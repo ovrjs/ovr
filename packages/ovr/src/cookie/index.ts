@@ -38,116 +38,87 @@ export namespace Cookie {
 		readonly priority?: "low" | "medium" | "high";
 	};
 
+	type HostPrefixOptions = BaseOptions & {
+		/**
+		 * Limits the scope of the cookie to a secure context (HTTPS).
+		 * **Requirement:** `__Host-` cookies must be Secure.
+		 */
+		readonly secure: true;
+
+		/**
+		 * Specifies the path that must exist in the requested URL.
+		 * **Requirement:** `__Host-` cookies must use the path "/".
+		 */
+		readonly path?: "/";
+
+		/**
+		 * Specifies the domain for which the cookie is valid.
+		 * **Requirement:** `__Host-` cookies must not have a defined domain.
+		 */
+		readonly domain?: never;
+
+		/** Controls whether the cookie is sent with cross-site requests. */
+		readonly sameSite?: "lax" | "strict" | "none";
+
+		/** Indicates that the cookie should be stored using partitioned storage (CHIPS). */
+		readonly partitioned?: boolean;
+	};
+
+	type SecurePrefixOptions = BaseOptions & {
+		/**
+		 * Limits the scope of the cookie to a secure context (HTTPS).
+		 * **Requirement:** `__Secure-` cookies must be Secure.
+		 */
+		readonly secure: true;
+
+		/** Controls whether the cookie is sent with cross-site requests. */
+		readonly sameSite?: "lax" | "strict" | "none";
+
+		/** Indicates that the cookie should be stored using partitioned storage (CHIPS). */
+		readonly partitioned?: boolean;
+	};
+
+	type SecureOptions = BaseOptions & {
+		/** Limits the scope of the cookie to a secure context (HTTPS). */
+		readonly secure: true;
+
+		/** Controls whether the cookie is sent with cross-site requests. */
+		readonly sameSite?: "lax" | "strict" | "none";
+
+		/** Indicates that the cookie should be stored using partitioned storage (CHIPS). */
+		readonly partitioned?: boolean;
+	};
+
+	type InsecureOptions = BaseOptions & {
+		/** Limits the scope of the cookie to a secure context (HTTPS). */
+		readonly secure?: false;
+
+		/**
+		 * Controls whether the cookie is sent with cross-site requests.
+		 * **Note:** `"none"` is not allowed unless `secure` is true.
+		 */
+		readonly sameSite?: "lax" | "strict";
+
+		/**
+		 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
+		 * **Note:** `true` is not allowed unless `secure` is true.
+		 */
+		readonly partitioned?: false;
+	};
+
 	/**
 	 * Configuration options for setting a cookie.
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie)
 	 */
-	export type Options<Name extends string = string> = BaseOptions &
-		// check for lowercase typos first to prevent invalid prefixes
-		(Name extends `__${"host" | "secure"}-${string}`
-			? never
+	export type Options<Name extends string = string> =
+		Name extends `__${"host" | "secure"}-${string}`
+			? never // typos
 			: Name extends `__Host-${string}`
-				? {
-						/**
-						 * Limits the scope of the cookie to a secure context (HTTPS).
-						 * Required for `SameSite=None` and Partitioned cookies.
-						 *
-						 * **Requirement:** `__Host-` cookies must be Secure.
-						 */
-						readonly secure: true;
-
-						/**
-						 * Specifies the path that must exist in the requested URL for the browser
-						 * to send the Cookie header.
-						 *
-						 * **Requirement:** `__Host-` cookies must use the path "/".
-						 */
-						readonly path?: "/";
-
-						/**
-						 * Specifies the domain for which the cookie is valid.
-						 *
-						 * **Requirement:** `__Host-` cookies must not have a defined domain.
-						 */
-						readonly domain?: never;
-
-						/**
-						 * Controls whether the cookie is sent with cross-site requests.
-						 * - `lax`: Sent with same-site requests and top-level navigation.
-						 * - `strict`: Sent only with same-site requests.
-						 * - `none`: Sent with all requests (requires `secure: true`).
-						 */
-						readonly sameSite?: "lax" | "strict" | "none";
-
-						/**
-						 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
-						 * Requires `secure: true`.
-						 */
-						readonly partitioned?: boolean;
-					}
+				? HostPrefixOptions
 				: Name extends `__Secure-${string}`
-					? {
-							/**
-							 * Limits the scope of the cookie to a secure context (HTTPS).
-							 * Required for `SameSite=None` and Partitioned cookies.
-							 *
-							 * **Requirement:** `__Secure-` cookies must be Secure.
-							 */
-							readonly secure: true;
-
-							/**
-							 * Controls whether the cookie is sent with cross-site requests.
-							 * - `lax`: Sent with same-site requests and top-level navigation.
-							 * - `strict`: Sent only with same-site requests.
-							 * - `none`: Sent with all requests (requires `secure: true`).
-							 */
-							readonly sameSite?: "lax" | "strict" | "none";
-
-							/**
-							 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
-							 * Requires `secure: true`.
-							 */
-							readonly partitioned?: boolean;
-						}
-					:
-							| {
-									/**
-									 * Limits the scope of the cookie to a secure context (HTTPS).
-									 * Required for `SameSite=None` and Partitioned cookies.
-									 */
-									readonly secure: true;
-
-									/**
-									 * Controls whether the cookie is sent with cross-site requests.
-									 * - `lax`: Sent with same-site requests and top-level navigation.
-									 * - `strict`: Sent only with same-site requests.
-									 * - `none`: Sent with all requests (requires `secure: true`).
-									 */
-									readonly sameSite?: "lax" | "strict" | "none";
-
-									/**
-									 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
-									 * Requires `secure: true`.
-									 */
-									readonly partitioned?: boolean;
-							  }
-							| {
-									/** Limits the scope of the cookie to a secure context (HTTPS). */
-									readonly secure?: false;
-
-									/**
-									 * Controls whether the cookie is sent with cross-site requests.
-									 * **Note:** `"none"` is not allowed unless `secure` is true.
-									 */
-									readonly sameSite?: "lax" | "strict";
-
-									/**
-									 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
-									 * **Note:** `true` is not allowed unless `secure` is true.
-									 */
-									readonly partitioned?: false;
-							  });
+					? SecurePrefixOptions
+					: SecureOptions | InsecureOptions;
 }
 
 /** HTTP cookie manager */
