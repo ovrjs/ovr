@@ -213,7 +213,6 @@ export class Cookie {
 			? [options: Cookie.Options<Name>]
 			: [options?: Cookie.Options<Name>]
 	) {
-		// Use Partial to safely handle the default empty object without casting
 		options ??= {};
 
 		const parts = [
