@@ -179,14 +179,14 @@ describe("Cookie Manager", () => {
 			const cookie = new Cookie(ctx);
 
 			cookie.set("id", "1", {
-				sameSite: "strict",
-				priority: "high",
+				sameSite: "Strict",
+				priority: "High",
 				secure: true,
 			});
 
 			const callArgs = appendSpy.mock.calls[0][1];
-			expect(callArgs).toContain("SameSite=strict");
-			expect(callArgs).toContain("Priority=high");
+			expect(callArgs).toContain("SameSite=Strict");
+			expect(callArgs).toContain("Priority=High");
 		});
 	});
 

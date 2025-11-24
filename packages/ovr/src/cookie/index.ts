@@ -35,7 +35,7 @@ export namespace Cookie {
 		readonly path?: string;
 
 		/** Determines which cookies to keep when the browser limit is exceeded. */
-		readonly priority?: "low" | "medium" | "high";
+		readonly priority?: "Low" | "Medium" | "High";
 	};
 
 	type HostPrefixOptions = BaseOptions & {
@@ -58,7 +58,7 @@ export namespace Cookie {
 		readonly domain?: never;
 
 		/** Controls whether the cookie is sent with cross-site requests. */
-		readonly sameSite?: "lax" | "strict" | "none";
+		readonly sameSite?: "Lax" | "Strict" | "None";
 
 		/** Indicates that the cookie should be stored using partitioned storage (CHIPS). */
 		readonly partitioned?: boolean;
@@ -72,7 +72,7 @@ export namespace Cookie {
 		readonly secure: true;
 
 		/** Controls whether the cookie is sent with cross-site requests. */
-		readonly sameSite?: "lax" | "strict" | "none";
+		readonly sameSite?: "Lax" | "Strict" | "None";
 
 		/** Indicates that the cookie should be stored using partitioned storage (CHIPS). */
 		readonly partitioned?: boolean;
@@ -83,7 +83,7 @@ export namespace Cookie {
 		readonly secure: true;
 
 		/** Controls whether the cookie is sent with cross-site requests. */
-		readonly sameSite?: "lax" | "strict" | "none";
+		readonly sameSite?: "Lax" | "Strict" | "None";
 
 		/** Indicates that the cookie should be stored using partitioned storage (CHIPS). */
 		readonly partitioned?: boolean;
@@ -97,7 +97,7 @@ export namespace Cookie {
 		 * Controls whether the cookie is sent with cross-site requests.
 		 * **Note:** `"none"` is not allowed unless `secure` is true.
 		 */
-		readonly sameSite?: "lax" | "strict";
+		readonly sameSite?: "Lax" | "Strict";
 
 		/**
 		 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
