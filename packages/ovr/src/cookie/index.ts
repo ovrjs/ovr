@@ -215,20 +215,21 @@ export class Cookie {
 	) {
 		options ??= {};
 
-		const parts = [
+		const cookie = [
 			`${name}=${encodeURIComponent(value)}`,
 			`Path=${options.path ?? "/"}`,
 		];
 
-		if (options.domain) parts.push(`Domain=${options.domain}`);
-		if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
-		if (options.expires) parts.push(`Expires=${options.expires.toUTCString()}`);
-		if (options.httpOnly) parts.push("HttpOnly");
-		if (options.partitioned) parts.push("Partitioned");
-		if (options.secure) parts.push("Secure");
-		if (options.priority) parts.push(`Priority=${options.priority}`);
-		if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
+		if (options.secure) cookie.push("Secure");
+		if (options.httpOnly) cookie.push("HttpOnly");
+		if (options.partitioned) cookie.push("Partitioned");
+		if (options.domain) cookie.push(`Domain=${options.domain}`);
+		if (options.priority) cookie.push(`Priority=${options.priority}`);
+		if (options.sameSite) cookie.push(`SameSite=${options.sameSite}`);
+		if (options.maxAge !== undefined) cookie.push(`Max-Age=${options.maxAge}`);
+		if (options.expires)
+			cookie.push(`Expires=${options.expires.toUTCString()}`);
 
-		this.#c.res.headers.append("set-cookie", parts.join("; "));
+		this.#c.res.headers.append("set-cookie", cookie.join("; "));
 	}
 }
