@@ -97,7 +97,6 @@ Route.get("/api/:id", (c) => {
 
 	c.cookie.get(name); // get cookie
 	c.cookie.set(name, value); // set cookie
-	c.cookie.delete(name); // expire cookie
 
 	if (c.etag(str)) return; // ETag - sets 304 if match
 

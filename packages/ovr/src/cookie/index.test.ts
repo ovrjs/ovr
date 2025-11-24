@@ -195,7 +195,7 @@ describe("Cookie Manager", () => {
 			const { ctx, appendSpy } = createMockContext();
 			const cookie = new Cookie(ctx);
 
-			cookie.delete("session");
+			cookie.set("session", "", { maxAge: 0 });
 
 			expect(appendSpy).toHaveBeenCalledWith(
 				"set-cookie",
@@ -207,7 +207,11 @@ describe("Cookie Manager", () => {
 			const { ctx, appendSpy } = createMockContext();
 			const cookie = new Cookie(ctx);
 
-			cookie.delete("session", { path: "/app", domain: "sub.example.com" });
+			cookie.set("session", "", {
+				path: "/app",
+				domain: "sub.example.com",
+				maxAge: 0,
+			});
 
 			expect(appendSpy).toHaveBeenCalledWith(
 				"set-cookie",
