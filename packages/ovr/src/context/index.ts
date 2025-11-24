@@ -1,3 +1,4 @@
+import { Cookie } from "../cookie/index.js";
 import { render } from "../jsx/index.js";
 import { type Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
@@ -58,6 +59,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 
 	/** Contains the arguments to used create the final `Response` */
 	readonly res: Context.PreparedResponse = { headers: new Headers() };
+
+	/** Get, set, and delete cookies. */
+	readonly cookie = new Cookie(this);
 
 	// for reuse across methods
 	static readonly #contentType = "content-type";
