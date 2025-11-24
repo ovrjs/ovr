@@ -43,14 +43,31 @@ export namespace Cookie {
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie)
 	 */
-	export type Options = BaseOptions &
-		(
-			| {
+	export type Options<Name extends string = string> = BaseOptions &
+		(Name extends `__Host-${string}`
+			? {
 					/**
 					 * Limits the scope of the cookie to a secure context (HTTPS).
 					 * Required for `SameSite=None` and Partitioned cookies.
+					 *
+					 * **Requirement:** `__Host-` cookies must be Secure.
 					 */
 					readonly secure: true;
+
+					/**
+					 * Specifies the path that must exist in the requested URL for the browser
+					 * to send the Cookie header.
+					 *
+					 * **Requirement:** `__Host-` cookies must use the path "/".
+					 */
+					readonly path?: "/";
+
+					/**
+					 * Specifies the domain for which the cookie is valid.
+					 *
+					 * **Requirement:** `__Host-` cookies must not have a defined domain.
+					 */
+					readonly domain?: never;
 
 					/**
 					 * Controls whether the cookie is sent with cross-site requests.
@@ -65,24 +82,69 @@ export namespace Cookie {
 					 * Requires `secure: true`.
 					 */
 					readonly partitioned?: boolean;
-			  }
-			| {
-					/** Limits the scope of the cookie to a secure context (HTTPS). */
-					readonly secure?: false;
+				}
+			: Name extends `__Secure-${string}`
+				? {
+						/**
+						 * Limits the scope of the cookie to a secure context (HTTPS).
+						 * Required for `SameSite=None` and Partitioned cookies.
+						 *
+						 * **Requirement:** `__Secure-` cookies must be Secure.
+						 */
+						readonly secure: true;
 
-					/**
-					 * Controls whether the cookie is sent with cross-site requests.
-					 * **Note:** `"none"` is not allowed unless `secure` is true.
-					 */
-					readonly sameSite?: "lax" | "strict";
+						/**
+						 * Controls whether the cookie is sent with cross-site requests.
+						 * - `lax`: Sent with same-site requests and top-level navigation.
+						 * - `strict`: Sent only with same-site requests.
+						 * - `none`: Sent with all requests (requires `secure: true`).
+						 */
+						readonly sameSite?: "lax" | "strict" | "none";
 
-					/**
-					 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
-					 * **Note:** `true` is not allowed unless `secure` is true.
-					 */
-					readonly partitioned?: false;
-			  }
-		);
+						/**
+						 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
+						 * Requires `secure: true`.
+						 */
+						readonly partitioned?: boolean;
+					}
+				:
+						| {
+								/**
+								 * Limits the scope of the cookie to a secure context (HTTPS).
+								 * Required for `SameSite=None` and Partitioned cookies.
+								 */
+								readonly secure: true;
+
+								/**
+								 * Controls whether the cookie is sent with cross-site requests.
+								 * - `lax`: Sent with same-site requests and top-level navigation.
+								 * - `strict`: Sent only with same-site requests.
+								 * - `none`: Sent with all requests (requires `secure: true`).
+								 */
+								readonly sameSite?: "lax" | "strict" | "none";
+
+								/**
+								 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
+								 * Requires `secure: true`.
+								 */
+								readonly partitioned?: boolean;
+						  }
+						| {
+								/** Limits the scope of the cookie to a secure context (HTTPS). */
+								readonly secure?: false;
+
+								/**
+								 * Controls whether the cookie is sent with cross-site requests.
+								 * **Note:** `"none"` is not allowed unless `secure` is true.
+								 */
+								readonly sameSite?: "lax" | "strict";
+
+								/**
+								 * Indicates that the cookie should be stored using partitioned storage (CHIPS).
+								 * **Note:** `true` is not allowed unless `secure` is true.
+								 */
+								readonly partitioned?: false;
+						  });
 }
 
 /** HTTP cookie manager */
@@ -166,9 +228,18 @@ export class Cookie {
 	 *
 	 * @param name Name of the cookie
 	 * @param value Value to store
-	 * @param options Configuration options
+	 * @param args Options configuration. Required if name starts with `__Secure-` or `__Host-`.
 	 */
-	set(name: string, value: string, options: Cookie.Options = {}) {
+	set<Name extends string>(
+		name: Name,
+		value: string,
+		...[options]: Name extends `__Secure-${string}` | `__Host-${string}`
+			? [options: Cookie.Options<Name>]
+			: [options?: Cookie.Options<Name>]
+	) {
+		// Use Partial to safely handle the default empty object without casting
+		options ??= {};
+
 		const parts = [
 			`${name}=${encodeURIComponent(value)}`,
 			`Path=${options.path ?? "/"}`,
@@ -193,7 +264,27 @@ export class Cookie {
 	 * @param options Path and Domain options.
 	 * These must match the options used when the cookie was originally set for the deletion to succeed.
 	 */
-	delete(name: string, options: Pick<Cookie.Options, "path" | "domain"> = {}) {
-		this.set(name, "", { ...options, maxAge: 0 });
+	delete<Name extends string>(
+		name: Name,
+		...[options]: Name extends `__Secure-${string}` | `__Host-${string}`
+			? [
+					options: Omit<
+						Cookie.Options<Name>,
+						"maxAge" | "expires" | "priority" | "httpOnly"
+					>,
+				]
+			: [
+					options?: Omit<
+						Cookie.Options<Name>,
+						"maxAge" | "expires" | "priority" | "httpOnly"
+					>,
+				]
+	) {
+		this.set(
+			name,
+			"",
+			// @ts-expect-error - tuple type
+			Object.assign(options ?? {}, { maxAge: 0 }),
+		);
 	}
 }
