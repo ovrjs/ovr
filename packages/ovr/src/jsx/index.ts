@@ -1,5 +1,6 @@
 import { Chunk } from "../chunk/index.js";
 import type { MaybeFunction, MaybePromise } from "../types/index.js";
+import { encoder } from "../util/encoder.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 import { merge } from "./merge.js";
 
@@ -111,9 +112,6 @@ export async function* jsx<P extends Props = Props>(
 export async function* Fragment(props: { children?: JSX.Element }) {
 	yield* render(props.children);
 }
-
-/** Single encoder to use across requests. */
-const encoder = new TextEncoder();
 
 export namespace render {
 	/** Rendering options */

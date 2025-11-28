@@ -174,7 +174,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			() => this.#run(middleware, i + 1), // next
 		);
 
-		// resolve the final return value
+		// resolve the return value
 		if (r instanceof Response) {
 			// overwrite
 			this.res.body = r.body;

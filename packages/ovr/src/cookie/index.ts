@@ -1,4 +1,5 @@
 import type { Context } from "../context/index.js";
+import { parseHeader } from "../util/parse-header.js";
 
 export namespace Cookie {
 	type BaseOptions = {
@@ -145,56 +146,9 @@ export class Cookie {
 	 * @returns Value of the cookie, or `undefined` if not found
 	 */
 	get(name: string) {
-		if (this.#parsed) return this.#parsed.get(name);
-
-		this.#parsed = new Map();
-
-		const header = this.#c.req.headers.get("cookie") ?? "";
-		const { length } = header;
-
-		for (let cursor = 0; cursor < length; ) {
-			const equal = header.indexOf("=", cursor);
-			if (equal === -1) break; // done
-
-			let semi = header.indexOf(";", cursor);
-			if (semi === -1) semi = length;
-
-			if (equal > semi) {
-				// equal is in the next cookie, current is malformed
-				// move the cursor to the start of the next and ignore
-				cursor = header.lastIndexOf(";", equal - 1) + 1;
-				continue;
-			}
-
-			const key = header.slice(cursor, equal).trim();
-
-			if (!this.#parsed.has(key)) {
-				// first cookie should take precedence
-
-				let value = header.slice(equal + 1, semi).trim();
-
-				if (value[0] === '"' && value[value.length - 1] === '"') {
-					// remove quotes
-					value = value.slice(1, -1);
-				}
-
-				if (value.includes("%")) {
-					// most cookies don't need to be decoded
-					try {
-						// cookie must be a simple string
-						value = decodeURIComponent(value);
-					} catch {
-						// ignore
-					}
-				}
-
-				this.#parsed.set(key, value);
-			}
-
-			cursor = semi + 1;
-		}
-
-		return this.#parsed.get(name);
+		return (this.#parsed ??= parseHeader(
+			this.#c.req.headers.get("cookie"),
+		)).get(name);
 	}
 
 	/**

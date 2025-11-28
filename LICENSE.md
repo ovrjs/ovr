@@ -16,7 +16,7 @@ Portions of this software have been adapted from the following projects, which a
   Copyright (c) 2013 TJ Holowaychuk <tj@apex.sh>
 - djb2 hash util - https://github.com/sveltejs/kit
   Copyright (c) 2020 SvelteKit contributors
-- HTML escape replacer - https://github.com/remix-run/remix
+- Multipart parser and HTML escape replacer - https://github.com/remix-run/remix
   Copyright (c) 2025 Shopify Inc.
 - Trie router - https://github.com/SaltyAom/memoirist
   Copyright (c) 2023 saltyAom
