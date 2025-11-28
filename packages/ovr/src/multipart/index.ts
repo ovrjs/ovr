@@ -41,31 +41,40 @@ const concat = (...buffers: Uint8Array[]) => {
 };
 
 class Finder {
-	/** stores where each byte is located in the needle */
+	/** Stores where each byte is located in the needle */
 	bytes: Record<string, number[]> = {};
 
-	#length: number;
+	/** Sequence of bytes to find */
+	needle: Uint8Array<ArrayBuffer>;
+
+	/** Length of the needle */
+	needleLength: number;
+
+	/** Index of the last character in the needle */
+	needleEnd: number;
+
+	/**
+	 * Stores the how far from the last character each char in the needle is so
+	 * the iterator know how far to safely skip forward when the character is
+	 * found the rest of the array is filled with the length (default skip)
+	 */
+	skip: Uint8Array<ArrayBuffer>;
 
 	find: (pc: ParseContext) => Promise<true | undefined>;
 	findStream: (pc: ParseContext) => ReadableStream<Uint8Array<ArrayBuffer>>;
 
 	constructor(pattern: string) {
-		const needle = encoder.encode(pattern);
-		this.#length = needle.length;
-		const needleEnd = this.#length - 1;
+		this.needle = encoder.encode(pattern);
+		this.needleLength = this.needle.length;
+		this.needleEnd = this.needleLength - 1;
+		this.skip = new Uint8Array(256).fill(this.needleLength);
 
-		// this table stores the how far from the last character
-		// each char in the needle is so the iterator know how far to
-		// safely skip forward when the character is found
-		// the rest of the table is filled with the length (default skip)
-		const skip = new Uint8Array(256).fill(this.#length);
+		for (let i = 0; i < this.needleLength; i++) {
+			const byte = this.needle[i]!;
 
-		for (let i = 0; i < this.#length; i++) {
-			const byte = needle[i]!;
-
-			if (i !== needleEnd) {
+			if (i !== this.needleEnd) {
 				// skip the last char of the needle since that would be a find
-				skip[byte] = needleEnd - i;
+				this.skip[byte] = this.needleEnd - i;
 			}
 
 			this.bytes[byte] ??= [];
@@ -80,18 +89,18 @@ class Finder {
 			for (
 				// start the search at the last char of the needle
 				// since it could be at the very start
-				pc.start += needleEnd;
+				pc.start += this.needleEnd;
 				pc.start < haystackLength; // end - not found
-				pc.start += skip[pc.buffer.value[pc.start]!]!
+				pc.start += this.skip[pc.buffer.value[pc.start]!]!
 			) {
 				for (
-					let i = needleEnd;
-					i >= 0 && needle[i] === pc.buffer.value[pc.start];
+					let i = this.needleEnd;
+					i >= 0 && this.needle[i] === pc.buffer.value[pc.start];
 					i--, pc.start-- // check previous char when there's a match
 				) {
 					if (i === 0) {
 						// all characters match
-						pc.end = pc.start + this.#length;
+						pc.end = pc.start + this.needleLength;
 						return true;
 					}
 				}
@@ -122,14 +131,20 @@ class Finder {
 
 						if (lastByteIndices) {
 							// last char is in the boundary, check for partial boundary
-							for (let i = lastByteIndices.length - 1; i >= 0; i--) {
+							for (
+								let byteIndex = lastByteIndices.length - 1;
+								byteIndex >= 0;
+								byteIndex--
+							) {
 								// iterate backwards through the indices
 								for (
-									let j = lastByteIndices[i]!, k = end;
-									j <= 0 && pc.buffer.value[j] === needle[k];
-									j--, k--
+									let charIndex = lastByteIndices[byteIndex]!,
+										needleIndex = end;
+									charIndex <= 0 &&
+									pc.buffer.value[charIndex] === this.needle[needleIndex];
+									charIndex--, needleIndex--
 								) {
-									if (j === 0) {
+									if (charIndex === 0) {
 										// send up until, check if next has the rest
 										controller.enqueue(pc.buffer.value.slice(0));
 									}
@@ -164,7 +179,7 @@ class Finder {
 
 			// where to start the search in the concatenated chunk result
 			// go back len - 1 in case it was partially at the end
-			pc.start = pc.buffer.value.length - (this.#length - 1);
+			pc.start = pc.buffer.value.length - (this.needleLength - 1);
 
 			// add the next chunk onto the end of current
 			pc.buffer.value = concat(pc.buffer.value, next.value);
