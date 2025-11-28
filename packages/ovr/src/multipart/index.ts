@@ -14,120 +14,61 @@ class ParseContext {
 	/** End index of the last item found */
 	end = 0;
 
+	find: (needle: Needle) => Promise<Uint8Array<ArrayBuffer> | undefined>;
+
+	findStream: (needle: Needle) => ReadableStream<Uint8Array<ArrayBuffer>>;
+
 	constructor(
 		reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>,
 		buffer: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>,
 	) {
 		this.reader = reader;
 		this.buffer = buffer;
-	}
-}
 
-const concat = (...buffers: Uint8Array[]) => {
-	let totalLength = 0;
-	for (const buffer of buffers) {
-		totalLength += buffer.length;
-	}
+		this.find = async (needle) => {
+			if (!this.buffer.value) return;
 
-	const result = new Uint8Array(totalLength);
-
-	let i = 0;
-	for (const buffer of buffers) {
-		result.set(buffer, i);
-		i += buffer.length;
-	}
-
-	return result;
-};
-
-class Finder {
-	/** Stores where each byte is located in the needle */
-	bytes: Record<string, number[]> = {};
-
-	/** Sequence of bytes to find */
-	needle: Uint8Array<ArrayBuffer>;
-
-	/** Length of the needle */
-	needleLength: number;
-
-	/** Index of the last character in the needle */
-	needleEnd: number;
-
-	/**
-	 * Stores the how far from the last character each char in the needle is so
-	 * the iterator know how far to safely skip forward when the character is
-	 * found the rest of the array is filled with the length (default skip)
-	 */
-	skip: Uint8Array<ArrayBuffer>;
-
-	find: (pc: ParseContext) => Promise<true | undefined>;
-	findStream: (pc: ParseContext) => ReadableStream<Uint8Array<ArrayBuffer>>;
-
-	constructor(pattern: string) {
-		this.needle = encoder.encode(pattern);
-		this.needleLength = this.needle.length;
-		this.needleEnd = this.needleLength - 1;
-		this.skip = new Uint8Array(256).fill(this.needleLength);
-
-		for (let i = 0; i < this.needleLength; i++) {
-			const byte = this.needle[i]!;
-
-			if (i !== this.needleEnd) {
-				// skip the last char of the needle since that would be a find
-				this.skip[byte] = this.needleEnd - i;
-			}
-
-			this.bytes[byte] ??= [];
-			this.bytes[byte].push(i);
-		}
-
-		this.find = async (pc: ParseContext) => {
-			if (!pc.buffer.value) return;
-
-			const haystackLength = pc.buffer.value.length;
+			const haystackLength = this.buffer.value.length;
 
 			for (
 				// start the search at the last char of the needle
 				// since it could be at the very start
-				pc.start += this.needleEnd;
-				pc.start < haystackLength; // end - not found
-				pc.start += this.skip[pc.buffer.value[pc.start]!]!
+				this.start += needle.end;
+				this.start < haystackLength; // end - not found
+				this.start += needle.skip[this.buffer.value[this.start]!]!
 			) {
 				for (
-					let i = this.needleEnd;
-					i >= 0 && this.needle[i] === pc.buffer.value[pc.start];
-					i--, pc.start-- // check previous char when there's a match
+					let i = needle.end;
+					i >= 0 && needle.bytes[i] === this.buffer.value[this.start];
+					i--, this.start-- // check previous char when there's a match
 				) {
 					if (i === 0) {
 						// all characters match
-						pc.end = pc.start + this.needleLength;
-						return true;
+						this.end = this.start + needle.length;
+						return this.unshift();
 					}
 				}
 			}
 		};
 
-		this.findStream = (pc) =>
+		this.findStream = (needle) =>
 			new ReadableStream({
 				type: "bytes",
 				pull: async (controller) => {
-					if (!pc.buffer.value) return;
+					if (!this.buffer.value) return;
 
-					if (await this.find(pc)) {
+					if (await this.find(needle)) {
 						// found within current chunk
 						console.log("found");
 
-						// send up until the boundary
-						controller.enqueue(pc.buffer.value.slice(0, pc.start));
-						// update buffer to part after the boundary
-						pc.buffer.value = pc.buffer.value.slice(pc.end);
+						controller.enqueue(this.unshift());
 					} else {
 						// not found within current chunk
 						console.log("not found");
 
-						const end = pc.buffer.value.length - 1;
-						const lastByte = pc.buffer.value[end]!;
-						const lastByteIndices = this.bytes[lastByte];
+						const end = this.buffer.value.length - 1;
+						const lastByte = this.buffer.value[end]!;
+						const lastByteIndices = needle.map[lastByte];
 
 						if (lastByteIndices) {
 							// last char is in the boundary, check for partial boundary
@@ -141,12 +82,12 @@ class Finder {
 									let charIndex = lastByteIndices[byteIndex]!,
 										needleIndex = end;
 									charIndex <= 0 &&
-									pc.buffer.value[charIndex] === this.needle[needleIndex];
+									this.buffer.value[charIndex] === needle.bytes[needleIndex];
 									charIndex--, needleIndex--
 								) {
 									if (charIndex === 0) {
 										// send up until, check if next has the rest
-										controller.enqueue(pc.buffer.value.slice(0));
+										controller.enqueue(this.buffer.value.slice(0));
 									}
 								}
 							}
@@ -154,7 +95,7 @@ class Finder {
 							// if not found then check again for partial tail
 						} else {
 							console.log("no partial match");
-							controller.enqueue(pc.buffer.value);
+							controller.enqueue(this.buffer.value);
 							// send current,
 							// read next chunk, check for boundary
 							// if not found then check again for partial tail
@@ -166,23 +107,82 @@ class Finder {
 			});
 	}
 
-	async findConcat(pc: ParseContext) {
-		if (!pc.buffer.value) return;
+	unshift() {
+		const before = this.buffer.value!.slice(0, this.start);
+		this.buffer.value = this.buffer.value!.slice(this.end); // after
+		this.start = 0;
+		this.end = 0;
+
+		return before;
+	}
+
+	concat(buffer: Uint8Array) {
+		const result = new Uint8Array(this.buffer.value!.length + buffer.length);
+
+		result.set(this.buffer.value!);
+		result.set(buffer, buffer.length);
+
+		this.buffer.value = result;
+	}
+
+	async findConcat(needle: Needle) {
+		if (!this.buffer.value) return;
 
 		let next: ReadableStreamReadResult<Uint8Array>;
 
 		for (;;) {
 			// try to find in the next chunk
-			if (await this.find(pc)) return true;
+			const found = await this.find(needle);
+			if (found) return found;
 
-			if ((next = await pc.reader.read()).done) return; // no more chunks
+			if ((next = await this.reader.read()).done) return; // no more chunks
 
 			// where to start the search in the concatenated chunk result
 			// go back len - 1 in case it was partially at the end
-			pc.start = pc.buffer.value.length - (this.needleLength - 1);
+			this.start = this.buffer.value.length - (needle.length - 1);
 
 			// add the next chunk onto the end of current
-			pc.buffer.value = concat(pc.buffer.value, next.value);
+			this.concat(next.value);
+		}
+	}
+}
+
+class Needle {
+	/** Sequence of bytes to find */
+	bytes: Uint8Array<ArrayBuffer>;
+
+	/** Length of the needle */
+	length: number;
+
+	/** Index of the last character in the needle */
+	end: number;
+
+	/**
+	 * Stores the how far from the last character each char in the needle is so
+	 * the iterator know how far to safely skip forward when the character is
+	 * found the rest of the array is filled with the length (default skip)
+	 */
+	skip: Uint8Array<ArrayBuffer>;
+
+	/** Stores where each byte is located in the needle */
+	map: Record<string, number[]> = {};
+
+	constructor(pattern: string) {
+		this.bytes = encoder.encode(pattern);
+		this.length = this.bytes.length;
+		this.end = this.length - 1;
+		this.skip = new Uint8Array(256).fill(this.length);
+
+		for (let i = 0; i < this.length; i++) {
+			const byte = this.bytes[i]!;
+
+			if (i !== this.end) {
+				// skip the last char of the needle since that would be a find
+				this.skip[byte] = this.end - i;
+			}
+
+			this.map[byte] ??= [];
+			this.map[byte].push(i);
 		}
 	}
 }
@@ -194,7 +194,7 @@ export class Parser {
 		this.#req = req;
 	}
 
-	static #createHeaders(raw: string) {
+	static #headers(raw: string) {
 		const headers = new Headers();
 		const lines = raw.split("\r\n");
 
@@ -206,7 +206,7 @@ export class Parser {
 		return headers;
 	}
 
-	static #CRLF = new Finder("\r\n\r\n");
+	static #CRLF = new Needle("\r\n\r\n");
 
 	/**
 	 * Handle multi-part form data streams.
@@ -226,22 +226,17 @@ export class Parser {
 
 		if (pc.buffer.done) return;
 
-		const boundary = new Finder(`--${boundaryStr}\r\n`);
-		if (!(await boundary.findConcat(pc))) return;
+		const boundary = new Needle(`--${boundaryStr}\r\n`);
 
-		const headerStart = pc.end;
+		if (!(await pc.findConcat(boundary))) return;
 
-		if (!(await Parser.#CRLF.findConcat(pc))) return;
-
-		const headers = Parser.#createHeaders(
-			decoder.decode(pc.buffer.value.slice(headerStart, pc.start)),
+		const headers = Parser.#headers(
+			decoder.decode(await pc.findConcat(Parser.#CRLF)),
 		);
 
-		pc.buffer.value = pc.buffer.value.slice(pc.end);
-		pc.start = 0;
-		pc.end = 0;
+		const part = new Part(headers, pc.findStream(boundary));
 
-		const part = new Part(headers, boundary.findStream(pc));
+		console.log(part);
 
 		yield part;
 	}
