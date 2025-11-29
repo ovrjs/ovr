@@ -6,26 +6,28 @@ class ParseContext {
 	reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>;
 
 	/** Current chunk(s) in the buffer */
-	buffer: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>;
+	buffer!: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>;
 
-	/** Start index of the last item found */
+	/** Start index of the found needle */
 	start = 0;
 
-	/** End index of the last item found */
+	/** End index of the found needle */
 	end = 0;
 
-	find: (needle: Needle) => Promise<Uint8Array<ArrayBuffer> | undefined>;
+	find: (needle: Needle) => Uint8Array<ArrayBuffer> | undefined;
 
 	findStream: (needle: Needle) => ReadableStream<Uint8Array<ArrayBuffer>>;
 
-	constructor(
-		reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>,
-		buffer: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>,
-	) {
+	/**
+	 * Use `ParseContext.init` to create a new parse context and read
+	 * the first chunk into the buffer.
+	 *
+	 * @param reader
+	 */
+	constructor(reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>) {
 		this.reader = reader;
-		this.buffer = buffer;
 
-		this.find = async (needle) => {
+		this.find = (needle) => {
 			if (!this.buffer.value) return;
 
 			const haystackLength = this.buffer.value.length;
@@ -33,21 +35,33 @@ class ParseContext {
 			for (
 				// start the search at the last char of the needle
 				// since it could be at the very start
-				this.start += needle.end;
-				this.start < haystackLength; // end - not found
-				this.start += needle.skip[this.buffer.value[this.start]!]!
+				let cursor = needle.end;
+				cursor < haystackLength; // end - not found
+				cursor += needle.skip[this.buffer.value[cursor]!]!
 			) {
 				for (
-					let i = needle.end;
-					i >= 0 && needle.bytes[i] === this.buffer.value[this.start];
-					i--, this.start-- // check previous char when there's a match
+					let needleIndex = needle.end;
+					needleIndex >= 0 &&
+					needle.bytes[needleIndex] === this.buffer.value[cursor];
+					needleIndex--, cursor-- // check previous char when there's a match
 				) {
-					if (i === 0) {
+					if (needleIndex === 0) {
 						// all characters match
-						this.end = this.start + needle.length;
-						return this.unshift();
+						this.start = cursor;
+						this.end = cursor + needle.length;
+						return this.shift();
 					}
 				}
+			}
+
+			if (needle.length < haystackLength) {
+				// where to safely start the next search in the concatenated chunk result
+				// go back len - 1 in case it was partially at the end
+				this.start = this.buffer.value.length - (needle.length - 1);
+				this.end = this.buffer.value.length - 1;
+			} else {
+				this.start = 0;
+				this.end = 0;
 			}
 		};
 
@@ -57,49 +71,52 @@ class ParseContext {
 				pull: async (controller) => {
 					if (!this.buffer.value) return;
 
-					if (await this.find(needle)) {
-						// found within current chunk
-						console.log("found");
+					for (;;) {
+						const found = this.find(needle);
 
-						controller.enqueue(this.unshift());
-					} else {
+						if (found) {
+							// found within current chunk
+							console.log("found");
+							controller.enqueue(found);
+							break;
+						}
+
 						// not found within current chunk
 						console.log("not found");
 
-						const end = this.buffer.value.length - 1;
-						const lastByte = this.buffer.value[end]!;
-						const lastByteIndices = needle.map[lastByte];
+						let cursor = this.buffer.value.length - 1;
+						const lastByte = this.buffer.value[cursor]!;
+						const needleIndices = needle.map[lastByte];
 
-						if (lastByteIndices) {
+						if (needleIndices) {
 							// last char is in the boundary, check for partial boundary
 							for (
-								let byteIndex = lastByteIndices.length - 1;
+								// iterate backwards through the indices
+								let byteIndex = needleIndices.length - 1;
 								byteIndex >= 0;
 								byteIndex--
 							) {
-								// iterate backwards through the indices
 								for (
-									let charIndex = lastByteIndices[byteIndex]!,
-										needleIndex = end;
-									charIndex <= 0 &&
-									this.buffer.value[charIndex] === needle.bytes[needleIndex];
-									charIndex--, needleIndex--
+									let needleIndex = needleIndices[byteIndex]!;
+									needleIndex <= 0 &&
+									needle.bytes[needleIndex] === this.buffer.value[cursor];
+									needleIndex--, cursor--
 								) {
-									if (charIndex === 0) {
-										// send up until, check if next has the rest
-										controller.enqueue(this.buffer.value.slice(0));
+									if (needleIndex === 0) {
+										this.start = this.end = cursor;
+										// rerun check if next has the rest
 									}
 								}
 							}
-
-							// if not found then check again for partial tail
-						} else {
-							console.log("no partial match");
-							controller.enqueue(this.buffer.value);
-							// send current,
-							// read next chunk, check for boundary
-							// if not found then check again for partial tail
 						}
+
+						const before = this.shift();
+
+						if (before.length) {
+							controller.enqueue(before);
+						}
+
+						await this.concatNext();
 					}
 
 					controller.close();
@@ -107,7 +124,15 @@ class ParseContext {
 			});
 	}
 
-	unshift() {
+	static async init(
+		reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>,
+	) {
+		const pc = new ParseContext(reader);
+		pc.buffer = await pc.reader.read();
+		return pc;
+	}
+
+	shift() {
 		const before = this.buffer.value!.slice(0, this.start);
 		this.buffer.value = this.buffer.value!.slice(this.end); // after
 		this.start = 0;
@@ -116,33 +141,30 @@ class ParseContext {
 		return before;
 	}
 
-	concat(buffer: Uint8Array) {
-		const result = new Uint8Array(this.buffer.value!.length + buffer.length);
+	async concatNext() {
+		const next = await this.reader.read();
+
+		if (this.buffer.done || next.done) return false;
+
+		const result = new Uint8Array(this.buffer.value.length + next.value.length);
 
 		result.set(this.buffer.value!);
-		result.set(buffer, buffer.length);
+		result.set(next.value, this.buffer.value.length);
 
 		this.buffer.value = result;
+
+		return true;
 	}
 
 	async findConcat(needle: Needle) {
 		if (!this.buffer.value) return;
 
-		let next: ReadableStreamReadResult<Uint8Array>;
-
 		for (;;) {
 			// try to find in the next chunk
-			const found = await this.find(needle);
+			const found = this.find(needle);
 			if (found) return found;
 
-			if ((next = await this.reader.read()).done) return; // no more chunks
-
-			// where to start the search in the concatenated chunk result
-			// go back len - 1 in case it was partially at the end
-			this.start = this.buffer.value.length - (needle.length - 1);
-
-			// add the next chunk onto the end of current
-			this.concat(next.value);
+			if (!(await this.concatNext())) return; // no more chunks
 		}
 	}
 }
@@ -222,9 +244,7 @@ export class Parser {
 
 		if (!boundaryStr || !reader) return;
 
-		const pc = new ParseContext(reader, await reader.read());
-
-		if (pc.buffer.done) return;
+		const pc = await ParseContext.init(reader);
 
 		const boundary = new Needle(`--${boundaryStr}\r\n`);
 
@@ -299,6 +319,10 @@ export class Part {
 			buffer += decoder.decode(chunk.value);
 		}
 
-		return parser?.(buffer) ?? buffer;
+		// buffer = buffer.trim(); //?????????
+
+		if (parser) return parser(buffer);
+
+		return buffer;
 	}
 }
