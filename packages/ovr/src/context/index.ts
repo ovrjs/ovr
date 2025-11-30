@@ -1,6 +1,7 @@
 import { Cookie } from "../cookie/index.js";
 import { render } from "../jsx/index.js";
 import { type Middleware } from "../middleware/index.js";
+import { Parser } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
 import { hash } from "../util/hash.js";
@@ -155,6 +156,29 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Parse multi-part form data streams.
+	 *
+	 * @yields Multipart form data `Part`(s)
+	 *
+	 * @example
+	 *
+	 * ```ts
+	 * import { Route } from "ovr";
+	 *
+	 * const post = Route.post(async (c) => {
+	 * 	for await (const part of c.data()) {
+	 * 		if (part.name === "email") {
+	 * 			// ...
+	 * 		}
+	 * 	}
+	 * })
+	 * ```
+	 */
+	async *data() {
+		yield* new Parser(this.req).data();
 	}
 
 	/**

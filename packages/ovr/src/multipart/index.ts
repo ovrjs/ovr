@@ -279,7 +279,7 @@ export class Parser {
 							) {
 								for (
 									let needleIndex = needleIndices[byteIndex]!;
-									needleIndex <= 0 &&
+									needleIndex >= 0 &&
 									needle.bytes[needleIndex] === this.#buffer.value[cursor];
 									needleIndex--, cursor--
 								) {
@@ -358,21 +358,9 @@ export class Parser {
 	}
 
 	/**
-	 * Handle multi-part form data streams.
+	 * Parse multi-part form data streams.
 	 *
 	 * @yields Multipart form data `Part`(s)
-	 *
-	 * @example
-	 *
-	 * ```ts
-	 * const post = new Route(async (c) => {
-	 * 	for await (const part of c.data()) {
-	 * 		if (part.name === "email") {
-	 * 			// ...
-	 * 		}
-	 * 	}
-	 * })
-	 * ```
 	 */
 	async *data() {
 		this.#buffer = await this.#reader.read();
