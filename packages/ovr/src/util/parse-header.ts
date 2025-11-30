@@ -3,7 +3,7 @@
  * @returns Map containing each key=value pair
  */
 export const parseHeader = (header: string | null) => {
-	const parsed = new Map<string, string>();
+	const parsed: Record<string, string> = {};
 
 	if (header) {
 		const headerLength = header.length;
@@ -24,7 +24,7 @@ export const parseHeader = (header: string | null) => {
 
 			const key = header.slice(cursor, equal).trim();
 
-			if (!parsed.has(key)) {
+			if (!(key in parsed)) {
 				// first value should take precedence
 
 				let value = header.slice(equal + 1, semi).trim();
@@ -44,7 +44,7 @@ export const parseHeader = (header: string | null) => {
 					}
 				}
 
-				parsed.set(key, value);
+				parsed[key] = value;
 			}
 
 			cursor = semi + 1;

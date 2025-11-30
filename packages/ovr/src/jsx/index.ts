@@ -1,6 +1,6 @@
 import { Chunk } from "../chunk/index.js";
 import type { MaybeFunction, MaybePromise } from "../types/index.js";
-import { encoder } from "../util/encoder.js";
+import { Codec } from "../util/codec.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 import { merge } from "./merge.js";
 
@@ -257,7 +257,7 @@ render.stream = (element: JSX.Element, options = {}) => {
 					// need to encode for Node (ex: during prerendering) or it will error
 					// doesn't seem to be needed for browsers
 					// faster than piping through a `TextEncoderStream`
-					encoder.encode(result.value.value),
+					Codec.encode(result.value.value),
 				);
 			},
 			cancel() {

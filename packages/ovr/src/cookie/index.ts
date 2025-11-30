@@ -128,7 +128,7 @@ export class Cookie {
 	readonly #c: Context;
 
 	/** Lazily parsed cookie map */
-	#parsed?: Map<string, string>;
+	#parsed?: Record<string, string>;
 
 	/**
 	 * Create a new cookie manager.
@@ -146,9 +146,9 @@ export class Cookie {
 	 * @returns Value of the cookie, or `undefined` if not found
 	 */
 	get(name: string) {
-		return (this.#parsed ??= parseHeader(
-			this.#c.req.headers.get("cookie"),
-		)).get(name);
+		return (this.#parsed ??= parseHeader(this.#c.req.headers.get("cookie")))[
+			name
+		];
 	}
 
 	/**
