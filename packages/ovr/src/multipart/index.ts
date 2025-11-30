@@ -44,6 +44,118 @@ class Needle {
 	}
 }
 
+class Part {
+	/** Headers of the part */
+	readonly headers = new Headers();
+
+	/** Readable stream containing the body of the part */
+	readonly body: ReadableStream<Uint8Array<ArrayBuffer>>;
+
+	/** Parsed Content-Disposition header */
+	readonly #disposition: Record<string, string>;
+
+	/** Cached buffers to return if drain is called more than once */
+	#drain?: Uint8Array<ArrayBuffer>[];
+
+	/** Cached bytes to return if bytes is called more than once */
+	#bytes?: Uint8Array<ArrayBuffer>;
+
+	/**
+	 * Create a new multi-part part.
+	 *
+	 * @param headers Raw buffer of HTTP headers for the part
+	 * @param body Part body
+	 */
+	constructor(
+		headers: Uint8Array<ArrayBuffer>,
+		body: ReadableStream<Uint8Array<ArrayBuffer>>,
+	) {
+		this.body = body;
+
+		// create headers
+		const lines = Codec.decode(headers).split("\r\n");
+		for (const line of lines) {
+			const [name, value] = line.split(":");
+			if (name && value) this.headers.append(name, value);
+		}
+
+		this.#disposition = parseHeader(this.headers.get("content-disposition"));
+	}
+
+	/** Form input `name` attribute */
+	get name() {
+		return this.#disposition.name;
+	}
+
+	/** Filename from Content-Disposition header if file */
+	get filename() {
+		return this.#disposition.filename;
+	}
+
+	/**
+	 * Drain the part body so the reader can proceed to the next part.
+	 *
+	 * @returns Values from each body chunk.
+	 * If already drained, the cached values are returned.
+	 */
+	async drain() {
+		if (!this.#drain) {
+			this.#drain = [];
+			const reader = this.body.getReader();
+
+			let chunk: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>;
+			while (!(chunk = await reader.read()).done) {
+				this.#drain.push(chunk.value);
+			}
+		}
+
+		return this.#drain;
+	}
+
+	/**
+	 * Drain the body and concatenates the bytes into a single array.
+	 *
+	 * @returns Part body bytes
+	 */
+	async bytes() {
+		if (!this.#bytes) {
+			const arrays = await this.drain();
+
+			this.#bytes = new Uint8Array(
+				arrays.reduce((acc, value) => acc + value.length, 0),
+			);
+
+			let i = 0;
+			for (const array of arrays) {
+				this.#bytes.set(array, i);
+				i += array.length;
+			}
+		}
+
+		return this.#bytes;
+	}
+
+	/**
+	 * Parse the part body text with a specific parser function.
+	 *
+	 * @example await part.parse(Number) // returns number
+	 * @example await part.parse(JSON.parse) // returns any
+	 */
+	parse<T>(parser: (buffer: string) => T): Promise<T>;
+	/**
+	 * Buffers the part body and returns it as a string.
+	 *
+	 * @example await part.parse() // returns string
+	 */
+	parse(): Promise<string>;
+	async parse<T>(parser?: (buffer: string) => T) {
+		const buffer = Codec.decode(await this.bytes());
+
+		return parser ? parser(buffer) : buffer;
+	}
+}
+
+/** Multipart form data parser */
 export class Parser {
 	readonly #req: Request;
 
@@ -248,7 +360,19 @@ export class Parser {
 	/**
 	 * Handle multi-part form data streams.
 	 *
-	 * @yields Form data `Part`s
+	 * @yields Multipart form data `Part`(s)
+	 *
+	 * @example
+	 *
+	 * ```ts
+	 * const post = new Route(async (c) => {
+	 * 	for await (const part of c.data()) {
+	 * 		if (part.name === "email") {
+	 * 			// ...
+	 * 		}
+	 * 	}
+	 * })
+	 * ```
 	 */
 	async *data() {
 		this.#buffer = await this.#reader.read();
@@ -274,116 +398,5 @@ export class Parser {
 
 			await part.drain();
 		}
-	}
-}
-
-export class Part {
-	/** Headers of the part */
-	readonly headers = new Headers();
-
-	/** Readable stream containing the body of the part */
-	readonly body: ReadableStream<Uint8Array<ArrayBuffer>>;
-
-	/** Parsed Content-Disposition header */
-	readonly #disposition: Record<string, string>;
-
-	/** Cached buffers to return if drain is called more than once */
-	#drain?: Uint8Array<ArrayBuffer>[];
-
-	/** Cached bytes to return if bytes is called more than once */
-	#bytes?: Uint8Array<ArrayBuffer>;
-
-	/**
-	 * Create a new multi-part part.
-	 *
-	 * @param headers Raw buffer of HTTP headers for the part
-	 * @param body Part body
-	 */
-	constructor(
-		headers: Uint8Array<ArrayBuffer>,
-		body: ReadableStream<Uint8Array<ArrayBuffer>>,
-	) {
-		this.body = body;
-
-		// create headers
-		const lines = Codec.decode(headers).split("\r\n");
-		for (const line of lines) {
-			const [name, value] = line.split(":");
-			if (name && value) this.headers.append(name, value);
-		}
-
-		this.#disposition = parseHeader(this.headers.get("content-disposition"));
-	}
-
-	/** Form input `name` attribute */
-	get name() {
-		return this.#disposition.name;
-	}
-
-	/** Filename from Content-Disposition header if file */
-	get filename() {
-		return this.#disposition.filename;
-	}
-
-	/**
-	 * Drain the part body so the reader can proceed to the next part.
-	 *
-	 * @returns Values from each body chunk.
-	 * If already drained, the cached values are returned.
-	 */
-	async drain() {
-		if (!this.#drain) {
-			this.#drain = [];
-			const reader = this.body.getReader();
-
-			let chunk: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>;
-			while (!(chunk = await reader.read()).done) {
-				this.#drain.push(chunk.value);
-			}
-		}
-
-		return this.#drain;
-	}
-
-	/**
-	 * Drain the body and concatenates the bytes into a single array.
-	 *
-	 * @returns Part body bytes
-	 */
-	async bytes() {
-		if (!this.#bytes) {
-			const arrays = await this.drain();
-
-			this.#bytes = new Uint8Array(
-				arrays.reduce((acc, value) => acc + value.length, 0),
-			);
-
-			let i = 0;
-			for (const array of arrays) {
-				this.#bytes.set(array, i);
-				i += array.length;
-			}
-		}
-
-		return this.#bytes;
-	}
-
-	/**
-	 * Parse the part body text with a specific parser function.
-	 *
-	 * @example await part.parse(Number) // returns number
-	 * @example await part.parse(JSON.parse) // returns any
-	 */
-	parse<T>(parser: (buffer: string) => T): Promise<T>;
-	/**
-	 * Buffers the part body and returns it as a string.
-	 *
-	 * @example await part.parse() // returns string
-	 */
-	parse(): Promise<string>;
-	async parse<T>(parser?: (buffer: string) => T) {
-		const buffer = Codec.decode(await this.bytes());
-
-		return parser ? parser(buffer) : buffer;
 	}
 }
