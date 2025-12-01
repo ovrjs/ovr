@@ -207,7 +207,7 @@ export class Parser {
 		this.#reader = req.body.getReader();
 
 		this.#find = (needle) => {
-			if (!this.#buffer.value) return;
+			if (this.#buffer.done) return;
 
 			const haystackLength = this.#buffer.value.length;
 			// start the search at the last char of the needle
@@ -241,8 +241,8 @@ export class Parser {
 			this.#start = this.#end = safeStart;
 		};
 
-		this.#findStream = (needle) =>
-			new ReadableStream({
+		this.#findStream = (needle) => {
+			return new ReadableStream({
 				type: "bytes",
 				pull: async (controller) => {
 					for (;;) {
@@ -301,6 +301,7 @@ export class Parser {
 					}
 				},
 			});
+		};
 	}
 
 	/**
@@ -311,9 +312,7 @@ export class Parser {
 	#shift() {
 		const before = this.#buffer.value!.slice(0, this.#start);
 		this.#buffer.value = this.#buffer.value!.slice(this.#end); // after
-		this.#start = 0;
-		this.#end = 0;
-
+		this.#start = this.#end = 0;
 		return before;
 	}
 
@@ -344,16 +343,12 @@ export class Parser {
 	 * @returns Buffer up until the found needle
 	 */
 	async #findConcat(needle: Needle) {
-		if (!this.#buffer.value) return;
-
-		for (;;) {
-			// try to find in the next chunk
-			const found = this.#find(needle);
-			if (found) return found;
-
+		let found: Uint8Array<ArrayBuffer> | undefined;
+		while (!this.#buffer.done && !(found = this.#find(needle))) {
 			await this.#read();
-			if (this.#buffer.done) return; // no more chunks
 		}
+
+		return found;
 	}
 
 	/**
@@ -374,15 +369,16 @@ export class Parser {
 
 		await this.#findConcat(opening);
 
-		while (true) {
-			const headers = await this.#findConcat(Parser.#CRLF);
-
-			if (!headers) break;
-
+		let headers: Uint8Array<ArrayBuffer> | undefined;
+		while ((headers = await this.#findConcat(Parser.#CRLF))) {
 			const part = new Part(headers, this.#findStream(boundary));
 
 			yield part;
 
+			// in order to get the next part, the entire body of the
+			// current part must be read - can't collect the next and
+			// save the body for later it must be read by the user
+			// or drained
 			if (!part.body.locked) await part.drain();
 		}
 	}
