@@ -12,7 +12,7 @@
 	"dependencies": {
 		"@fontsource-variable/geist": "^5.2.8",
 		"@fontsource-variable/geist-mono": "^5.2.7",
-		"@ovrjs/size": "*",
+		"@ovrjs/size": "0.0.1",
 		"@robino/md": "^4.0.3",
 		"clsx": "^2.1.1",
 		"dotenv": "^17.2.3",

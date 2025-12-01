@@ -65,6 +65,13 @@ export namespace Route {
 	export type Form<Pattern extends string> = (
 		props: JSX.IntrinsicElements["form"] & URLOptions<ExtractParams<Pattern>>,
 	) => JSX.Element;
+
+	/** Extract params from a Route instance. */
+	export type Params<R> = R extends { pattern: infer P }
+		? P extends string
+			? ExtractParams<P>
+			: never
+		: never;
 }
 
 // these types are needed for proper JSDoc on `get` and `post` return types
@@ -104,9 +111,6 @@ type WithAnchor<Pattern extends string = string> = {
  * @template Pattern Route pattern
  */
 export class Route<Pattern extends string = string> {
-	/** Extracted parameters type for the pattern */
-	declare readonly Params: ExtractParams<Pattern>;
-
 	/** Route pattern */
 	readonly pattern: Pattern;
 
@@ -114,7 +118,7 @@ export class Route<Pattern extends string = string> {
 	readonly method: Method;
 
 	/** Route middleware stack, runs after global middleware */
-	middleware: Middleware<any>[]; // any so you can use other middleware
+	readonly middleware: Middleware<any>[]; // any so you can use other middleware
 
 	/** Pattern parts */
 	#parts: string[];
@@ -204,7 +208,6 @@ export class Route<Pattern extends string = string> {
 	 */
 	static #withComponents<Pattern extends string>(route: Route<Pattern>) {
 		return Object.assign(route, {
-			/** with component */
 			Button: (({ params, search, hash, ...rest }) =>
 				jsx("button", {
 					formaction: route.url({ params, search, hash } as Route.URLOptions<
@@ -213,7 +216,6 @@ export class Route<Pattern extends string = string> {
 					formmethod: route.method,
 					...rest,
 				})) as Route.Button<Pattern>,
-			/** with component? */
 			Form: (({ params, search, hash, ...rest }) =>
 				jsx("form", {
 					action: route.url({ params, search, hash } as Route.URLOptions<

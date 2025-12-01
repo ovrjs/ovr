@@ -202,7 +202,7 @@ page.pathname({ id: "world" });
 const params = [
 	{ name: "world" },
 	{ name: "ross" },
-] as const satisfies (typeof page.Params)[];
+] as const satisfies Route.Params<typeof page>[];
 
 const pathnames = params.map((p) => page.pathname(p));
 
