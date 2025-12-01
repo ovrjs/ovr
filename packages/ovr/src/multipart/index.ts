@@ -54,9 +54,6 @@ class Part {
 	/** Parsed Content-Disposition header */
 	readonly #disposition: Record<string, string>;
 
-	/** Cached buffers to return if drain is called more than once */
-	#drain?: Uint8Array<ArrayBuffer>[];
-
 	/** Cached bytes to return if bytes is called more than once */
 	#bytes?: Uint8Array<ArrayBuffer>;
 
@@ -98,21 +95,23 @@ class Part {
 	/**
 	 * Drain the part body so the reader can proceed to the next part.
 	 *
-	 * @returns Values from each body chunk.
-	 * If already drained, the cached values are returned.
+	 * @param collect Collects the chunk values into a buffer
+	 * @returns An array values from each body chunk
 	 */
-	async drain() {
-		if (!this.#drain) {
-			this.#drain = [];
-			const reader = this.body.getReader();
+	drain(collect: true): Promise<Uint8Array<ArrayBuffer>[]>;
+	/** @param collect Does buffer body values as they are read */
+	drain(collect?: false): Promise<undefined>;
+	async drain(collect?: boolean) {
+		const reader = this.body.getReader();
 
+		if (collect) {
+			const buffer: Uint8Array<ArrayBuffer>[] = [];
 			let chunk: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>;
-			while (!(chunk = await reader.read()).done) {
-				this.#drain.push(chunk.value);
-			}
+			while (!(chunk = await reader.read()).done) buffer.push(chunk.value);
+			return buffer;
 		}
 
-		return this.#drain;
+		while (!(await reader.read()).done);
 	}
 
 	/**
@@ -122,14 +121,14 @@ class Part {
 	 */
 	async bytes() {
 		if (!this.#bytes) {
-			const arrays = await this.drain();
+			const buffer = await this.drain(true);
 
 			this.#bytes = new Uint8Array(
-				arrays.reduce((acc, buffer) => acc + buffer.length, 0),
+				buffer.reduce((acc, buffer) => acc + buffer.length, 0),
 			);
 
 			let i = 0;
-			for (const array of arrays) {
+			for (const array of buffer) {
 				this.#bytes.set(array, i);
 				i += array.length;
 			}
@@ -384,7 +383,7 @@ export class Parser {
 
 			yield part;
 
-			await part.drain();
+			if (!part.body.locked) await part.drain();
 		}
 	}
 }
