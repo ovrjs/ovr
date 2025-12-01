@@ -22,10 +22,10 @@ class Needle {
 	readonly map: Record<string, number[]> = {};
 
 	/**
-	 * @param s String to find within the stream
+	 * @param needle String to find within the stream
 	 */
-	constructor(s: string) {
-		this.bytes = Codec.encode(s);
+	constructor(needle: string) {
+		this.bytes = Codec.encode(needle);
 		this.length = this.bytes.length;
 		this.end = this.length - 1;
 		this.skip = new Uint8Array(256).fill(this.length);
@@ -54,6 +54,12 @@ class Part {
 	/** Parsed Content-Disposition header */
 	readonly #disposition: Record<string, string>;
 
+	/** Form input `name` attribute */
+	readonly name?: string;
+
+	/** Filename from Content-Disposition header if file */
+	readonly filename?: string;
+
 	/** Cached bytes to return if bytes is called more than once */
 	#bytes?: Uint8Array<ArrayBuffer>;
 
@@ -72,24 +78,16 @@ class Part {
 		// create headers
 		const lines = Codec.decode(headers).split("\r\n");
 		for (const line of lines) {
-			const i = line.indexOf(":");
-			if (i === -1) continue;
-			const name = line.slice(0, i).trim();
-			const value = line.slice(i + 1).trim();
+			const colon = line.indexOf(":");
+			if (colon === -1) continue;
+			const name = line.slice(0, colon).trim();
+			const value = line.slice(colon + 1).trim();
 			if (name && value) this.headers.append(name, value);
 		}
 
 		this.#disposition = parseHeader(this.headers.get("content-disposition"));
-	}
-
-	/** Form input `name` attribute */
-	get name() {
-		return this.#disposition.name;
-	}
-
-	/** Filename from Content-Disposition header if file */
-	get filename() {
-		return this.#disposition.filename;
+		this.name = this.#disposition.name;
+		this.filename = this.#disposition.filename;
 	}
 
 	/**
@@ -115,7 +113,8 @@ class Part {
 	}
 
 	/**
-	 * Drain the body and concatenates the bytes into a single array.
+	 * Drains and collects the body, then concatenates the bytes into
+	 * a single array.
 	 *
 	 * @returns Part body bytes
 	 */
@@ -152,7 +151,6 @@ class Part {
 	parse(): Promise<string>;
 	async parse<T>(parser?: (buffer: string) => T) {
 		const buffer = Codec.decode(await this.bytes());
-
 		return parser ? parser(buffer) : buffer;
 	}
 }
@@ -244,31 +242,14 @@ export class Parser {
 		this.#findStream = (needle) => {
 			return new ReadableStream({
 				type: "bytes",
-				pull: async (controller) => {
-					for (;;) {
-						const found = this.#find(needle);
+				pull: async (c) => {
+					let found: Uint8Array<ArrayBuffer> | undefined;
 
-						if (found) {
-							// found within current chunk
-							if (found.length) {
-								controller.enqueue(found);
-							}
-							controller.close();
-							return;
-						}
-
-						if (this.#buffer.done) {
-							if (this.#buffer.value?.length) {
-								controller.enqueue(this.#buffer.value);
-							}
-							controller.close();
-							return;
-						}
-
+					while (!(found = this.#find(needle)) && !this.#buffer.done) {
 						// not found within current chunk
-						const lastIndex = this.#buffer.value.length - 1;
-						const lastByte = this.#buffer.value[lastIndex]!;
-						const needleIndices = needle.map[lastByte];
+						const { value } = this.#buffer;
+						const lastIndex = value.length - 1;
+						const needleIndices = needle.map[value[lastIndex]!];
 
 						if (needleIndices) {
 							// last char is in the boundary, check for partial boundary
@@ -277,7 +258,7 @@ export class Parser {
 								for (
 									let needleIndex = needleIndices[i]!, cursor = lastIndex;
 									needleIndex >= 0 &&
-									needle.bytes[needleIndex] === this.#buffer.value[cursor];
+									needle.bytes[needleIndex] === value[cursor];
 									needleIndex--, cursor--
 								) {
 									if (needleIndex === 0) {
@@ -293,12 +274,15 @@ export class Parser {
 						const before = this.#shift();
 
 						if (before.length) {
-							controller.enqueue(before);
+							c.enqueue(before);
 							return; // wait for next pull
 						}
 
 						await this.#read();
 					}
+
+					if (found?.length) c.enqueue(found);
+					c.close();
 				},
 			});
 		};
