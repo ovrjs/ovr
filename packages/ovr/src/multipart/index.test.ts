@@ -8,7 +8,6 @@ async function collectParts(parser: Parser) {
 	const parts = [];
 	for await (const part of parser.data()) {
 		parts.push(part);
-		await part.parse();
 	}
 	return parts;
 }
@@ -63,7 +62,7 @@ describe("MultipartParser", () => {
 
 		// Test Boolean/Custom coercion
 		const activePart = parts.find((p) => p.name === "isActive");
-		const isActive = await activePart?.parse((val) => val === "true");
+		const isActive = await activePart?.parse((v) => v === "true");
 		expect(isActive).toBe(true);
 
 		// Test JSON coercion

@@ -75,7 +75,10 @@ class Part {
 		// create headers
 		const lines = Codec.decode(headers).split("\r\n");
 		for (const line of lines) {
-			const [name, value] = line.split(":");
+			const i = line.indexOf(":");
+			if (i === -1) continue;
+			const name = line.slice(0, i).trim();
+			const value = line.slice(i + 1).trim();
 			if (name && value) this.headers.append(name, value);
 		}
 
@@ -122,7 +125,7 @@ class Part {
 			const arrays = await this.drain();
 
 			this.#bytes = new Uint8Array(
-				arrays.reduce((acc, value) => acc + value.length, 0),
+				arrays.reduce((acc, buffer) => acc + buffer.length, 0),
 			);
 
 			let i = 0;
@@ -208,38 +211,35 @@ export class Parser {
 			if (!this.#buffer.value) return;
 
 			const haystackLength = this.#buffer.value.length;
+			// start the search at the last char of the needle
+			// since it could be at the very start
+			let i = this.#start + needle.end;
 
-			for (
-				// start the search at the last char of the needle
-				// since it could be at the very start
-				let cursor = needle.end;
-				cursor < haystackLength; // end - not found
-				cursor += needle.skip[this.#buffer.value[cursor]!]!
-			) {
+			while (i < haystackLength) {
 				for (
-					let needleIndex = needle.end;
+					let needleIndex = needle.end, cursor = i;
 					needleIndex >= 0 &&
 					needle.bytes[needleIndex] === this.#buffer.value[cursor];
-					needleIndex--, cursor-- // check previous char when there's a match
+					needleIndex--, cursor--
 				) {
 					if (needleIndex === 0) {
-						// all characters match
 						this.#start = cursor;
 						this.#end = cursor + needle.length;
 						return this.#shift();
 					}
 				}
+
+				i += needle.skip[this.#buffer.value[i]!]!;
 			}
 
-			if (needle.length < haystackLength) {
-				// where to safely start the next search in the concatenated chunk result
-				// go back len - 1 in case it was partially at the end
-				this.#start = this.#buffer.value.length - (needle.length - 1);
-				this.#end = this.#buffer.value.length - 1;
-			} else {
-				this.#start = 0;
-				this.#end = 0;
-			}
+			// where to safely start the next search in the concatenated chunk result
+			// go back len - 1 in case it was partially at the end
+			const safeStart =
+				needle.length < haystackLength
+					? haystackLength - (needle.length - 1)
+					: 0;
+
+			this.#start = this.#end = safeStart;
 		};
 
 		this.#findStream = (needle) =>
@@ -251,7 +251,9 @@ export class Parser {
 
 						if (found) {
 							// found within current chunk
-							controller.enqueue(found);
+							if (found.length) {
+								controller.enqueue(found);
+							}
 							controller.close();
 							return;
 						}
@@ -265,27 +267,25 @@ export class Parser {
 						}
 
 						// not found within current chunk
-						let cursor = this.#buffer.value.length - 1;
-						const lastByte = this.#buffer.value[cursor]!;
+						const lastIndex = this.#buffer.value.length - 1;
+						const lastByte = this.#buffer.value[lastIndex]!;
 						const needleIndices = needle.map[lastByte];
 
 						if (needleIndices) {
 							// last char is in the boundary, check for partial boundary
-							for (
-								// iterate backwards through the indices
-								let byteIndex = needleIndices.length - 1;
-								byteIndex >= 0;
-								byteIndex--
-							) {
+							// iterate backwards through the indices
+							indices: for (let i = needleIndices.length - 1; i >= 0; i--) {
 								for (
-									let needleIndex = needleIndices[byteIndex]!;
+									let needleIndex = needleIndices[i]!, cursor = lastIndex;
 									needleIndex >= 0 &&
 									needle.bytes[needleIndex] === this.#buffer.value[cursor];
 									needleIndex--, cursor--
 								) {
 									if (needleIndex === 0) {
+										// these are the same since no needle was found
 										this.#start = this.#end = cursor;
 										// rerun check if next has the rest
+										break indices;
 									}
 								}
 							}
@@ -305,9 +305,9 @@ export class Parser {
 	}
 
 	/**
-	 * Cuts off the buffer < start index.
+	 * Cuts off the buffer < end index.
 	 *
-	 * @returns Shifted off buffer
+	 * @returns Shifted off buffer < start index
 	 */
 	#shift() {
 		const before = this.#buffer.value!.slice(0, this.#start);
