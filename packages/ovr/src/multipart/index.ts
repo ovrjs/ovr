@@ -79,37 +79,17 @@ class Part {
 		const lines = Codec.decode(headers).split("\r\n");
 		for (const line of lines) {
 			const colon = line.indexOf(":");
-			if (colon === -1) continue;
-			const name = line.slice(0, colon).trim();
-			const value = line.slice(colon + 1).trim();
-			if (name && value) this.headers.append(name, value);
+
+			if (colon !== -1) {
+				const name = line.slice(0, colon).trim();
+				const value = line.slice(colon + 1).trim();
+				if (name && value) this.headers.append(name, value);
+			}
 		}
 
 		this.#disposition = parseHeader(this.headers.get("content-disposition"));
 		this.name = this.#disposition.name;
 		this.filename = this.#disposition.filename;
-	}
-
-	/**
-	 * Drain the part body so the reader can proceed to the next part.
-	 *
-	 * @param collect Collects the chunk values into a buffer
-	 * @returns An array values from each body chunk
-	 */
-	drain(collect: true): Promise<Uint8Array<ArrayBuffer>[]>;
-	/** @param collect Does buffer body values as they are read */
-	drain(collect?: false): Promise<undefined>;
-	async drain(collect?: boolean) {
-		const reader = this.body.getReader();
-
-		if (collect) {
-			const buffer: Uint8Array<ArrayBuffer>[] = [];
-			let chunk: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>;
-			while (!(chunk = await reader.read()).done) buffer.push(chunk.value);
-			return buffer;
-		}
-
-		while (!(await reader.read()).done);
 	}
 
 	/**
@@ -119,21 +99,7 @@ class Part {
 	 * @returns Part body bytes
 	 */
 	async bytes() {
-		if (!this.#bytes) {
-			const buffer = await this.drain(true);
-
-			this.#bytes = new Uint8Array(
-				buffer.reduce((acc, buffer) => acc + buffer.length, 0),
-			);
-
-			let i = 0;
-			for (const array of buffer) {
-				this.#bytes.set(array, i);
-				i += array.length;
-			}
-		}
-
-		return this.#bytes;
+		return (this.#bytes ??= await new Response(this.body).bytes());
 	}
 
 	/**
@@ -150,8 +116,8 @@ class Part {
 	 */
 	parse(): Promise<string>;
 	async parse<T>(parser?: (buffer: string) => T) {
-		const buffer = Codec.decode(await this.bytes());
-		return parser ? parser(buffer) : buffer;
+		const s = Codec.decode(await this.bytes());
+		return parser ? parser(s) : s;
 	}
 }
 
@@ -356,14 +322,16 @@ export class Parser {
 		let headers: Uint8Array<ArrayBuffer> | undefined;
 		while ((headers = await this.#findConcat(Parser.#CRLF))) {
 			const part = new Part(headers, this.#findStream(boundary));
-
 			yield part;
 
 			// in order to get the next part, the entire body of the
 			// current part must be read - can't collect the next and
 			// save the body for later it must be read by the user
 			// or drained
-			if (!part.body.locked) await part.drain();
+			if (!part.body.locked) {
+				const reader = part.body.getReader();
+				while (!(await reader.read()).done);
+			}
 		}
 	}
 }
