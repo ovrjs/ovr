@@ -1,56 +1,40 @@
 import { Codec } from "../util/codec.js";
 import { parseHeader } from "../util/parse-header.js";
 
-class Needle {
-	/** Sequence of bytes to find */
-	readonly bytes: Uint8Array<ArrayBuffer>;
-
-	/** Length of the needle */
-	readonly length: number;
-
+class Needle extends Uint8Array<ArrayBuffer> {
 	/** Index of the last character in the needle */
-	readonly end: number;
+	readonly end = this.length - 1;
 
 	/**
 	 * Stores the how far from the last character each char in the needle is so
 	 * the iterator know how far to safely skip forward when the character is
 	 * found the rest of the array is filled with the length (default skip)
 	 */
-	readonly skip: Uint8Array<ArrayBuffer>;
+	readonly skip = new Uint8Array(256).fill(this.length);
 
 	/** Stores where each byte is located in the needle */
-	readonly map: (number[] | undefined)[] = new Array(256);
+	readonly loc: (number[] | undefined)[] = new Array(256);
 
 	/**
 	 * @param needle String to find within the stream
 	 */
 	constructor(needle: string) {
-		this.bytes = Codec.encode(needle);
-		this.length = this.bytes.length;
-		this.end = this.length - 1;
-		this.skip = new Uint8Array(256).fill(this.length);
+		super(Codec.encode(needle).buffer);
 
 		for (let i = 0; i < this.length; i++) {
-			const byte = this.bytes[i]!;
+			const byte = this[i]!;
 
 			if (i !== this.end) {
 				// skip the last char of the needle since that would be a find
 				this.skip[byte] = this.end - i;
 			}
 
-			this.map[byte] ??= [];
-			this.map[byte].push(i);
+			(this.loc[byte] ??= []).push(i);
 		}
 	}
 }
 
-class Part {
-	/** Headers of the part */
-	readonly headers = new Headers();
-
-	/** Readable stream containing the body of the part */
-	readonly body: ReadableStream<Uint8Array<ArrayBuffer>>;
-
+class Part extends Response {
 	/** Form input `name` attribute */
 	readonly name?: string;
 
@@ -60,17 +44,17 @@ class Part {
 	/**
 	 * Create a new multi-part part.
 	 *
-	 * @param headers Raw buffer of HTTP headers for the part
+	 * @param rawHeaders Raw buffer of HTTP headers for the part
 	 * @param body Part body
 	 */
 	constructor(
-		headers: Uint8Array<ArrayBuffer>,
 		body: ReadableStream<Uint8Array<ArrayBuffer>>,
+		rawHeaders: Uint8Array<ArrayBuffer>,
 	) {
-		this.body = body;
+		super(body);
 
 		// create headers
-		const lines = Codec.decode(headers).split("\r\n");
+		const lines = Codec.decode(rawHeaders).split("\r\n");
 		for (const line of lines) {
 			const colon = line.indexOf(":");
 
@@ -84,36 +68,6 @@ class Part {
 		const disposition = parseHeader(this.headers.get("content-disposition"));
 		this.name = disposition.name;
 		this.filename = disposition.filename;
-	}
-
-	/** Helper to access the response methods */
-	get #res() {
-		return new Response(this.body);
-	}
-
-	/** @returns Buffered `part.body` array buffer */
-	arrayBuffer() {
-		return this.#res.arrayBuffer();
-	}
-
-	/** @returns Buffered `part.body` blob */
-	blob() {
-		return this.#res.blob();
-	}
-
-	/** @returns Buffered `part.body` bytes */
-	bytes() {
-		return this.#res.bytes();
-	}
-
-	/** @returns Buffered `part.body` json */
-	json(): Promise<unknown> {
-		return this.#res.json();
-	}
-
-	/** @returns Buffered `part.body` text */
-	text() {
-		return this.#res.text();
 	}
 }
 
@@ -177,7 +131,7 @@ export class Parser {
 		while (i < haystackLength) {
 			for (
 				let needleIndex = needle.end, cursor = i;
-				needleIndex >= 0 && needle.bytes[needleIndex] === this.#memory[cursor];
+				needleIndex >= 0 && needle[needleIndex] === this.#memory[cursor];
 				needleIndex--, cursor--
 			) {
 				if (needleIndex === 0) {
@@ -209,7 +163,7 @@ export class Parser {
 				while (!(found = this.#find(needle)) && !this.#done) {
 					// not found within current chunk
 					const lastIndex = this.#cursor - 1;
-					const needleIndices = needle.map[this.#memory[lastIndex]!];
+					const needleIndices = needle.loc[this.#memory[lastIndex]!];
 
 					if (needleIndices) {
 						// last char is in the boundary, check for partial boundary
@@ -218,7 +172,7 @@ export class Parser {
 							for (
 								let needleIndex = needleIndices[i]!, cursor = lastIndex;
 								needleIndex >= 0 &&
-								needle.bytes[needleIndex] === this.#memory[cursor];
+								needle[needleIndex] === this.#memory[cursor];
 								needleIndex--, cursor--
 							) {
 								if (needleIndex === 0) {
@@ -328,14 +282,14 @@ export class Parser {
 
 		let headers: Uint8Array<ArrayBuffer> | undefined;
 		while ((headers = await this.#findConcat(Parser.#CRLF))) {
-			const part = new Part(headers, this.#findStream(boundary));
+			const part = new Part(this.#findStream(boundary), headers);
 			yield part;
 
 			// in order to get the next part, the entire body of the
 			// current part must be read - can't collect the next and
 			// save the body for later it must be read by the user
 			// or drained
-			if (!part.body.locked) await part.body.cancel();
+			if (part.body !== null && !part.body.locked) await part.body.cancel();
 		}
 	}
 }

@@ -274,15 +274,15 @@ describe("MultipartParser", () => {
 			const parser = new Parser(req);
 
 			for await (const part of parser.data()) {
-				const reader = part.body.getReader();
+				const reader = part.body?.getReader();
 
 				let i = 0;
 				while (true) {
-					const next = await reader.read();
+					const next = await reader?.read();
 
-					if (next.done) break;
+					if (next?.done) break;
 
-					const text = new TextDecoder().decode(next.value);
+					const text = new TextDecoder().decode(next?.value);
 
 					if (i++ === 0) {
 						expect(text).toBe(trickyValue.slice(0, -3));
