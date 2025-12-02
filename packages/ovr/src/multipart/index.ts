@@ -1,7 +1,7 @@
 import { Codec } from "../util/codec.js";
 import { parseHeader } from "../util/parse-header.js";
 
-class Needle extends Uint8Array<ArrayBuffer> {
+class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
 
@@ -59,7 +59,7 @@ class Part extends Response {
 
 			if (colon !== -1) {
 				const name = line.slice(0, colon).trim();
-				const value = line.slice(colon + 1).trim();
+				const value = line.slice(colon + 1);
 				if (name && value) this.headers.append(name, value);
 			}
 		}
@@ -110,6 +110,12 @@ export class Parser {
 		this.#reader = req.body.getReader();
 	}
 
+	/** @param reader Reader from the stream to drain */
+	static async #drain(reader: ReadableStreamDefaultReader) {
+		while (!(await reader.read()).done);
+		reader.releaseLock();
+	}
+
 	/**
 	 * Attempts to find the needle within the current buffer (haystack).
 	 * Sets start and end to the start and end of the found needle, or the
@@ -119,8 +125,6 @@ export class Parser {
 	 * @returns If found, shifts the buffer and returns the result.
 	 */
 	#find(needle: Needle) {
-		if (this.#done && this.#cursor === 0) return; // empty and done
-
 		const haystackLength = this.#cursor;
 
 		// start the search at the last char of the needle
@@ -288,7 +292,16 @@ export class Parser {
 			// current part must be read - can't collect the next and
 			// save the body for later it must be read by the user
 			// or drained
-			if (part.body !== null && !part.body.locked) await part.body.cancel();
+			// cannot just cancel, then the chunks would be in the
+			// next header
+			if (part.body && !part.bodyUsed) {
+				await Parser.#drain(part.body.getReader());
+			}
+
+			if (this.#memory[0] === 0x2d && this.#memory[1] === 0x2d) {
+				// done - drain any epilogue
+				return Parser.#drain(this.#reader);
+			}
 		}
 	}
 }

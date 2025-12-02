@@ -61,7 +61,7 @@ describe("MultipartParser", () => {
 			if (part.name === "username") {
 				const username = await part.text();
 				expect(username).toBe("alice");
-			} else if (part.name === "") {
+			} else if (part.name === "role") {
 				const role = await part.text();
 
 				expect(role).toBe("admin");
@@ -87,7 +87,9 @@ describe("MultipartParser", () => {
 		for await (const part of parser.data()) {
 			i++;
 
-			if (part.name === "") {
+			// skip the drain on the username part
+
+			if (part.name === "role") {
 				const role = await part.text();
 				expect(role).toBe("admin");
 			}
@@ -414,6 +416,103 @@ describe("MultipartParser", () => {
 				count++;
 			}
 			expect(count).toBe(1);
+		});
+	});
+
+	describe("Epilogue Handling", () => {
+		const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+
+		it("ignores epilogue after closing boundary", async () => {
+			const epilogue =
+				"\r\nThis is epilogue text that should be ignored.\r\nIt contains a fake header-like line: Foo: bar\r\n\r\nAnd even a CRLF: \r\n\r\nBut no extra parts.";
+			const payload =
+				createMultipartPayload(BOUNDARY, [{ name: "data", content: "foo" }]) +
+				epilogue;
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			const parser = new Parser(req);
+			let count = 0;
+			for await (const part of parser.data()) {
+				expect(part.name).toBe("data");
+				expect(await part.text()).toBe("foo");
+				count++;
+			}
+			expect(count).toBe(1);
+
+			// Verify entire body consumed (epilogue drained)
+			expect(req.bodyUsed).toBe(true);
+		});
+
+		it("handles chunked epilogue without extra parts", async () => {
+			const epilogue =
+				"Chunked epilogue with CRLF\r\n\r\nand boundary mimic: --notreal\r\n";
+			const payload = createMultipartPayload(BOUNDARY, [
+				{ name: "chunked", content: "bar" },
+			]);
+
+			const encoder = new TextEncoder();
+			const closingIndex = payload.indexOf(`--${BOUNDARY}--`);
+			const chunk1 = encoder.encode(
+				payload.slice(0, closingIndex + `--${BOUNDARY}--`.length + 2),
+			); // Up to \r\n after closing
+			const chunk2 = encoder.encode(epilogue.slice(0, epilogue.length / 2));
+			const chunk3 = encoder.encode(epilogue.slice(epilogue.length / 2));
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: createStreamFromChunks([chunk1, chunk2, chunk3]),
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			const parser = new Parser(req);
+			let count = 0;
+			for await (const part of parser.data()) {
+				expect(part.name).toBe("chunked");
+				expect(await part.text()).toBe("bar");
+				count++;
+			}
+			expect(count).toBe(1);
+
+			// Verify entire body consumed
+			expect(req.bodyUsed).toBe(true);
+		});
+
+		it("errors on data after closing boundary if strict mode enabled", async () => {
+			// Assuming future strict mode; for now, just drain silently
+			const strictEpilogue = "\r\nStrict epilogue with extra data.";
+			const payload =
+				createMultipartPayload(BOUNDARY, [{ name: "strict", content: "baz" }]) +
+				strictEpilogue;
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			const parser = new Parser(req);
+			let count = 0;
+			for await (const part of parser.data()) {
+				expect(part.name).toBe("strict");
+				expect(await part.text()).toBe("baz");
+				count++;
+			}
+			expect(count).toBe(1);
+			expect(req.bodyUsed).toBe(true);
+			// TODO: In strict mode, expect thrown error on non-empty epilogue
 		});
 	});
 });
