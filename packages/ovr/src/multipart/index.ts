@@ -19,7 +19,7 @@ class Needle {
 	readonly skip: Uint8Array<ArrayBuffer>;
 
 	/** Stores where each byte is located in the needle */
-	readonly map: Record<string, number[]> = {};
+	readonly map: (number[] | undefined)[] = new Array(256);
 
 	/**
 	 * @param needle String to find within the stream
@@ -51,17 +51,11 @@ class Part {
 	/** Readable stream containing the body of the part */
 	readonly body: ReadableStream<Uint8Array<ArrayBuffer>>;
 
-	/** Parsed Content-Disposition header */
-	readonly #disposition: Record<string, string>;
-
 	/** Form input `name` attribute */
 	readonly name?: string;
 
 	/** Filename from Content-Disposition header if file */
 	readonly filename?: string;
-
-	/** Cached bytes to return if bytes is called more than once */
-	#bytes?: Uint8Array<ArrayBuffer>;
 
 	/**
 	 * Create a new multi-part part.
@@ -87,37 +81,39 @@ class Part {
 			}
 		}
 
-		this.#disposition = parseHeader(this.headers.get("content-disposition"));
-		this.name = this.#disposition.name;
-		this.filename = this.#disposition.filename;
+		const disposition = parseHeader(this.headers.get("content-disposition"));
+		this.name = disposition.name;
+		this.filename = disposition.filename;
 	}
 
-	/**
-	 * Drains and collects the body, then concatenates the bytes into
-	 * a single array.
-	 *
-	 * @returns Part body bytes
-	 */
-	async bytes() {
-		return (this.#bytes ??= await new Response(this.body).bytes());
+	/** Helper to access the response methods */
+	get #res() {
+		return new Response(this.body);
 	}
 
-	/**
-	 * Parse the part body text with a specific parser function.
-	 *
-	 * @example await part.parse(Number) // returns number
-	 * @example await part.parse(JSON.parse) // returns any
-	 */
-	parse<T>(parser: (buffer: string) => T): Promise<T>;
-	/**
-	 * Buffers the part body and returns it as a string.
-	 *
-	 * @example await part.parse() // returns string
-	 */
-	parse(): Promise<string>;
-	async parse<T>(parser?: (buffer: string) => T) {
-		const s = Codec.decode(await this.bytes());
-		return parser ? parser(s) : s;
+	/** @returns Buffered `part.body` array buffer */
+	arrayBuffer() {
+		return this.#res.arrayBuffer();
+	}
+
+	/** @returns Buffered `part.body` blob */
+	blob() {
+		return this.#res.blob();
+	}
+
+	/** @returns Buffered `part.body` bytes */
+	bytes() {
+		return this.#res.bytes();
+	}
+
+	/** @returns Buffered `part.body` json */
+	json(): Promise<unknown> {
+		return this.#res.json();
+	}
+
+	/** @returns Buffered `part.body` text */
+	text() {
+		return this.#res.text();
 	}
 }
 
@@ -128,8 +124,14 @@ export class Parser {
 	/** Request body reader */
 	readonly #reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>;
 
-	/** Current chunk(s) in the buffer */
-	#buffer!: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>;
+	/** Current values being buffered in memory */
+	readonly #memory: Uint8Array<ArrayBuffer>;
+
+	/** If the request body has completed streaming */
+	#done = false;
+
+	/** Where valid data ends, valid < #cursor >= empty space */
+	#cursor = 0;
 
 	/** Start index of the found needle */
 	#start = 0;
@@ -141,6 +143,21 @@ export class Parser {
 	static #CRLF = new Needle("\r\n\r\n");
 
 	/**
+	 * Create a new Parser.
+	 *
+	 * @param req Request
+	 */
+	constructor(req: Request) {
+		this.#req = req;
+		if (!req.body) throw new Error("No request body");
+
+		this.#memory = new Uint8Array(
+			new ArrayBuffer(64 * 1024, { maxByteLength: 1024 * 1024 }),
+		);
+		this.#reader = req.body.getReader();
+	}
+
+	/**
 	 * Attempts to find the needle within the current buffer (haystack).
 	 * Sets start and end to the start and end of the found needle, or the
 	 * safe place to start the next search from if not found.
@@ -148,110 +165,86 @@ export class Parser {
 	 * @param needle Needle to find
 	 * @returns If found, shifts the buffer and returns the result.
 	 */
-	readonly #find: (needle: Needle) => Uint8Array<ArrayBuffer> | undefined;
+	#find(needle: Needle) {
+		if (this.#done && this.#cursor === 0) return; // empty and done
+
+		const haystackLength = this.#cursor;
+
+		// start the search at the last char of the needle
+		// since it could be at the very start
+		let i = this.#start + needle.end;
+
+		while (i < haystackLength) {
+			for (
+				let needleIndex = needle.end, cursor = i;
+				needleIndex >= 0 && needle.bytes[needleIndex] === this.#memory[cursor];
+				needleIndex--, cursor--
+			) {
+				if (needleIndex === 0) {
+					this.#start = cursor;
+					this.#end = cursor + needle.length;
+					return this.#shift();
+				}
+			}
+
+			i += needle.skip[this.#memory[i]!]!;
+		}
+
+		// where to safely start the next search in the concatenated chunk result
+		// go back len - 1 in case it was partially at the end
+		this.#start = this.#end =
+			needle.length < haystackLength ? haystackLength - (needle.length - 1) : 0;
+	}
 
 	/**
 	 * @param needle Needle to find
 	 * @returns Stream that streams the content until the next find
 	 */
-	readonly #findStream: (
-		needle: Needle,
-	) => ReadableStream<Uint8Array<ArrayBuffer>>;
+	#findStream(needle: Needle) {
+		return new ReadableStream({
+			type: "bytes",
+			pull: async (c) => {
+				let found: Uint8Array<ArrayBuffer> | undefined;
 
-	/**
-	 * Create a new Parser.
-	 *
-	 * @param req
-	 */
-	constructor(req: Request) {
-		this.#req = req;
+				while (!(found = this.#find(needle)) && !this.#done) {
+					// not found within current chunk
+					const lastIndex = this.#cursor - 1;
+					const needleIndices = needle.map[this.#memory[lastIndex]!];
 
-		if (!req.body) throw new Error("No request body");
-
-		this.#reader = req.body.getReader();
-
-		this.#find = (needle) => {
-			if (this.#buffer.done) return;
-
-			const haystackLength = this.#buffer.value.length;
-			// start the search at the last char of the needle
-			// since it could be at the very start
-			let i = this.#start + needle.end;
-
-			while (i < haystackLength) {
-				for (
-					let needleIndex = needle.end, cursor = i;
-					needleIndex >= 0 &&
-					needle.bytes[needleIndex] === this.#buffer.value[cursor];
-					needleIndex--, cursor--
-				) {
-					if (needleIndex === 0) {
-						this.#start = cursor;
-						this.#end = cursor + needle.length;
-						return this.#shift();
-					}
-				}
-
-				i += needle.skip[this.#buffer.value[i]!]!;
-			}
-
-			// where to safely start the next search in the concatenated chunk result
-			// go back len - 1 in case it was partially at the end
-			const safeStart =
-				needle.length < haystackLength
-					? haystackLength - (needle.length - 1)
-					: 0;
-
-			this.#start = this.#end = safeStart;
-		};
-
-		this.#findStream = (needle) => {
-			return new ReadableStream({
-				type: "bytes",
-				pull: async (c) => {
-					let found: Uint8Array<ArrayBuffer> | undefined;
-
-					while (!(found = this.#find(needle)) && !this.#buffer.done) {
-						// not found within current chunk
-						const { value } = this.#buffer;
-						const lastIndex = value.length - 1;
-						const needleIndices = needle.map[value[lastIndex]!];
-
-						if (needleIndices) {
-							// last char is in the boundary, check for partial boundary
-							// iterate backwards through the indices
-							indices: for (let i = needleIndices.length - 1; i >= 0; i--) {
-								for (
-									let needleIndex = needleIndices[i]!, cursor = lastIndex;
-									needleIndex >= 0 &&
-									needle.bytes[needleIndex] === value[cursor];
-									needleIndex--, cursor--
-								) {
-									if (needleIndex === 0) {
-										// these are the same since no needle was found
-										this.#start = this.#end = cursor;
-										// rerun check if next has the rest
-										break indices;
-									}
+					if (needleIndices) {
+						// last char is in the boundary, check for partial boundary
+						// iterate backwards through the indices
+						indices: for (let i = needleIndices.length - 1; i >= 0; i--) {
+							for (
+								let needleIndex = needleIndices[i]!, cursor = lastIndex;
+								needleIndex >= 0 &&
+								needle.bytes[needleIndex] === this.#memory[cursor];
+								needleIndex--, cursor--
+							) {
+								if (needleIndex === 0) {
+									// these are the same since no needle was found
+									this.#start = this.#end = cursor;
+									// rerun check if next has the rest
+									break indices;
 								}
 							}
 						}
-
-						const before = this.#shift();
-
-						if (before.length) {
-							c.enqueue(before);
-							return; // wait for next pull
-						}
-
-						await this.#read();
 					}
 
-					if (found?.length) c.enqueue(found);
-					c.close();
-				},
-			});
-		};
+					const before = this.#shift();
+
+					if (before.length) {
+						c.enqueue(before);
+						return; // wait for next pull
+					}
+
+					await this.#read();
+				}
+
+				if (found?.length) c.enqueue(found);
+				c.close();
+			},
+		});
 	}
 
 	/**
@@ -260,9 +253,19 @@ export class Parser {
 	 * @returns Shifted off buffer < start index
 	 */
 	#shift() {
-		const before = this.#buffer.value!.slice(0, this.#start);
-		this.#buffer.value = this.#buffer.value!.slice(this.#end); // after
+		const before = this.#memory.slice(0, this.#start);
+
+		// how much data is left after the found needle
+		const remainder = this.#cursor - this.#end;
+
+		if (remainder) {
+			// copy remainder to the start of the buffer
+			this.#memory.copyWithin(0, this.#end, this.#cursor);
+		}
+
+		this.#cursor = remainder;
 		this.#start = this.#end = 0;
+
 		return before;
 	}
 
@@ -273,15 +276,22 @@ export class Parser {
 	async #read() {
 		const next = await this.#reader.read();
 
-		if (!(this.#buffer.done = next.done)) {
-			const result = new Uint8Array(
-				this.#buffer.value.length + next.value.length,
-			);
+		if (!(this.#done = next.done)) {
+			const required = this.#cursor + next.value.length;
 
-			result.set(this.#buffer.value);
-			result.set(next.value, this.#buffer.value.length);
+			// resize if full
+			if (required > this.#memory.buffer.byteLength) {
+				this.#memory.buffer.resize(
+					Math.min(
+						this.#memory.buffer.maxByteLength,
+						Math.max(required, this.#memory.buffer.byteLength * 2),
+					),
+				);
+			}
 
-			this.#buffer.value = result;
+			// write at the cursor
+			this.#memory.set(next.value, this.#cursor);
+			this.#cursor += next.value.length;
 		}
 	}
 
@@ -294,10 +304,9 @@ export class Parser {
 	 */
 	async #findConcat(needle: Needle) {
 		let found: Uint8Array<ArrayBuffer> | undefined;
-		while (!this.#buffer.done && !(found = this.#find(needle))) {
+		while (!this.#done && !(found = this.#find(needle))) {
 			await this.#read();
 		}
-
 		return found;
 	}
 
@@ -307,8 +316,6 @@ export class Parser {
 	 * @yields Multipart form data `Part`(s)
 	 */
 	async *data() {
-		this.#buffer = await this.#reader.read();
-
 		const boundaryStr = parseHeader(
 			this.#req.headers.get("content-type"),
 		).boundary;
@@ -328,10 +335,7 @@ export class Parser {
 			// current part must be read - can't collect the next and
 			// save the body for later it must be read by the user
 			// or drained
-			if (!part.body.locked) {
-				const reader = part.body.getReader();
-				while (!(await reader.read()).done);
-			}
+			if (!part.body.locked) await part.body.cancel();
 		}
 	}
 }

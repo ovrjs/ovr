@@ -59,10 +59,10 @@ describe("MultipartParser", () => {
 			i++;
 
 			if (part.name === "username") {
-				const username = await part.parse();
+				const username = await part.text();
 				expect(username).toBe("alice");
 			} else if (part.name === "") {
-				const role = await part.parse();
+				const role = await part.text();
 
 				expect(role).toBe("admin");
 			}
@@ -88,40 +88,12 @@ describe("MultipartParser", () => {
 			i++;
 
 			if (part.name === "") {
-				const role = await part.parse();
+				const role = await part.text();
 				expect(role).toBe("admin");
 			}
 		}
 
 		expect(i).toBe(2);
-	});
-
-	it("should support custom type coercion via .parse(fn)", async () => {
-		const formData = new FormData();
-		formData.append("age", "42");
-		formData.append("isActive", "true");
-		formData.append("settings", '{"theme":"dark"}');
-
-		const req = new Request("http://localhost:3000", {
-			method: "POST",
-			body: formData,
-		});
-
-		const parser = new Parser(req);
-
-		for await (const part of parser.data()) {
-			if (part.name === "age") {
-				const age = await part.parse(Number);
-				expect(age).toBe(42);
-				expect(typeof age).toBe("number");
-			} else if (part.name === "isActive") {
-				const isActive = await part.parse((v) => v === "true");
-				expect(isActive).toBe(true);
-			} else if (part.name === "settings") {
-				const settings = await part.parse(JSON.parse);
-				expect(settings).toEqual({ theme: "dark" });
-			}
-		}
 	});
 
 	it("should handle file uploads correctly", async () => {
@@ -141,7 +113,7 @@ describe("MultipartParser", () => {
 			expect(part.name).toBe("document");
 			expect(part.filename).toBe("hello.txt");
 			expect(part.headers.get("content-type")).toBe("text/plain");
-			const content = await part.parse();
+			const content = await part.text();
 			expect(content).toBe(fileContent);
 		}
 	});
@@ -197,7 +169,7 @@ describe("MultipartParser", () => {
 			parts.push({
 				name: part.name,
 				filename: part.filename,
-				body: await part.parse(),
+				body: await part.text(),
 			});
 		}
 
@@ -257,7 +229,7 @@ describe("MultipartParser", () => {
 				for await (const part of parser.data()) {
 					partCount++;
 					expect(part.name).toBe(fieldName);
-					const content = await part.parse();
+					const content = await part.text();
 					expect(content).toBe(fieldValue);
 				}
 
@@ -300,14 +272,25 @@ describe("MultipartParser", () => {
 			});
 
 			const parser = new Parser(req);
-			let found = false;
 
 			for await (const part of parser.data()) {
-				const body = await part.parse();
-				expect(body).toBe(trickyValue);
-				found = true;
+				const reader = part.body.getReader();
+
+				let i = 0;
+				while (true) {
+					const next = await reader.read();
+
+					if (next.done) break;
+
+					const text = new TextDecoder().decode(next.value);
+
+					if (i++ === 0) {
+						expect(text).toBe(trickyValue.slice(0, -3));
+					} else if (i === 1) {
+						expect(text).toBe(trickyValue.slice(-3));
+					}
+				}
 			}
-			expect(found).toBe(true);
 		});
 
 		it("handles extreme fragmentation (1 byte chunks)", async () => {
@@ -330,7 +313,7 @@ describe("MultipartParser", () => {
 			let found = false;
 
 			for await (const part of parser.data()) {
-				const body = await part.parse();
+				const body = await part.text();
 				expect(body).toBe(fieldValue);
 				found = true;
 			}
@@ -403,7 +386,7 @@ describe("MultipartParser", () => {
 			const parser = new Parser(req);
 			for await (const part of parser.data()) {
 				expect(part.name).toBe("splitHeader");
-				expect(await part.parse()).toBe("value");
+				expect(await part.text()).toBe("value");
 			}
 		});
 
@@ -427,7 +410,7 @@ describe("MultipartParser", () => {
 			let count = 0;
 			for await (const part of parser.data()) {
 				expect(part.name).toBe("data");
-				expect(await part.parse()).toBe("foo");
+				expect(await part.text()).toBe("foo");
 				count++;
 			}
 			expect(count).toBe(1);
