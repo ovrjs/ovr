@@ -54,8 +54,7 @@ class Part extends Response {
 		super(body);
 
 		// create headers
-		const lines = Codec.decode(rawHeaders).split("\r\n");
-		for (const line of lines) {
+		for (const line of Codec.decode(rawHeaders).split("\r\n")) {
 			const colon = line.indexOf(":");
 
 			if (colon !== -1) {
