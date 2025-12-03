@@ -24,10 +24,8 @@ class Needle extends Uint8Array {
 		for (let i = 0; i < this.length; i++) {
 			const byte = this[i]!;
 
-			if (i !== this.end) {
-				// skip the last char of the needle since that would be a find
-				this.skip[byte] = this.end - i;
-			}
+			// skip the last char of the needle since that would be a find
+			if (i !== this.end) this.skip[byte] = this.end - i;
 
 			(this.loc[byte] ??= []).push(i);
 		}
@@ -86,9 +84,9 @@ export class Parser {
 	/** Current values being buffered in memory */
 	readonly #memory = new Uint8Array(
 		new ArrayBuffer(
-			// slightly bigger than common packet/high water mark of 64kb to account for leftover boundary
+			// slightly larger than common packet/high water mark 64kb for leftover boundary
 			65 * Parser.#kb,
-			// cap max packet + leftover at 4mb
+			// cap max packet + leftover
 			{ maxByteLength: 4 * Parser.#mb },
 		),
 	);
