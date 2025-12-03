@@ -1,5 +1,5 @@
-import { Codec } from "../util/codec.js";
-import { parseHeader } from "../util/parse-header.js";
+import * as codec from "../util/codec.js";
+import * as header from "../util/header.js";
 
 class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
@@ -19,7 +19,7 @@ class Needle extends Uint8Array {
 	 * @param needle String to find within the stream
 	 */
 	constructor(needle: string) {
-		super(Codec.encode(needle).buffer);
+		super(codec.encode(needle).buffer);
 
 		for (let i = 0; i < this.length; i++) {
 			const byte = this[i]!;
@@ -51,7 +51,7 @@ class Part extends Response {
 		super(body);
 
 		// create headers
-		for (const line of Codec.decode(rawHeaders).split("\r\n")) {
+		for (const line of codec.decode(rawHeaders).split("\r\n")) {
 			const colon = line.indexOf(":");
 
 			if (colon !== -1) {
@@ -63,7 +63,7 @@ class Part extends Response {
 			}
 		}
 
-		const disposition = parseHeader(this.headers.get("content-disposition"));
+		const disposition = header.parse(this.headers.get("content-disposition"));
 		this.name = disposition.name;
 		this.filename = disposition.filename;
 	}
@@ -297,8 +297,8 @@ export class Parser {
 	 * @yields Multipart form data `Part`(s)
 	 */
 	async *data() {
-		const boundaryStr = parseHeader(
-			this.#req.headers.get("content-type"),
+		const boundaryStr = header.parse(
+			this.#req.headers.get(header.contentType),
 		).boundary;
 		if (!boundaryStr) return;
 

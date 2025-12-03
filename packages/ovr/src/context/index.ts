@@ -5,6 +5,7 @@ import { Parser } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
 import { hash } from "../util/hash.js";
+import { contentType } from "../util/header.js";
 
 export namespace Context {
 	/** Properties to build the final `Response` with once middleware has run. */
@@ -65,7 +66,6 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	readonly cookie = new Cookie(this);
 
 	// for reuse across methods
-	static readonly #contentType = "content-type";
 	static readonly #textHtml = "text/html";
 	static readonly #utf8 = "charset=utf-8";
 	static readonly #htmlType = `${Context.#textHtml}; ${Context.#utf8}`;
@@ -89,7 +89,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	html(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Context.#contentType, Context.#htmlType);
+		this.res.headers.set(contentType, Context.#htmlType);
 	}
 
 	/**
@@ -101,7 +101,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	json(data: unknown, status?: number) {
 		this.res.body = JSON.stringify(data);
 		this.res.status = status;
-		this.res.headers.set(Context.#contentType, "application/json");
+		this.res.headers.set(contentType, "application/json");
 	}
 
 	/**
@@ -113,7 +113,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	text(body: BodyInit, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Context.#contentType, `text/plain; ${Context.#utf8}`);
+		this.res.headers.set(contentType, `text/plain; ${Context.#utf8}`);
 	}
 
 	/**
@@ -211,18 +211,16 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			}
 		} else if (r !== undefined) {
 			// something to stream
-			const contentType = this.res.headers.get(Context.#contentType);
+			const type = this.res.headers.get(contentType);
 
 			this.res.body = render.stream(r, {
 				// other defined types are safe
-				safe: Boolean(
-					contentType && !contentType.startsWith(Context.#textHtml),
-				),
+				safe: Boolean(type && !type.startsWith(Context.#textHtml)),
 			});
 
-			if (!contentType) {
+			if (!type) {
 				// default to HTML
-				this.res.headers.set(Context.#contentType, Context.#htmlType);
+				this.res.headers.set(contentType, Context.#htmlType);
 			}
 
 			// do not overwrite/remove status - that way user can set it before returning

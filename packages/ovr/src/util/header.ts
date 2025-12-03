@@ -1,8 +1,11 @@
+// shared content type header to minify better
+export const contentType = "content-type";
+
 /**
  * @param header header value to parse
  * @returns Map containing each key=value pair
  */
-export const parseHeader = (header: string | null) => {
+export const parse = (header: string | null) => {
 	const parsed: Record<string, string> = {};
 
 	if (header) {

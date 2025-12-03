@@ -1,10 +1,9 @@
-/** Codec to use across requests */
-export class Codec {
-	static readonly #encoder = new TextEncoder();
-	static readonly #decoder = new TextDecoder();
+/** @module codec Shared codec to use across requests */
 
-	static readonly encode = (s: string) => Codec.#encoder.encode(s);
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
-	/** DO NOT USE FOR STREAMS */
-	static readonly decode = (input?: Uint8Array) => Codec.#decoder.decode(input);
-}
+export const encode = (s: string) => encoder.encode(s);
+
+/** DO NOT USE FOR STREAMS */
+export const decode = (input?: Uint8Array) => decoder.decode(input);
