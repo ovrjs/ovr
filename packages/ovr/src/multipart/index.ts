@@ -72,6 +72,7 @@ class Part extends Response {
 
 /** Multipart form data parser */
 export class Parser {
+	/** Multipart request */
 	readonly #req: Request;
 
 	/** Request body reader */
