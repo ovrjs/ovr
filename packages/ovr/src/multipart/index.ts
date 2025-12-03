@@ -44,13 +44,10 @@ class Part extends Response {
 	/**
 	 * Create a new multi-part part.
 	 *
-	 * @param rawHeaders Raw buffer of HTTP headers for the part
 	 * @param body Part body
+	 * @param rawHeaders Raw buffer of HTTP headers for the part
 	 */
-	constructor(
-		body: ReadableStream<Uint8Array<ArrayBuffer>>,
-		rawHeaders: Uint8Array<ArrayBuffer>,
-	) {
+	constructor(body: ReadableStream, rawHeaders: Uint8Array) {
 		super(body);
 
 		// create headers
@@ -58,9 +55,11 @@ class Part extends Response {
 			const colon = line.indexOf(":");
 
 			if (colon !== -1) {
-				const name = line.slice(0, colon).trim();
-				const value = line.slice(colon + 1);
-				if (name && value) this.headers.append(name, value);
+				this.headers.append(
+					line.slice(0, colon).trim(),
+					// no need to trim value - Headers.set does this already
+					line.slice(colon + 1),
+				);
 			}
 		}
 
@@ -70,19 +69,35 @@ class Part extends Response {
 	}
 }
 
+export namespace Parser {
+	/** Memory allocation options */
+	export type Memory = {
+		/**
+		 * Initial memory allocation
+		 *
+		 * @default 64KB
+		 */
+		init?: number;
+
+		/**
+		 * Max memory allocation
+		 *
+		 * @default 4MB
+		 */
+		max?: number;
+	};
+}
+
 /** Multipart form data parser */
 export class Parser {
 	/** Multipart request */
 	readonly #req: Request;
 
 	/** Request body reader */
-	readonly #reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>;
+	readonly #reader: ReadableStreamDefaultReader;
 
 	/** Current values being buffered in memory */
 	readonly #memory: Uint8Array<ArrayBuffer>;
-
-	/** If the request body has completed streaming */
-	#done = false;
 
 	/** Where valid data ends, valid < #cursor >= empty space */
 	#cursor = 0;
@@ -96,17 +111,22 @@ export class Parser {
 	/** New line needle to share across requests and parts */
 	static #newLine = new Needle("\r\n\r\n");
 
+	static #kb = 1024;
+	static #mb = 1024 * Parser.#kb;
+
 	/**
 	 * Create a new Parser.
 	 *
 	 * @param req Request
 	 */
-	constructor(req: Request) {
+	constructor(req: Request, memory?: Parser.Memory) {
 		this.#req = req;
 		if (!req.body) throw new Error("No request body");
 
 		this.#memory = new Uint8Array(
-			new ArrayBuffer(64 * 1024, { maxByteLength: 1024 * 1024 }),
+			new ArrayBuffer(memory?.init ?? 64 * Parser.#kb, {
+				maxByteLength: memory?.max ?? 4 * Parser.#mb,
+			}),
 		);
 		this.#reader = req.body.getReader();
 	}
@@ -164,7 +184,11 @@ export class Parser {
 			pull: async (c) => {
 				let found: Uint8Array<ArrayBuffer> | undefined;
 
-				while (!(found = this.#find(needle)) && !this.#done) {
+				for (
+					let done: boolean | undefined;
+					!(found = this.#find(needle)) && !done;
+					done = await this.#read()
+				) {
 					// not found within current chunk
 					const lastIndex = this.#cursor - 1;
 					const needleIndices = needle.loc[this.#memory[lastIndex]!];
@@ -190,16 +214,14 @@ export class Parser {
 					}
 
 					const before = this.#shift();
-
 					if (before.length) {
 						c.enqueue(before);
 						return; // wait for next pull
 					}
-
-					await this.#read();
 				}
 
 				if (found?.length) c.enqueue(found);
+
 				c.close();
 			},
 		});
@@ -230,27 +252,30 @@ export class Parser {
 	/**
 	 * Reads the next chunk in the request stream and concatenates it
 	 * onto the buffer.
+	 *
+	 * @returns `true` if done
 	 */
 	async #read() {
 		const next = await this.#reader.read();
 
-		if (!(this.#done = next.done)) {
-			const required = this.#cursor + next.value.length;
+		if (next.done) return true;
 
-			// resize if full
-			if (required > this.#memory.buffer.byteLength) {
-				this.#memory.buffer.resize(
-					Math.min(
-						this.#memory.buffer.maxByteLength,
-						Math.max(required, this.#memory.buffer.byteLength * 2),
-					),
-				);
-			}
+		const required = this.#cursor + next.value.length;
 
-			// write at the cursor
-			this.#memory.set(next.value, this.#cursor);
-			this.#cursor += next.value.length;
+		// resize if full
+		if (required > this.#memory.buffer.byteLength) {
+			this.#memory.buffer.resize(
+				Math.min(
+					// in case double is larger than the max
+					this.#memory.buffer.maxByteLength,
+					Math.max(required, this.#memory.buffer.byteLength * 2),
+				),
+			);
 		}
+
+		// write at the cursor
+		this.#memory.set(next.value, this.#cursor);
+		this.#cursor += next.value.length;
 	}
 
 	/**
@@ -261,10 +286,8 @@ export class Parser {
 	 * @returns Buffer up until the found needle
 	 */
 	async #findConcat(needle: Needle) {
-		let found: Uint8Array<ArrayBuffer> | undefined;
-		while (!this.#done && !(found = this.#find(needle))) {
-			await this.#read();
-		}
+		let found: Uint8Array | undefined;
+		while (!(found = this.#find(needle)) && !(await this.#read()));
 		return found;
 	}
 
@@ -284,7 +307,7 @@ export class Parser {
 
 		await this.#findConcat(opening);
 
-		let headers: Uint8Array<ArrayBuffer> | undefined;
+		let headers: Uint8Array | undefined;
 		while ((headers = await this.#findConcat(Parser.#newLine))) {
 			const part = new Part(this.#findStream(boundary), headers);
 			yield part;
