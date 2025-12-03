@@ -2,124 +2,156 @@ import { parseMultipartRequest } from "@remix-run/multipart-parser";
 import * as ovr from "ovr";
 import { bench, describe } from "vitest";
 
-// Helper to create a large binary buffer (e.g., 10MB file for benchmarking)
-function createLargeBuffer(sizeInMB: number): Uint8Array {
-	const size = sizeInMB * 1024 * 1024;
-	const buffer = new Uint8Array(size);
-	// Fill with a simple pattern to avoid zeroed memory optimizations
-	for (let i = 0; i < size; i++) {
-		buffer[i] = (i % 256) + 1; // Non-zero bytes
-	}
-	return buffer;
+const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+const encoder = new TextEncoder();
+
+function createStreamingSimpleTextRequest() {
+	const body = new ReadableStream({
+		start(controller) {
+			const part = `--${boundary}\r\nContent-Disposition: form-data; name="textField"\r\n\r\nsimple text value\r\n--${boundary}--\r\n`;
+			controller.enqueue(encoder.encode(part));
+			controller.close();
+		},
+	});
+	return new Request("http://localhost:3000/simple", {
+		method: "POST",
+		headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+		body,
+		// @ts-expect-error - required for streaming
+		duplex: "half",
+	});
 }
 
-// Helper to create a multipart Request with a large file
-function createLargeFileRequest(sizeInMB: number): Request {
-	const formData = new FormData();
-	const largeBuffer = createLargeBuffer(sizeInMB);
-	const largeFile = new File(
-		[largeBuffer as any],
-		`large-file-${sizeInMB}mb.bin`,
-		{ type: "application/octet-stream" },
-	);
-	formData.append("largeFile", largeFile);
+// Helper to create a streaming multipart Request with a large binary file (generated in 64KB packets)
+function createStreamingLargeFileRequest(mb: number) {
+	const size = mb * 1024 * 1024;
+	let written = 0;
+
+	const body = new ReadableStream({
+		start(controller) {
+			const header = `--${boundary}\r\nContent-Disposition: form-data; name="largeFile"; filename="large-file-${mb}mb.bin"\r\nContent-Type: application/octet-stream\r\n\r\n`;
+			controller.enqueue(encoder.encode(header));
+		},
+		pull(controller) {
+			if (written >= size) {
+				const closing = `\r\n--${boundary}--\r\n`;
+				controller.enqueue(encoder.encode(closing));
+				controller.close();
+				return;
+			}
+			const chunkSize = Math.min(64 * 1024, size - written); // Simulate 64KB network packets
+			const chunk = new Uint8Array(chunkSize);
+			for (let i = 0; i < chunkSize; i++) {
+				chunk[i] = ((written + i) % 256) + 1; // Simple non-zero pattern
+			}
+			controller.enqueue(chunk);
+			written += chunkSize;
+		},
+	});
 
 	return new Request("http://localhost:3000/upload", {
 		method: "POST",
-		body: formData,
+		headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+		body,
+		// @ts-expect-error - required for streaming
+		duplex: "half",
 	});
 }
 
-// Helper to create a simple text-only multipart Request (for baseline comparison)
-function createSimpleTextRequest(): Request {
-	const formData = new FormData();
-	formData.append("textField", "simple text value");
-
-	return new Request("http://localhost:3000/simple", {
-		method: "POST",
-		body: formData,
+// Helper to create a streaming multipart Request with a small text field + large binary file
+function createStreamingMixedRequest(mb: number) {
+	const size = mb * 1024 * 1024;
+	let written = 0;
+	const body = new ReadableStream({
+		start(controller) {
+			const textPart = `--${boundary}\r\nContent-Disposition: form-data; name="metadata"\r\n\r\nsome small text\r\n`;
+			const fileHeader = `--${boundary}\r\nContent-Disposition: form-data; name="largeFile"; filename="mixed-large-${mb}mb.bin"\r\nContent-Type: application/octet-stream\r\n\r\n`;
+			controller.enqueue(encoder.encode(textPart + fileHeader));
+		},
+		pull(controller) {
+			if (written >= size) {
+				const closing = `\r\n--${boundary}--\r\n`;
+				controller.enqueue(encoder.encode(closing));
+				controller.close();
+				return;
+			}
+			const chunkSize = Math.min(64 * 1024, size - written); // Simulate 64KB network packets
+			const chunk = new Uint8Array(chunkSize);
+			for (let i = 0; i < chunkSize; i++) {
+				chunk[i] = ((written + i) % 256) + 1; // Simple non-zero pattern
+			}
+			controller.enqueue(chunk);
+			written += chunkSize;
+		},
 	});
-}
-
-// Helper to create a mixed request with one large file + small text field
-function createMixedRequest(sizeInMB: number): Request {
-	const formData = new FormData();
-	const largeBuffer = createLargeBuffer(sizeInMB);
-	const largeFile = new File(
-		[largeBuffer as any],
-		`mixed-large-${sizeInMB}mb.bin`,
-		{ type: "application/octet-stream" },
-	);
-	formData.append("largeFile", largeFile);
-	formData.append("metadata", "some small text");
-
 	return new Request("http://localhost:3000/mixed", {
 		method: "POST",
-		body: formData,
+		headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+		body,
+		// @ts-expect-error - required for streaming
+		duplex: "half",
 	});
 }
 
 // Helper to fully consume the multipart stream for ovr (iterate parts and drain bodies manually)
-async function consumeOvr(req: Request): Promise<void> {
-	const parser = new ovr.Parser(req, { max: 50 * 1024 * 1024 });
-	for await (const _part of parser.data());
+async function consumeOvr(req: Request) {
+	for await (const _part of new ovr.Parser(req).data());
 }
 
 // Helper to fully consume the multipart stream for remix (iterate parts and drain bodies)
-async function consumeRemix(req: Request): Promise<void> {
+async function consumeRemix(req: Request) {
 	for await (const _part of parseMultipartRequest(req, {
-		maxFileSize: 50 * 1024 * 1024,
+		maxFileSize: 1000 * 1024 * 1024,
 	}));
 }
 
 describe("simple text", () => {
-	// Baseline: Simple text-only request (small payload)
-	const simpleReq = createSimpleTextRequest();
+	// Baseline: Simple text-only request (small payload, streamed)
+	const req = createStreamingSimpleTextRequest();
 
-	bench("ovr: simple text (drain stream)", async () => {
-		await consumeOvr(simpleReq.clone());
+	bench("ovr", async () => {
+		await consumeOvr(req.clone());
 	});
 
-	bench("remix: simple text (drain stream)", async () => {
-		await consumeRemix(simpleReq.clone());
+	bench("remix", async () => {
+		await consumeRemix(req.clone());
 	});
 });
 
 describe("10MB file", () => {
-	// Large file: 10MB binary file (single part)
-	const largeReq10mb = createLargeFileRequest(10);
+	// Large file: 10MB binary file (single part, streamed in packets)
+	const req = createStreamingLargeFileRequest(10);
 
-	bench("ovr: 10MB file (drain stream)", async () => {
-		await consumeOvr(largeReq10mb.clone()); // 16MB max buffer
+	bench("ovr", async () => {
+		await consumeOvr(req.clone()); // 50MB max buffer (streams without full load)
 	});
 
-	bench("remix: 10MB file (drain stream)", async () => {
-		await consumeRemix(largeReq10mb.clone());
+	bench("remix", async () => {
+		await consumeRemix(req.clone());
 	});
 });
 
 describe("50MB file", () => {
-	// Even larger: 50MB binary file (for more stress testing)
-	// Note: This may be too large for quick benches; consider running separately
-	const largeReq50mb = createLargeFileRequest(50);
+	// Even larger: 50MB binary file (for more stress testing, streamed in packets)
+	const req = createStreamingLargeFileRequest(50);
 
-	bench("ovr: 50MB file (drain stream)", async () => {
-		await consumeOvr(largeReq50mb.clone()); // Larger buffer allowance
+	bench("ovr", async () => {
+		await consumeOvr(req.clone()); // 50MB max buffer (streams without full load)
 	});
 
-	bench("remix: 50MB file (drain stream)", async () => {
-		await consumeRemix(largeReq50mb.clone());
+	bench("remix", async () => {
+		await consumeRemix(req.clone());
 	});
 });
 
 describe("mixed 10MB", () => {
-	const mixedReq10mb = createMixedRequest(10);
+	const req = createStreamingMixedRequest(10);
 
-	bench("ovr: mixed 10MB (drain stream)", async () => {
-		await consumeOvr(mixedReq10mb.clone());
+	bench("ovr", async () => {
+		await consumeOvr(req.clone());
 	});
 
-	bench("remix: mixed 10MB (drain stream)", async () => {
-		await consumeRemix(mixedReq10mb.clone());
+	bench("remix", async () => {
+		await consumeRemix(req.clone());
 	});
 });
