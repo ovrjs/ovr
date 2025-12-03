@@ -71,7 +71,7 @@ class Part extends Response {
 
 export namespace Parser {
 	/** Memory allocation options */
-	export type Memory = {
+	export type Options = {
 		/**
 		 * Initial memory allocation
 		 *
@@ -82,7 +82,7 @@ export namespace Parser {
 		/**
 		 * Max memory allocation
 		 *
-		 * @default 4MB
+		 * @default 1MB
 		 */
 		max?: number;
 	};
@@ -112,23 +112,25 @@ export class Parser {
 	static #newLine = new Needle("\r\n\r\n");
 
 	static #kb = 1024;
-	static #mb = 1024 * Parser.#kb;
+	static #mb = Parser.#kb ** 2;
 
 	/**
 	 * Create a new Parser.
 	 *
 	 * @param req Request
+	 * @param options Parser options
 	 */
-	constructor(req: Request, memory?: Parser.Memory) {
+	constructor(req: Request, options?: Parser.Options) {
 		this.#req = req;
 		if (!req.body) throw new Error("No request body");
 
+		this.#reader = req.body.getReader();
+
 		this.#memory = new Uint8Array(
-			new ArrayBuffer(memory?.init ?? 64 * Parser.#kb, {
-				maxByteLength: memory?.max ?? 4 * Parser.#mb,
+			new ArrayBuffer(options?.init ?? 64 * Parser.#kb, {
+				maxByteLength: options?.max ?? Parser.#mb,
 			}),
 		);
-		this.#reader = req.body.getReader();
 	}
 
 	/** @param reader Reader from the stream to drain */
@@ -256,26 +258,28 @@ export class Parser {
 	 * @returns `true` if done
 	 */
 	async #read() {
-		const next = await this.#reader.read();
+		const next = await this.#reader!.read(); // checked in data
 
 		if (next.done) return true;
 
-		const required = this.#cursor + next.value.length;
+		const nextLength = next.value.length;
+		const required = this.#cursor + nextLength;
+		const size = this.#memory.buffer.byteLength;
 
 		// resize if full
-		if (required > this.#memory.buffer.byteLength) {
+		if (required > size) {
 			this.#memory.buffer.resize(
 				Math.min(
 					// in case double is larger than the max
 					this.#memory.buffer.maxByteLength,
-					Math.max(required, this.#memory.buffer.byteLength * 2),
+					Math.max(required, size * 2),
 				),
 			);
 		}
 
 		// write at the cursor
 		this.#memory.set(next.value, this.#cursor);
-		this.#cursor += next.value.length;
+		this.#cursor += nextLength;
 	}
 
 	/**

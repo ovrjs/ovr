@@ -1,5 +1,5 @@
-import { bench, run, summary } from "mitata";
 import * as o from "ovr";
+import { bench, describe } from "vitest";
 
 async function Async() {
 	return o.jsx("p", { children: "Async" });
@@ -11,11 +11,11 @@ function* Component() {
 	}
 }
 
-summary(() => {
+describe("render", () => {
 	bench("generate 500", async () => {
 		const gen = o.render(o.jsx(Component, {}));
 		for await (const _r of gen);
-	}).gc("inner");
+	});
 });
 
 const app = new o.App();
@@ -47,7 +47,7 @@ app.use(
 	}),
 );
 
-summary(() => {
+describe("router", () => {
 	bench("router - match various routes", async () => {
 		const paths = [
 			"/",
@@ -71,11 +71,5 @@ summary(() => {
 				await app.fetch("http://localhost:5173" + p);
 			}
 		}
-	}).gc("inner");
+	});
 });
-
-console.log("running benchmarks...\n");
-
-await run();
-
-console.log();

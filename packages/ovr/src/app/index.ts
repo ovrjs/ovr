@@ -1,5 +1,6 @@
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
+import { Parser } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
 import type { DeepArray } from "../types/index.js";
@@ -37,35 +38,40 @@ export namespace App {
 		 * @default "never"
 		 */
 		readonly trailingSlash?: Options.TrailingSlash;
+
+		/** Multipart parser options */
+		readonly parser?: Parser.Options;
 	};
 }
 
 /** Web server application */
 export class App {
+	/** Route trie */
+	readonly #trie = new Trie();
+
+	/** Global middleware */
+	readonly #global: Middleware[] = [];
+
+	/** Resolved app options */
+	readonly #options;
+
 	/**
 	 * Create a new application.
 	 *
 	 * @param options configuration options
 	 */
 	constructor(options?: App.Options) {
-		const resolved: Required<App.Options> = {
-			csrf: true,
-			trailingSlash: "never",
-		};
-		Object.assign(resolved, options);
+		this.#options = Object.assign(
+			{ csrf: true, trailingSlash: "never" },
+			options,
+		);
 
-		if (resolved.csrf === true) this.#global.push(App.#csrf);
+		if (this.#options.csrf === true) this.#global.push(App.#csrf);
 
-		if (resolved.trailingSlash !== "ignore") {
-			this.#global.push(App.#createTrailingSlash(resolved.trailingSlash));
+		if (this.#options.trailingSlash !== "ignore") {
+			this.#global.push(App.#createTrailingSlash(this.#options.trailingSlash));
 		}
 	}
-
-	/** Route trie */
-	readonly #trie = new Trie();
-
-	/** Global middleware */
-	readonly #global: Middleware[] = [];
 
 	/**
 	 * @param routes Route or middleware to use
@@ -104,7 +110,7 @@ export class App {
 		resource: RequestInfo | URL,
 		options?: RequestInit,
 	): Promise<Response> => {
-		const c = new Context(new Request(resource, options));
+		const c = new Context(new Request(resource, options), this.#options);
 
 		return Object.assign(
 			c,

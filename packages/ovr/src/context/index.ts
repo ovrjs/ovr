@@ -1,3 +1,4 @@
+import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { render } from "../jsx/index.js";
 import { type Middleware } from "../middleware/index.js";
@@ -65,6 +66,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/** Get, set, and delete cookies. */
 	readonly cookie = new Cookie(this);
 
+	/** Forwarded app options */
+	readonly #options: App.Options;
+
 	// for reuse across methods
 	static readonly #textHtml = "text/html";
 	static readonly #utf8 = "charset=utf-8";
@@ -74,10 +78,12 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * Creates a new `Context` with the current `Request`.
 	 *
 	 * @param req Request
+	 * @param options App options
 	 */
-	constructor(req: Request) {
+	constructor(req: Request, options: App.Options) {
 		this.req = req;
 		this.url = new URL(req.url);
+		this.#options = options;
 	}
 
 	/**
@@ -161,7 +167,6 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/**
 	 * Parse multi-part form data streams.
 	 *
-	 * @param memory Memory allocation options
 	 * @yields Multipart form data `Part`(s)
 	 *
 	 * @example
@@ -178,8 +183,8 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * })
 	 * ```
 	 */
-	async *data(memory?: Parser.Memory) {
-		yield* new Parser(this.req, memory).data();
+	data() {
+		return new Parser(this.req, this.#options.parser).data();
 	}
 
 	/**

@@ -8,7 +8,9 @@
 		"start": "tsc && node --expose-gc dist"
 	},
 	"dependencies": {
-		"mitata": "^1.0.34",
 		"ovr": "*"
+	},
+	"devDependencies": {
+		"@remix-run/multipart-parser": "^0.14.0"
 	}
 }
