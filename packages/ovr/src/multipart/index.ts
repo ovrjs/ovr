@@ -94,7 +94,7 @@ export class Parser {
 	#end = 0;
 
 	/** New line needle to share across requests and parts */
-	static #CRLF = new Needle("\r\n\r\n");
+	static #newLine = new Needle("\r\n\r\n");
 
 	/**
 	 * Create a new Parser.
@@ -285,7 +285,7 @@ export class Parser {
 		await this.#findConcat(opening);
 
 		let headers: Uint8Array<ArrayBuffer> | undefined;
-		while ((headers = await this.#findConcat(Parser.#CRLF))) {
+		while ((headers = await this.#findConcat(Parser.#newLine))) {
 			const part = new Part(this.#findStream(boundary), headers);
 			yield part;
 
