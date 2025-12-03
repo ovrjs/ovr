@@ -71,6 +71,12 @@ class Part extends Response {
 
 /** Multipart form data parser */
 export class Parser {
+	static readonly #kb = 1024;
+	static readonly #mb = 1024 ** 2;
+
+	/** New line needle to share across requests and parts */
+	static readonly #newLine = new Needle("\r\n\r\n");
+
 	/** Multipart request */
 	readonly #req: Request;
 
@@ -78,7 +84,14 @@ export class Parser {
 	readonly #reader: ReadableStreamDefaultReader;
 
 	/** Current values being buffered in memory */
-	readonly #memory = new Uint8Array(128 * 1024);
+	readonly #memory = new Uint8Array(
+		new ArrayBuffer(
+			// slightly bigger than common packet/high water mark of 64kb to account for leftover boundary
+			65 * Parser.#kb,
+			// cap max packet + leftover at 4mb
+			{ maxByteLength: 4 * Parser.#mb },
+		),
+	);
 
 	/** Where valid data ends, valid < #cursor >= empty space */
 	#cursor = 0;
@@ -88,9 +101,6 @@ export class Parser {
 
 	/** End index of the found needle */
 	#end = 0;
-
-	/** New line needle to share across requests and parts */
-	static #newLine = new Needle("\r\n\r\n");
 
 	/**
 	 * Create a new Parser.
@@ -232,9 +242,24 @@ export class Parser {
 
 		if (next.done) return true;
 
+		const nextLength = next.value.length;
+		const required = this.#cursor + nextLength;
+		const size = this.#memory.buffer.byteLength;
+
+		// resize if full
+		if (required > size) {
+			this.#memory.buffer.resize(
+				Math.min(
+					// in case double is larger than the max
+					this.#memory.buffer.maxByteLength,
+					Math.max(required, size * 2),
+				),
+			);
+		}
+
 		// write at the cursor
 		this.#memory.set(next.value, this.#cursor);
-		this.#cursor += next.value.length;
+		this.#cursor += nextLength;
 	}
 
 	/**

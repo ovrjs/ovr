@@ -2,7 +2,7 @@ import { parseMultipartRequest } from "@remix-run/multipart-parser";
 import * as ovr from "ovr";
 import { bench, describe } from "vitest";
 
-const logMemory = false;
+const logMemory = true;
 
 const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 const encoder = new TextEncoder();
