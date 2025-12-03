@@ -69,25 +69,6 @@ class Part extends Response {
 	}
 }
 
-export namespace Parser {
-	/** Memory allocation options */
-	export type Options = {
-		/**
-		 * Initial memory allocation
-		 *
-		 * @default 64KB
-		 */
-		init?: number;
-
-		/**
-		 * Max memory allocation
-		 *
-		 * @default 1MB
-		 */
-		max?: number;
-	};
-}
-
 /** Multipart form data parser */
 export class Parser {
 	/** Multipart request */
@@ -97,7 +78,7 @@ export class Parser {
 	readonly #reader: ReadableStreamDefaultReader;
 
 	/** Current values being buffered in memory */
-	readonly #memory: Uint8Array<ArrayBuffer>;
+	readonly #memory = new Uint8Array(128 * 1024);
 
 	/** Where valid data ends, valid < #cursor >= empty space */
 	#cursor = 0;
@@ -111,26 +92,15 @@ export class Parser {
 	/** New line needle to share across requests and parts */
 	static #newLine = new Needle("\r\n\r\n");
 
-	static #kb = 1024;
-	static #mb = Parser.#kb ** 2;
-
 	/**
 	 * Create a new Parser.
 	 *
 	 * @param req Request
-	 * @param options Parser options
 	 */
-	constructor(req: Request, options?: Parser.Options) {
+	constructor(req: Request) {
 		this.#req = req;
 		if (!req.body) throw new Error("No request body");
-
 		this.#reader = req.body.getReader();
-
-		this.#memory = new Uint8Array(
-			new ArrayBuffer(options?.init ?? 64 * Parser.#kb, {
-				maxByteLength: options?.max ?? Parser.#mb,
-			}),
-		);
 	}
 
 	/** @param reader Reader from the stream to drain */
@@ -258,28 +228,13 @@ export class Parser {
 	 * @returns `true` if done
 	 */
 	async #read() {
-		const next = await this.#reader!.read(); // checked in data
+		const next = await this.#reader.read();
 
 		if (next.done) return true;
 
-		const nextLength = next.value.length;
-		const required = this.#cursor + nextLength;
-		const size = this.#memory.buffer.byteLength;
-
-		// resize if full
-		if (required > size) {
-			this.#memory.buffer.resize(
-				Math.min(
-					// in case double is larger than the max
-					this.#memory.buffer.maxByteLength,
-					Math.max(required, size * 2),
-				),
-			);
-		}
-
 		// write at the cursor
 		this.#memory.set(next.value, this.#cursor);
-		this.#cursor += nextLength;
+		this.#cursor += next.value.length;
 	}
 
 	/**
@@ -296,11 +251,9 @@ export class Parser {
 	}
 
 	/**
-	 * Parse multi-part form data streams.
-	 *
 	 * @yields Multipart form data `Part`(s)
 	 */
-	async *data() {
+	async *#run() {
 		const boundaryStr = header.parse(
 			this.#req.headers.get(header.contentType),
 		).boundary;
@@ -331,5 +284,15 @@ export class Parser {
 				return Parser.#drain(this.#reader);
 			}
 		}
+	}
+
+	/**
+	 * Parse multi-part form data streams.
+	 *
+	 * @param req
+	 * @yields Multipart form data `Part`(s)
+	 */
+	static data(req: Request) {
+		return new Parser(req).#run();
 	}
 }

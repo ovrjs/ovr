@@ -52,10 +52,8 @@ describe("MultipartParser", () => {
 			body: formData,
 		});
 
-		const parser = new Parser(req);
-
 		let i = 0;
-		for await (const part of parser.data()) {
+		for await (const part of Parser.data(req)) {
 			i++;
 
 			if (part.name === "username") {
@@ -81,10 +79,8 @@ describe("MultipartParser", () => {
 			body: formData,
 		});
 
-		const parser = new Parser(req);
-
 		let i = 0;
-		for await (const part of parser.data()) {
+		for await (const part of Parser.data(req)) {
 			i++;
 
 			// skip the drain on the username part
@@ -109,9 +105,7 @@ describe("MultipartParser", () => {
 			body: formData,
 		});
 
-		const parser = new Parser(req);
-
-		for await (const part of parser.data()) {
+		for await (const part of Parser.data(req)) {
 			expect(part.name).toBe("document");
 			expect(part.filename).toBe("hello.txt");
 			expect(part.headers.get("content-type")).toBe("text/plain");
@@ -134,10 +128,8 @@ describe("MultipartParser", () => {
 			body: formData,
 		});
 
-		const parser = new Parser(req);
-
 		let i = 0;
-		for await (const part of parser.data()) {
+		for await (const part of Parser.data(req)) {
 			i++;
 			if (i === 1) {
 				expect(part.name).toBe("title");
@@ -164,10 +156,9 @@ describe("MultipartParser", () => {
 			body: payload,
 		});
 
-		const parser = new Parser(req);
 		const parts = [];
 
-		for await (const part of parser.data()) {
+		for await (const part of Parser.data(req)) {
 			parts.push({
 				name: part.name,
 				filename: part.filename,
@@ -225,10 +216,9 @@ describe("MultipartParser", () => {
 					duplex: "half",
 				});
 
-				const parser = new Parser(req);
 				let partCount = 0;
 
-				for await (const part of parser.data()) {
+				for await (const part of Parser.data(req)) {
 					partCount++;
 					expect(part.name).toBe(fieldName);
 					const content = await part.text();
@@ -273,9 +263,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			const parser = new Parser(req);
-
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				const reader = part.body?.getReader();
 
 				let i = 0;
@@ -311,10 +299,9 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			const parser = new Parser(req);
 			let found = false;
 
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				const body = await part.text();
 				expect(body).toBe(fieldValue);
 				found = true;
@@ -353,9 +340,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			const parser = new Parser(req);
-
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				expect(part.filename).toBe("bin.dat");
 
 				// Read bytes directly
@@ -385,8 +370,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			const parser = new Parser(req);
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				expect(part.name).toBe("splitHeader");
 				expect(await part.text()).toBe("value");
 			}
@@ -408,9 +392,8 @@ describe("MultipartParser", () => {
 				body: preamble + payload + epilogue,
 			});
 
-			const parser = new Parser(req);
 			let count = 0;
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				expect(part.name).toBe("data");
 				expect(await part.text()).toBe("foo");
 				count++;
@@ -437,9 +420,8 @@ describe("MultipartParser", () => {
 				body: payload,
 			});
 
-			const parser = new Parser(req);
 			let count = 0;
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				expect(part.name).toBe("data");
 				expect(await part.text()).toBe("foo");
 				count++;
@@ -475,9 +457,8 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			const parser = new Parser(req);
 			let count = 0;
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				expect(part.name).toBe("chunked");
 				expect(await part.text()).toBe("bar");
 				count++;
@@ -503,9 +484,8 @@ describe("MultipartParser", () => {
 				body: payload,
 			});
 
-			const parser = new Parser(req);
 			let count = 0;
-			for await (const part of parser.data()) {
+			for await (const part of Parser.data(req)) {
 				expect(part.name).toBe("strict");
 				expect(await part.text()).toBe("baz");
 				count++;
