@@ -99,9 +99,6 @@ export class Parser {
 	/** New line needle to share across requests and parts */
 	static readonly #newLine = new Needle("\r\n\r\n");
 
-	/** Multipart request */
-	readonly #req: Request;
-
 	/** Request body reader */
 	readonly #reader: ReadableStreamDefaultReader;
 
@@ -124,15 +121,23 @@ export class Parser {
 	/** End index of the found needle */
 	#end = 0;
 
+	#opening: Needle;
+	#boundary: Needle;
+
 	/**
 	 * Create a new Parser.
 	 *
 	 * @param req Request
 	 */
 	constructor(req: Request) {
-		this.#req = req;
 		if (!req.body) throw new Error("No request body");
 		this.#reader = req.body.getReader();
+
+		const boundary = header.parse(req.headers.get(header.contentType)).boundary;
+		if (!boundary) throw new Error("Unable to parse boundary");
+
+		this.#opening = new Needle(`--${boundary}\r\n`);
+		this.#boundary = new Needle(`\r\n--${boundary}`);
 	}
 
 	/** @param reader Reader from the stream to drain */
@@ -301,27 +306,16 @@ export class Parser {
 	 * @yields Multipart form data `Part`(s)
 	 */
 	async *#run() {
-		const boundaryStr = header.parse(
-			this.#req.headers.get(header.contentType),
-		).boundary;
-		if (!boundaryStr) return;
-
-		const opening = new Needle(`--${boundaryStr}\r\n`);
-		const boundary = new Needle(`\r\n--${boundaryStr}`);
-
-		await this.#findConcat(opening);
+		await this.#findConcat(this.#opening);
 
 		let headers: Uint8Array | undefined;
 		while ((headers = await this.#findConcat(Parser.#newLine))) {
-			const part = new Part(this.#findStream(boundary), headers);
+			const part = new Part(this.#findStream(this.#boundary), headers);
 			yield part;
 
-			// in order to get the next part, the entire body of the
-			// current part must be read - can't collect the next and
-			// save the body for later it must be read by the user
-			// or drained
-			// cannot just cancel, then the chunks would be in the
-			// next header
+			// to get next part, the entire body must be read
+			// cannot collect the next and save the body for later
+			// also cannot cancel, chunks would be in the next header
 			if (part.body && !part.bodyUsed) {
 				await Parser.#drain(part.body.getReader());
 			}
