@@ -112,6 +112,12 @@ export class Parser {
 		),
 	);
 
+	/** Opening boundary needle */
+	readonly #opening: Needle;
+
+	/** Part boundary needle */
+	readonly #boundary: Needle;
+
 	/** Where valid data ends, valid < #cursor >= empty space */
 	#cursor = 0;
 
@@ -120,9 +126,6 @@ export class Parser {
 
 	/** End index of the found needle */
 	#end = 0;
-
-	#opening: Needle;
-	#boundary: Needle;
 
 	/**
 	 * Create a new Parser.
