@@ -1,6 +1,8 @@
 import * as formContent from "@/server/demo/form/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
+import { createWriteStream } from "node:fs";
+import { Writable } from "node:stream";
 import * as ovr from "ovr";
 import * as z from "zod";
 
@@ -17,8 +19,8 @@ export const form = ovr.Route.get("/demo/form", (c) => {
 
 			<post.Form class="bg-muted border-secondary grid max-w-sm gap-4 rounded-md border p-4">
 				<div>
-					<label for="name">Name</label>
-					<input type="text" name="name" id="name" />
+					<label for="file">File</label>
+					<input type="file" name="file" id="file" />
 				</div>
 
 				<button>Submit</button>
@@ -28,9 +30,17 @@ export const form = ovr.Route.get("/demo/form", (c) => {
 });
 
 export const post = ovr.Route.post(async (c) => {
-	const data = await c.req.formData();
-	const name = z.string().parse(data.get("name"));
-	name; // text input string
+	for await (const part of c.data()) {
+		if (part.name === "file") {
+			const stream = Writable.toWeb(
+				createWriteStream(`${process.cwd()}/output.png`),
+			);
 
-	c.redirect("/", 303);
+			await part.body?.pipeTo(stream);
+		}
+	}
+
+	console.log("done");
+
+	c.redirect(form.pathname(), 303);
 });

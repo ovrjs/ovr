@@ -1,7 +1,7 @@
 /** @module codec Shared codec to use across requests */
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 export const encode = (s: string) => encoder.encode(s);
 

@@ -8,6 +8,7 @@ BREAKING CHANGES:
 
 - Makes router `Trie` class private
 - `Get` and `Post` helpers are now `Route.get` and `Route.post` respectively.
+- POST Route components (`<Form>`/`<Button>`) default to set `enctype=multipart/form-data`
 
 ```diff
 - import { Get, Post } from "ovr";

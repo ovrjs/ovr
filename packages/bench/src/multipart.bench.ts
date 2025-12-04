@@ -2,7 +2,7 @@ import { parseMultipartRequest } from "@remix-run/multipart-parser";
 import * as ovr from "ovr";
 import { bench, describe } from "vitest";
 
-const logMemory = true;
+const logMemory = false;
 
 const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 const encoder = new TextEncoder();
@@ -154,29 +154,41 @@ function createStreamingMultiFileRequest(mb: number) {
 }
 
 async function consumeOvr(req: Request): Promise<void> {
-	const result = await measureMemory(async () => {
+	const consume = async () => {
 		for await (const _part of ovr.Parser.data(req));
-	});
-	if (logMemory)
-		console.log("ovr memory:", {
-			heapDelta: result.after.heapUsed - result.before.heapUsed,
-			peakHeapUsed: result.peakHeapUsed - result.before.heapUsed,
-			rssDelta: result.after.rss - result.before.rss,
-		});
+	};
+
+	if (logMemory) {
+		const result = await measureMemory(consume);
+		if (logMemory)
+			console.log("ovr memory:", {
+				heapDelta: result.after.heapUsed - result.before.heapUsed,
+				peakHeapUsed: result.peakHeapUsed - result.before.heapUsed,
+				rssDelta: result.after.rss - result.before.rss,
+			});
+	} else {
+		await consume();
+	}
 }
 
 async function consumeRemix(req: Request): Promise<void> {
-	const result = await measureMemory(async () => {
+	const consume = async () => {
 		for await (const _part of parseMultipartRequest(req, {
 			maxFileSize: 3000 * 1024 * 1024,
 		}));
-	});
-	if (logMemory)
-		console.log("remix memory:", {
-			heapDelta: result.after.heapUsed - result.before.heapUsed,
-			peakHeapUsed: result.peakHeapUsed - result.before.heapUsed,
-			rssDelta: result.after.rss - result.before.rss,
-		});
+	};
+
+	if (logMemory) {
+		const result = await measureMemory(consume);
+		if (logMemory)
+			console.log("remix memory:", {
+				heapDelta: result.after.heapUsed - result.before.heapUsed,
+				peakHeapUsed: result.peakHeapUsed - result.before.heapUsed,
+				rssDelta: result.after.rss - result.before.rss,
+			});
+	} else {
+		await consume();
+	}
 }
 
 describe("text", () => {

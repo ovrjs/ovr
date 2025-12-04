@@ -207,6 +207,8 @@ export class Route<Pattern extends string = string> {
 	 * @returns Route with added components
 	 */
 	static #withComponents<Pattern extends string>(route: Route<Pattern>) {
+		const enctype = route.method === "POST" ? "multipart/form-data" : undefined;
+
 		return Object.assign(route, {
 			Button: (({ params, search, hash, ...rest }) =>
 				jsx("button", {
@@ -214,6 +216,7 @@ export class Route<Pattern extends string = string> {
 						ExtractParams<Pattern>
 					>),
 					formmethod: route.method,
+					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
 			Form: (({ params, search, hash, ...rest }) =>
@@ -222,6 +225,7 @@ export class Route<Pattern extends string = string> {
 						ExtractParams<Pattern>
 					>),
 					method: route.method,
+					enctype,
 					...rest,
 				})) as Route.Form<Pattern>,
 		});

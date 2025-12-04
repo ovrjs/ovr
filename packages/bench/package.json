@@ -2,11 +2,6 @@
 	"name": "@ovrjs/bench",
 	"private": true,
 	"type": "module",
-	"scripts": {
-		"check": "tsc --noEmit",
-		"build": "tsc",
-		"start": "tsc && node --expose-gc dist"
-	},
 	"dependencies": {
 		"ovr": "*"
 	},

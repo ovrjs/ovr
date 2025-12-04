@@ -83,7 +83,7 @@ const page = Route.get("/", () => {
 
 ## Post
 
-There is also a `Route.post` function that will create a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route and corresponding `Form` and `Button` elements. Anytime you need to handle a form submission, use the generated `Form` component.
+There is also a `Route.post` function that will create a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route and corresponding `Form` and `Button` elements. Anytime you need to handle a form submission, use the generated `Form` component. These components also automatically set the `enctype=multipart/form-data` attribute.
 
 For `Route.post`, ovr will automatically generate a unique pathname for the route based on a hash of the middleware provided.
 
@@ -97,10 +97,10 @@ const login = Route.post(async (c) => {
 const page = Route.get("/", () => {
 	return (
 		<main>
-			{/* <form method="POST" action="/_p/generated-hash"> */}
+			{/* <form method="POST" action="/_p/generated-hash" enctype="multipart/form-data"> */}
 			<login.Form>...</login.Form>
 
-			{/* <button formmethod="POST" formaction="/_p/generated-hash"> */}
+			{/* <button formmethod="POST" formaction="/_p/generated-hash" formenctype="multipart/form-data"> */}
 			<login.Button>Submit</login.Button>
 		</main>
 	);

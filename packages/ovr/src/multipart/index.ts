@@ -33,37 +33,61 @@ class Needle extends Uint8Array {
 }
 
 class Part extends Response {
-	/** Form input `name` attribute */
-	readonly name?: string;
-
-	/** Filename from Content-Disposition header if file */
-	readonly filename?: string;
+	/**
+	 * Form input `name` attribute
+	 *
+	 * @example
+	 *
+	 * ```html
+	 * <input type="file" name="photo">
+	 * ```
+	 */
+	name?: string;
 
 	/**
-	 * Create a new multi-part part.
+	 * Filename from Content-Disposition header if file
+	 *
+	 * @example "my-image.png"
+	 */
+	filename?: string;
+
+	/**
+	 * Media type of the part
+	 *
+	 * @example "image/png"
+	 */
+	mime?: string;
+
+	/**
+	 * Create a new multi-part part
 	 *
 	 * @param body Part body
 	 * @param rawHeaders Raw buffer of HTTP headers for the part
 	 */
 	constructor(body: ReadableStream, rawHeaders: Uint8Array) {
-		super(body);
+		const headers: [string, string][] = [];
 
 		// create headers
 		for (const line of codec.decode(rawHeaders).split("\r\n")) {
 			const colon = line.indexOf(":");
 
 			if (colon !== -1) {
-				this.headers.append(
+				headers.push([
 					line.slice(0, colon).trim(),
 					// no need to trim value - Headers.set does this already
 					line.slice(colon + 1),
-				);
+				]);
 			}
 		}
 
-		const disposition = header.parse(this.headers.get("content-disposition"));
-		this.name = disposition.name;
-		this.filename = disposition.filename;
+		super(body, { headers });
+
+		const disp = header.parse(this.headers.get("content-disposition"));
+
+		this.name = disp.name;
+		this.filename = disp.filename;
+
+		this.mime = this.headers.get(header.contentType)?.split(";", 1)[0];
 	}
 }
 
