@@ -58,8 +58,12 @@ class Part extends Response {
 	 */
 	readonly mime?: string;
 
+	// part body will always be defined, this removes the `null` type
+	/** Part body */
+	declare readonly body: ReadableStream<Uint8Array<ArrayBuffer>>;
+
 	/**
-	 * Create a new multi-part part
+	 * Create a new multipart part
 	 *
 	 * @param body Part body
 	 * @param rawHeaders Raw buffer of HTTP headers for the part
@@ -91,8 +95,8 @@ class Part extends Response {
 	}
 }
 
-export namespace Parser {
-	/** Parser options */
+export namespace Multipart {
+	/** Multipart options */
 	export type Options = {
 		/**
 		 * Maximum memory allocation for request body processing (default 4MB)
@@ -107,7 +111,7 @@ export namespace Parser {
 		 *
 		 * ```ts
 		 * const memory = 12 * 1024 * 1024; // increase to 12MB
-		 * Parser.data(request, { memory });
+		 * Multipart.parse(request, { memory });
 		 * ```
 		 */
 		memory?: number;
@@ -126,7 +130,7 @@ export namespace Parser {
 		 *
 		 * ```ts
 		 * const size = 1024 ** 3; // increase to 1GB
-		 * Parser.data(request, { size });
+		 * Multipart.parse(request, { size });
 		 * ```
 		 */
 		size?: number;
@@ -137,17 +141,17 @@ export namespace Parser {
 }
 
 /**
- * Multipart request body parser.
+ * Multipart form data parser
  *
  * @example
  *
  * ```ts
- * for await (const part of Parser.data(request)) {
+ * for await (const part of Multipart.parse(request)) {
  * 	// ...
  * }
  * ```
  */
-export class Parser {
+export class Multipart {
 	static readonly #kb = 1024;
 	static readonly #mb = 1024 ** 2;
 
@@ -155,9 +159,9 @@ export class Parser {
 	static readonly #newLine = new Needle("\r\n\r\n");
 
 	/** Parser options */
-	readonly #options: Required<Parser.Options> = {
-		memory: 4 * Parser.#mb,
-		size: 10 * Parser.#mb,
+	readonly #options: Required<Multipart.Options> = {
+		memory: 4 * Multipart.#mb,
+		size: 10 * Multipart.#mb,
 	};
 
 	/** Request body reader */
@@ -184,13 +188,16 @@ export class Parser {
 	/** Total bytes read from the stream */
 	#totalBytes = 0;
 
+	// parser is stateful a new one must be created for each request
+	// so the static `parse` method does this in one fn and doesn't have
+	// the risk of users doing `new Multipart().parse()` repeatedly
 	/**
-	 * Use `Parser.data` to run the parser.
+	 * Use `Multipart.parse` to create and run the parser.
 	 *
 	 * @param req Request
-	 * @param options Parser options
+	 * @param options Options
 	 */
-	constructor(req: Request, options?: Parser.Options) {
+	constructor(req: Request, options?: Multipart.Options) {
 		const boundary = header.parse(req.headers.get(header.contentType)).boundary;
 
 		if (!boundary) throw new TypeError("Boundary Not Found");
@@ -204,7 +211,7 @@ export class Parser {
 		this.#memory = new Uint8Array(
 			new ArrayBuffer(
 				// slightly larger than common chunk size/high water mark 64kb for leftover boundary
-				65 * Parser.#kb,
+				65 * Multipart.#kb,
 				// cap max chunk size + leftover
 				{ maxByteLength: this.#options.memory },
 			),
@@ -376,16 +383,14 @@ export class Parser {
 		});
 	}
 
-	/**
-	 * @yields Multipart form data `Part`(s)
-	 */
-	async *#run() {
+	/** @yields Multipart form data `Part`(s) */
+	async *#data() {
 		try {
 			await this.#findConcat(this.#opening);
 
 			let headers: Uint8Array | undefined;
 
-			while ((headers = await this.#findConcat(Parser.#newLine))) {
+			while ((headers = await this.#findConcat(Multipart.#newLine))) {
 				const part = new Part(this.#findStream(this.#boundary), headers);
 				yield part;
 
@@ -419,20 +424,20 @@ export class Parser {
 	}
 
 	/**
-	 * Parse multi-part form data streams.
+	 * Parse multipart form data streams.
 	 *
 	 * @param req Request
-	 * @param options Parse options
+	 * @param options Options
 	 * @yields Multipart form data `Part`(s)
 	 * @example
 	 *
 	 * ```ts
-	 * for await (const part of Parser.data(request)) {
+	 * for await (const part of Multipart.parse(request)) {
 	 * 	// ...
 	 * }
 	 * ```
 	 */
-	static data(req: Request, options?: Parser.Options) {
-		return new Parser(req, options).#run();
+	static parse(req: Request, options?: Multipart.Options) {
+		return new Multipart(req, options).#data();
 	}
 }

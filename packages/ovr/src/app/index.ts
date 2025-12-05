@@ -1,6 +1,6 @@
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
-import type { Parser } from "../multipart/index.js";
+import type { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
 import type { DeepArray } from "../types/index.js";
@@ -43,7 +43,7 @@ export namespace App {
 		 * Multipart parser options
 		 * (overridden by options passed into `Context.data(options)`)
 		 */
-		readonly parser?: Parser.Options;
+		readonly multipart?: Multipart.Options;
 	};
 }
 

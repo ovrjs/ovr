@@ -16,7 +16,7 @@ const mw: Middleware = async (c, next) => {
 };
 ```
 
-> Middleware are just functions, use the `Middleware` type helper to easily type the parameters.
+> Middleware are just functions, use the `Middleware` type helper to easily type the parameters if you are creating them outside of a route.
 
 ## Composition
 

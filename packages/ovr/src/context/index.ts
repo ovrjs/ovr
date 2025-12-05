@@ -2,7 +2,7 @@ import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { render } from "../jsx/index.js";
 import { type Middleware } from "../middleware/index.js";
-import { Parser } from "../multipart/index.js";
+import { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
 import { hash } from "../util/hash.js";
@@ -182,10 +182,10 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * })
 	 * ```
 	 */
-	data(options?: Parser.Options) {
-		return Parser.data(
+	data(options?: Multipart.Options) {
+		return Multipart.parse(
 			this.req,
-			Object.assign({}, this.#options.parser, options),
+			Object.assign({}, this.#options.multipart, options),
 		);
 	}
 

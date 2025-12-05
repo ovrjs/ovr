@@ -1,5 +1,5 @@
 import { parseMultipartRequest } from "@remix-run/multipart-parser";
-import * as ovr from "ovr";
+import { Multipart } from "ovr";
 import { bench, describe } from "vitest";
 
 const benchMemory = false;
@@ -156,7 +156,7 @@ function createStreamingMultiFileRequest(mb: number) {
 
 async function consumeOvr(req: Request): Promise<void> {
 	const consume = async () => {
-		for await (const _part of ovr.Parser.data(req, { size: 1024 ** 3 }));
+		for await (const _part of Multipart.parse(req, { size: 1024 ** 3 }));
 	};
 
 	if (benchMemory) {
