@@ -1,3 +1,4 @@
+import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { render } from "../jsx/index.js";
 import { type Middleware } from "../middleware/index.js";
@@ -65,6 +66,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/** Get, set, and delete cookies. */
 	readonly cookie = new Cookie(this);
 
+	/** Forwarded app options */
+	readonly #options: App.Options;
+
 	// for reuse across methods
 	static readonly #textHtml = "text/html";
 	static readonly #utf8 = "charset=utf-8";
@@ -75,9 +79,10 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 *
 	 * @param req Request
 	 */
-	constructor(req: Request) {
+	constructor(req: Request, options: App.Options = {}) {
 		this.req = req;
 		this.url = new URL(req.url);
+		this.#options = options;
 	}
 
 	/**
@@ -177,8 +182,11 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * })
 	 * ```
 	 */
-	data() {
-		return Parser.data(this.req);
+	data(options?: Parser.Options) {
+		return Parser.data(
+			this.req,
+			Object.assign({}, this.#options.parser, options),
+		);
 	}
 
 	/**

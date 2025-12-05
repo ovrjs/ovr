@@ -1,6 +1,7 @@
 import * as codec from "../util/codec.js";
 import * as header from "../util/header.js";
 
+/** Sequence of bytes to find within the stream */
 class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
@@ -15,9 +16,7 @@ class Needle extends Uint8Array {
 	/** Stores where each byte is located in the needle */
 	readonly loc: (number[] | undefined)[] = new Array(256);
 
-	/**
-	 * @param needle String to find within the stream
-	 */
+	/** @param needle String to find within the stream */
 	constructor(needle: string) {
 		super(codec.encode(needle).buffer);
 
@@ -32,6 +31,7 @@ class Needle extends Uint8Array {
 	}
 }
 
+/** Multipart part */
 class Part extends Response {
 	/**
 	 * Form input `name` attribute
@@ -42,21 +42,21 @@ class Part extends Response {
 	 * <input type="file" name="photo">
 	 * ```
 	 */
-	name?: string;
+	readonly name?: string;
 
 	/**
 	 * Filename from Content-Disposition header if file
 	 *
 	 * @example "my-image.png"
 	 */
-	filename?: string;
+	readonly filename?: string;
 
 	/**
 	 * Media type of the part
 	 *
 	 * @example "image/png"
 	 */
-	mime?: string;
+	readonly mime?: string;
 
 	/**
 	 * Create a new multi-part part
@@ -91,7 +91,62 @@ class Part extends Response {
 	}
 }
 
-/** Multipart form data parser */
+export namespace Parser {
+	/** Parser options */
+	export type Options = {
+		/**
+		 * Maximum memory allocation for request body processing (default 4MB)
+		 *
+		 * Even for large files, the parser does not hold the entire file in memory,
+		 * it processes each chunk of the request body as it arrives.
+		 * Set to a larger number if for example clients are sending all the
+		 * data in a massive chunk instead of broken into smaller packets.
+		 *
+		 * @default 4 * 1024 * 1024
+		 * @example
+		 *
+		 * ```ts
+		 * const memory = 12 * 1024 * 1024; // increase to 12MB
+		 * Parser.data(request, { memory });
+		 * ```
+		 */
+		memory?: number;
+
+		/**
+		 * Maximum request body size in bytes (default 10MB)
+		 *
+		 * Prevents attackers from creating massive requests.
+		 *
+		 * Since the parser doesn't hold chunks in memory, it's possible for
+		 * it to handle very large requests. Use this option to adjust the
+		 * maximum total request body size that will run through the server.
+		 *
+		 * @default 10 * 1024 * 1024
+		 * @example
+		 *
+		 * ```ts
+		 * const size = 1024 ** 3; // increase to 1GB
+		 * Parser.data(request, { size });
+		 * ```
+		 */
+		size?: number | bigint;
+	};
+
+	/** Type for a `Part` of the multipart body */
+	export type Part = InstanceType<typeof Part>;
+}
+
+/**
+ * Multipart request body parser.
+ *
+ * @example
+ *
+ * ```ts
+ * for await (const part of Parser.data(request)) {
+ * 	// ...
+ * }
+ * ```
+ */
 export class Parser {
 	static readonly #kb = 1024;
 	static readonly #mb = 1024 ** 2;
@@ -99,18 +154,17 @@ export class Parser {
 	/** New line needle to share across requests and parts */
 	static readonly #newLine = new Needle("\r\n\r\n");
 
+	/** Parser options */
+	readonly #options: Required<Parser.Options> = {
+		memory: 4 * Parser.#mb,
+		size: 10 * Parser.#mb,
+	};
+
 	/** Request body reader */
 	readonly #reader: ReadableStreamDefaultReader;
 
 	/** Current values being buffered in memory */
-	readonly #memory = new Uint8Array(
-		new ArrayBuffer(
-			// slightly larger than common packet/high water mark 64kb for leftover boundary
-			65 * Parser.#kb,
-			// cap max packet + leftover
-			{ maxByteLength: 4 * Parser.#mb },
-		),
-	);
+	readonly #memory: Uint8Array<ArrayBuffer>;
 
 	/** Opening boundary needle */
 	readonly #opening: Needle;
@@ -127,26 +181,39 @@ export class Parser {
 	/** End index of the found needle */
 	#end = 0;
 
+	/** Total bytes read from the stream */
+	#totalBytes = 0n;
+
 	/**
-	 * Create a new Parser.
+	 * Use `Parser.data` to run the parser.
 	 *
 	 * @param req Request
+	 * @param options Parser options
 	 */
-	constructor(req: Request) {
-		if (!req.body) throw new Error("No request body");
-		this.#reader = req.body.getReader();
-
+	constructor(req: Request, options?: Parser.Options) {
 		const boundary = header.parse(req.headers.get(header.contentType)).boundary;
-		if (!boundary) throw new Error("Unable to parse boundary");
 
+		if (!boundary) throw new TypeError("Boundary Not Found");
+		if (!req.body) throw new TypeError("No Request Body");
+
+		Object.assign(this.#options, options);
+		this.#reader = req.body.getReader();
 		this.#opening = new Needle(`--${boundary}\r\n`);
 		this.#boundary = new Needle(`\r\n--${boundary}`);
+
+		this.#memory = new Uint8Array(
+			new ArrayBuffer(
+				// slightly larger than common chunk size/high water mark 64kb for leftover boundary
+				65 * Parser.#kb,
+				// cap max chunk size + leftover
+				{ maxByteLength: this.#options.memory },
+			),
+		);
 	}
 
 	/** @param reader Reader from the stream to drain */
 	static async #drain(reader: ReadableStreamDefaultReader) {
 		while (!(await reader.read()).done);
-		reader.releaseLock();
 	}
 
 	/**
@@ -252,6 +319,8 @@ export class Parser {
 
 		if (remainder) {
 			// copy remainder to the start of the buffer
+			// this doesn't move the chunks, just copies to the start
+			// old will be overwritten
 			this.#memory.copyWithin(0, this.#end, this.#cursor);
 		}
 
@@ -273,6 +342,11 @@ export class Parser {
 		if (next.done) return true;
 
 		const nextLength = next.value.length;
+
+		if ((this.#totalBytes += BigInt(nextLength)) > this.#options.size) {
+			throw new RangeError("Payload Too Large");
+		}
+
 		const required = this.#cursor + nextLength;
 		const size = this.#memory.buffer.byteLength;
 
@@ -280,8 +354,7 @@ export class Parser {
 		if (required > size) {
 			this.#memory.buffer.resize(
 				Math.min(
-					// in case double is larger than the max
-					this.#memory.buffer.maxByteLength,
+					this.#options.memory, // in case double is larger than the max
 					Math.max(required, size * 2),
 				),
 			);
@@ -309,34 +382,50 @@ export class Parser {
 	 * @yields Multipart form data `Part`(s)
 	 */
 	async *#run() {
-		await this.#findConcat(this.#opening);
+		try {
+			await this.#findConcat(this.#opening);
 
-		let headers: Uint8Array | undefined;
-		while ((headers = await this.#findConcat(Parser.#newLine))) {
-			const part = new Part(this.#findStream(this.#boundary), headers);
-			yield part;
+			let headers: Uint8Array | undefined;
+			while ((headers = await this.#findConcat(Parser.#newLine))) {
+				const part = new Part(this.#findStream(this.#boundary), headers);
+				yield part;
 
-			// to get next part, the entire body must be read
-			// cannot collect the next and save the body for later
-			// also cannot cancel, chunks would be in the next header
-			if (part.body && !part.bodyUsed) {
-				await Parser.#drain(part.body.getReader());
+				// to get next part, the entire body must be read
+				// cannot collect the next and save the body for later
+				// also cannot cancel, chunks would be in the next header
+				if (part.body && !part.bodyUsed) {
+					const reader = part.body.getReader();
+					await Parser.#drain(reader);
+					reader.releaseLock();
+				}
+
+				if (this.#memory[0] === 45 && this.#memory[1] === 45) {
+					// -- = done, drain any epilogue
+					// if not done it is \r\nNEXT-HEADER
+					await Parser.#drain(this.#reader);
+					break;
+				}
 			}
-
-			if (this.#memory[0] === 0x2d && this.#memory[1] === 0x2d) {
-				// done - drain any epilogue
-				return Parser.#drain(this.#reader);
-			}
+		} finally {
+			this.#reader.releaseLock();
 		}
 	}
 
 	/**
 	 * Parse multi-part form data streams.
 	 *
-	 * @param req
+	 * @param req Request
+	 * @param options Parse options
 	 * @yields Multipart form data `Part`(s)
+	 * @example
+	 *
+	 * ```ts
+	 * for await (const part of Parser.data(request)) {
+	 * 	// ...
+	 * }
+	 * ```
 	 */
-	static data(req: Request) {
-		return new Parser(req).#run();
+	static data(req: Request, options?: Parser.Options) {
+		return new Parser(req, options).#run();
 	}
 }

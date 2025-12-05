@@ -1,5 +1,6 @@
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
+import type { Parser } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
 import type { DeepArray } from "../types/index.js";
@@ -37,6 +38,12 @@ export namespace App {
 		 * @default "never"
 		 */
 		readonly trailingSlash?: Options.TrailingSlash;
+
+		/**
+		 * Multipart parser options
+		 * (overridden by options passed into `Context.data(options)`)
+		 */
+		readonly parser?: Parser.Options;
 	};
 }
 
@@ -48,21 +55,24 @@ export class App {
 	/** Global middleware */
 	readonly #global: Middleware[] = [];
 
+	/** App options */
+	readonly #options;
+
 	/**
 	 * Create a new application.
 	 *
 	 * @param options configuration options
 	 */
 	constructor(options?: App.Options) {
-		const resolved = Object.assign(
+		this.#options = Object.assign(
 			{ csrf: true, trailingSlash: "never" },
 			options,
 		);
 
-		if (resolved.csrf === true) this.#global.push(App.#csrf);
+		if (this.#options.csrf === true) this.#global.push(App.#csrf);
 
-		if (resolved.trailingSlash !== "ignore") {
-			this.#global.push(App.#createTrailingSlash(resolved.trailingSlash));
+		if (this.#options.trailingSlash !== "ignore") {
+			this.#global.push(App.#createTrailingSlash(this.#options.trailingSlash));
 		}
 	}
 
@@ -102,8 +112,8 @@ export class App {
 	readonly fetch = async (
 		resource: RequestInfo | URL,
 		options?: RequestInit,
-	): Promise<Response> => {
-		const c = new Context(new Request(resource, options));
+	) => {
+		const c = new Context(new Request(resource, options), this.#options);
 
 		return Object.assign(
 			c,

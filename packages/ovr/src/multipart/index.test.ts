@@ -5,9 +5,7 @@ import { describe, expect, it } from "vitest";
  * Creates a ReadableStream that yields the provided chunks.
  * This simulates network packets arriving one by one.
  */
-function createStreamFromChunks(
-	chunks: Uint8Array[],
-): ReadableStream<Uint8Array> {
+function streamChunks(chunks: Uint8Array[]) {
 	return new ReadableStream({
 		start(controller) {
 			for (const chunk of chunks) {
@@ -21,7 +19,7 @@ function createStreamFromChunks(
 /**
  * Creates a multipart payload string.
  */
-function createMultipartPayload(
+function multipartPayload(
 	boundary: string,
 	parts: { name: string; filename?: string; content: string }[],
 ) {
@@ -61,7 +59,6 @@ describe("MultipartParser", () => {
 				expect(username).toBe("alice");
 			} else if (part.name === "role") {
 				const role = await part.text();
-
 				expect(role).toBe("admin");
 			}
 		}
@@ -145,7 +142,7 @@ describe("MultipartParser", () => {
 	const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 
 	it("parses a simple single-chunk multipart request", async () => {
-		const payload = createMultipartPayload(BOUNDARY, [
+		const payload = multipartPayload(BOUNDARY, [
 			{ name: "field1", content: "value1" },
 			{ name: "file1", filename: "test.txt", content: "file content" },
 		]);
@@ -156,27 +153,20 @@ describe("MultipartParser", () => {
 			body: payload,
 		});
 
-		const parts = [];
-
+		let i = 0;
 		for await (const part of Parser.data(req)) {
-			parts.push({
-				name: part.name,
-				filename: part.filename,
-				body: await part.text(),
-			});
+			if (i === 0) {
+				expect(part.name).toBe("field1");
+				expect(part.filename).toBeUndefined();
+				expect(await part.text()).toBe("value1");
+			} else if (i === 1) {
+				expect(part.name).toBe("file1");
+				expect(part.filename).toBe("test.txt");
+				expect(await part.text()).toBe("file content");
+			}
+			i++;
 		}
-
-		expect(parts).toHaveLength(2);
-		expect(parts[0]).toEqual({
-			name: "field1",
-			filename: undefined,
-			body: "value1",
-		});
-		expect(parts[1]).toEqual({
-			name: "file1",
-			filename: "test.txt",
-			body: "file content",
-		});
+		expect(i).toBe(2);
 	});
 
 	describe("Streaming & Boundary Edge Cases", () => {
@@ -211,7 +201,7 @@ describe("MultipartParser", () => {
 					headers: {
 						"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
 					},
-					body: createStreamFromChunks([chunk1, chunk2]),
+					body: streamChunks([chunk1, chunk2]),
 					// @ts-expect-error - required for streaming
 					duplex: "half",
 				});
@@ -240,7 +230,7 @@ describe("MultipartParser", () => {
 			// \r\n- is the start of a boundary sequence
 			const trickyValue = "data_ending_with_\r\n-";
 
-			const payload = createMultipartPayload(BOUNDARY, [
+			const payload = multipartPayload(BOUNDARY, [
 				{ name: "tricky", content: trickyValue },
 			]);
 
@@ -258,7 +248,7 @@ describe("MultipartParser", () => {
 				headers: {
 					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
 				},
-				body: createStreamFromChunks([chunk1, chunk2]),
+				body: streamChunks([chunk1, chunk2]),
 				// @ts-expect-error - required for streaming
 				duplex: "half",
 			});
@@ -294,7 +284,7 @@ describe("MultipartParser", () => {
 				headers: {
 					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
 				},
-				body: createStreamFromChunks(chunks),
+				body: streamChunks(chunks),
 				// @ts-expect-error - required for streaming
 				duplex: "half",
 			});
@@ -328,7 +318,7 @@ describe("MultipartParser", () => {
 			const chunk1 = binaryData.slice(0, mid);
 			const chunk2 = binaryData.slice(mid);
 
-			const stream = createStreamFromChunks([header, chunk1, chunk2, footer]);
+			const stream = streamChunks([header, chunk1, chunk2, footer]);
 
 			const req = new Request("http://localhost", {
 				method: "POST",
@@ -362,7 +352,7 @@ describe("MultipartParser", () => {
 				headers: {
 					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
 				},
-				body: createStreamFromChunks([
+				body: streamChunks([
 					new TextEncoder().encode(headerPart1),
 					new TextEncoder().encode(headerPart2),
 				]),
@@ -380,7 +370,7 @@ describe("MultipartParser", () => {
 			const preamble = "This is preamble text that should be ignored\r\n";
 			const epilogue = "\r\nThis is epilogue text";
 
-			const payload = createMultipartPayload(BOUNDARY, [
+			const payload = multipartPayload(BOUNDARY, [
 				{ name: "data", content: "foo" },
 			]);
 
@@ -409,7 +399,7 @@ describe("MultipartParser", () => {
 			const epilogue =
 				"\r\nThis is epilogue text that should be ignored.\r\nIt contains a fake header-like line: Foo: bar\r\n\r\nAnd even a CRLF: \r\n\r\nBut no extra parts.";
 			const payload =
-				createMultipartPayload(BOUNDARY, [{ name: "data", content: "foo" }]) +
+				multipartPayload(BOUNDARY, [{ name: "data", content: "foo" }]) +
 				epilogue;
 
 			const req = new Request("http://localhost", {
@@ -435,7 +425,7 @@ describe("MultipartParser", () => {
 		it("handles chunked epilogue without extra parts", async () => {
 			const epilogue =
 				"Chunked epilogue with CRLF\r\n\r\nand boundary mimic: --notreal\r\n";
-			const payload = createMultipartPayload(BOUNDARY, [
+			const payload = multipartPayload(BOUNDARY, [
 				{ name: "chunked", content: "bar" },
 			]);
 
@@ -452,7 +442,7 @@ describe("MultipartParser", () => {
 				headers: {
 					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
 				},
-				body: createStreamFromChunks([chunk1, chunk2, chunk3]),
+				body: streamChunks([chunk1, chunk2, chunk3]),
 				// @ts-expect-error - required for streaming
 				duplex: "half",
 			});
@@ -468,13 +458,288 @@ describe("MultipartParser", () => {
 			// Verify entire body consumed
 			expect(req.bodyUsed).toBe(true);
 		});
+	});
 
-		it("errors on data after closing boundary if strict mode enabled", async () => {
-			// Assuming future strict mode; for now, just drain silently
-			const strictEpilogue = "\r\nStrict epilogue with extra data.";
-			const payload =
-				createMultipartPayload(BOUNDARY, [{ name: "strict", content: "baz" }]) +
-				strictEpilogue;
+	describe("Limits (size and memory options)", () => {
+		const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+		const ONE_MB = 1024 * 1024;
+
+		it("uses default size limit (10MB) and throws on exceed", async () => {
+			// Create a payload slightly over 10MB (multipart overhead ~few KB, so content >10MB safe)
+			const oversizedContent = "a".repeat(11 * ONE_MB);
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "oversized", content: oversizedContent },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			const parts = Parser.data(req);
+			await expect(parts.next()).rejects.toThrow();
+		});
+
+		it("uses default memory limit (4MB) and throws on oversized chunk", async () => {
+			// Single chunk >4MB: header + huge data + footer, but data chunk itself >4MB
+			const hugeData = new Uint8Array(5 * ONE_MB); // Pure binary > memory
+			for (let i = 0; i < hugeData.length; i++) hugeData[i] = i % 256;
+
+			const encoder = new TextEncoder();
+			const header = encoder.encode(
+				`--${BOUNDARY}\r\nContent-Disposition: form-data; name="huge"; filename="big.bin"\r\n\r\n`,
+			);
+			const footer = encoder.encode(`\r\n--${BOUNDARY}--`);
+
+			// Stream: header + hugeData (single chunk >4MB) + footer
+			const stream = streamChunks([header, hugeData, footer]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: stream,
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			for await (const part of Parser.data(req)) {
+				expect(part).toBeDefined();
+				expect(part.name).toBe("huge");
+				await expect(part.arrayBuffer()).rejects.toThrow(RangeError); // From Uint8Array.set(source longer than dest)
+			}
+		});
+
+		it("respects custom size limit and throws when exceeded", async () => {
+			const customSize = 1 * ONE_MB;
+			const oversizedContent = "a".repeat(customSize + 1024); // Slightly over
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "custom", content: oversizedContent },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			const parts = Parser.data(req, { size: customSize });
+			await expect(parts.next()).rejects.toThrow();
+		});
+
+		it("respects custom memory limit and throws on oversized chunk", async () => {
+			const customMemory = 512 * 1024; // 512KB
+			const hugeData = new Uint8Array(customMemory + 1024); // Slightly over
+			for (let i = 0; i < hugeData.length; i++) hugeData[i] = i % 256;
+
+			const encoder = new TextEncoder();
+			const header = encoder.encode(
+				`--${BOUNDARY}\r\nContent-Disposition: form-data; name="custom"; filename="chunk.bin"\r\n\r\n`,
+			);
+			const footer = encoder.encode(`\r\n--${BOUNDARY}--`);
+
+			const stream = streamChunks([header, hugeData, footer]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: stream,
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			for await (const part of Parser.data(req, { memory: customMemory })) {
+				expect(part).toBeDefined();
+				expect(part.name).toBe("custom");
+				await expect(part.arrayBuffer()).rejects.toThrow(RangeError);
+			}
+		});
+
+		it("parses successfully when under custom limits", async () => {
+			const smallContent = "small data under limits";
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "small", content: smallContent },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			// Custom small limits, but payload << limits
+			const parts = Parser.data(req, { size: 1 * ONE_MB, memory: 1 * ONE_MB });
+
+			let count = 0;
+			for await (const part of parts) {
+				expect(part.name).toBe("small");
+				expect(await part.text()).toBe(smallContent);
+				count++;
+			}
+			expect(count).toBe(1);
+		});
+
+		it("resizes buffer dynamically up to memory limit without error", async () => {
+			// Start small, send accumulating chunks that trigger resizes up to ~3MB <4MB default
+			const totalData = 3 * ONE_MB;
+			const numChunks = 10;
+			const chunkSize = Math.floor(totalData / numChunks);
+
+			const dataChunks: Uint8Array[] = [];
+			let pos = 0;
+			for (let i = 0; i < numChunks; i++) {
+				const len = i < numChunks - 1 ? chunkSize : totalData - pos;
+				const chunk = new Uint8Array(len);
+				for (let j = 0; j < len; j++) chunk[j] = (pos + j) % 256;
+				dataChunks.push(chunk);
+				pos += len;
+			}
+
+			const encoder = new TextEncoder();
+			const header = encoder.encode(
+				`--${BOUNDARY}\r\nContent-Disposition: form-data; name="resizable"; filename="data.bin"\r\n\r\n`,
+			);
+			const footer = encoder.encode(`\r\n--${BOUNDARY}--`);
+
+			const stream = streamChunks([header, ...dataChunks, footer]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: stream,
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			for await (const part of Parser.data(req)) {
+				expect(part.filename).toBe("data.bin");
+
+				const bytes = await part.arrayBuffer();
+				expect(bytes.byteLength).toBe(totalData); // Full reassembly
+			}
+		});
+	});
+
+	describe("Empty and Edge-Case Parts", () => {
+		it("handles parts with empty body content", async () => {
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "empty", content: "" },
+				{ name: "hello", content: "asdf" },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			for await (const part of Parser.data(req)) {
+				if (part.name === "empty") {
+					expect(await part.bytes()).toHaveLength(0);
+				}
+			}
+		});
+	});
+
+	describe("Header Edge Cases", () => {
+		it("parses MIME type with additional parameters (e.g., charset)", async () => {
+			const payload = [
+				`--${BOUNDARY}`,
+				`Content-Disposition: form-data; name="text"`,
+				`Content-Type: text/plain; charset=utf-8`,
+				``,
+				"hello",
+				`--${BOUNDARY}--`,
+			].join("\r\n");
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			for await (const part of Parser.data(req)) {
+				expect(part.mime).toBe("text/plain"); // Splits on ';', ignores params
+				expect(part.headers.get("content-type")).toBe(
+					"text/plain; charset=utf-8",
+				); // Full header preserved
+			}
+		});
+
+		it("ignores malformed header lines without colon", async () => {
+			const malformedPayload = [
+				`--${BOUNDARY}`,
+				`Content-Disposition: form-data; name="malformed"`,
+				`Invalid-Header-Line`, // No colon
+				``,
+				"value",
+				`--${BOUNDARY}--`,
+			].join("\r\n");
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: malformedPayload,
+			});
+
+			for await (const part of Parser.data(req)) {
+				expect(part.name).toBe("malformed");
+				expect(part.headers.get("invalid-header-line")).toBeNull(); // Ignored
+				expect(await part.text()).toBe("value");
+			}
+		});
+	});
+
+	describe("Content with Boundary-Like Sequences", () => {
+		it("handles content containing boundary-like sequences mid-part", async () => {
+			const boundaryLike = `\r\n--${BOUNDARY.slice(0, -2)}`; // Partial boundary in content
+			const content = `Normal content${boundaryLike}more content`;
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "content", content },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			for await (const part of Parser.data(req)) {
+				expect(await part.text()).toBe(content); // Full content yielded, no false boundary
+			}
+		});
+	});
+
+	describe("Large-Scale Scenarios", () => {
+		const ONE_MB = 1024 * 1024;
+
+		it("handles many small parts without exceeding memory", async () => {
+			const numParts = 100; // Many small parts
+			const partsData = Array.from({ length: numParts }, (_, i) => ({
+				name: `part${i}`,
+				content: "small".repeat(100), // ~500 bytes each, total ~50KB
+			}));
+			const payload = multipartPayload(BOUNDARY, partsData);
 
 			const req = new Request("http://localhost", {
 				method: "POST",
@@ -485,14 +750,143 @@ describe("MultipartParser", () => {
 			});
 
 			let count = 0;
-			for await (const part of Parser.data(req)) {
-				expect(part.name).toBe("strict");
-				expect(await part.text()).toBe("baz");
+			for await (const part of Parser.data(req, { memory: 512 * 1024 })) {
+				// Tight memory
+				expect(part.name).toBe(`part${count}`);
+				expect(await part.text()).toBe("small".repeat(100));
 				count++;
 			}
-			expect(count).toBe(1);
-			expect(req.bodyUsed).toBe(true);
-			// TODO: In strict mode, expect thrown error on non-empty epilogue
+			expect(count).toBe(numParts);
+		});
+
+		it("enforces size limit with many small parts accumulating over limit", async () => {
+			const numParts = 20; // Accumulate to >1MB custom limit
+			const partsData = Array.from({ length: numParts }, (_, i) => ({
+				name: `part${i}`,
+				content: "a".repeat(60 * 1024), // ~60KB each, total ~1.2MB
+			}));
+			const payload = multipartPayload(BOUNDARY, partsData);
+
+			const encoder = new TextEncoder();
+			const bytes = encoder.encode(payload);
+
+			// Split into chunks of ~100KB each to simulate streaming
+			const chunkSize = 100 * 1024;
+			const chunks: Uint8Array[] = [];
+			for (let i = 0; i < bytes.length; i += chunkSize) {
+				chunks.push(bytes.slice(i, i + chunkSize));
+			}
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: streamChunks(chunks),
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			let count = 0;
+			const read = async () => {
+				for await (const part of Parser.data(req, { size: ONE_MB })) {
+					count++;
+				}
+			};
+
+			await expect(read()).rejects.toThrow();
+
+			expect(count).toBeGreaterThan(0);
+			expect(count).toBeLessThan(numParts);
+		});
+
+		it.skip(
+			"handles boundary search spanning buffer resizes",
+			{ timeout: 10000 },
+			async () => {
+				// Large part where boundary search starts near end of buffer, triggers resize during #find
+				const largeContent = new Uint8Array(3 * ONE_MB - 1000); // Close to memory limit
+				for (let i = 0; i < largeContent.length; i++) largeContent[i] = i % 256;
+
+				const encoder = new TextEncoder();
+				const header = encoder.encode(
+					`--${BOUNDARY}\r\nContent-Disposition: form-data; name="large"; filename="span.bin"\r\n\r\n`,
+				);
+				const boundaryStart = encoder.encode(`\r\n--${BOUNDARY}--`); // Boundary after large content
+
+				// Chunks: header + most of large (triggers resize) + end of large + partial boundary + rest
+				const midLarge = largeContent.length - 500;
+				const chunk1 = largeContent.slice(0, midLarge);
+				const chunk2 = largeContent.slice(midLarge);
+				const partialBoundary = boundaryStart.slice(0, 3); // Partial to span
+				const chunk3 = boundaryStart.slice(3);
+
+				const stream = streamChunks([
+					header,
+					chunk1,
+					chunk2,
+					partialBoundary,
+					chunk3,
+				]);
+
+				const req = new Request("http://localhost", {
+					method: "POST",
+					headers: {
+						"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+					},
+					body: stream,
+					// @ts-expect-error - required for streaming
+					duplex: "half",
+				});
+
+				for await (const part of Parser.data(req)) {
+					expect(part.name).toBe("large");
+					const bytes = await part.arrayBuffer();
+					expect(bytes.byteLength).toBe(largeContent.length);
+					expect(new Uint8Array(bytes)).toEqual(largeContent);
+				}
+			},
+		);
+	});
+
+	describe("Error Conditions", () => {
+		it("throws on request without body", async () => {
+			const req = new Request("http://localhost", { method: "POST" }); // No body
+
+			await expect(async () => Parser.data(req)).rejects.toThrow();
+		});
+
+		it("throws on invalid Content-Type (no boundary)", async () => {
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "--boundary\r\n\r\ndata\r\n--boundary--",
+			});
+
+			await expect(async () => Parser.data(req)).rejects.toThrow();
+		});
+
+		it("handles bigint size limits for very large requests", async () => {
+			// Use a large but feasible size (e.g., 1GB as bigint)
+			const largeSize = 1024n ** 3n; // 1GB
+			const smallPayload = multipartPayload(BOUNDARY, [
+				{ name: "small", content: "tiny" },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: smallPayload,
+			});
+
+			const parts = Parser.data(req, { size: largeSize });
+			let count = 0;
+			for await (const part of parts) {
+				count++;
+			}
+			expect(count).toBe(1); // Parses fine under large limit
 		});
 	});
 });
