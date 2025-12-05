@@ -13,23 +13,20 @@ Instead of using `Request.formData` to buffer the entire request body in memory,
 import { Route } from "ovr";
 
 const post = Route.post(async (c) => {
-	// authenticate...
+	for await (const part of c.data()) {
+		part; // extends Response
+		part.name; // form input name
+		part.filename; // filename if available
+		part.mime; // media type
+		part.headers; // Headers
+		part.body; // ReadableStream
 
-	// stream file upload
-	try {
-		for await (const part of c.data()) {
-			if (part.name === "photo") {
-				await Bun.write(
-					`/uploads/${part.filename}`,
-					part, // extends Response
-				);
-			}
+		if (part.name === "name") {
+			const name = await part.text(); // buffer a text input
+		} else if (part.name === "photo") {
+			// stream part.body...
+			// see examples below
 		}
-
-		c.text("Upload Complete", 201);
-	} catch (e) {
-		console.error(e);
-		c.text("Upload Failed", 500);
 	}
 });
 ```
@@ -64,6 +61,85 @@ const app = new Hono();
 app.post("/post", async (c) => {
 	for await (const part of Multipart.parse(c.req.raw)) {
 		// ...
+	}
+});
+```
+
+## Examples
+
+### Node
+
+```ts
+import { createWriteStream } from "node:fs";
+import { Writable } from "node:stream";
+import { Route } from "ovr";
+
+const upload = Route.post(async (c) => {
+	try {
+		for await (const part of c.data()) {
+			if (part.name === "photo") {
+				await part.body.pipeTo(
+					Writable.toWeb(createWriteStream(`/uploads/${part.filename}`)),
+				);
+			}
+		}
+
+		c.text("Upload Complete", 201);
+	} catch (error) {
+		console.error(error);
+		c.text("Upload Failed", 500);
+	}
+});
+```
+
+### Deno
+
+```ts
+import { Route } from "ovr";
+
+const upload = Route.post(async (c) => {
+	try {
+		for await (const part of c.data()) {
+			if (part.name === "photo") {
+				await Deno.writeFile(`/uploads/${part.filename}`, part.body);
+			}
+		}
+
+		c.text("Upload Complete", 201);
+	} catch (error) {
+		console.error(error);
+		c.text("Upload Failed", 500);
+	}
+});
+```
+
+### S3
+
+```ts
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { Route } from "ovr";
+
+const s3 = new S3Client({ region: process.env.AWS_REGION });
+
+const upload = Route.post(async (c) => {
+	try {
+		for await (const part of c.data()) {
+			if (part.name === "photo") {
+				await s3.send(
+					new PutObjectCommand({
+						Bucket: process.env.BUCKET_NAME,
+						Key: part.filename,
+						Body: part.body,
+						ContentType: part.mime ?? "application/octet-stream",
+					}),
+				);
+			}
+		}
+
+		c.text("Upload Complete", 201);
+	} catch (error) {
+		console.error(error);
+		c.text("Upload Failed", 500);
 	}
 });
 ```

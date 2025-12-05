@@ -1,8 +1,8 @@
 import * as formContent from "@/server/demo/form/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-// import { createWriteStream } from "node:fs";
-// import { Writable } from "node:stream";
+import { createWriteStream } from "node:fs";
+import { Writable } from "node:stream";
 import * as ovr from "ovr";
 
 export const form = ovr.Route.get("/demo/form", (c) => {
@@ -33,9 +33,10 @@ export const post = ovr.Route.post(async (c) => {
 		for await (const part of c.data()) {
 			if (part.name === "photo") {
 				// NODE
-				// await part.body.pipeTo(
-				// 	Writable.toWeb(createWriteStream(`${process.cwd()}/output.png`)),
-				// );
+				await part.body.pipeTo(
+					Writable.toWeb(createWriteStream(`${process.cwd()}/output.png`)),
+				);
+
 				// DENO
 				// await Deno.writeFile("output.txt", part.body);
 				// BUN
