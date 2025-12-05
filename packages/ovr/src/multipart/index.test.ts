@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
  * Creates a ReadableStream that yields the provided chunks.
  * This simulates network packets arriving one by one.
  */
-function streamChunks(chunks: Uint8Array[]) {
-	return new ReadableStream({
+const streamChunks = (chunks: Uint8Array[]) =>
+	new ReadableStream({
 		start(controller) {
 			for (const chunk of chunks) {
 				controller.enqueue(chunk);
@@ -14,15 +14,14 @@ function streamChunks(chunks: Uint8Array[]) {
 			controller.close();
 		},
 	});
-}
 
 /**
  * Creates a multipart payload string.
  */
-function multipartPayload(
+const multipartPayload = (
 	boundary: string,
 	parts: { name: string; filename?: string; content: string }[],
-) {
+) => {
 	const lines: string[] = [];
 	for (const part of parts) {
 		lines.push(`--${boundary}`);
@@ -37,7 +36,7 @@ function multipartPayload(
 	lines.push(`--${boundary}--`);
 	// Multipart uses CRLF
 	return lines.join("\r\n");
-}
+};
 
 describe("MultipartParser", () => {
 	it("should parse simple text fields", async () => {
@@ -394,6 +393,7 @@ describe("MultipartParser", () => {
 
 	describe("Epilogue Handling", () => {
 		const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+		const ONE_MB = 1024 * 1024;
 
 		it("ignores epilogue after closing boundary", async () => {
 			const epilogue =
@@ -457,6 +457,43 @@ describe("MultipartParser", () => {
 
 			// Verify entire body consumed
 			expect(req.bodyUsed).toBe(true);
+		});
+
+		it("enforces size limit on large epilogue", async () => {
+			const smallContent = "small valid part";
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "data", content: smallContent },
+			]);
+
+			const encoder = new TextEncoder();
+			const payloadBytes = encoder.encode(payload);
+
+			// Epilogue: Two chunks—first under limit, second tips over
+			const epilogueChunk1 = encoder.encode("a".repeat(500 * 1024)); // 500KB (under 1MB total)
+			const epilogueChunk2 = encoder.encode("a".repeat(600 * 1024)); // 600KB (total >1MB)
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: streamChunks([payloadBytes, epilogueChunk1, epilogueChunk2]),
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			let partCount = 0;
+			const consume = async () => {
+				for await (const part of Parser.data(req, { size: ONE_MB })) {
+					expect(part.name).toBe("data");
+					expect(await part.text()).toBe(smallContent);
+					partCount++;
+				}
+			};
+
+			// Should parse the part, then throw during epilogue drain
+			await expect(consume()).rejects.toThrow("Payload Too Large");
+			expect(partCount).toBe(1);
 		});
 	});
 
@@ -868,7 +905,7 @@ describe("MultipartParser", () => {
 
 		it("handles bigint size limits for very large requests", async () => {
 			// Use a large but feasible size (e.g., 1GB as bigint)
-			const largeSize = 1024n ** 3n; // 1GB
+			const largeSize = 1024 ** 3; // 1GB
 			const smallPayload = multipartPayload(BOUNDARY, [
 				{ name: "small", content: "tiny" },
 			]);

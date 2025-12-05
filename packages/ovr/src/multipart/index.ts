@@ -129,7 +129,7 @@ export namespace Parser {
 		 * Parser.data(request, { size });
 		 * ```
 		 */
-		size?: number | bigint;
+		size?: number;
 	};
 
 	/** Type for a `Part` of the multipart body */
@@ -172,8 +172,8 @@ export class Parser {
 	/** Part boundary needle */
 	readonly #boundary: Needle;
 
-	/** Where valid data ends, valid < #cursor >= empty space */
-	#cursor = 0;
+	/** Where valid data ends, valid < #valid >= invalid or empty space */
+	#valid = 0;
 
 	/** Start index of the found needle */
 	#start = 0;
@@ -182,7 +182,7 @@ export class Parser {
 	#end = 0;
 
 	/** Total bytes read from the stream */
-	#totalBytes = 0n;
+	#totalBytes = 0;
 
 	/**
 	 * Use `Parser.data` to run the parser.
@@ -211,9 +211,66 @@ export class Parser {
 		);
 	}
 
-	/** @param reader Reader from the stream to drain */
-	static async #drain(reader: ReadableStreamDefaultReader) {
-		while (!(await reader.read()).done);
+	/**
+	 * Reads the next chunk in the request stream and concatenates it
+	 * onto the buffer.
+	 *
+	 * @param append
+	 * @returns `true` if done
+	 */
+	async #read(append = true) {
+		const next = await this.#reader.read();
+
+		if (next.done) return true;
+
+		const nextLength = next.value.length;
+
+		if ((this.#totalBytes += nextLength) > this.#options.size) {
+			throw new RangeError("Payload Too Large");
+		}
+
+		if (append) {
+			const required = this.#valid + nextLength;
+			const size = this.#memory.buffer.byteLength;
+
+			// resize if full
+			if (required > size) {
+				this.#memory.buffer.resize(
+					Math.min(
+						this.#options.memory, // in case double is larger than the max
+						Math.max(required, size * 2),
+					),
+				);
+			}
+
+			// write at the valid cutoff
+			this.#memory.set(next.value, this.#valid);
+			this.#valid += nextLength;
+		}
+	}
+
+	/**
+	 * Cuts off the buffer < end index.
+	 *
+	 * @returns Shifted off buffer < start index
+	 */
+	#shift() {
+		const before = this.#memory.slice(0, this.#start);
+
+		// how much data is left after the found needle
+		const remainder = this.#valid - this.#end;
+
+		if (remainder) {
+			// copy remainder to the start of the buffer
+			// this doesn't move the chunks, just copies to the start
+			// old will be overwritten
+			this.#memory.copyWithin(0, this.#end, this.#valid);
+		}
+
+		this.#valid = remainder;
+		this.#start = this.#end = 0;
+
+		return before;
 	}
 
 	/**
@@ -225,7 +282,7 @@ export class Parser {
 	 * @returns If found, shifts the buffer and returns the result.
 	 */
 	#find(needle: Needle) {
-		const haystackLength = this.#cursor;
+		const haystackLength = this.#valid;
 
 		// start the search at the last char of the needle
 		// since it could be at the very start
@@ -254,6 +311,19 @@ export class Parser {
 	}
 
 	/**
+	 * Tries to find the needle in the buffer, if not found, the next
+	 * chunk is read an concatenated onto the buffer.
+	 *
+	 * @param needle Needle to find
+	 * @returns Buffer up until the found needle
+	 */
+	async #findConcat(needle: Needle) {
+		let found: Uint8Array | undefined;
+		while (!(found = this.#find(needle)) && !(await this.#read()));
+		return found;
+	}
+
+	/**
 	 * @param needle Needle to find
 	 * @returns Stream that streams the content until the next find
 	 */
@@ -269,7 +339,7 @@ export class Parser {
 					done = await this.#read()
 				) {
 					// not found within current chunk
-					const lastIndex = this.#cursor - 1;
+					const lastIndex = this.#valid - 1;
 					const needleIndices = needle.loc[this.#memory[lastIndex]!];
 
 					if (needleIndices) {
@@ -307,78 +377,6 @@ export class Parser {
 	}
 
 	/**
-	 * Cuts off the buffer < end index.
-	 *
-	 * @returns Shifted off buffer < start index
-	 */
-	#shift() {
-		const before = this.#memory.slice(0, this.#start);
-
-		// how much data is left after the found needle
-		const remainder = this.#cursor - this.#end;
-
-		if (remainder) {
-			// copy remainder to the start of the buffer
-			// this doesn't move the chunks, just copies to the start
-			// old will be overwritten
-			this.#memory.copyWithin(0, this.#end, this.#cursor);
-		}
-
-		this.#cursor = remainder;
-		this.#start = this.#end = 0;
-
-		return before;
-	}
-
-	/**
-	 * Reads the next chunk in the request stream and concatenates it
-	 * onto the buffer.
-	 *
-	 * @returns `true` if done
-	 */
-	async #read() {
-		const next = await this.#reader.read();
-
-		if (next.done) return true;
-
-		const nextLength = next.value.length;
-
-		if ((this.#totalBytes += BigInt(nextLength)) > this.#options.size) {
-			throw new RangeError("Payload Too Large");
-		}
-
-		const required = this.#cursor + nextLength;
-		const size = this.#memory.buffer.byteLength;
-
-		// resize if full
-		if (required > size) {
-			this.#memory.buffer.resize(
-				Math.min(
-					this.#options.memory, // in case double is larger than the max
-					Math.max(required, size * 2),
-				),
-			);
-		}
-
-		// write at the cursor
-		this.#memory.set(next.value, this.#cursor);
-		this.#cursor += nextLength;
-	}
-
-	/**
-	 * Tries to find the needle in the buffer, if not found, the next
-	 * chunk is read an concatenated onto the buffer.
-	 *
-	 * @param needle Needle to find
-	 * @returns Buffer up until the found needle
-	 */
-	async #findConcat(needle: Needle) {
-		let found: Uint8Array | undefined;
-		while (!(found = this.#find(needle)) && !(await this.#read()));
-		return found;
-	}
-
-	/**
 	 * @yields Multipart form data `Part`(s)
 	 */
 	async *#run() {
@@ -386,23 +384,32 @@ export class Parser {
 			await this.#findConcat(this.#opening);
 
 			let headers: Uint8Array | undefined;
+
 			while ((headers = await this.#findConcat(Parser.#newLine))) {
 				const part = new Part(this.#findStream(this.#boundary), headers);
 				yield part;
 
 				// to get next part, the entire body must be read
-				// cannot collect the next and save the body for later
-				// also cannot cancel, chunks would be in the next header
+				// cannot cancel, chunks would be in the next header
 				if (part.body && !part.bodyUsed) {
-					const reader = part.body.getReader();
-					await Parser.#drain(reader);
-					reader.releaseLock();
+					const partReader = part.body.getReader();
+					try {
+						while (!(await partReader.read()).done);
+					} finally {
+						partReader.releaseLock();
+					}
 				}
 
-				if (this.#memory[0] === 45 && this.#memory[1] === 45) {
-					// -- = done, drain any epilogue
-					// if not done it is \r\nNEXT-HEADER
-					await Parser.#drain(this.#reader);
+				if (
+					// ensures invalid characters aren't used to determine if it's done
+					this.#valid > 1 &&
+					// check for --
+					// if not done it would be \r\nNEXT-HEADER
+					this.#memory[0] === 45 &&
+					this.#memory[1] === 45
+				) {
+					// done, drain any epilogue
+					while (!(await this.#read(false)));
 					break;
 				}
 			}

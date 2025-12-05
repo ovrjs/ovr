@@ -2,7 +2,7 @@ import { parseMultipartRequest } from "@remix-run/multipart-parser";
 import * as ovr from "ovr";
 import { bench, describe } from "vitest";
 
-const logMemory = false;
+const benchMemory = false;
 
 const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 const encoder = new TextEncoder();
@@ -144,6 +144,7 @@ function createStreamingMultiFileRequest(mb: number) {
 			}
 		},
 	});
+
 	return new Request("http://localhost:3000/multi", {
 		method: "POST",
 		headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
@@ -155,12 +156,12 @@ function createStreamingMultiFileRequest(mb: number) {
 
 async function consumeOvr(req: Request): Promise<void> {
 	const consume = async () => {
-		for await (const _part of ovr.Parser.data(req));
+		for await (const _part of ovr.Parser.data(req, { size: 1024 ** 3 }));
 	};
 
-	if (logMemory) {
+	if (benchMemory) {
 		const result = await measureMemory(consume);
-		if (logMemory)
+		if (benchMemory)
 			console.log("ovr memory:", {
 				heapDelta: result.after.heapUsed - result.before.heapUsed,
 				peakHeapUsed: result.peakHeapUsed - result.before.heapUsed,
@@ -173,14 +174,14 @@ async function consumeOvr(req: Request): Promise<void> {
 
 async function consumeRemix(req: Request): Promise<void> {
 	const consume = async () => {
-		for await (const _part of parseMultipartRequest(req, {
+		for await (const _ of parseMultipartRequest(req, {
 			maxFileSize: 3000 * 1024 * 1024,
 		}));
 	};
 
-	if (logMemory) {
+	if (benchMemory) {
 		const result = await measureMemory(consume);
-		if (logMemory)
+		if (benchMemory)
 			console.log("remix memory:", {
 				heapDelta: result.after.heapUsed - result.before.heapUsed,
 				peakHeapUsed: result.peakHeapUsed - result.before.heapUsed,
@@ -215,38 +216,38 @@ describe("10MB file", () => {
 	});
 });
 
-// describe("100MB file", () => {
-// 	const req = createStreamingMixedRequest(100);
+describe("100MB file", () => {
+	const req = createStreamingMixedRequest(100);
 
-// 	bench("ovr", async () => {
-// 		await consumeOvr(req.clone());
-// 	});
+	bench("ovr", async () => {
+		await consumeOvr(req.clone());
+	});
 
-// 	bench("remix", async () => {
-// 		await consumeRemix(req.clone());
-// 	});
-// });
+	bench("remix", async () => {
+		await consumeRemix(req.clone());
+	});
+});
 
-// describe("1000MB file", () => {
-// 	const req = createStreamingMixedRequest(1000);
+describe.skip("1000MB file", () => {
+	const req = createStreamingMixedRequest(1000);
 
-// 	bench("ovr", async () => {
-// 		await consumeOvr(req.clone());
-// 	});
+	bench("ovr", async () => {
+		await consumeOvr(req.clone());
+	});
 
-// 	bench("remix", async () => {
-// 		await consumeRemix(req.clone());
-// 	});
-// });
+	bench("remix", async () => {
+		await consumeRemix(req.clone());
+	});
+});
 
-// describe("5x 100MB files", () => {
-// 	const req = createStreamingMultiFileRequest(100);
+describe.skip("5x 100MB files", () => {
+	const req = createStreamingMultiFileRequest(100);
 
-// 	bench("ovr", async () => {
-// 		await consumeOvr(req.clone());
-// 	});
+	bench("ovr", async () => {
+		await consumeOvr(req.clone());
+	});
 
-// 	bench("remix", async () => {
-// 		await consumeRemix(req.clone());
-// 	});
-// });
+	bench("remix", async () => {
+		await consumeRemix(req.clone());
+	});
+});
