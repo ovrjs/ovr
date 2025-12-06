@@ -110,14 +110,14 @@ export namespace Multipart {
 		 * @example
 		 *
 		 * ```ts
-		 * const memory = 12 * 1024 * 1024; // increase to 12MB
+		 * const memory = 8 * 1024 * 1024; // increase to 8MB
 		 * Multipart.parse(request, { memory });
 		 * ```
 		 */
 		memory?: number;
 
 		/**
-		 * Maximum request body size in bytes (default 10MB)
+		 * Maximum request body size in bytes (default 16MB)
 		 *
 		 * Prevents attackers from creating massive requests.
 		 *
@@ -125,7 +125,7 @@ export namespace Multipart {
 		 * it to handle very large requests. Use this option to adjust the
 		 * maximum total request body size that will run through the server.
 		 *
-		 * @default 10 * 1024 * 1024
+		 * @default 16 * 1024 * 1024
 		 * @example
 		 *
 		 * ```ts
@@ -161,7 +161,7 @@ export class Multipart {
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
 		memory: 4 * Multipart.#mb,
-		size: 10 * Multipart.#mb,
+		size: 16 * Multipart.#mb,
 	};
 
 	/** Request body reader */

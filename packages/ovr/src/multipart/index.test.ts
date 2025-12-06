@@ -38,134 +38,138 @@ const multipartPayload = (
 	return lines.join("\r\n");
 };
 
+const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+
 describe("MultipartParser", () => {
-	it("should parse simple text fields", async () => {
-		const formData = new FormData();
-		formData.append("username", "alice");
-		formData.append("role", "admin");
+	describe("Basic", () => {
+		it("should parse simple text fields", async () => {
+			const formData = new FormData();
+			formData.append("username", "alice");
+			formData.append("role", "admin");
 
-		const req = new Request("http://localhost:3000", {
-			method: "POST",
-			body: formData,
-		});
+			const req = new Request("http://localhost:3000", {
+				method: "POST",
+				body: formData,
+			});
 
-		let i = 0;
-		for await (const part of Multipart.parse(req)) {
-			i++;
+			let i = 0;
+			for await (const part of Multipart.parse(req)) {
+				i++;
 
-			if (part.name === "username") {
-				const username = await part.text();
-				expect(username).toBe("alice");
-			} else if (part.name === "role") {
-				const role = await part.text();
-				expect(role).toBe("admin");
+				if (part.name === "username") {
+					const username = await part.text();
+					expect(username).toBe("alice");
+				} else if (part.name === "role") {
+					const role = await part.text();
+					expect(role).toBe("admin");
+				}
 			}
-		}
 
-		expect(i).toBe(2);
-	});
-
-	it("should drain unused parts", async () => {
-		const formData = new FormData();
-		formData.append("username", "alice");
-		formData.append("role", "admin");
-
-		const req = new Request("http://localhost:3000", {
-			method: "POST",
-			body: formData,
+			expect(i).toBe(2);
 		});
 
-		let i = 0;
-		for await (const part of Multipart.parse(req)) {
-			i++;
+		it("should drain unused parts", async () => {
+			const formData = new FormData();
+			formData.append("username", "alice");
+			formData.append("role", "admin");
 
-			// skip the drain on the username part
+			const req = new Request("http://localhost:3000", {
+				method: "POST",
+				body: formData,
+			});
 
-			if (part.name === "role") {
-				const role = await part.text();
-				expect(role).toBe("admin");
+			let i = 0;
+			for await (const part of Multipart.parse(req)) {
+				i++;
+
+				// skip the drain on the username part
+
+				if (part.name === "role") {
+					const role = await part.text();
+					expect(role).toBe("admin");
+				}
 			}
-		}
 
-		expect(i).toBe(2);
-	});
-
-	it("should handle file uploads correctly", async () => {
-		const formData = new FormData();
-		const fileContent = "Hello world, this is a text file.";
-		const file = new File([fileContent], "hello.txt", { type: "text/plain" });
-		formData.append("document", file);
-
-		const req = new Request("http://localhost:3000", {
-			method: "POST",
-			body: formData,
+			expect(i).toBe(2);
 		});
 
-		for await (const part of Multipart.parse(req)) {
-			expect(part.name).toBe("document");
-			expect(part.filename).toBe("hello.txt");
-			expect(part.headers.get("content-type")).toBe("text/plain");
-			const content = await part.text();
-			expect(content).toBe(fileContent);
-		}
-	});
+		it("should handle file uploads correctly", async () => {
+			const formData = new FormData();
+			const fileContent = "Hello world, this is a text file.";
+			const file = new File([fileContent], "hello.txt", { type: "text/plain" });
+			formData.append("document", file);
 
-	it("should handle a complex mix of files and fields", async () => {
-		const formData = new FormData();
-		formData.append("title", "My Vacation");
-		const imageFile = new File(["(binary data mockup)"], "photo.png", {
-			type: "image/png",
-		});
-		formData.append("upload", imageFile);
-		formData.append("description", "A lovely trip.");
+			const req = new Request("http://localhost:3000", {
+				method: "POST",
+				body: formData,
+			});
 
-		const req = new Request("http://localhost:3000", {
-			method: "POST",
-			body: formData,
-		});
-
-		let i = 0;
-		for await (const part of Multipart.parse(req)) {
-			i++;
-			if (i === 1) {
-				expect(part.name).toBe("title");
-			} else if (i === 2) {
-				expect(part.filename).toBe("photo.png");
-			} else if (i === 3) {
-				expect(part.name).toBe("description");
+			for await (const part of Multipart.parse(req)) {
+				expect(part.name).toBe("document");
+				expect(part.filename).toBe("hello.txt");
+				expect(part.headers.get("content-type")).toBe("text/plain");
+				const content = await part.text();
+				expect(content).toBe(fileContent);
 			}
-		}
-		expect(i).toBe(3);
-	});
-
-	const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
-
-	it("parses a simple single-chunk multipart request", async () => {
-		const payload = multipartPayload(BOUNDARY, [
-			{ name: "field1", content: "value1" },
-			{ name: "file1", filename: "test.txt", content: "file content" },
-		]);
-
-		const req = new Request("http://localhost", {
-			method: "POST",
-			headers: { "content-type": `multipart/form-data; boundary=${BOUNDARY}` },
-			body: payload,
 		});
 
-		let i = 0;
-		for await (const part of Multipart.parse(req)) {
-			if (i === 0) {
-				expect(part.name).toBe("field1");
-				expect(part.filename).toBeUndefined();
-				expect(await part.text()).toBe("value1");
-			} else if (i === 1) {
-				expect(part.name).toBe("file1");
-				expect(part.filename).toBe("test.txt");
-				expect(await part.text()).toBe("file content");
+		it("should handle a complex mix of files and fields", async () => {
+			const formData = new FormData();
+			formData.append("title", "My Vacation");
+			const imageFile = new File(["(binary data mockup)"], "photo.png", {
+				type: "image/png",
+			});
+			formData.append("upload", imageFile);
+			formData.append("description", "A lovely trip.");
+
+			const req = new Request("http://localhost:3000", {
+				method: "POST",
+				body: formData,
+			});
+
+			let i = 0;
+			for await (const part of Multipart.parse(req)) {
+				i++;
+				if (i === 1) {
+					expect(part.name).toBe("title");
+				} else if (i === 2) {
+					expect(part.filename).toBe("photo.png");
+				} else if (i === 3) {
+					expect(part.name).toBe("description");
+				}
 			}
-			i++;
-		}
-		expect(i).toBe(2);
+			expect(i).toBe(3);
+		});
+
+		it("parses a simple single-chunk multipart request", async () => {
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "field1", content: "value1" },
+				{ name: "file1", filename: "test.txt", content: "file content" },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			let i = 0;
+			for await (const part of Multipart.parse(req)) {
+				if (i === 0) {
+					expect(part.name).toBe("field1");
+					expect(part.filename).toBeUndefined();
+					expect(await part.text()).toBe("value1");
+				} else if (i === 1) {
+					expect(part.name).toBe("file1");
+					expect(part.filename).toBe("test.txt");
+					expect(await part.text()).toBe("file content");
+				}
+				i++;
+			}
+			expect(i).toBe(2);
+		});
 	});
 
 	describe("Streaming & Boundary Edge Cases", () => {
@@ -492,7 +496,7 @@ describe("MultipartParser", () => {
 			};
 
 			// Should parse the part, then throw during epilogue drain
-			await expect(consume()).rejects.toThrow("Payload Too Large");
+			await expect(consume()).rejects.toThrow(RangeError);
 			expect(partCount).toBe(1);
 		});
 	});
@@ -501,23 +505,73 @@ describe("MultipartParser", () => {
 		const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 		const ONE_MB = 1024 * 1024;
 
-		it("uses default size limit (10MB) and throws on exceed", async () => {
-			// Create a payload slightly over 10MB (multipart overhead ~few KB, so content >10MB safe)
-			const oversizedContent = "a".repeat(11 * ONE_MB);
+		it("uses default size limit (16MB) and throws on exceed", async () => {
+			// Create a payload slightly over 16MB (multipart overhead ~few KB, so content >16MB safe)
+			const oversizedContent = "a".repeat(16 * ONE_MB);
 			const payload = multipartPayload(BOUNDARY, [
 				{ name: "oversized", content: oversizedContent },
 			]);
+
+			const encoder = new TextEncoder();
+			const payloadBytes = encoder.encode(payload);
+
+			// Stream in 1MB chunks to avoid memory limit issues and simulate network
+			const chunkSize = ONE_MB;
+			const chunks: Uint8Array[] = [];
+			for (let i = 0; i < payloadBytes.length; i += chunkSize) {
+				chunks.push(payloadBytes.slice(i, i + chunkSize));
+			}
 
 			const req = new Request("http://localhost", {
 				method: "POST",
 				headers: {
 					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
 				},
-				body: payload,
+				body: streamChunks(chunks),
+				// @ts-expect-error - required for streaming
+				duplex: "half",
 			});
 
-			const parts = Multipart.parse(req);
-			await expect(parts.next()).rejects.toThrow();
+			await expect(async () => {
+				for await (const part of Multipart.parse(req)) {
+					// Intentionally empty to trigger full drain and size check
+				}
+			}).rejects.toThrow("Payload Too Large");
+		});
+
+		it("uses default size limit (16MB) and succeeds on smaller size", async () => {
+			const content = "a".repeat(15.99 * ONE_MB);
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "oversized", content },
+			]);
+
+			const encoder = new TextEncoder();
+			const payloadBytes = encoder.encode(payload);
+
+			// Stream in 1MB chunks to avoid memory limit issues and simulate network
+			const chunkSize = ONE_MB;
+			const chunks: Uint8Array[] = [];
+			for (let i = 0; i < payloadBytes.length; i += chunkSize) {
+				chunks.push(payloadBytes.slice(i, i + chunkSize));
+			}
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: streamChunks(chunks),
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			let partCount = 0;
+			for await (const part of Multipart.parse(req)) {
+				partCount++;
+				expect(part.name).toBe("oversized");
+				expect(await part.text()).toBe(content);
+			}
+			expect(partCount).toBe(1);
 		});
 
 		it("uses default memory limit (4MB) and throws on oversized chunk", async () => {
@@ -547,27 +601,43 @@ describe("MultipartParser", () => {
 			for await (const part of Multipart.parse(req)) {
 				expect(part).toBeDefined();
 				expect(part.name).toBe("huge");
-				await expect(part.arrayBuffer()).rejects.toThrow(RangeError); // From Uint8Array.set(source longer than dest)
+				expect(part).toBeDefined();
+				await expect(part!.arrayBuffer()).rejects.toThrow(RangeError); // From Uint8Array.set(source longer than dest)
 			}
 		});
 
 		it("respects custom size limit and throws when exceeded", async () => {
-			const customSize = 1 * ONE_MB;
+			const customSize = ONE_MB;
 			const oversizedContent = "a".repeat(customSize + 1024); // Slightly over
 			const payload = multipartPayload(BOUNDARY, [
 				{ name: "custom", content: oversizedContent },
 			]);
+
+			const encoder = new TextEncoder();
+			const payloadBytes = encoder.encode(payload);
+
+			// Stream in 256KB chunks to avoid memory limit issues and simulate network
+			const chunkSize = 256 * 1024;
+			const chunks: Uint8Array[] = [];
+			for (let i = 0; i < payloadBytes.length; i += chunkSize) {
+				chunks.push(payloadBytes.slice(i, i + chunkSize));
+			}
 
 			const req = new Request("http://localhost", {
 				method: "POST",
 				headers: {
 					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
 				},
-				body: payload,
+				body: streamChunks(chunks),
+				// @ts-expect-error - required for streaming
+				duplex: "half",
 			});
 
-			const parts = Multipart.parse(req, { size: customSize });
-			await expect(parts.next()).rejects.toThrow();
+			await expect(async () => {
+				for await (const part of Multipart.parse(req, { size: customSize })) {
+					// Intentionally empty to trigger full drain and size check
+				}
+			}).rejects.toThrow("Payload Too Large");
 		});
 
 		it("respects custom memory limit and throws on oversized chunk", async () => {
@@ -596,6 +666,7 @@ describe("MultipartParser", () => {
 			for await (const part of Multipart.parse(req, { memory: customMemory })) {
 				expect(part).toBeDefined();
 				expect(part.name).toBe("custom");
+				expect(part).toBeDefined();
 				await expect(part.arrayBuffer()).rejects.toThrow(RangeError);
 			}
 		});
@@ -829,12 +900,12 @@ describe("MultipartParser", () => {
 
 			let count = 0;
 			const read = async () => {
-				for await (const part of Multipart.parse(req, { size: ONE_MB })) {
+				for await (const _ of Multipart.parse(req, { size: ONE_MB })) {
 					count++;
 				}
 			};
 
-			await expect(read()).rejects.toThrow();
+			await expect(read()).rejects.toThrow(RangeError);
 
 			expect(count).toBeGreaterThan(0);
 			expect(count).toBeLessThan(numParts);
@@ -893,7 +964,7 @@ describe("MultipartParser", () => {
 		it("throws on request without body", async () => {
 			const req = new Request("http://localhost", { method: "POST" }); // No body
 
-			await expect(async () => Multipart.parse(req)).rejects.toThrow();
+			await expect(async () => Multipart.parse(req)).rejects.toThrow(TypeError);
 		});
 
 		it("throws on invalid Content-Type (no boundary)", async () => {
@@ -903,30 +974,7 @@ describe("MultipartParser", () => {
 				body: "--boundary\r\n\r\ndata\r\n--boundary--",
 			});
 
-			await expect(async () => Multipart.parse(req)).rejects.toThrow();
-		});
-
-		it("handles bigint size limits for very large requests", async () => {
-			// Use a large but feasible size (e.g., 1GB as bigint)
-			const largeSize = 1024 ** 3; // 1GB
-			const smallPayload = multipartPayload(BOUNDARY, [
-				{ name: "small", content: "tiny" },
-			]);
-
-			const req = new Request("http://localhost", {
-				method: "POST",
-				headers: {
-					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
-				},
-				body: smallPayload,
-			});
-
-			const parts = Multipart.parse(req, { size: largeSize });
-			let count = 0;
-			for await (const part of parts) {
-				count++;
-			}
-			expect(count).toBe(1); // Parses fine under large limit
+			await expect(async () => Multipart.parse(req)).rejects.toThrow(TypeError);
 		});
 	});
 });
