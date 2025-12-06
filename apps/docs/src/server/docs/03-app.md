@@ -35,6 +35,19 @@ ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/
 new App({ csrf: false }); // disables the built-in protection
 ```
 
+### Multipart
+
+[Multipart parser options](/06-data#options).
+
+```ts
+new App({
+	multipart: {
+		memory: 12 * 1024 * 1024, // increase to 12MB
+		size: 1024 ** 3, // increase to 1GB
+	},
+});
+```
+
 ## Use
 
 _Use_ the `use` method to register [routes](/04-route) and [middleware](/05-middleware) to your application.
