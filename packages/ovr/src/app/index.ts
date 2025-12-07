@@ -41,7 +41,7 @@ export namespace App {
 
 		/**
 		 * Multipart parser options
-		 * (overridden by options passed into `Context.data(options)`)
+		 * (overridden by options passed into `Context.form(options)`)
 		 */
 		readonly multipart?: Multipart.Options;
 	};

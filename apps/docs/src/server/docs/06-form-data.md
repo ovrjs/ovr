@@ -1,5 +1,5 @@
 ---
-title: Data
+title: Form Data
 description: How to handle user data with the built-in multipart form data parser.
 ---
 
@@ -9,13 +9,12 @@ When a user submits an [HTML form](https://developer.mozilla.org/en-US/docs/Web/
 
 Instead of using [`Request.formData`](https://developer.mozilla.org/en-US/docs/Web/API/Request/formData) to buffer the entire request body in memory, ovr provides a streaming multipart parser to read the request body as it arrives in [chunks](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Transfer-Encoding#chunked).
 
-## Memory
+- **Streaming** - Only one chunk is held in memory at a time to search for the boundary between parts. This allows the parser to handle massive file uploads without running out of memory.
+- **Limit** - Configurable max `memory` (for chunk processing) and total `payload` size to prevent abuse.
 
-Only one chunk is held in memory at a time to identify the boundary between parts. This allows the parser to handle massive file uploads without running out of memory.
+## Usage
 
-## Parse
-
-To stream parts of a multipart `Request`, use the `Multipart.parse` method. Each `Multipart.Part` yielded from `data` extends the web [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) object, so all of the methods such as `text()` and `bytes()` are available to use.
+To stream parts of a multipart `Request`, use the `Multipart.parse` method. Each `Multipart.Part` yielded extends the web [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) object, so all of the methods such as `text()` and `bytes()` are available to use.
 
 ```ts
 import { upload } from "./upload";
@@ -44,13 +43,13 @@ for await (const part of Multipart.parse(request)) {
 }
 ```
 
-If you are using the parser within [middleware](/05-middleware), `Context.data` runs the parser on the current request.
+If you are using the parser within [middleware](/05-middleware), `Context.form` runs the parser on the current request.
 
 ```ts
 import { Route } from "ovr";
 
 const post = Route.post(async (c) => {
-	for await (const part of c.data()) {
+	for await (const part of c.form()) {
 		// ...
 	}
 });
@@ -58,12 +57,12 @@ const post = Route.post(async (c) => {
 
 ## Options
 
-The parser comes with options for the maximum `memory` allocation and total `size` of the request body to prevent attackers from sending massive requests.
+The parser comes with options for the maximum `memory` allocation and total `payload` size of the request body to prevent attackers from sending massive requests.
 
 ```ts
 const options: Multipart.Options = {
 	memory: 12 * 1024 * 1024, // increase to 12MB
-	size: 1024 ** 3, // increase to 1GB
+	payload: 1024 ** 3, // increase to 1GB
 };
 
 // standalone
@@ -72,8 +71,8 @@ Multipart.parse(request, options);
 // set options for the entire app
 new App({ multipart: options });
 
-// Context.data sets the options for the current request
-c.data(options);
+// Context.form sets the options for the current request
+c.form(options);
 ```
 
 ## Examples
@@ -91,7 +90,7 @@ import { Route } from "ovr";
 
 const upload = Route.post(async (c) => {
 	try {
-		for await (const part of c.data()) {
+		for await (const part of c.form()) {
 			if (part.name === "photo") {
 				await part.body.pipeTo(
 					Writable.toWeb(createWriteStream(`/uploads/${part.filename}`)),
@@ -116,7 +115,7 @@ import { Route } from "ovr";
 
 const upload = Route.post(async (c) => {
 	try {
-		for await (const part of c.data()) {
+		for await (const part of c.form()) {
 			if (part.name === "photo") {
 				await Deno.writeFile(`/uploads/${part.filename}`, part.body);
 			}
@@ -159,3 +158,23 @@ app.post("/upload", async (c) => {
 	}
 });
 ```
+
+## Comparisons
+
+### FormData
+
+[`Request.formData`](https://developer.mozilla.org/en-US/docs/Web/API/Request/formData) is a built-in method to parse form data from any request, it **buffers all parts memory** when called. ovr's parser supports streaming and has memory and size guards to prevent abuse.
+
+### Remix
+
+[`@remix-run/multipart-parser`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser) is a great option for multipart parsing, its [search function](https://github.com/remix-run/remix/blob/main/packages/multipart-parser/src/lib/buffer-search.ts) (Boyer-Moore-Horspool) has been adapted for use in ovr. It also depends on [`@remix-run/headers`](https://github.com/remix-run/remix/tree/main/packages/headers) which provides a rich API for accessing additional information about each part if needed.
+
+Remix's incrementally **buffers each _part_ in memory** compared to ovr's incremental processing of each _chunk_. This makes it unable to stream extremely large files if your server cannot hold them in memory, and requires them to be fully buffered before forwarding to another server.
+
+### SvelteKit
+
+[SvelteKit's multipart parser](https://github.com/sveltejs/kit/pull/14775) is a full-stack solution to progressively enhance multipart submissions. It uses a [custom encoding](https://bsky.app/profile/rich-harris.dev/post/3m65ghxt4r22t) to stream files when client-side JavaScript is available. If you are using SvelteKit, it makes sense to use this parser, but it is **limited to using within SvelteKit applications**.
+
+### Busboy
+
+[`busboy`](https://github.com/mscdex/busboy) is the gold standard solution for multipart parsing in JavaScript. The primary difference from ovr is that busboy is **built for Node** and parses an `IncomingMessage` instead of a Fetch API `Request`.

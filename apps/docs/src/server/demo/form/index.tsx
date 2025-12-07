@@ -30,7 +30,7 @@ export const form = ovr.Route.get("/demo/form", (c) => {
 
 export const post = ovr.Route.post(async (c) => {
 	try {
-		for await (const part of c.data()) {
+		for await (const part of c.form()) {
 			if (part.name === "photo") {
 				// NODE
 				await part.body.pipeTo(

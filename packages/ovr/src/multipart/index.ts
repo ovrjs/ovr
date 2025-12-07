@@ -117,23 +117,23 @@ export namespace Multipart {
 		memory?: number;
 
 		/**
-		 * Maximum request body size in bytes (default 16MB)
+		 * Maximum `Request.body` size in bytes (default 16MB)
 		 *
 		 * Prevents attackers from creating massive requests.
 		 *
-		 * Since the parser doesn't hold chunks in memory, it's possible for
-		 * it to handle very large requests. Use this option to adjust the
-		 * maximum total request body size that will run through the server.
+		 * Since the parser doesn't buffer all chunks in memory, it's possible
+		 * to handle very large requests. Use this option to adjust the
+		 * maximum total request body size that will be processed.
 		 *
 		 * @default 16 * 1024 * 1024
 		 * @example
 		 *
 		 * ```ts
-		 * const size = 1024 ** 3; // increase to 1GB
-		 * Multipart.parse(request, { size });
+		 * const payload = 1024 ** 3; // increase to 1GB
+		 * Multipart.parse(request, { payload });
 		 * ```
 		 */
-		size?: number;
+		payload?: number;
 	};
 
 	/** Type for a `Part` of the multipart body */
@@ -154,6 +154,7 @@ export namespace Multipart {
 export class Multipart {
 	static readonly #kb = 1024;
 	static readonly #mb = 1024 ** 2;
+	static #multipartType = "multipart/form-data";
 
 	/** New line needle to share across requests and parts */
 	static readonly #newLine = new Needle("\r\n\r\n");
@@ -161,7 +162,7 @@ export class Multipart {
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
 		memory: 4 * Multipart.#mb,
-		size: 16 * Multipart.#mb,
+		payload: 16 * Multipart.#mb,
 	};
 
 	/** Request body reader */
@@ -186,7 +187,7 @@ export class Multipart {
 	#end = 0;
 
 	/** Total bytes read from the stream */
-	#totalBytes = 0;
+	#payloadSize = 0;
 
 	// parser is stateful a new one must be created for each request
 	// so the static `parse` method does this in one fn and doesn't have
@@ -198,7 +199,15 @@ export class Multipart {
 	 * @param options Options
 	 */
 	constructor(req: Request, options?: Multipart.Options) {
-		const boundary = header.parse(req.headers.get(header.contentType)).boundary;
+		const type = req.headers.get(header.contentType);
+
+		if (!type?.startsWith(Multipart.#multipartType)) {
+			throw new TypeError("Unsupported Media Type");
+		}
+
+		const boundary = header.parse(
+			type.slice(Multipart.#multipartType.length + 1),
+		).boundary;
 
 		if (!boundary) throw new TypeError("Boundary Not Found");
 		if (!req.body) throw new TypeError("No Request Body");
@@ -211,6 +220,7 @@ export class Multipart {
 		this.#memory = new Uint8Array(
 			new ArrayBuffer(
 				// slightly larger than common chunk size/high water mark 64kb for leftover boundary
+				// prevents having to resize memory for most requests
 				65 * Multipart.#kb,
 				// cap max chunk size + leftover
 				{ maxByteLength: this.#options.memory },
@@ -232,7 +242,7 @@ export class Multipart {
 
 		const nextLength = next.value.length;
 
-		if ((this.#totalBytes += nextLength) > this.#options.size) {
+		if ((this.#payloadSize += nextLength) > this.#options.payload) {
 			throw new RangeError("Payload Too Large");
 		}
 

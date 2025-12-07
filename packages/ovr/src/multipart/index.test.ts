@@ -488,7 +488,7 @@ describe("MultipartParser", () => {
 
 			let partCount = 0;
 			const consume = async () => {
-				for await (const part of Multipart.parse(req, { size: ONE_MB })) {
+				for await (const part of Multipart.parse(req, { payload: ONE_MB })) {
 					expect(part.name).toBe("data");
 					expect(await part.text()).toBe(smallContent);
 					partCount++;
@@ -501,11 +501,11 @@ describe("MultipartParser", () => {
 		});
 	});
 
-	describe("Limits (size and memory options)", () => {
+	describe("Limits", () => {
 		const BOUNDARY = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 		const ONE_MB = 1024 * 1024;
 
-		it("uses default size limit (16MB) and throws on exceed", async () => {
+		it("uses default payload limit (16MB) and throws on exceed", async () => {
 			// Create a payload slightly over 16MB (multipart overhead ~few KB, so content >16MB safe)
 			const oversizedContent = "a".repeat(16 * ONE_MB);
 			const payload = multipartPayload(BOUNDARY, [
@@ -539,7 +539,7 @@ describe("MultipartParser", () => {
 			}).rejects.toThrow("Payload Too Large");
 		});
 
-		it("uses default size limit (16MB) and succeeds on smaller size", async () => {
+		it("uses default payload limit (16MB) and succeeds on smaller size", async () => {
 			const content = "a".repeat(15.99 * ONE_MB);
 			const payload = multipartPayload(BOUNDARY, [
 				{ name: "oversized", content },
@@ -606,7 +606,7 @@ describe("MultipartParser", () => {
 			}
 		});
 
-		it("respects custom size limit and throws when exceeded", async () => {
+		it("respects custom payload limit and throws when exceeded", async () => {
 			const customSize = ONE_MB;
 			const oversizedContent = "a".repeat(customSize + 1024); // Slightly over
 			const payload = multipartPayload(BOUNDARY, [
@@ -634,7 +634,9 @@ describe("MultipartParser", () => {
 			});
 
 			await expect(async () => {
-				for await (const part of Multipart.parse(req, { size: customSize })) {
+				for await (const part of Multipart.parse(req, {
+					payload: customSize,
+				})) {
 					// Intentionally empty to trigger full drain and size check
 				}
 			}).rejects.toThrow("Payload Too Large");
@@ -687,7 +689,7 @@ describe("MultipartParser", () => {
 
 			// Custom small limits, but payload << limits
 			const parts = Multipart.parse(req, {
-				size: 1 * ONE_MB,
+				payload: 1 * ONE_MB,
 				memory: 1 * ONE_MB,
 			});
 
@@ -870,7 +872,7 @@ describe("MultipartParser", () => {
 			expect(count).toBe(numParts);
 		});
 
-		it("enforces size limit with many small parts accumulating over limit", async () => {
+		it("enforces payload limit with many small parts accumulating over limit", async () => {
 			const numParts = 20; // Accumulate to >1MB custom limit
 			const partsData = Array.from({ length: numParts }, (_, i) => ({
 				name: `part${i}`,
@@ -900,7 +902,7 @@ describe("MultipartParser", () => {
 
 			let count = 0;
 			const read = async () => {
-				for await (const _ of Multipart.parse(req, { size: ONE_MB })) {
+				for await (const _ of Multipart.parse(req, { payload: ONE_MB })) {
 					count++;
 				}
 			};
@@ -916,6 +918,7 @@ describe("MultipartParser", () => {
 			{ timeout: 10000 },
 			async () => {
 				// Large part where boundary search starts near end of buffer, triggers resize during #find
+				console.log("starting");
 				const largeContent = new Uint8Array(3 * ONE_MB - 1000); // Close to memory limit
 				for (let i = 0; i < largeContent.length; i++) largeContent[i] = i % 256;
 
@@ -956,6 +959,8 @@ describe("MultipartParser", () => {
 					expect(bytes.byteLength).toBe(largeContent.length);
 					expect(new Uint8Array(bytes)).toEqual(largeContent);
 				}
+
+				console.log("done");
 			},
 		);
 	});
@@ -975,6 +980,22 @@ describe("MultipartParser", () => {
 			});
 
 			await expect(async () => Multipart.parse(req)).rejects.toThrow(TypeError);
+		});
+
+		it("throws on multipart Content-Type without boundary parameter", async () => {
+			const payload = multipartPayload(BOUNDARY, [
+				{ name: "data", content: "value" },
+			]);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: { "content-type": "multipart/form-data" },
+				body: payload,
+			});
+
+			await expect(async () => Multipart.parse(req)).rejects.toThrow(
+				"Boundary Not Found",
+			);
 		});
 	});
 });

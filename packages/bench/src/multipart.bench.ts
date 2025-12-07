@@ -156,7 +156,7 @@ function createStreamingMultiFileRequest(mb: number) {
 
 async function consumeOvr(req: Request): Promise<void> {
 	const consume = async () => {
-		for await (const _part of Multipart.parse(req, { size: 1024 ** 3 }));
+		for await (const _part of Multipart.parse(req, { payload: 1024 ** 4 }));
 	};
 
 	if (benchMemory) {
@@ -228,8 +228,8 @@ describe("100MB file", () => {
 	});
 });
 
-describe.skip("1000MB file", () => {
-	const req = createStreamingMixedRequest(1000);
+describe.skip("1GB file", () => {
+	const req = createStreamingMixedRequest(1024);
 
 	bench("ovr", async () => {
 		await consumeOvr(req.clone());

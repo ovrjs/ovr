@@ -174,7 +174,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * import { Route } from "ovr";
 	 *
 	 * const post = Route.post(async (c) => {
-	 * 	for await (const part of c.data()) {
+	 * 	for await (const part of c.form()) {
 	 * 		if (part.name === "email") {
 	 * 			// ...
 	 * 		}
@@ -182,7 +182,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * })
 	 * ```
 	 */
-	data(options?: Multipart.Options) {
+	form(options?: Multipart.Options) {
 		return Multipart.parse(
 			this.req,
 			Object.assign({}, this.#options.multipart, options),
