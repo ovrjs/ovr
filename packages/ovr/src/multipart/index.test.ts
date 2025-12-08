@@ -53,7 +53,7 @@ describe("MultipartParser", () => {
 			});
 
 			let i = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				i++;
 
 				if (part.name === "username") {
@@ -79,7 +79,7 @@ describe("MultipartParser", () => {
 			});
 
 			let i = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				i++;
 
 				// skip the drain on the username part
@@ -104,7 +104,7 @@ describe("MultipartParser", () => {
 				body: formData,
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.name).toBe("document");
 				expect(part.filename).toBe("hello.txt");
 				expect(part.headers.get("content-type")).toBe("text/plain");
@@ -128,7 +128,7 @@ describe("MultipartParser", () => {
 			});
 
 			let i = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				i++;
 				if (i === 1) {
 					expect(part.name).toBe("title");
@@ -156,10 +156,10 @@ describe("MultipartParser", () => {
 			});
 
 			let i = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				if (i === 0) {
 					expect(part.name).toBe("field1");
-					expect(part.filename).toBeUndefined();
+					expect(part.filename).toBeNull();
 					expect(await part.text()).toBe("value1");
 				} else if (i === 1) {
 					expect(part.name).toBe("file1");
@@ -211,7 +211,7 @@ describe("MultipartParser", () => {
 
 				let partCount = 0;
 
-				for await (const part of Multipart.parse(req)) {
+				for await (const part of new Multipart(req)) {
 					partCount++;
 					expect(part.name).toBe(fieldName);
 					const content = await part.text();
@@ -256,7 +256,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				const reader = part.body?.getReader();
 
 				let i = 0;
@@ -294,7 +294,7 @@ describe("MultipartParser", () => {
 
 			let found = false;
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				const body = await part.text();
 				expect(body).toBe(fieldValue);
 				found = true;
@@ -333,7 +333,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.filename).toBe("bin.dat");
 
 				// Read bytes directly
@@ -363,7 +363,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.name).toBe("splitHeader");
 				expect(await part.text()).toBe("value");
 			}
@@ -386,7 +386,7 @@ describe("MultipartParser", () => {
 			});
 
 			let count = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.name).toBe("data");
 				expect(await part.text()).toBe("foo");
 				count++;
@@ -415,7 +415,7 @@ describe("MultipartParser", () => {
 			});
 
 			let count = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.name).toBe("data");
 				expect(await part.text()).toBe("foo");
 				count++;
@@ -452,7 +452,7 @@ describe("MultipartParser", () => {
 			});
 
 			let count = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.name).toBe("chunked");
 				expect(await part.text()).toBe("bar");
 				count++;
@@ -488,7 +488,7 @@ describe("MultipartParser", () => {
 
 			let partCount = 0;
 			const consume = async () => {
-				for await (const part of Multipart.parse(req, { payload: ONE_MB })) {
+				for await (const part of new Multipart(req, { payload: ONE_MB })) {
 					expect(part.name).toBe("data");
 					expect(await part.text()).toBe(smallContent);
 					partCount++;
@@ -533,7 +533,7 @@ describe("MultipartParser", () => {
 			});
 
 			await expect(async () => {
-				for await (const part of Multipart.parse(req)) {
+				for await (const part of new Multipart(req)) {
 					// Intentionally empty to trigger full drain and size check
 				}
 			}).rejects.toThrow("Payload Too Large");
@@ -566,7 +566,7 @@ describe("MultipartParser", () => {
 			});
 
 			let partCount = 0;
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				partCount++;
 				expect(part.name).toBe("oversized");
 				expect(await part.text()).toBe(content);
@@ -598,7 +598,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part).toBeDefined();
 				expect(part.name).toBe("huge");
 				expect(part).toBeDefined();
@@ -634,9 +634,7 @@ describe("MultipartParser", () => {
 			});
 
 			await expect(async () => {
-				for await (const part of Multipart.parse(req, {
-					payload: customSize,
-				})) {
+				for await (const part of new Multipart(req, { payload: customSize })) {
 					// Intentionally empty to trigger full drain and size check
 				}
 			}).rejects.toThrow("Payload Too Large");
@@ -665,7 +663,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			for await (const part of Multipart.parse(req, { memory: customMemory })) {
+			for await (const part of new Multipart(req, { memory: customMemory })) {
 				expect(part).toBeDefined();
 				expect(part.name).toBe("custom");
 				expect(part).toBeDefined();
@@ -688,7 +686,7 @@ describe("MultipartParser", () => {
 			});
 
 			// Custom small limits, but payload << limits
-			const parts = Multipart.parse(req, {
+			const parts = new Multipart(req, {
 				payload: 1 * ONE_MB,
 				memory: 1 * ONE_MB,
 			});
@@ -736,7 +734,7 @@ describe("MultipartParser", () => {
 				duplex: "half",
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.filename).toBe("data.bin");
 
 				const bytes = await part.arrayBuffer();
@@ -760,7 +758,7 @@ describe("MultipartParser", () => {
 				body: payload,
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				if (part.name === "empty") {
 					expect(await part.bytes()).toHaveLength(0);
 				}
@@ -787,8 +785,8 @@ describe("MultipartParser", () => {
 				body: payload,
 			});
 
-			for await (const part of Multipart.parse(req)) {
-				expect(part.mime).toBe("text/plain"); // Splits on ';', ignores params
+			for await (const part of new Multipart(req)) {
+				expect(part.type).toBe("text/plain"); // Splits on ';', ignores params
 				expect(part.headers.get("content-type")).toBe(
 					"text/plain; charset=utf-8",
 				); // Full header preserved
@@ -813,7 +811,7 @@ describe("MultipartParser", () => {
 				body: malformedPayload,
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(part.name).toBe("malformed");
 				expect(part.headers.get("invalid-header-line")).toBeNull(); // Ignored
 				expect(await part.text()).toBe("value");
@@ -837,7 +835,7 @@ describe("MultipartParser", () => {
 				body: payload,
 			});
 
-			for await (const part of Multipart.parse(req)) {
+			for await (const part of new Multipart(req)) {
 				expect(await part.text()).toBe(content); // Full content yielded, no false boundary
 			}
 		});
@@ -863,7 +861,7 @@ describe("MultipartParser", () => {
 			});
 
 			let count = 0;
-			for await (const part of Multipart.parse(req, { memory: 512 * 1024 })) {
+			for await (const part of new Multipart(req, { memory: 512 * 1024 })) {
 				// Tight memory
 				expect(part.name).toBe(`part${count}`);
 				expect(await part.text()).toBe("small".repeat(100));
@@ -902,7 +900,7 @@ describe("MultipartParser", () => {
 
 			let count = 0;
 			const read = async () => {
-				for await (const _ of Multipart.parse(req, { payload: ONE_MB })) {
+				for await (const _ of new Multipart(req, { payload: ONE_MB })) {
 					count++;
 				}
 			};
@@ -953,7 +951,7 @@ describe("MultipartParser", () => {
 					duplex: "half",
 				});
 
-				for await (const part of Multipart.parse(req)) {
+				for await (const part of new Multipart(req)) {
 					expect(part.name).toBe("large");
 					const bytes = await part.arrayBuffer();
 					expect(bytes.byteLength).toBe(largeContent.length);
@@ -969,7 +967,7 @@ describe("MultipartParser", () => {
 		it("throws on request without body", async () => {
 			const req = new Request("http://localhost", { method: "POST" }); // No body
 
-			await expect(async () => Multipart.parse(req)).rejects.toThrow(TypeError);
+			await expect(async () => new Multipart(req)).rejects.toThrow(TypeError);
 		});
 
 		it("throws on invalid Content-Type (no boundary)", async () => {
@@ -979,7 +977,7 @@ describe("MultipartParser", () => {
 				body: "--boundary\r\n\r\ndata\r\n--boundary--",
 			});
 
-			await expect(async () => Multipart.parse(req)).rejects.toThrow(TypeError);
+			await expect(async () => new Multipart(req)).rejects.toThrow(TypeError);
 		});
 
 		it("throws on multipart Content-Type without boundary parameter", async () => {
@@ -993,7 +991,7 @@ describe("MultipartParser", () => {
 				body: payload,
 			});
 
-			await expect(async () => Multipart.parse(req)).rejects.toThrow(
+			await expect(async () => new Multipart(req)).rejects.toThrow(
 				"Boundary Not Found",
 			);
 		});

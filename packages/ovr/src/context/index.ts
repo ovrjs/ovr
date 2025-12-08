@@ -164,9 +164,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	}
 
 	/**
-	 * Parse multi-part form data streams.
+	 * Parse multipart requests.
 	 *
-	 * @yields Multipart form data `Part`(s)
+	 * @yields Multipart request `Part`(s)
 	 *
 	 * @example
 	 *
@@ -183,9 +183,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * ```
 	 */
 	form(options?: Multipart.Options) {
-		return Multipart.parse(
+		return new Multipart(
 			this.req,
-			Object.assign({}, this.#options.multipart, options),
+			Object.assign({}, this.#options.form, options),
 		);
 	}
 

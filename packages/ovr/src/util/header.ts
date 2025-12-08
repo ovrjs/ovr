@@ -3,9 +3,26 @@ export const contentType = "content-type";
 
 /**
  * @param header header value to parse
+ * @returns Base/first param
+ */
+export const shift = (
+	header: string | null,
+): [string | null, string | null] => {
+	if (header) {
+		const semi = header.indexOf(";");
+		if (semi !== -1) {
+			return [header.slice(0, semi), header.slice(semi)];
+		}
+	}
+
+	return [header, null];
+};
+
+/**
+ * @param header header value to parse
  * @returns Map containing each key=value pair
  */
-export const parse = (header: string | null) => {
+export const params = (header: string | null) => {
 	const parsed: Record<string, string> = {};
 
 	if (header) {

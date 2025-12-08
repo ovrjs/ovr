@@ -32,7 +32,7 @@ class Needle extends Uint8Array {
 }
 
 /** Multipart part */
-class Part extends Response {
+class Part extends Request {
 	/**
 	 * Form input `name` attribute
 	 *
@@ -42,21 +42,21 @@ class Part extends Response {
 	 * <input type="file" name="photo">
 	 * ```
 	 */
-	readonly name?: string;
+	readonly name: string | null;
 
 	/**
 	 * Filename from Content-Disposition header if file
 	 *
 	 * @example "my-image.png"
 	 */
-	readonly filename?: string;
+	readonly filename: string | null;
 
 	/**
-	 * Media type of the part
+	 * Content-Type of the part
 	 *
 	 * @example "image/png"
 	 */
-	readonly mime?: string;
+	readonly type: string | null;
 
 	// part body will always be defined, this removes the `null` type
 	/** Part body */
@@ -65,10 +65,11 @@ class Part extends Response {
 	/**
 	 * Create a new multipart part
 	 *
+	 * @param req Original request
 	 * @param body Part body
 	 * @param rawHeaders Raw buffer of HTTP headers for the part
 	 */
-	constructor(body: ReadableStream, rawHeaders: Uint8Array) {
+	constructor(req: Request, body: ReadableStream, rawHeaders: Uint8Array) {
 		const headers: [string, string][] = [];
 
 		// create headers
@@ -84,14 +85,18 @@ class Part extends Response {
 			}
 		}
 
-		super(body, { headers });
+		super(req, {
+			headers,
+			body,
+			// @ts-expect-error - streaming https://developer.mozilla.org/en-US/docs/Web/API/RequestInit#duplex
+			duplex: "half",
+		});
 
-		const disp = header.parse(this.headers.get("content-disposition"));
+		[this.type] = header.shift(this.headers.get(header.contentType));
 
-		this.name = disp.name;
-		this.filename = disp.filename;
-
-		this.mime = this.headers.get(header.contentType)?.split(";", 1)[0];
+		({ name: this.name = null, filename: this.filename = null } = header.params(
+			this.headers.get("content-disposition"),
+		));
 	}
 }
 
@@ -111,7 +116,7 @@ export namespace Multipart {
 		 *
 		 * ```ts
 		 * const memory = 8 * 1024 * 1024; // increase to 8MB
-		 * Multipart.parse(request, { memory });
+		 * new Multipart(request, { memory });
 		 * ```
 		 */
 		memory?: number;
@@ -130,7 +135,7 @@ export namespace Multipart {
 		 *
 		 * ```ts
 		 * const payload = 1024 ** 3; // increase to 1GB
-		 * Multipart.parse(request, { payload });
+		 * new Multipart(request, { payload });
 		 * ```
 		 */
 		payload?: number;
@@ -140,18 +145,8 @@ export namespace Multipart {
 	export type Part = InstanceType<typeof Part>;
 }
 
-/**
- * Multipart form data parser
- *
- * @example
- *
- * ```ts
- * for await (const part of Multipart.parse(request)) {
- * 	// ...
- * }
- * ```
- */
-export class Multipart {
+/** Multipart request */
+export class Multipart extends Request {
 	static readonly #kb = 1024;
 	static readonly #mb = 1024 ** 2;
 	static #multipartType = "multipart/form-data";
@@ -189,31 +184,37 @@ export class Multipart {
 	/** Total bytes read from the stream */
 	#payloadSize = 0;
 
-	// parser is stateful a new one must be created for each request
-	// so the static `parse` method does this in one fn and doesn't have
-	// the risk of users doing `new Multipart().parse()` repeatedly
 	/**
-	 * Use `Multipart.parse` to create and run the parser.
+	 * Split a multipart request into parts.
 	 *
-	 * @param req Request
+	 * @param req Multipart request
 	 * @param options Options
+	 * @yields Multipart form data `Part`(s)
+	 * @throws {TypeError} If request headers are invalid
+	 * @example
+	 *
+	 * ```ts
+	 * for await (const part of new Multipart(request)) {
+	 * 	// ...
+	 * }
+	 * ```
 	 */
 	constructor(req: Request, options?: Multipart.Options) {
-		const type = req.headers.get(header.contentType);
+		super(req);
 
-		if (!type?.startsWith(Multipart.#multipartType)) {
+		const [type, params] = header.shift(this.headers.get(header.contentType));
+
+		if (type !== Multipart.#multipartType) {
 			throw new TypeError("Unsupported Media Type");
 		}
 
-		const boundary = header.parse(
-			type.slice(Multipart.#multipartType.length + 1),
-		).boundary;
+		const { boundary } = header.params(params);
 
 		if (!boundary) throw new TypeError("Boundary Not Found");
-		if (!req.body) throw new TypeError("No Request Body");
+		if (!this.body) throw new TypeError("No Request Body");
 
 		Object.assign(this.#options, options);
-		this.#reader = req.body.getReader();
+		this.#reader = this.body.getReader();
 		this.#opening = new Needle(`--${boundary}\r\n`);
 		this.#boundary = new Needle(`\r\n--${boundary}`);
 
@@ -394,14 +395,14 @@ export class Multipart {
 	}
 
 	/** @yields Multipart form data `Part`(s) */
-	async *#data() {
+	async *[Symbol.asyncIterator]() {
 		try {
 			await this.#findConcat(this.#opening);
 
 			let headers: Uint8Array | undefined;
 
 			while ((headers = await this.#findConcat(Multipart.#newLine))) {
-				const part = new Part(this.#findStream(this.#boundary), headers);
+				const part = new Part(this, this.#findStream(this.#boundary), headers);
 				yield part;
 
 				// to get next part, the entire body must be read
@@ -431,23 +432,5 @@ export class Multipart {
 		} finally {
 			this.#reader.releaseLock();
 		}
-	}
-
-	/**
-	 * Parse multipart form data streams.
-	 *
-	 * @param req Request
-	 * @param options Options
-	 * @yields Multipart form data `Part`(s)
-	 * @example
-	 *
-	 * ```ts
-	 * for await (const part of Multipart.parse(request)) {
-	 * 	// ...
-	 * }
-	 * ```
-	 */
-	static parse(req: Request, options?: Multipart.Options) {
-		return new Multipart(req, options).#data();
 	}
 }

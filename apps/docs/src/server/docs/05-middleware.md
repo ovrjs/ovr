@@ -65,6 +65,8 @@ Route.get("/api/:id", (c) => {
 	c.url; // parsed web `URL`
 	c.params; // type-safe route parameters { id: "123" }
 	c.route; // matched `Route`
+	c.cookie.get(name); // get cookie
+	c.form(); // multipart form data
 });
 ```
 
@@ -95,7 +97,6 @@ Route.get("/api/:id", (c) => {
 	c.json(data, status); // JSON
 	c.redirect(location, status); // redirect
 
-	c.cookie.get(name); // get cookie
 	c.cookie.set(name, value); // set cookie
 
 	if (c.etag(str)) return; // ETag - sets 304 if match

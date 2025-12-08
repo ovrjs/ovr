@@ -40,10 +40,10 @@ export namespace App {
 		readonly trailingSlash?: Options.TrailingSlash;
 
 		/**
-		 * Multipart parser options
+		 * Multipart form data options
 		 * (overridden by options passed into `Context.form(options)`)
 		 */
-		readonly multipart?: Multipart.Options;
+		readonly form?: Multipart.Options;
 	};
 }
 

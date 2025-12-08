@@ -1,5 +1,5 @@
 import type { Context } from "../context/index.js";
-import { parse } from "../util/header.js";
+import { params } from "../util/header.js";
 
 export namespace Cookie {
 	type BaseOptions = {
@@ -146,7 +146,7 @@ export class Cookie {
 	 * @returns Value of the cookie, or `undefined` if not found
 	 */
 	get(name: string) {
-		return (this.#parsed ??= parse(this.#c.req.headers.get("cookie")))[name];
+		return (this.#parsed ??= params(this.#c.req.headers.get("cookie")))[name];
 	}
 
 	/**

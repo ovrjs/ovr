@@ -35,13 +35,13 @@ ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/
 new App({ csrf: false }); // disables the built-in protection
 ```
 
-### Multipart
+### Form
 
-[Multipart parser options](/06-form-data#options).
+[Multipart form data options](/06-form-data#options).
 
 ```ts
 new App({
-	multipart: {
+	form: {
 		memory: 12 * 1024 * 1024, // increase to 12MB
 		payload: 1024 ** 3, // increase to 1GB
 	},

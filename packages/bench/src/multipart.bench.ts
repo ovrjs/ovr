@@ -156,7 +156,7 @@ function createStreamingMultiFileRequest(mb: number) {
 
 async function consumeOvr(req: Request): Promise<void> {
 	const consume = async () => {
-		for await (const _part of Multipart.parse(req, { payload: 1024 ** 4 }));
+		for await (const _part of new Multipart(req, { payload: 1024 ** 4 }));
 	};
 
 	if (benchMemory) {
