@@ -1,11 +1,10 @@
 import type { Middleware } from "ovr";
 
-const route = "04-route";
-
 const permanent: Record<string, string> = {
-	"/04-helpers": route,
-	"/06-routing": route,
-	"/05-context": "05-middleware#context",
+	"/02-components": "/02-render",
+	"/04-helpers": "/04-route",
+	"/05-context": "/05-middleware#context",
+	"/06-routing": "/04-route",
 	"/07-memo": "https://blog.robino.dev/posts/simple-memo",
 };
 
