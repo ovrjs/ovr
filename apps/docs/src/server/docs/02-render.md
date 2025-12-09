@@ -5,6 +5,8 @@ description: Easily parallelize async operations and render strings with ovr.
 
 ## JSX
 
+ovr has a built in JSX import source that can be used to parallelize component renders and output HTML. You can also use the [`Render`](#render) class on it's own without using JSX.
+
 Components are functions that return a `JSX.Element`. Use them to declaratively describe and reuse parts of your HTML.
 
 Define a `props` object as a parameter for a component to pass arguments to it.
@@ -125,11 +127,33 @@ function Component() {
 const render = new Render(<Component />);
 
 for await (const chunk of render) {
-	console.log(chunk.value); // value contains the HTML string
+	console.log(chunk.toString()); // HTML string
 }
 ```
 
-> Set `Render.Options.safe` to `true` to bypass HTML escaping to render other types of content: `new Render(element, { safe: true })`.
+> Any of the supported [data types](#data-types) can also be rendered directly without JSX. For example, the following array can be passed into `Render` running all async operations in parallel.
+
+```ts
+const render = new Render([
+	async () => "hello",
+	"world",
+	[
+		async function* () {
+			yield "!";
+		},
+	],
+]);
+
+for await (const chunk of render) {
+	console.log(chunk.toString());
+}
+```
+
+Set `Render.Options.safe` to `true` to bypass HTML escaping to render [other types of content](/05-middleware#return-value).
+
+```ts
+new Render(element, { safe: true });
+```
 
 ### Stream
 

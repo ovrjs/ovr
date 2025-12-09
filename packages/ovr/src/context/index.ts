@@ -32,6 +32,8 @@ export namespace Context {
 		 */
 		headers: Headers;
 	};
+
+	export type Cookie = InstanceType<typeof Cookie>;
 }
 
 /**

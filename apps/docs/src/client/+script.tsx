@@ -20,9 +20,9 @@ if (import.meta.env.DEV) {
 		}
 	}
 
-	const gen = new o.Render(<Component />);
+	const render = new o.Render(<Component />);
 
 	const time = performance.now();
-	for await (const _chunk of gen);
+	for await (const _chunk of render);
 	console.log(performance.now() - time);
 }

@@ -1,5 +1,5 @@
 // cspell: disable
-import type { JSX, Props } from "./index.js";
+import type { JSX } from "./index.js";
 
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes
 /**
@@ -8,7 +8,10 @@ import type { JSX, Props } from "./index.js";
  * @template P Additional props
  * @template Children For void elements - `undefined` is passed in here
  */
-type Attributes<P extends Props = Props, Children = JSX.Element> = Partial<{
+type Attributes<
+	P extends JSX.Props = JSX.Props,
+	Children = JSX.Element,
+> = Partial<{
 	children: Children;
 	accesskey: string;
 	anchor: string;
@@ -151,7 +154,7 @@ type Attributes<P extends Props = Props, Children = JSX.Element> = Partial<{
 	"aria-relevant": "additions" | "all" | "removals" | "text" | "additions text";
 	"aria-roledescription": string;
 }> &
-	Props &
+	JSX.Props &
 	Partial<P>;
 
 // have lots of values and shared by some elements but not global
@@ -726,7 +729,7 @@ export type IntrinsicElements =
 		bdo: Attributes;
 		blockquote: BlockquoteAttributes;
 		body: BodyAttributes;
-		br: Attributes<Props, undefined>;
+		br: Attributes<JSX.Props, undefined>;
 		button: ButtonAttributes;
 		canvas: CanvasAttributes;
 		caption: Attributes;
@@ -760,7 +763,7 @@ export type IntrinsicElements =
 		head: Attributes;
 		header: Attributes;
 		hgroup: Attributes;
-		hr: Attributes<Props, undefined>;
+		hr: Attributes<JSX.Props, undefined>;
 		html: HtmlAttributes;
 		iframe: IframeAttributes;
 		i: Attributes;
@@ -824,5 +827,5 @@ export type IntrinsicElements =
 		ul: Attributes;
 		var: Attributes;
 		video: VideoAttributes;
-		wbr: Attributes<Props, undefined>;
+		wbr: Attributes<JSX.Props, undefined>;
 	};

@@ -2,18 +2,20 @@ import * as o from "ovr";
 import { bench, describe } from "vitest";
 
 async function Async() {
-	return o.jsx("p", { children: "Async" });
+	return o.JSX.jsx("p", { children: "Async" });
 }
 
 function* Component() {
 	for (let r = 0; r < 500; r++) {
-		yield o.jsx("div", { children: [r, o.jsx(Async, { class: "text-sm" })] });
+		yield o.JSX.jsx("div", {
+			children: [r, o.JSX.jsx(Async, { class: "text-sm" })],
+		});
 	}
 }
 
 describe("render", () => {
 	bench("generate 500", async () => {
-		const r = new o.Render(o.jsx(Component, {}));
+		const r = new o.Render(o.JSX.jsx(Component, {}));
 		for await (const _r of r);
 	});
 });

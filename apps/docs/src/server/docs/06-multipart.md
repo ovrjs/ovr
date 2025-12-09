@@ -1,9 +1,9 @@
 ---
-title: Form Data
+title: Multipart
 description: How to handle user data with the built-in multipart form data parser.
 ---
 
-## Multipart
+## Form data
 
 When a user submits an [HTML form](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/form#enctype) with the `enctype="multipart/form-data"` attribute or creates a [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/RequestInit#body) with form data, a multipart request is created that streams the information from the client to the server.
 
@@ -78,7 +78,7 @@ c.form(options);
 
 ## Comparisons
 
-### FormData
+### Platform
 
 [`Request.formData`](https://developer.mozilla.org/en-US/docs/Web/API/Request/formData) is a built-in method to parse form data from any request, it **buffers all parts memory** when called. ovr's parser supports streaming and has memory and size guards to prevent abuse.
 

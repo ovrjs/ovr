@@ -118,7 +118,7 @@ app.use(() => new Response("Hello world"));
 
 2. **Stream**
 
-Any value that is returned from middleware will be passed into [`render.stream`](/02-components#stream) and assigned to `Context.res.body`.
+Any value that is returned from middleware will be passed into [`Render.stream`](/02-render#stream) and assigned to `Context.res.body`.
 
 Returning a value sets the content type header to HTML unless it has already been set. HTML will be escaped during the render while other content types will not.
 

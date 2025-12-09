@@ -37,7 +37,7 @@ new App({ csrf: false }); // disables the built-in protection
 
 ### Form
 
-[Multipart form data options](/06-form-data#options).
+[Multipart form data options](/06-multipart#options).
 
 ```ts
 new App({
