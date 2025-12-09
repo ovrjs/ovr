@@ -4,7 +4,7 @@
 
 refactor(app)!: Merge `App.add` and `App.on/get/post` with `App.use`.
 
-`use` is now the single way to add middleware and routes to an app. Routes are now exclusively created using the `Route` class and then added to the app.
+`App.use` is now the single way to add middleware and routes to an app. Routes are now exclusively created using the `Route` class and then added to the app.
 
 ```ts
 import { App, type Middleware, Route } from "ovr";
