@@ -1,5 +1,4 @@
-import * as codec from "../util/codec.js";
-import * as header from "../util/header.js";
+import { Codec, Header } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
 class Needle extends Uint8Array {
@@ -18,7 +17,7 @@ class Needle extends Uint8Array {
 
 	/** @param needle String to find within the stream */
 	constructor(needle: string) {
-		super(codec.encode(needle).buffer);
+		super(Codec.encode(needle).buffer);
 
 		for (let i = 0; i < this.length; i++) {
 			const byte = this[i]!;
@@ -73,7 +72,7 @@ class Part extends Request {
 		const headers: [string, string][] = [];
 
 		// create headers
-		for (const line of codec.decode(rawHeaders).split("\r\n")) {
+		for (const line of Codec.decode(rawHeaders).split("\r\n")) {
 			const colon = line.indexOf(":");
 
 			if (colon !== -1) {
@@ -92,9 +91,9 @@ class Part extends Request {
 			duplex: "half",
 		});
 
-		[this.type] = header.shift(this.headers.get(header.contentType));
+		[this.type] = Header.shift(this.headers.get(Header.contentType));
 
-		({ name: this.name = null, filename: this.filename = null } = header.params(
+		({ name: this.name = null, filename: this.filename = null } = Header.params(
 			this.headers.get("content-disposition"),
 		));
 	}
@@ -202,13 +201,13 @@ export class Multipart extends Request {
 	constructor(req: Request, options?: Multipart.Options) {
 		super(req);
 
-		const [type, params] = header.shift(this.headers.get(header.contentType));
+		const [type, params] = Header.shift(this.headers.get(Header.contentType));
 
 		if (type !== Multipart.#multipartType) {
 			throw new TypeError("Unsupported Media Type");
 		}
 
-		const { boundary } = header.params(params);
+		const { boundary } = Header.params(params);
 
 		if (!boundary) throw new TypeError("Boundary Not Found");
 		if (!this.body) throw new TypeError("No Request Body");

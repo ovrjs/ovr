@@ -1,5 +1,5 @@
 import type { JSX } from "../jsx/index.js";
-import * as codec from "../util/codec.js";
+import { Codec } from "../util/index.js";
 
 type Next = { i: number; result: IteratorResult<Chunk, void> };
 
@@ -186,7 +186,7 @@ export class Render {
 						// need to encode for Node (ex: during prerendering) or it will error
 						// doesn't seem to be needed for browsers
 						// faster than piping through a `TextEncoderStream`
-						codec.encode(String(result.value)),
+						Codec.encode(String(result.value)),
 					);
 				},
 				cancel() {

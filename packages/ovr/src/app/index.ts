@@ -3,7 +3,7 @@ import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
-import type { DeepArray } from "../types/index.js";
+import type { Util } from "../util/index.js";
 
 export namespace App {
 	export namespace Options {
@@ -81,7 +81,7 @@ export class App {
 	 * @returns `App` instance
 	 */
 	use(
-		...routes: DeepArray<
+		...routes: Util.DeepArray<
 			Route | Middleware | Record<string, Route | Middleware>
 		>[]
 	) {

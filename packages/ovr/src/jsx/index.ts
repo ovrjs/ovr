@@ -1,5 +1,5 @@
 import { Render } from "../render/index.js";
-import type { MaybeFunction, MaybePromise } from "../types/index.js";
+import type { Util } from "../util/index.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 
 export namespace JSX {
@@ -7,8 +7,8 @@ export namespace JSX {
 	export interface IntrinsicElements extends IE {}
 
 	/** JSX Element */
-	export type Element = MaybeFunction<
-		MaybePromise<
+	export type Element = Util.MaybeFunction<
+		Util.MaybePromise<
 			| string
 			| number
 			| bigint

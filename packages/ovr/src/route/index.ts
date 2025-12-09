@@ -1,10 +1,50 @@
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Trie } from "../trie/index.js";
-import type { ExtractParams, InsertParams, Method } from "../types/index.js";
-import { hash } from "../util/hash.js";
+import { Hash } from "../util/index.js";
+
+/** Helper type to extract the route params (`:slug`) into a record */
+export type ExtractParams<Pattern extends string = string> =
+	Pattern extends `${infer _Start}:${infer Param}/${infer Rest}`
+		? { [k in Param | keyof ExtractParams<Rest>]: string }
+		: Pattern extends `${infer _Start}:${infer Param}`
+			? { [k in Param]: string }
+			: Pattern extends `${infer _Rest}*`
+				? { "*": string }
+				: {};
+
+/** Helper type to insert a record of params into a resolved string */
+export type InsertParams<
+	Pattern extends string,
+	Params extends Trie.Params,
+> = Pattern extends `${infer Start}:${infer Param}/${infer Rest}`
+	? Param extends keyof Params
+		? `${Start}${Params[Param]}/${InsertParams<Rest, Params>}`
+		: Pattern
+	: Pattern extends `${infer Start}:${infer Param}`
+		? Param extends keyof Params
+			? `${Start}${Params[Param]}`
+			: Pattern
+		: Pattern extends `${infer Start}*`
+			? "*" extends keyof Params
+				? `${Start}${Params["*"]}`
+				: Pattern
+			: Pattern;
 
 export namespace Route {
+	/** HTTP Method */
+	export type Method =
+		| "GET"
+		| "HEAD"
+		| "POST"
+		| "PUT"
+		| "DELETE"
+		| "CONNECT"
+		| "OPTIONS"
+		| "TRACE"
+		| "PATCH"
+		| (string & {});
+
 	/**
 	 * Options to construct a relative URL from the route.
 	 *
@@ -115,7 +155,7 @@ export class Route<Pattern extends string = string> {
 	readonly pattern: Pattern;
 
 	/** HTTP method */
-	readonly method: Method;
+	readonly method: Route.Method;
 
 	/** Route middleware stack, runs after global middleware */
 	readonly middleware: Middleware<any>[]; // any so you can use other middleware
@@ -131,7 +171,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware Route middleware
 	 */
 	constructor(
-		method: Method,
+		method: Route.Method,
 		pattern: Pattern,
 		...middleware: Middleware<ExtractParams<Pattern>>[]
 	) {
@@ -284,7 +324,7 @@ export class Route<Pattern extends string = string> {
 			pattern = patternOrMiddleware;
 		} else {
 			middleware.unshift(patternOrMiddleware);
-			pattern = `/_p/${hash(middleware.join())}` as Pattern;
+			pattern = `/_p/${Hash.djb2(middleware.join())}` as Pattern;
 		}
 
 		return Route.#withComponents(new Route("POST", pattern, ...middleware));

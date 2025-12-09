@@ -5,8 +5,7 @@ import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
-import { hash } from "../util/hash.js";
-import { contentType } from "../util/header.js";
+import { Hash, Header } from "../util/index.js";
 
 export namespace Context {
 	/** Properties to build the final `Response` with once middleware has run. */
@@ -96,7 +95,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	html(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(contentType, Context.#htmlType);
+		this.res.headers.set(Header.contentType, Context.#htmlType);
 	}
 
 	/**
@@ -108,7 +107,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	json(data: unknown, status?: number) {
 		this.res.body = JSON.stringify(data);
 		this.res.status = status;
-		this.res.headers.set(contentType, "application/json");
+		this.res.headers.set(Header.contentType, "application/json");
 	}
 
 	/**
@@ -120,7 +119,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	text(body: BodyInit, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(contentType, `text/plain; ${Context.#utf8}`);
+		this.res.headers.set(Header.contentType, `text/plain; ${Context.#utf8}`);
 	}
 
 	/**
@@ -151,7 +150,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * @returns `true` if the etag matches, `false` otherwise
 	 */
 	etag(string: string) {
-		const etag = `"${hash(string)}"`;
+		const etag = `"${Hash.djb2(string)}"`;
 
 		this.res.headers.set("etag", etag);
 
@@ -220,7 +219,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			}
 		} else if (r !== undefined) {
 			// something to stream
-			const type = this.res.headers.get(contentType);
+			const type = this.res.headers.get(Header.contentType);
 
 			this.res.body = Render.stream(r, {
 				// other defined types are safe
@@ -229,7 +228,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 
 			if (!type) {
 				// default to HTML
-				this.res.headers.set(contentType, Context.#htmlType);
+				this.res.headers.set(Header.contentType, Context.#htmlType);
 			}
 
 			// do not overwrite/remove status - that way user can set it before returning
