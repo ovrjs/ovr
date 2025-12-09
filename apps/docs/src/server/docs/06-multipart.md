@@ -58,7 +58,7 @@ const post = Route.post(async (c) => {
 
 ### Data
 
-If you do need to buffer all the data in memory, the `Multipart.data` method is available as a drop in replacement for `Request.formData`, enhanced with size thresholds.
+If you do need to buffer all the data in memory, the `Multipart.data` method is available as a drop in replacement for [`Request.formData`](https://developer.mozilla.org/en-US/docs/Web/API/Request/formData), enhanced with thresholds.
 
 ```ts
 const mp = new Multipart(req, options);
