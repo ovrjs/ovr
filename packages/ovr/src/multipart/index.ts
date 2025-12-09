@@ -51,7 +51,7 @@ class Part extends Request {
 	readonly filename: string | null;
 
 	/**
-	 * Content-Type of the part
+	 * Media type of the part
 	 *
 	 * @example "image/png"
 	 */
@@ -431,5 +431,36 @@ export class Multipart extends Request {
 		} finally {
 			this.#reader.releaseLock();
 		}
+	}
+
+	/**
+	 * Drop in replacement for `Request.formData` enhanced with size thresholds.
+	 *
+	 * Only use `data` when buffering all content is needed, otherwise iterate through
+	 * the multipart using `for await...of` instead.
+	 *
+	 * @returns Buffered `FormData`
+	 */
+	async data() {
+		const data = new FormData();
+
+		for await (const part of this) {
+			if (part.name) {
+				let value: string | File;
+
+				if (part.filename || part.type === "application/octet-stream") {
+					const blob = await part.blob();
+					value = new File([blob], part.filename ?? "blob", {
+						type: blob.type,
+					});
+				} else {
+					value = await part.text();
+				}
+
+				data.append(part.name, value);
+			}
+		}
+
+		return data;
 	}
 }

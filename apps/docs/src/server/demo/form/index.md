@@ -7,9 +7,8 @@ This is a page and post route created with the [`Route.get` and `Route.post` met
 
 ```tsx
 import { Route } from "ovr";
-import * as z from "zod";
 
-export const page = Route.get("/demo/form", (c) => {
+export const form = Route.get("/demo/form", (c) => {
 	return (
 		<post.Form>
 			<div>
@@ -23,9 +22,11 @@ export const page = Route.get("/demo/form", (c) => {
 });
 
 export const post = Route.post(async (c) => {
-	const data = await c.req.formData();
-	const name = z.string().parse(data.get("name"));
-	name; // text input string
+	for await (const part of c.form()) {
+		if (part.name === "name") {
+			console.log(part);
+		}
+	}
 
 	c.redirect("/", 303);
 });

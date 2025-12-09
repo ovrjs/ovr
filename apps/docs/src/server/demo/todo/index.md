@@ -6,7 +6,7 @@ description: A basic todo app built with ovr.
 A server driven todo app that stores data in the URL.
 
 ```tsx
-import { Chunk, type Middleware, Route } from "ovr";
+import { type Middleware, Route } from "ovr";
 import * as z from "zod";
 
 export const add = Route.post(async (c) => {
@@ -34,48 +34,36 @@ export const remove = Route.post(async (c) => {
 });
 
 export const todo = Route.get("/demo/todo", (c) => {
-	const Layout = createLayout(c);
-
 	return (
 		<>
-			<h1>Todo</h1>
+			<add.Form search={c.url.search}>
+				<input name="text" placeholder="Add todo" />
+				<button>Add</button>
+			</add.Form>
 
-			<div>
-				<add.Form search={c.url.search}>
-					<input name="text" placeholder="Add todo" />
-					<button>Add</button>
-				</add.Form>
+			<ul>
+				{getTodos(c).map((t) => (
+					<li class="m-0">
+						<form>
+							<input type="hidden" name="id" value={t.id} />
 
-				<ul>
-					{getTodos(c).map((t) => (
-						<li>
-							<form>
-								<input type="hidden" name="id" value={t.id} />
+							<div>
+								<toggle.Button search={c.url.search} aria-label="toggle todo">
+									<span class={t.done ? "check" : "square-dashed"} />
+								</toggle.Button>
 
-								<div>
-									<toggle.Button search={c.url.search} aria-label="toggle todo">
-										<span
-											class={
-												t.done
-													? "icon-[lucide--check]"
-													: "icon-[lucide--square-dashed]"
-											}
-										/>
-									</toggle.Button>
+								<span>{t.text}</span>
+							</div>
 
-									<span>{t.text}</span>
-								</div>
+							<remove.Button search={c.url.search} aria-label="delete todo">
+								x
+							</remove.Button>
+						</form>
+					</li>
+				))}
+			</ul>
 
-								<remove.Button search={c.url.search} aria-label="delete todo">
-									<span class="icon-[lucide--x]" />
-								</remove.Button>
-							</form>
-						</li>
-					))}
-				</ul>
-
-				<todo.Anchor>Reset</todo.Anchor>
-			</div>
+			<todo.Anchor>Reset</todo.Anchor>
 		</>
 	);
 });
@@ -102,7 +90,7 @@ const getTodos = (c: Middleware.Context) => {
 };
 
 const data = async (c: Middleware.Context) => {
-	const data = await c.req.formData();
+	const data = await c.form().data();
 	return TodoSchema.parse({ id: data.get("id"), text: data.get("text") });
 };
 ```

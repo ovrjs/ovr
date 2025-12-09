@@ -28,7 +28,7 @@ async function fetch(req: Request) {
 		part.body; // ReadableStream
 		part.name; // form input name
 		part.filename; // filename if available
-		part.type; // content type
+		part.type; // media type
 
 		if (part.name === "name") {
 			// buffer a text input
@@ -54,6 +54,15 @@ const post = Route.post(async (c) => {
 		// ...
 	}
 });
+```
+
+### Data
+
+If you do need to buffer all the data in memory, the `Multipart.data` method is available as a drop in replacement for `Request.formData`, enhanced with size thresholds.
+
+```ts
+const mp = new Multipart(req, options);
+const data = await mp.data(); // FormData
 ```
 
 ## Options

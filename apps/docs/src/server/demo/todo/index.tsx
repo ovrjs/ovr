@@ -111,6 +111,6 @@ const getTodos = (c: Middleware.Context) => {
 };
 
 const data = async (c: Middleware.Context) => {
-	const data = await c.req.formData();
+	const data = await c.form().data();
 	return TodoSchema.parse({ id: data.get("id"), text: data.get("text") });
 };
