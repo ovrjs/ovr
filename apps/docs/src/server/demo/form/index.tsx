@@ -12,7 +12,7 @@ export const form = ovr.Route.get("/demo/form", (c) => {
 		<Layout head={<Meta {...formContent.frontmatter} />}>
 			<h1>{formContent.frontmatter.title}</h1>
 
-			{ovr.Chunk.safe(formContent.html)}
+			{ovr.Render.html(formContent.html)}
 
 			<hr />
 

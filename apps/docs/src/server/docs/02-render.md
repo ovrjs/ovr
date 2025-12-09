@@ -1,9 +1,9 @@
 ---
-title: Components
-description: Async generator JSX
+title: Rendering
+description: Easily parallelize async operations and render strings with ovr.
 ---
 
-## Basics
+## JSX
 
 Components are functions that return a `JSX.Element`. Use them to declaratively describe and reuse parts of your HTML.
 
@@ -38,7 +38,7 @@ ovr aligns with the standard (all lowercase) HTML attributes---all attributes wi
 
 > If you're coming from React, this means you must use `class` and `for` instead of `className` and `htmlFor` respectively. There is also no need to provide a `key` attribute in when rendering lists.
 
-## Async
+## Async components
 
 Components can be asynchronous, for example you can `fetch` directly in a component.
 
@@ -51,7 +51,7 @@ async function Data() {
 }
 ```
 
-## Generator functions
+## Generator components
 
 Components can also be generator functions for more fine grained control and [memory optimization](/demo/memory). When utilizing generators `yield` values instead of returning them.
 
@@ -85,9 +85,9 @@ function Page() {
 
 > The order of your components does not affect when they are evaluated, but it does impact when they will display. If `Username` is the slowest component, `Generator` and `Data` will be queued but only streamed after `Username` completes. This ensures no client-side JavaScript has to run for users to see your content.
 
-## Return types
+## Data types
 
-You can `return` or `yield` most data types from a component, they will be rendered as you might expect:
+You can `return` or `yield` most data types from a component, they will be rendered as you might expect. Each of these data types can also be used to create a new [`Render`](#render).
 
 ```tsx
 function* DataTypes() {
@@ -98,7 +98,6 @@ function* DataTypes() {
 
 	yield "string"; // "string"
 	yield 0; // "0";
-	yield BigInt(9007199254740991); // "9007199254740991"
 	yield <p>jsx</p>; // "<p>jsx</p>"
 	yield ["any-", "iterable", 1, null]; // "any-iterable1"
 	yield () => "function"; // "function"
@@ -106,46 +105,46 @@ function* DataTypes() {
 }
 ```
 
-> Check out the [source code](https://github.com/rossrobino/ovr/blob/main/packages/ovr/src/jsx/index.ts) for the `render` function to understand how ovr evaluates each data type.
+> Check out the [source code](https://github.com/rossrobino/ovr/blob/main/packages/ovr/src/render/index.ts) for the `render` function to understand how ovr evaluates each data type.
 
-## Rendering components
+## Render
 
-To evaluate components (for example, if you aren't using returning them from `Middleware` or need to call them separately), you can use these functions.
+To render any element on it's own (for example, if you aren't using returning them from `Middleware` or need to call them separately), use the `Render` class.
 
-### Render
+### Async iterable
 
-Convert any `JSX.Element` into `AsyncGenerator<Chunk>` with `render`. `render` yields escaped `Chunk`s of HTML.
+Create a new `Render` async iterable that yields escaped `Chunk`s of HTML.
 
 ```tsx
-import { render } from "ovr";
+import { Render } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const gen = render(<Component />);
+const render = new Render(<Component />);
 
-for await (const chunk of gen) {
+for await (const chunk of render) {
 	console.log(chunk.value); // value contains the HTML string
 }
 ```
 
-> Set `render.Options.safe` to `true` to bypass HTML escaping to render other types of content: `render(element, { safe: true })`.
+> Set `Render.Options.safe` to `true` to bypass HTML escaping to render other types of content: `new Render(element, { safe: true })`.
 
 ### Stream
 
-Turn a `JSX.Element` into a `ReadableStream` using `render.stream`. This pipes the result of `render` into a `ReadableStream`.
+Turn an element into a `ReadableStream` using `Render.stream`. This pipes a `Render` into a `ReadableStream`.
 
 This stream is optimized for generating HTML---it ensures backpressure is properly handled for slower clients and generation stops if the client aborts the request.
 
 ```tsx
-import { render } from "ovr";
+import { Render } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const stream = render.stream(<Component />);
+const stream = Render.stream(<Component />);
 
 const response = new Response(stream, {
 	"content-type": "text/html; charset=utf-8",
@@ -154,28 +153,28 @@ const response = new Response(stream, {
 
 ### String
 
-Convert any `JSX.Element` into a `string` of HTML with `render.string`. This runs `render` and joins the results into a single string.
+Convert any element into a `string` of HTML with `Render.string`. This iterates through the `Render` and joins the results into a single string.
 
 ```tsx
-import { render } from "ovr";
+import { Render } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const str = await render.string(<Component />);
+const str = await Render.string(<Component />);
 ```
 
-## Raw HTML
+### Raw HTML
 
-To create a new `Chunk` directly without escaping, use the `Chunk.safe` method.
+To render safe HTML **without escaping**, use the `Render.html` method.
 
 ```tsx
-import { Chunk } from "ovr";
+import { Render } from "ovr";
 
 const html = "<p>Safe to render</p>";
 
 function Component() {
-	return <div>{Chunk.safe(html)}</div>;
+	return <div>{Render.html(html)}</div>;
 }
 ```

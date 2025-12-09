@@ -191,7 +191,7 @@
 
 ### Minor Changes
 
-- 6935fc4: feat: Adds `Chunk.safe` method as an alias for `new Chunk(html, true)`.
+- 6935fc4: feat: Adds `Render.safe` method as an alias for `new Chunk(html, true)`.
 
 ### Patch Changes
 

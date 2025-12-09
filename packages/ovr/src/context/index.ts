@@ -1,8 +1,8 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
-import { render } from "../jsx/index.js";
 import { type Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
+import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
 import { hash } from "../util/hash.js";
@@ -220,7 +220,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			// something to stream
 			const type = this.res.headers.get(contentType);
 
-			this.res.body = render.stream(r, {
+			this.res.body = Render.stream(r, {
 				// other defined types are safe
 				safe: Boolean(type && !type.startsWith(Context.#textHtml)),
 			});

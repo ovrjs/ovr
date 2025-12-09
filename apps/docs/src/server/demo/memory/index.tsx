@@ -29,7 +29,7 @@ export const memory = ovr.Route.get("/demo/memory", async (c) => {
 		<Layout head={<Meta {...memoryContent.frontmatter} />}>
 			<h1>{memoryContent.frontmatter.title}</h1>
 
-			{ovr.Chunk.safe(memoryContent.html)}
+			{ovr.Render.html(memoryContent.html)}
 
 			<div class="flex flex-wrap gap-px">
 				<div class="sr-only">

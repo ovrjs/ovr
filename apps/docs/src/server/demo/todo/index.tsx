@@ -1,7 +1,7 @@
 import * as todoContent from "@/server/demo/todo/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Chunk, type Middleware, Route } from "ovr";
+import { type Middleware, Render, Route } from "ovr";
 import * as z from "zod";
 
 export const add = Route.post(async (c) => {
@@ -84,7 +84,7 @@ export const todo = Route.get("/demo/todo", (c) => {
 
 			<hr />
 
-			{Chunk.safe(todoContent.html)}
+			{Render.html(todoContent.html)}
 		</Layout>
 	);
 });

@@ -13,8 +13,8 @@ function* Component() {
 
 describe("render", () => {
 	bench("generate 500", async () => {
-		const gen = o.render(o.jsx(Component, {}));
-		for await (const _r of gen);
+		const r = new o.Render(o.jsx(Component, {}));
+		for await (const _r of r);
 	});
 });
 

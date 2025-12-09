@@ -34,7 +34,7 @@ export const page = o.Route.get("/", (c) => {
 
 			<hr />
 
-			{o.Chunk.safe(result.html)}
+			{o.Render.html(result.html)}
 
 			<hr />
 

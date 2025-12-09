@@ -29,7 +29,7 @@ export const chat = ovr.Route.get("/demo/chat", (c) => {
 		<Layout head={<Meta {...chatContent.frontmatter} />}>
 			<h1>{chatContent.frontmatter.title}</h1>
 
-			{ovr.Chunk.safe(chatContent.html)}
+			{ovr.Render.html(chatContent.html)}
 
 			<hr />
 

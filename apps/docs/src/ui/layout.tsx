@@ -18,7 +18,7 @@ const Assets = () => {
 			{import.meta.env.DEV && (
 				<link rel="stylesheet" href="/client/tailwind.css" />
 			)}
-			{o.Chunk.safe(tags)}
+			{o.Render.html(tags)}
 		</>
 	);
 };
