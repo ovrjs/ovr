@@ -33,7 +33,7 @@ export class JSX {
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Glossary/Void_element#self-closing_tags)
 	 */
-	static readonly #voidElements = new Set([
+	static readonly #void = new Set([
 		"area",
 		"base",
 		"br",
@@ -95,7 +95,7 @@ export class JSX {
 
 		yield Render.html(`<${tag}${attributes}>`);
 
-		if (JSX.#voidElements.has(tag)) return;
+		if (JSX.#void.has(tag)) return;
 
 		yield* new Render(props.children);
 
