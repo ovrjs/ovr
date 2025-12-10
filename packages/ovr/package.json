@@ -5,7 +5,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/rossrobino/ovr.git"
+		"url": "git+https://github.com/ovrjs/ovr.git"
 	},
 	"author": {
 		"name": "Ross Robino",

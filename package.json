@@ -6,7 +6,7 @@
 	"packageManager": "npm@11.6.2",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/rossrobino/ovr.git"
+		"url": "git+https://github.com/ovrjs/ovr.git"
 	},
 	"type": "module",
 	"workspaces": [

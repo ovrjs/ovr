@@ -107,7 +107,7 @@ function* DataTypes() {
 }
 ```
 
-> Check out the [source code](https://github.com/rossrobino/ovr/blob/main/packages/ovr/src/render/index.ts) for the `render` function to understand how ovr evaluates each data type.
+> Check out the [source code](https://github.com/ovrjs/ovr/blob/main/packages/ovr/src/render/index.ts) for the `render` function to understand how ovr evaluates each data type.
 
 ## Render
 
