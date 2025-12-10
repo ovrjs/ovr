@@ -5,15 +5,14 @@ on:
     branches:
       - main
 
-permissions:
-  id-token: write
-  contents: write
-  pull-requests: write
-
-concurrency: ${{ github.workflow }}-${{ github.ref }}
-
+permissions: {}
 jobs:
   release:
+    if: github.repository == 'ovrjs/ovr'
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
     name: Release
     runs-on: ubuntu-latest
     steps:
