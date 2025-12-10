@@ -7,13 +7,13 @@ export const memory = ovr.Route.get("/demo/memory", async (c) => {
 	const Layout = createLayout(c);
 
 	function* OverNineThousand() {
-		const time = performance.now();
+		// const time = performance.now();
 
 		for (let i = 0; i < 9_114; i++) {
 			yield <div class="bg-foreground rounded-sm p-0.5" />;
 		}
 
-		console.log(performance.now() - time);
+		// console.log(performance.now() - time);
 	}
 
 	// const time = performance.now();

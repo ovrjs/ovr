@@ -10,8 +10,8 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
-		"@fontsource-variable/geist": "^5.2.8",
-		"@fontsource-variable/geist-mono": "^5.2.7",
+		"@fontsource-variable/inconsolata": "^5.2.8",
+		"@fontsource-variable/literata": "^5.2.8",
 		"@ovrjs/size": "0.0.1",
 		"@robino/md": "^4.0.3",
 		"clsx": "^2.1.1",

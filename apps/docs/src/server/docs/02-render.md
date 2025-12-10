@@ -1,5 +1,5 @@
 ---
-title: Rendering
+title: Render
 description: Easily parallelize async operations and render strings with ovr.
 ---
 

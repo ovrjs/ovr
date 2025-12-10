@@ -4,12 +4,13 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
+/* literata-latin-wght-normal */
 @font-face {
 	font-style: normal;
-	font-weight: 100 900;
-	src: url(@fontsource-variable/geist/files/geist-latin-wght-normal.woff2)
+	font-weight: 200 900;
+	src: url(@fontsource-variable/literata/files/literata-latin-wght-normal.woff2)
 		format("woff2-variations");
-	font-family: "Geist Variable";
+	font-family: "Literata Variable";
 	font-display: swap;
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
@@ -17,12 +18,13 @@
 		U+2215, U+FEFF, U+FFFD;
 }
 
+/* inconsolata-latin-wght-normal */
 @font-face {
 	font-style: normal;
-	font-weight: 100 900;
-	src: url(@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2)
+	font-weight: 200 900;
+	src: url(@fontsource-variable/inconsolata/files/inconsolata-latin-wght-normal.woff2)
 		format("woff2-variations");
-	font-family: "Geist Mono Variable";
+	font-family: "Inconsolata Variable";
 	font-display: swap;
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
@@ -31,7 +33,7 @@
 }
 
 @plugin "@iconify/tailwind4" {
-	scale: 1.25;
+	scale: 1.1;
 }
 
 @theme {
@@ -60,8 +62,10 @@
 	--color-destructive: var(--destructive-background);
 	--color-destructive-foreground: var(--destructive-foreground);
 
+	--font-serif: var(--font-family-serif);
 	--font-sans: var(--font-family-sans);
 	--font-mono: var(--font-family-mono);
+	--font-headings: var(--font-family-headings);
 
 	--text-xs: var(--font-size-1);
 	--text-xs--line-height: var(--line-height-1);
@@ -98,9 +102,11 @@
 	:root {
 		--accent: var(--base-500);
 		--light-end: 0.002;
+		--border-radius: 5px;
 
-		--font-family-sans: "Geist Variable", sans-serif;
-		--font-family-mono: "Geist Mono Variable", monospace;
+		--font-family-serif: "Literata Variable", serif;
+		--font-family-mono: "Inconsolata Variable", monospace;
+		--font-family-headings: "Inconsolata Variable", sans-serif;
 
 		--shiki-foreground: var(--base-100);
 		--shiki-background: var(--base-900);
@@ -122,21 +128,20 @@
 	}
 
 	body {
-		font-weight: 300;
+		@apply font-serif font-light;
 	}
 
 	input,
 	input::placeholder,
 	textarea,
 	textarea::placeholder {
-		font-weight: 300;
+		@apply font-light;
 	}
 }
 
 @layer components {
 	pre {
-		margin: 0;
-		@apply rounded-none px-4 font-light sm:rounded-b-sm;
+		@apply m-0 rounded-none px-4 text-base font-light sm:rounded-b-sm;
 	}
 
 	a:not(h1 a, h2 a, h3 a, h4 a),
@@ -170,7 +175,7 @@
 
 	p code,
 	li code {
-		@apply border-secondary border text-nowrap not-italic shadow-xs;
+		@apply border-secondary border text-base font-normal text-nowrap not-italic shadow-xs;
 	}
 
 	h1,
@@ -179,15 +184,19 @@
 	h4,
 	h5,
 	h6 {
-		@apply font-semibold;
+		@apply font-headings;
 	}
 
 	strong {
-		@apply font-medium;
+		@apply font-semibold;
+	}
+
+	label {
+		@apply font-headings mb-2 text-base;
 	}
 
 	button,
 	.button {
-		@apply transition-colors;
+		@apply font-headings font-medium transition-colors ease-out active:scale-99;
 	}
 }

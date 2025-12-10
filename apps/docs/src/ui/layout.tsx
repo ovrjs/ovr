@@ -104,7 +104,7 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 	return (
 		<div>
 			<aside class="sticky top-0 hidden min-w-52 flex-col gap-3 p-4 lg:flex">
-				<h2 class="pl-3 text-xs uppercase">
+				<h2 class="pl-3 text-base uppercase">
 					<a href="#" class="text-muted-foreground font-bold">
 						On this page
 					</a>
@@ -132,7 +132,7 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 
 const HomeLink = () => {
 	return (
-		<a href="/" class="pl-2 text-lg font-bold no-underline">
+		<a href="/" class="font-headings pl-2 text-lg font-bold no-underline">
 			ovr
 		</a>
 	);
@@ -140,7 +140,7 @@ const HomeLink = () => {
 
 const NavHeading = (props: { children: o.JSX.Element }) => {
 	return (
-		<h2 class="text-muted-foreground pl-2 text-xs font-bold uppercase">
+		<h2 class="text-muted-foreground mt-1 pl-2 text-sm font-bold uppercase">
 			{props.children}
 		</h2>
 	);
@@ -192,7 +192,7 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 
 			<hr />
 
-			<ul class="flex">
+			<ul class="flex justify-between">
 				<li>
 					<GitHub />
 				</li>

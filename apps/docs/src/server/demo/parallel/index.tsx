@@ -8,7 +8,9 @@ export const parallel = ovr.Route.get("/demo/parallel", (c) => {
 
 	async function Delay({ ms }: { ms: number }) {
 		await new Promise((res) => setTimeout(res, ms));
-		return <div class="bg-muted rounded-md p-2">{ms}ms</div>;
+		return (
+			<div class="bg-muted flex justify-center rounded-md p-2">{ms}ms</div>
+		);
 	}
 
 	function Delays() {

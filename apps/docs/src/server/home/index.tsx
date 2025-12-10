@@ -58,7 +58,7 @@ function* Features() {
 		{
 			title: "Lightweight",
 			href: "https://npmgraph.js.org/?q=ovr",
-			content: "Heavy on features, zero dependencies.",
+			content: "Essential features, zero dependencies.",
 		},
 		{
 			title: "Type Safe",
@@ -72,9 +72,9 @@ function* Features() {
 				"Stream HTML with familiar JSX components, no client-side JS required.",
 		},
 		{
-			title: "Fast Routing",
-			href: "/04-route",
-			content: "Code based routing that scales.",
+			title: "User Data",
+			href: "/06-multipart",
+			content: "Low memory multipart form data streaming.",
 		},
 		{
 			title: "Web Standards",
@@ -91,9 +91,7 @@ function* Features() {
 				data-no-prefetch={feature.noPrefetch}
 			>
 				<h2 class="my-0 text-base">{feature.title}</h2>
-				<p class="text-muted-foreground mt-1 mb-0 text-sm font-light">
-					{feature.content}
-				</p>
+				<p class="text-muted-foreground mt-1 mb-0 text-sm">{feature.content}</p>
 			</a>
 		);
 	}
