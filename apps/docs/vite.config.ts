@@ -1,3 +1,4 @@
+// @ts-nocheck - TODO look into fixing the plugin types
 import { FrontmatterSchema, options } from "./src/lib/md";
 import { adapter } from "@domcojs/vercel";
 import { md } from "@robino/md";
