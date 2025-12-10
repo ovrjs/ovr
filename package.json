@@ -3,7 +3,7 @@
 	"private": true,
 	"version": "0.0.0",
 	"license": "MIT",
-	"packageManager": "npm@11.6.2",
+	"packageManager": "npm@11.7.0",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/ovrjs/ovr.git"
@@ -26,13 +26,13 @@
 		"release": "npm run build && changeset publish"
 	},
 	"devDependencies": {
-		"@changesets/cli": "^2.29.7",
+		"@changesets/cli": "^2.29.8",
 		"@robino/prettier": "^2.0.2",
 		"@robino/tsconfig": "^1.1.0",
-		"prettier": "^3.6.2",
-		"prettier-plugin-tailwindcss": "^0.7.1",
-		"turbo": "^2.5.8",
+		"prettier": "^3.7.4",
+		"prettier-plugin-tailwindcss": "^0.7.2",
+		"turbo": "^2.6.3",
 		"typescript": "^5.9.3",
-		"vitest": "^4.0.4"
+		"vitest": "^4.0.15"
 	}
 }
