@@ -1,0 +1,11 @@
+{
+	"name": "@ovrjs/bench",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"ovr": "*"
+	},
+	"devDependencies": {
+		"@remix-run/multipart-parser": "^0.14.0"
+	}
+}

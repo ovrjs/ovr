@@ -1,112 +1,83 @@
+import type { Middleware } from "../middleware/index.js";
+import { Route } from "../route/index.js";
+import type { Method } from "../types/index.js";
 import { App } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 const app = new App({ trailingSlash: "always" });
 
-const get = (pathname: string) => app.fetch("http://localhost:5173" + pathname);
+const notFound: Middleware = async (c, next) => {
+	await next();
+
+	if (c.res.body === undefined) {
+		c.res.status = 404;
+		c.res.body = "Not found";
+	}
+};
+
+const appFetch = (pathname: string, method: Method = "GET") =>
+	app.fetch("http://localhost:5173" + pathname, { method });
 
 test("context", () => {
-	app
-		.get(
+	app.use(
+		notFound,
+		Route.get(
 			"/",
 			async (c, next) => {
-				c.req.headers.set("hello", "world");
+				c.res.headers.set("hello", "world");
 				await next();
 			},
 			(c) => {
 				expect(c.url).toBeInstanceOf(URL);
 				expect(c.req).toBeInstanceOf(Request);
-				expect(c.req.headers.get("hello")).toBe("world");
+				expect(c.res.headers.get("hello")).toBe("world");
 
 				c.text("hello world");
 			},
-		)
-		.get("/api/:id/", (c) => {
+		),
+		Route.get("/api/:id/", (c) => {
 			expect(c.params.id).toBeDefined();
 			c.json(c.params);
-		})
-		.get("/wild/*", (c) => {
+		}),
+		Route.get("/wild/*", (c) => {
 			expect(c.params["*"]).toBeDefined();
 			c.json(c.params);
-		});
-
-	app.get(["/multi/:param/", "/pattern/:another/"], (c) => {
-		if ("param" in c.params) {
-			expect(c.params.param).toBeDefined();
-			c.text("multi");
-		} else {
-			expect(c.params.another).toBeDefined();
-			c.text("pattern");
-		}
-	});
-
-	app.post("/post/", async (c) => {
-		const formData = await c.req.formData();
-		c.json(formData.get("key"));
-	});
-
-	app.get("/page", (c) => {
-		c.layouts.push(function* ({ children }) {
-			yield "Layout";
-
-			yield children;
-
-			yield "END LAYOUT";
-		});
-
-		c.head.push("<meta name='description' content='desc'>");
-
-		c.layouts.push(function ({ children }) {
-			return `nested ${children} nested`;
-		});
-
-		c.page("page");
-	});
-
-	app.use(async (c, next) => {
-		c.base =
-			'<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body></body></html>';
-		await next();
-	});
-
-	app.on(["POST", "GET"], "/multi-method", async (c) => {
-		c.text(c.req.method);
-	});
-
-	app.get("/memo", (c) => {
-		let i = 0;
-
-		const add = c.memo.use((a: number, b: number) => {
-			i++;
-			return a + b;
-		});
-
-		add(1, 1);
-		add(1, 1);
-
-		expect(i).toBe(1);
-	});
+		}),
+		Route.post("/post/", async (c) => {
+			const formData = await c.req.formData();
+			c.json(formData.get("key"));
+		}),
+		Route.get("/page/", () => "page"),
+	);
 });
 
 test("GET /", async () => {
-	const res = await get("/");
+	const res = await appFetch("/");
 	const text = await res.text();
 
 	expect(text).toBe("hello world");
 });
 
+test("HEAD /", async () => {
+	const res = await appFetch("/", "HEAD");
+
+	expect(res.status).toBe(200);
+	expect(res.headers.get("hello")).toBe("world");
+	expect(res.body).toBe(null);
+});
+
 test("GET /api/:id/", async () => {
-	const res = await get("/api/123/");
+	const res = await appFetch("/api/123/");
 	const json = await res.json();
 
 	expect(json.id).toBe("123");
 });
 
 test("GET /wild/*", async () => {
-	const res = await get("/wild/hello");
+	const res = await appFetch("/wild/hello/");
 	const json = await res.json();
 
-	expect(json["*"]).toBe("hello");
+	expect(json["*"]).toBe("hello/");
 });
 
 test("POST /post/", async () => {
@@ -126,18 +97,8 @@ test("POST /post/", async () => {
 	expect(json).toBe("value");
 });
 
-test("GET /multi/param & /pattern/another", async () => {
-	const multi = await get("/multi/param/");
-	const mText = await multi.text();
-	expect(mText).toBe("multi");
-
-	const pat = await get("/pattern/another/");
-	const pText = await pat.text();
-	expect(pText).toBe("pattern");
-});
-
 test("GET /not-found/", async () => {
-	const res = await get("/not-found/");
+	const res = await appFetch("/not-found/");
 	const text = await res.text();
 
 	expect(text).toBe("Not found");
@@ -146,15 +107,14 @@ test("GET /not-found/", async () => {
 
 describe("trailing slash", () => {
 	test("always", async () => {
-		const res = await get("/api/123");
+		const res = await appFetch("/api/123");
 
 		expect(res.status).toBe(308);
 		expect(res.headers.get("location")).toBe("http://localhost:5173/api/123/");
 	});
 
 	test("never", async () => {
-		const nev = new App();
-		nev.get("/test", (c) => c.text("test"));
+		const nev = new App().use(Route.get("/test", (c) => c.text("test")));
 
 		const res = await nev.fetch(new Request("http://localhost:5173/test/"));
 
@@ -163,10 +123,11 @@ describe("trailing slash", () => {
 	});
 
 	test("ignore", async () => {
-		const ignore = new App({ trailingSlash: "ignore" });
-
-		ignore.get("/nope", (c) => c.text("nope"));
-		ignore.get("/yup/", (c) => c.text("yup"));
+		const ignore = new App({ trailingSlash: "ignore" }).use(
+			notFound,
+			Route.get("/nope", (c) => c.text("nope")),
+			Route.get("/yup/", (c) => c.text("yup")),
+		);
 
 		expect(
 			(await ignore.fetch(new Request("http://localhost:5173/nope"))).status,
@@ -185,22 +146,23 @@ describe("trailing slash", () => {
 });
 
 test("html", async () => {
-	const res = await get("/page");
+	const res = await appFetch("/page/");
 	const text = await res.text();
 	expect(res.status).toBe(200);
-	expect(text.startsWith("<")).toBe(true);
+	expect(text).toBe("page");
 });
 
 test("etag", async () => {
-	const r = new App();
-	r.get("/etag", (c) => {
-		const text = "hello world";
-		const matched = c.etag("hello");
+	const r = new App().use(
+		Route.get("/etag", (c) => {
+			const text = "hello world";
+			const matched = c.etag("hello");
 
-		if (matched) return;
+			if (matched) return;
 
-		c.text(text);
-	});
+			c.text(text);
+		}),
+	);
 
 	const res = await r.fetch(new Request("http://localhost:5173/etag"));
 	expect(res.status).toBe(200);
@@ -213,15 +175,4 @@ test("etag", async () => {
 	);
 	expect(etag.status).toBe(304);
 	expect(await etag.text()).toBe("");
-});
-
-test("multi-method", async () => {
-	const res = await get("/multi-method");
-	const text = await res.text();
-
-	expect(text).toBe("GET");
-});
-
-test("memo", async () => {
-	get("/memo");
 });

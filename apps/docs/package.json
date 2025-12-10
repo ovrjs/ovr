@@ -10,24 +10,26 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
-		"@fontsource-variable/geist": "^5.2.8",
-		"@fontsource-variable/geist-mono": "^5.2.7",
+		"@fontsource-variable/inconsolata": "^5.2.8",
+		"@fontsource-variable/literata": "^5.2.8",
+		"@ovrjs/size": "0.0.1",
 		"@robino/md": "^4.0.3",
 		"clsx": "^2.1.1",
 		"dotenv": "^17.2.3",
 		"drab": "^7.0.3",
-		"openai": "^6.7.0",
+		"openai": "^6.9.1",
 		"ovr": "*",
 		"uico": "^0.10.3",
 		"zod": "^4.1.12"
 	},
 	"devDependencies": {
 		"@domcojs/vercel": "^3.1.1",
-		"@iconify-json/lucide": "^1.2.71",
-		"@iconify/tailwind4": "^1.0.6",
-		"@tailwindcss/vite": "^4.1.16",
+		"@iconify-json/lucide": "^1.2.74",
+		"@iconify/tailwind4": "^1.1.0",
+		"@tailwindcss/vite": "^4.1.17",
 		"domco": "^4.5.2",
-		"tailwindcss": "^4.1.16",
-		"vite": "^7.1.12"
+		"tailwindcss": "^4.1.17",
+		"vite": "^7.2.4",
+		"vite-imagetools": "^9.0.2"
 	}
 }

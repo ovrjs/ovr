@@ -17,13 +17,15 @@ Alternatively, you can setup ovr with a pre-configured template using [Vite with
 npx create-domco@latest --framework=ovr
 ```
 
-## JSX
+## JSX configuration
 
 To utilize JSX, add the following options to your `tsconfig.json` to enable the JSX transform. TypeScript, Vite, or esbuild will pickup the option from this file.
 
 ```json
 { "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "ovr" } }
 ```
+
+> While the ovr package does not depend on React, it uses the same JSX transform as React that is built into `tsc` and other build tools.
 
 Or you can use a comment if you are using ovr in conjunction with another framework to specify the import source for a specific module where you are using ovr.
 
@@ -54,9 +56,9 @@ import { serve } from "srvx";
 
 const app = new App();
 
-app.get("/", () => <h1>Hello World</h1>);
+app.use(() => <h1>Hello World</h1>);
 
-serve({ fetch: app.fetch });
+serve({ fetch: (req) => app.fetch(req) });
 ```
 
 Then can compile `tsx` into `js` with TypeScript, and run the server with Node.

@@ -3,6 +3,8 @@ title: App
 description: Creating an application with ovr.
 ---
 
+## Create
+
 To create a web server with ovr, initialize a new `App` instance:
 
 ```ts
@@ -13,7 +15,7 @@ const app = new App();
 
 The `App` API is inspired by and works similar to frameworks such as [Express](http://expressjs.com), [Koa](https://koajs.com), and [Hono](https://hono.dev/).
 
-## Configuration
+## Options
 
 The following values can be configured when creating the `App`.
 
@@ -27,85 +29,60 @@ new App({ trailingSlash: "always" });
 
 ### CSRF
 
-ovr comes with built-in basic [cross-site request forgery](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF) protection.
+ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF) protection.
 
 ```ts
-new App({ csrf: false }); // disables the built-in checks
+new App({ csrf: false }); // disables the built-in protection
 ```
 
-## Response
+### Form
 
-At the most basic level, you can create a route and return a `Response` from the middleware to handle a request.
+[Multipart form data options](/06-multipart#options).
 
 ```ts
-app.get("/", () => new Response("Hello world"));
+new App({
+	form: {
+		memory: 12 * 1024 * 1024, // increase to 12MB
+		payload: 1024 ** 3, // increase to 1GB
+		parts: 4, // only accept up to 4 parts
+	},
+});
 ```
 
-You can also return a `ReadableStream` to use as the `Response.body`.
+## Use
 
-## JSX
-
-Returning JSX from middleware will generate an HTML streamed response.
+_Use_ the `use` method to register [routes](/04-route) and [middleware](/05-middleware) to your application.
 
 ```tsx
-app.get("/", () => <h1>Hello world</h1>);
+app.add(page); // single
+app.add(page, login, mw); // multiple
+app.add({ page, login, mw }); // object
+app.add([page, login, mw]); // array
+// any combination of these also works
 ```
 
-## HTTP methods
+This makes it easy to create a module of routes and/or middleware,
 
-`app.get` and `app.post` create handlers for the HTTP methods respectively. You can add other or custom methods with `app.on`.
+```tsx
+// home.tsx
+import { Route } from "ovr";
 
-```ts
-// Other or custom methods
-app.on("METHOD", "/pattern", () => {
+export const page = Route.get("/", (c) => {
+	// ...
+});
+
+export const login = Route.post((c) => {
 	// ...
 });
 ```
 
-## Multiple patterns
+and then add them all at once:
 
-Add the same middleware to multiple patterns.
+```tsx
+// app.tsx
+import * as home from "./home";
 
-```ts
-app.get(["/multi/:param", "/pattern/:another"], (c) => {
-	c.params; // { param: string } | { another: string }
-});
-```
-
-## Middleware
-
-When multiple middleware handlers are added to a route, the first middleware will be called, and the `next` middleware can be dispatched within the first by using `await next()`. Middleware is based on [koa-compose](https://github.com/koajs/compose).
-
-```ts
-app.get(
-	"/multi",
-	async (c, next) => {
-		console.log("1");
-
-		await next(); // dispatches the next middleware below
-
-		console.log("3");
-	},
-	(c) => {
-		console.log("2");
-	},
-);
-```
-
-The same [`Context`](/04-context) is passed into each middleware. After all the middleware have been run, the `Context` will `build` and return the final `Response`.
-
-### Global Middleware
-
-Add global middleware that runs in front of every request with `app.use`.
-
-```ts
-app.use(async (c, next) => {
-	// ...
-
-	await next();
-
-	// ...
-});
+app.add(home); // adds all exports
 ```
 
 ## Fetch
@@ -115,3 +92,7 @@ Use the `fetch` method to create a `Response`, this is the `Request` handler for
 ```ts
 const response = await app.fetch("https://example.com");
 ```
+
+## Head requests
+
+ovr automatically handles [`HEAD`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/HEAD) requests, each will be routed to the corresponding `GET` route. Middleware will execute but `Context.res.body` will cleaned up and set to `null` before building the final response.

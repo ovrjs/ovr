@@ -1,7 +1,8 @@
 import * as chatContent from "@/server/demo/chat/index.md";
-import { Head } from "@/ui/head";
+import { createLayout } from "@/ui/layout";
+import { Meta } from "@/ui/meta";
 import "dotenv/config";
-import { Chunk, Get, Post } from "ovr";
+import * as ovr from "ovr";
 import * as z from "zod";
 
 async function* Poet(props: { message: string }) {
@@ -21,14 +22,14 @@ async function* Poet(props: { message: string }) {
 	}
 }
 
-export const chat = new Get("/demo/chat", (c) => {
-	c.head.push(<Head {...chatContent.frontmatter} />);
+export const chat = ovr.Route.get("/demo/chat", (c) => {
+	const Layout = createLayout(c);
 
 	return (
-		<div>
+		<Layout head={<Meta {...chatContent.frontmatter} />}>
 			<h1>{chatContent.frontmatter.title}</h1>
 
-			{Chunk.safe(chatContent.html)}
+			{ovr.Render.html(chatContent.html)}
 
 			<hr />
 
@@ -43,16 +44,18 @@ export const chat = new Get("/demo/chat", (c) => {
 				</div>
 				<button>Send</button>
 			</stream.Form>
-		</div>
+		</Layout>
 	);
 });
 
-export const stream = new Post(async (c) => {
+export const stream = ovr.Route.post(async (c) => {
+	const Layout = createLayout(c);
+
 	const data = await c.req.formData();
 	const message = z.string().parse(data.get("message"));
 
 	return (
-		<div>
+		<Layout head={<Meta title="Message" description="Generated message." />}>
 			<h1>Poem</h1>
 
 			<div class="flex flex-col-reverse">
@@ -62,6 +65,6 @@ export const stream = new Post(async (c) => {
 					<Poet message={message} />
 				</blockquote>
 			</div>
-		</div>
+		</Layout>
 	);
 });

@@ -18,6 +18,7 @@
 		"check": "turbo check",
 		"test": "vitest run",
 		"test:dev": "vitest",
+		"bench": "NODE_OPTIONS='--expose-gc' vitest bench",
 		"build": "turbo build",
 		"format": "prettier --write .",
 		"changeset": "changeset",

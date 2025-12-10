@@ -40,6 +40,6 @@
 	"scripts": {
 		"check": "tsc --noEmit",
 		"dev": "tsc --watch",
-		"build": "tsc"
+		"build": "tsc && cp ../../LICENSE.md dist"
 	}
 }

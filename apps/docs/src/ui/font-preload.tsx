@@ -1,7 +1,7 @@
-import { chunk } from "client:page";
+import { src } from "client:script";
 
 export const FontPreload = () =>
-	chunk.src.assets.map((path) => (
+	src.assets.map((path) => (
 		<link
 			rel="preload"
 			href={`/${path}`}

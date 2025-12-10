@@ -1,18 +1,16 @@
 import * as result from "@/server/home/index.md";
-import { Head } from "@/ui/head";
-import { Chunk, Get } from "ovr";
+import { createLayout } from "@/ui/layout";
+import { Meta } from "@/ui/meta";
+import * as o from "ovr";
 
-export const page = new Get("/", (c) => {
-	c.head.push(<Head {...result.frontmatter} />);
+export const page = o.Route.get("/", (c) => {
+	const Layout = createLayout(c);
 
 	return (
-		<>
+		<Layout head={<Meta {...result.frontmatter} />}>
 			<h1>{result.frontmatter.title}</h1>
 
-			<p class="text-lg">
-				A lightweight server framework <strong>built for streaming</strong> with
-				asynchronous generator JSX.
-			</p>
+			<p class="text-lg">The Streaming Framework</p>
 
 			<hr />
 
@@ -33,7 +31,7 @@ export const page = new Get("/", (c) => {
 
 			<hr />
 
-			{Chunk.safe(result.html)}
+			{o.Render.html(result.html)}
 
 			<hr />
 
@@ -42,12 +40,28 @@ export const page = new Get("/", (c) => {
 					Get Started
 				</a>
 			</div>
-		</>
+		</Layout>
 	);
 });
 
 function* Features() {
 	const features = [
+		{
+			title: "Performance First",
+			href: "/demo/parallel",
+			noPrefetch: true,
+			content: "Run operations in parallel and stream results on the fly.",
+		},
+		{
+			title: "Lightweight",
+			href: "https://npmgraph.js.org/?q=ovr",
+			content: "Essential features, zero dependencies.",
+		},
+		{
+			title: "Type Safe",
+			href: "/04-route#pathname",
+			content: "Type safe path parameters, components, and more.",
+		},
 		{
 			title: "Async Generator JSX",
 			href: "/#introduction",
@@ -55,26 +69,9 @@ function* Features() {
 				"Stream HTML with familiar JSX components, no client-side JS required.",
 		},
 		{
-			title: "Performance First",
-			href: "/demo/parallel",
-			noPrefetch: true,
-			content:
-				"Evaluate components in parallel and stream them as they are generated.",
-		},
-		{
-			title: "Lightweight",
-			href: "https://npmgraph.js.org/?q=ovr",
-			content: "Heavy on features, zero dependencies.",
-		},
-		{
-			title: "Type Safe",
-			href: "/04-helpers#pathname",
-			content: "Type safe path parameters, components, and more.",
-		},
-		{
-			title: "Blazing Fast Routing",
-			href: "/06-routing",
-			content: "Code based routing that scales.",
+			title: "User Data",
+			href: "/06-multipart",
+			content: "Low memory multipart form data streaming.",
 		},
 		{
 			title: "Web Standards",
@@ -91,9 +88,7 @@ function* Features() {
 				data-no-prefetch={feature.noPrefetch}
 			>
 				<h2 class="my-0 text-base">{feature.title}</h2>
-				<p class="text-muted-foreground mt-1 mb-0 text-sm font-light">
-					{feature.content}
-				</p>
+				<p class="text-muted-foreground mt-1 mb-0 text-sm">{feature.content}</p>
 			</a>
 		);
 	}

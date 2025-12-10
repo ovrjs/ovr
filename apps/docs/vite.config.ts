@@ -4,6 +4,7 @@ import { md } from "@robino/md";
 import tailwindcss from "@tailwindcss/vite";
 import { domco } from "domco";
 import { defineConfig } from "vite";
+import { imagetools } from "vite-imagetools";
 
 export default defineConfig({
 	build: { minify: true },
@@ -11,5 +12,6 @@ export default defineConfig({
 		tailwindcss(),
 		domco({ adapter: adapter() }),
 		md({ ...options, FrontmatterSchema }),
+		imagetools(),
 	],
 });

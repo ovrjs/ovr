@@ -1,46 +1,23 @@
-import type { FrontmatterSchema } from "@/lib/md";
+import * as content from "@/lib/content";
 import * as homeResult from "@/server/home/index.md";
-import { Head } from "@/ui/head";
-import type { Result } from "@robino/md";
+import { createLayout } from "@/ui/layout";
+import { Meta } from "@/ui/meta";
 import { clsx } from "clsx";
-import { Chunk, Get } from "ovr";
+import * as ovr from "ovr";
 
-export const content = import.meta.glob<Result<typeof FrontmatterSchema>>(
-	`@/server/docs/*.md`,
-	{ eager: true },
-);
-
-const demos = import.meta.glob<Result<typeof FrontmatterSchema>>(
-	`@/server/demo/*/index.md`,
-	{ eager: true },
-);
-
-export const getSlugs = () => {
-	return Object.keys(content)
-		.map((path) => {
-			let slug = path.split("/").at(3)?.split(".").at(0);
-			return slug;
-		})
-		.filter(Boolean);
-};
-
-export const getContent = (slug: string) => content[`/server/docs/${slug}.md`];
-
-const getMd = (result: Result<typeof FrontmatterSchema>) => {
-	return `# ${result.frontmatter.title}\n\n${
-		result.frontmatter.description
-	}${result.article}`;
-};
-
-export const llms = new Get("/llms.txt", (c) => {
+export const llms = ovr.Route.get("/llms.txt", (c) => {
 	c.text(
-		[homeResult, ...Object.values(content), ...Object.values(demos)]
-			.map((result) => getMd(result))
+		[
+			homeResult,
+			...Object.values(content.content),
+			...Object.values(content.demos),
+		]
+			.map((result) => content.md(result))
 			.join("\n"),
 	);
 });
 
-export const page = new Get("/:slug", (c) => {
+export const page = ovr.Route.get("/:slug", (c) => {
 	let md = false;
 
 	if (c.params.slug.endsWith(".md")) {
@@ -48,34 +25,36 @@ export const page = new Get("/:slug", (c) => {
 		c.params.slug = c.params.slug.slice(0, -3);
 	}
 
-	const result = getContent(c.params.slug);
+	const result = content.get(c.params.slug);
 
 	if (!result) return;
 
 	if (md) {
-		return c.res(getMd(result), {
-			headers: { "content-type": "text/markdown; charset=UTF-8" },
-		});
+		// .md extensions
+		c.res.body = content.md(result);
+		c.res.status = 200;
+		c.res.headers.set("content-type", "text/markdown; charset=UTF-8");
+		return;
 	}
 
-	c.head.push(<Head {...result.frontmatter} />);
+	const Layout = createLayout(c);
 
 	return (
-		<>
+		<Layout head={<Meta {...result.frontmatter} />}>
 			<h1>{result.frontmatter.title}</h1>
 
-			{Chunk.safe(result.html)}
+			{ovr.Render.html(result.html)}
 
 			<hr />
 
 			{() => {
 				const num = parseInt(c.params.slug);
-				const previous = getSlugs().find((slug) => {
+				const previous = content.slugs().find((slug) => {
 					if (!slug) return false;
 					const n = parseInt(slug);
 					return n === num - 1;
 				});
-				const next = getSlugs().find((slug) => {
+				const next = content.slugs().find((slug) => {
 					if (!slug) return false;
 					const n = parseInt(slug);
 					return n === num + 1;
@@ -113,6 +92,6 @@ export const page = new Get("/:slug", (c) => {
 					</div>
 				);
 			}}
-		</>
+		</Layout>
 	);
 });

@@ -1,74 +1,63 @@
-export type Params = Record<string, string>;
+import type { Route } from "../route/index.js";
 
-export class Route<Store> {
-	/** Route pattern */
-	pattern: string;
-
-	/** Store returned when route is found */
-	store: Store;
-
-	/**
-	 * @param pattern route pattern
-	 * @param store value to store in the patterns final node
-	 */
-	constructor(pattern: string, store: Store) {
-		if (pattern[0] !== "/") {
-			throw new Error(
-				`Invalid route: ${pattern} - route pattern must begin with "/"`,
-			);
-		}
-
-		this.pattern = pattern;
-		this.store = store;
-	}
-}
-
-class ParamNode<Store> {
+class ParamNode {
 	/** Name of the parameter (without the colon ":") */
-	name: string;
+	readonly name: string;
 
 	/** Matched route */
-	route: Route<Store> | null = null;
+	route?: Route;
 
 	/** Static child node */
-	staticChild: Trie<Store> | null = null;
+	child?: Trie;
 
+	/**
+	 * Create a new parameter node.
+	 *
+	 * @param name Name of the parameter.
+	 */
 	constructor(name: string) {
 		this.name = name;
 	}
 }
 
-export class Trie<Store> {
+export namespace Trie {
+	/** Params created from the route match */
+	export type Params = Record<string, string>;
+}
+
+export class Trie {
 	/** Unique segment of the pattern trie */
-	segment: string;
+	readonly seg: string;
 
 	/** Static child node map, key is the first character in the segment */
-	staticMap: Map<number, Trie<Store>> | null = null;
+	map?: Map<number, Trie>;
 
 	/** Parametric child node */
-	paramChild: ParamNode<Store> | null = null;
+	param?: ParamNode;
 
 	/** Matched route */
-	route: Route<Store> | null = null;
+	route?: Route;
 
 	/** Matched wildcard route */
-	wildcardRoute: Route<Store> | null = null;
+	wild?: Route;
 
-	static #paramMatch = /:.+?(?=\/|$)/g;
-	static #paramSplit = /:.+?(?=\/|$)/;
+	static readonly #paramMatch = /:.+?(?=\/|$)/g;
+	static readonly #paramSplit = /:.+?(?=\/|$)/;
 
 	/**
+	 * Create a new trie.
+	 *
 	 * @param segment pattern segment
-	 * @param staticChildren static children nodes to add to staticMap
+	 * @param children static children nodes to add to staticMap
 	 */
-	constructor(segment = "/", staticChildren?: Trie<Store>[]) {
-		this.segment = segment;
+	constructor(segment = "/", children?: Trie[]) {
+		this.seg = segment;
 
-		if (staticChildren?.length) {
-			this.staticMap ??= new Map();
+		if (children?.length) {
+			this.map ??= new Map();
 
-			for (const child of staticChildren) {
-				this.staticMap.set(child.segment.charCodeAt(0), child);
+			for (const child of children) {
+				this.map.set(child.seg.charCodeAt(0), child);
 			}
 		}
 	}
@@ -80,10 +69,10 @@ export class Trie<Store> {
 	clone(segment: string) {
 		const clone = new Trie(segment);
 
-		clone.staticMap = this.staticMap;
-		clone.paramChild = this.paramChild;
+		clone.map = this.map;
+		clone.param = this.param;
 		clone.route = this.route;
-		clone.wildcardRoute = this.wildcardRoute;
+		clone.wild = this.wild;
 
 		return clone;
 	}
@@ -98,13 +87,15 @@ export class Trie<Store> {
 	 * @returns the new child produced from the new segment
 	 */
 	fork(charIndex: number, segment: string) {
-		const existingChild = this.clone(this.segment.slice(charIndex)); // "posts/"
-		const newChild = new Trie<Store>(segment.slice(charIndex)); // "movies/"
+		const newChild = new Trie(segment.slice(charIndex)); // "movies/"
 
 		Object.assign(
 			this,
 			// "api/" with the above as children
-			new Trie(this.segment.slice(0, charIndex), [existingChild, newChild]),
+			new Trie(this.seg.slice(0, charIndex), [
+				this.clone(this.seg.slice(charIndex)), // "posts/"
+				newChild,
+			]),
 		);
 
 		return newChild;
@@ -118,33 +109,27 @@ export class Trie<Store> {
 	 * @param segment
 	 */
 	split(segment: string) {
-		const secondHalf = this.clone(this.segment.slice(segment.length));
-
-		Object.assign(this, new Trie(segment, [secondHalf]));
+		Object.assign(
+			this,
+			new Trie(segment, [this.clone(this.seg.slice(segment.length))]),
+		);
 	}
 
 	/**
 	 * @param name name of the param
 	 * @returns the existing child with the same name, or creates a new
 	 */
-	setParamChild(name: string) {
-		if (this.paramChild && this.paramChild.name !== name) {
-			throw new Error(
-				`Cannot create parameter "${name}" because a different parameter ` +
-					`("${this.paramChild.name}") already exists in this location.\n\n${this}`,
-			);
-		}
-
-		return (this.paramChild ??= new ParamNode<Store>(name));
+	set(name: string) {
+		return (this.param ??= new ParamNode(name));
 	}
 
 	/**
 	 * @param route route return when pattern is matched
 	 * @returns this - the Node
 	 */
-	add(route: Route<Store>) {
-		let current: Trie<Store> = this;
-		let pattern = route.pattern; // created to not modify the original
+	add(route: Route) {
+		let current: Trie = this;
+		let pattern = route.method + route.pattern; // created to not modify the original
 
 		const endsWithWildcard = pattern.endsWith("*");
 		if (endsWithWildcard) pattern = pattern.slice(0, -1);
@@ -169,26 +154,26 @@ export class Trie<Store> {
 				// there is only a second static segment (could just be "/")
 				// if there is a param to split them, so there must be a param here
 
-				const paramChild = current.setParamChild(
+				const paramChild = current.set(
 					// param without the ":" (only increment when this is reached)
 					paramSegments[paramIndex++]!.slice(1),
 				);
 
-				if (!paramChild.staticChild) {
+				if (!paramChild.child) {
 					// new - create node with the next static segment
-					current = paramChild.staticChild = new Trie<Store>(staticSegment);
+					current = paramChild.child = new Trie(staticSegment);
 					continue; // next segment - no need to check since it's new
 				}
 
 				// there's already a static child - need to check if it's a match
-				current = paramChild.staticChild;
+				current = paramChild.child;
 			}
 
 			// check if the staticSegment matches the current node
 			for (let charIndex = 0; ; ) {
 				if (charIndex === staticSegment.length) {
 					// finished iterating through the staticSegment
-					if (charIndex < current.segment.length) {
+					if (charIndex < current.seg.length) {
 						// too short
 						current.split(staticSegment);
 					}
@@ -196,15 +181,15 @@ export class Trie<Store> {
 					break; // next segment
 				}
 
-				if (charIndex === current.segment.length) {
+				if (charIndex === current.seg.length) {
 					// passed the end of the current node
-					if (!current.staticMap) {
+					if (!current.map) {
 						// new pattern, create new leaf
-						current.staticMap = new Map();
+						current.map = new Map();
 					} else {
 						// there's already static children,
 						// check to see if there's a leaf that starts with the char
-						const staticChild = current.staticMap.get(
+						const staticChild = current.map.get(
 							staticSegment.charCodeAt(charIndex),
 						);
 
@@ -218,17 +203,14 @@ export class Trie<Store> {
 					}
 
 					// otherwise, add new staticChild
-					const staticChild = new Trie<Store>(staticSegment.slice(charIndex));
-					current.staticMap.set(
-						staticSegment.charCodeAt(charIndex),
-						staticChild,
-					);
+					const staticChild = new Trie(staticSegment.slice(charIndex));
+					current.map.set(staticSegment.charCodeAt(charIndex), staticChild);
 					current = staticChild;
 
 					break; // next segment
 				}
 
-				if (staticSegment[charIndex] !== current.segment[charIndex]) {
+				if (staticSegment[charIndex] !== current.seg[charIndex]) {
 					// different than the node - fork
 					current = current.fork(charIndex, staticSegment);
 
@@ -242,14 +224,13 @@ export class Trie<Store> {
 
 		if (paramIndex < paramSegments.length) {
 			// final segment is a param
-			current.setParamChild(paramSegments[paramIndex]!.slice(1)).route ??=
-				route;
+			current.set(paramSegments[paramIndex]!.slice(1)).route = route;
 		} else if (endsWithWildcard) {
 			// final segment is a wildcard
-			current.wildcardRoute ??= route;
+			current.wild = route;
 		} else {
 			// final segment is static
-			current.route ??= route;
+			current.route = route;
 		}
 
 		return this;
@@ -259,67 +240,62 @@ export class Trie<Store> {
 	 * @param pathname Path to find
 	 * @returns `Route` and the matched `params` if found, otherwise `null`
 	 */
-	find(pathname: string): { route: Route<Store>; params: Params } | null {
+	find(pathname: string): { route: Route; params: Trie.Params } | null {
+		const segmentLength = this.seg.length;
+
 		if (
 			// too short
-			pathname.length < this.segment.length ||
+			pathname.length < segmentLength ||
 			// segment does not match current node segment
-			!pathname.startsWith(this.segment)
+			!pathname.startsWith(this.seg)
 		) {
 			return null;
 		}
 
-		if (pathname === this.segment) {
+		if (pathname === this.seg) {
 			// reached the end of the path
 			if (this.route) return { route: this.route, params: {} };
 
-			if (this.wildcardRoute)
-				return { route: this.wildcardRoute, params: { "*": "" } };
+			if (this.wild) return { route: this.wild, params: { "*": "" } };
 
 			return null;
 		}
 
-		if (this.staticMap) {
+		if (this.map) {
 			// check for a static leaf that starts with the first character
-			const staticChild = this.staticMap.get(
-				pathname.charCodeAt(this.segment.length),
-			);
+			const staticChild = this.map.get(pathname.charCodeAt(segmentLength));
 
 			if (staticChild) {
-				const result = staticChild.find(pathname.slice(this.segment.length));
+				const result = staticChild.find(pathname.slice(segmentLength));
 				if (result) return result;
 			}
 		}
 
 		// check for param leaf
-		if (this.paramChild) {
-			const slashIndex = pathname.indexOf("/", this.segment.length);
+		if (this.param) {
+			const slashIndex = pathname.indexOf("/", segmentLength);
 
 			// if there is not a slash immediately following this.segment
-			if (slashIndex !== this.segment.length) {
+			if (slashIndex !== segmentLength) {
 				// there is a valid parameter
 				if (
 					// param is the end of the pathname
 					slashIndex === -1 &&
-					this.paramChild.route
+					this.param.route
 				) {
 					return {
-						route: this.paramChild.route,
-						params: {
-							[this.paramChild.name]: pathname.slice(this.segment.length),
-						},
+						route: this.param.route,
+						params: { [this.param.name]: pathname.slice(segmentLength) },
 					};
-				} else if (this.paramChild.staticChild) {
+				} else if (this.param.child) {
 					// there's a static node after the param
 					// this is how there can be multiple params, "/" in between
-					const result = this.paramChild.staticChild.find(
-						pathname.slice(slashIndex),
-					);
+					const result = this.param.child.find(pathname.slice(slashIndex));
 
 					if (result) {
 						// add original params to the result
-						result.params[this.paramChild.name] = pathname.slice(
-							this.segment.length,
+						result.params[this.param.name] = pathname.slice(
+							segmentLength,
 							slashIndex,
 						);
 
@@ -330,10 +306,10 @@ export class Trie<Store> {
 		}
 
 		// check for wildcard leaf
-		if (this.wildcardRoute) {
+		if (this.wild) {
 			return {
-				route: this.wildcardRoute,
-				params: { "*": pathname.slice(this.segment.length) },
+				route: this.wild,
+				params: { "*": pathname.slice(segmentLength) },
 			};
 		}
 
