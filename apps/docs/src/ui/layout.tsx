@@ -56,7 +56,6 @@ export const createLayout =
 								<Popover
 									title="ovr"
 									titleHref="/"
-									titleContent={<Logo />}
 									trigger={{
 										children: (
 											<span class="icon-[lucide--align-justify]"></span>
@@ -135,21 +134,21 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 	);
 };
 
-const Logo = () => (
-	<picture>
-		<source srcset={logo.black} media="(prefers-color-scheme: light)" />
-		<source srcset={logo.white} media="(prefers-color-scheme: dark)" />
-		<img src={logo.black} alt="ovr logo" class="size-8" />
-	</picture>
-);
+// const Logo = () => (
+// 	<picture>
+// 		<source srcset={logo.black} media="(prefers-color-scheme: light)" />
+// 		<source srcset={logo.white} media="(prefers-color-scheme: dark)" />
+// 		<img src={logo.black} alt="ovr logo" class="size-8" />
+// 	</picture>
+// );
 
 const HomeLink = () => {
 	return (
 		<a
 			href="/"
-			class="font-headings flex items-center gap-2 pl-1 text-xl font-bold no-underline"
+			class="font-headings flex items-center pl-2 text-xl font-bold no-underline"
 		>
-			<Logo />
+			ovr
 		</a>
 	);
 };
