@@ -67,12 +67,13 @@ const data = await mp.data(); // FormData
 
 ## Options
 
-Options are available for the maximum `memory` allocation and total `payload` size of the request body to prevent attackers from sending massive requests.
+Options are available for the maximum `memory` allocation, max total `payload` size, and max number of `parts`, to prevent attackers from sending massive requests.
 
 ```ts
 const options: Multipart.Options = {
 	memory: 12 * 1024 * 1024, // increase to 12MB
 	payload: 1024 ** 3, // increase to 1GB
+	parts: 4, // only accept up to 4 parts
 };
 
 // standalone

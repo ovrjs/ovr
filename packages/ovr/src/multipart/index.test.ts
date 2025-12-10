@@ -170,6 +170,61 @@ describe("MultipartParser", () => {
 			}
 			expect(i).toBe(2);
 		});
+
+		it("should work with data() method for simple text fields", async () => {
+			const formData = new FormData();
+			formData.append("username", "alice");
+			formData.append("role", "admin");
+
+			const req = new Request("http://localhost:3000", {
+				method: "POST",
+				body: formData,
+			});
+
+			const multipart = new Multipart(req);
+			const data = await multipart.data();
+
+			expect(data.get("username")).toBe("alice");
+			expect(data.get("role")).toBe("admin");
+		});
+
+		it("should handle files in data()", async () => {
+			const formData = new FormData();
+			const fileContent = "file content";
+			const file = new File([fileContent], "test.txt", { type: "text/plain" });
+			formData.append("file", file);
+
+			const req = new Request("http://localhost:3000", {
+				method: "POST",
+				body: formData,
+			});
+
+			const data = await new Multipart(req).data();
+			const f = data.get("file") as File;
+			expect(f.name).toBe("test.txt");
+			expect(await f.text()).toBe(fileContent);
+		});
+
+		it("should handle mixed fields and files in data()", async () => {
+			const formData = new FormData();
+			formData.append("title", "My Vacation");
+			const imageFile = new File(["(binary data mockup)"], "photo.png", {
+				type: "image/png",
+			});
+			formData.append("upload", imageFile);
+			formData.append("description", "A lovely trip.");
+
+			const req = new Request("http://localhost:3000", {
+				method: "POST",
+				body: formData,
+			});
+
+			const data = await new Multipart(req).data();
+			expect(data.get("title")).toBe("My Vacation");
+			const f = data.get("upload") as File;
+			expect(f.name).toBe("photo.png");
+			expect(data.get("description")).toBe("A lovely trip.");
+		});
 	});
 
 	describe("Streaming & Boundary Edge Cases", () => {
@@ -740,6 +795,114 @@ describe("MultipartParser", () => {
 				const bytes = await part.arrayBuffer();
 				expect(bytes.byteLength).toBe(totalData); // Full reassembly
 			}
+		});
+
+		it("enforces parts limit and throws on exceed", async () => {
+			const partsData = [
+				{ name: "part1", content: "value1" },
+				{ name: "part2", content: "value2" },
+				{ name: "part3", content: "value3" },
+			];
+			const payload = multipartPayload(BOUNDARY, partsData);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			const multipart = new Multipart(req, { parts: 2 });
+			let count = 0;
+			await expect(async () => {
+				for await (const part of multipart) {
+					expect(part.name).toBe(`part${count + 1}`);
+					expect(await part.text()).toBe(`value${count + 1}`);
+					count++;
+				}
+			}).rejects.toThrow(RangeError);
+			expect(count).toBe(2);
+		});
+
+		it("enforces parts limit in data() and throws on exceed", async () => {
+			const partsData = [
+				{ name: "part1", content: "value1" },
+				{ name: "part2", content: "value2" },
+				{ name: "part3", content: "value3" },
+			];
+			const payload = multipartPayload(BOUNDARY, partsData);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			await expect(() =>
+				new Multipart(req, { parts: 2 }).data(),
+			).rejects.toThrow(RangeError);
+		});
+
+		it("parses exactly parts limit without error", async () => {
+			const partsData = [
+				{ name: "part1", content: "value1" },
+				{ name: "part2", content: "value2" },
+			];
+			const payload = multipartPayload(BOUNDARY, partsData);
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: payload,
+			});
+
+			const multipart = new Multipart(req, { parts: 2 });
+			const data = await multipart.data();
+			expect(data.get("part1")).toBe("value1");
+			expect(data.get("part2")).toBe("value2");
+		});
+
+		it("enforces parts limit with streaming chunks", async () => {
+			const partsData = [
+				{ name: "part1", content: "value1" },
+				{ name: "part2", content: "value2" },
+				{ name: "part3", content: "value3" },
+			];
+			const payload = multipartPayload(BOUNDARY, partsData);
+
+			const encoder = new TextEncoder();
+			const payloadBytes = encoder.encode(payload);
+			const chunkSize = Math.floor(payloadBytes.length / 3);
+			const chunks: Uint8Array[] = [];
+			for (let i = 0; i < payloadBytes.length; i += chunkSize) {
+				chunks.push(payloadBytes.slice(i, i + chunkSize));
+			}
+
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: streamChunks(chunks),
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
+
+			const multipart = new Multipart(req, { parts: 2 });
+			let count = 0;
+			await expect(async () => {
+				for await (const part of multipart) {
+					expect(part.name).toBe(`part${count + 1}`);
+					expect(await part.text()).toBe(`value${count + 1}`);
+					count++;
+				}
+			}).rejects.toThrow(RangeError);
+			expect(count).toBe(2);
 		});
 	});
 

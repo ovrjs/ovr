@@ -138,6 +138,19 @@ export namespace Multipart {
 		 * ```
 		 */
 		payload?: number;
+
+		/**
+		 * Maximum number of parts.
+		 *
+		 * @default Infinity
+		 * @example
+		 *
+		 * ```ts
+		 * const parts = 4; // only allow 4 parts
+		 * new Multipart(request, { parts });
+		 * ```
+		 */
+		parts?: number;
 	};
 
 	/** Type for a `Part` of the multipart body */
@@ -157,6 +170,7 @@ export class Multipart extends Request {
 	readonly #options: Required<Multipart.Options> = {
 		memory: 4 * Multipart.#mb,
 		payload: 16 * Multipart.#mb,
+		parts: Infinity,
 	};
 
 	/** Request body reader */
@@ -400,7 +414,13 @@ export class Multipart extends Request {
 
 			let headers: Uint8Array | undefined;
 
-			while ((headers = await this.#findConcat(Multipart.#newLine))) {
+			for (
+				let i = 0;
+				(headers = await this.#findConcat(Multipart.#newLine));
+				i++
+			) {
+				if (i === this.#options.parts) throw new RangeError("Too Many Parts");
+
 				const part = new Part(this, this.#findStream(this.#boundary), headers);
 				yield part;
 

@@ -44,6 +44,7 @@ new App({
 	form: {
 		memory: 12 * 1024 * 1024, // increase to 12MB
 		payload: 1024 ** 3, // increase to 1GB
+		parts: 4, // only accept up to 4 parts
 	},
 });
 ```
