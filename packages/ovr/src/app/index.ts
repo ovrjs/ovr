@@ -115,14 +115,17 @@ export class App {
 	) => {
 		const c = new Context(new Request(resource, options), this.#options);
 
-		return Object.assign(
-			c,
-			// match
-			this.#trie.find(
-				// use GET for HEAD requests to find the correct route
-				(c.req.method === "HEAD" ? "GET" : c.req.method) + c.url.pathname,
+		return Context.compose(
+			Object.assign(
+				c,
+				// match
+				this.#trie.find(
+					// use GET for HEAD requests to find the correct route
+					(c.req.method === "HEAD" ? "GET" : c.req.method) + c.url.pathname,
+				),
 			),
-		).build(this.#global.concat(c.route?.middleware ?? []));
+			this.#global.concat(c.route?.middleware ?? []),
+		);
 	};
 
 	/** Basic CSRF middleware */

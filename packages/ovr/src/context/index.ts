@@ -234,23 +234,24 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/**
 	 * Composes a stack of `middleware` into a `Response`.
 	 *
+	 * @param c Context
 	 * @param middleware stack to compose
 	 * @returns constructed `Response`
 	 */
-	async build(middleware: Middleware<Params>[]) {
-		await this.#run(middleware);
+	static async compose(c: Context, middleware: Middleware[]) {
+		await c.#run(middleware);
 
-		if (this.req.method === "HEAD") {
-			if (this.res.body instanceof ReadableStream) {
+		if (c.req.method === "HEAD") {
+			if (c.res.body instanceof ReadableStream) {
 				// cancel unused stream to prevent leaks
-				await this.res.body.cancel("HEAD");
+				await c.res.body.cancel("HEAD");
 			}
 
-			this.res.body = null;
+			c.res.body = null;
 		}
 
-		Object.freeze(this.res);
+		Object.freeze(c.res);
 
-		return new Response(this.res.body, this.res);
+		return new Response(c.res.body, c.res);
 	}
 }

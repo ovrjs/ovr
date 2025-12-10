@@ -72,7 +72,7 @@ Route.get("/api/:id", (c) => {
 
 ## Response
 
-`Context.res` is a `PreparedResponse` that stores the arguments that will be passed into `new Response()` after middleware has executed.
+`Context.res` stores the arguments that will be passed into `new Response()` after middleware has executed.
 
 These properties can be set directly:
 
@@ -87,7 +87,7 @@ Route.get("/api/:id", (c) => {
 new Response(c.res.body, { status: c.res.status, headers: c.res.headers });
 ```
 
-The prepared response can be also be set with helper functions or by returning a value from the middleware.
+The response can be also be set with helper functions or by returning a value from the middleware.
 
 ```tsx
 Route.get("/api/:id", (c) => {

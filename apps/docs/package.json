@@ -29,6 +29,7 @@
 		"@tailwindcss/vite": "^4.1.17",
 		"domco": "^4.5.2",
 		"tailwindcss": "^4.1.17",
-		"vite": "^7.2.4"
+		"vite": "^7.2.4",
+		"vite-imagetools": "^9.0.2"
 	}
 }

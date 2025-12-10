@@ -5,10 +5,18 @@ type TriggerProps = ovr.JSX.IntrinsicElements["button"];
 type PopoverProps = ovr.JSX.IntrinsicElements["div"] & {
 	trigger: TriggerProps;
 	titleHref?: string;
+	titleContent?: ovr.JSX.Element;
 };
 
 export const Popover = (props: PopoverProps) => {
-	const { title, children, trigger, titleHref, ...rest } = props;
+	const {
+		title,
+		children,
+		trigger,
+		titleHref,
+		titleContent = title,
+		...rest
+	} = props;
 	const { children: triggerChildren, ...triggerRest } = trigger;
 
 	const id = rest.id ?? `popover-${Math.random().toString(36).substring(2, 6)}`;
@@ -28,10 +36,12 @@ export const Popover = (props: PopoverProps) => {
 				<div class="flex items-center justify-between">
 					{titleHref ? (
 						<a href={titleHref} class="text-xl font-semibold no-underline">
-							{title}
+							{titleContent}
 						</a>
 					) : (
-						<div class="cursor-default text-xl font-semibold">{title}</div>
+						<div class="cursor-default text-xl font-semibold">
+							{titleContent}
+						</div>
 					)}
 
 					<Trigger id={id}>
