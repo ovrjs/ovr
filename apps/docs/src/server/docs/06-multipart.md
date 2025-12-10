@@ -95,7 +95,7 @@ c.form(options);
 
 [`@remix-run/multipart-parser`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser) is a great option for multipart processing. Its [search function](https://github.com/remix-run/remix/blob/main/packages/multipart-parser/src/lib/buffer-search.ts) (Boyer-Moore-Horspool) has been adapted for use in ovr. It also depends on [`@remix-run/headers`](https://github.com/remix-run/remix/tree/main/packages/headers) which provides a rich API for accessing additional information about each part if needed.
 
-Remix incrementally **buffers each _part_ in memory** compared to ovr's incremental processing of each _chunk_. This makes Remix [unable to stream extremely large files](https://github.com/remix-run/remix/pull/10764) if your server cannot hold them in memory, it requires them to be fully buffered before use. ovr's streaming reduces peak memory usage and can improve upload performance by allowing overlapping I/O---writing starts as soon as chunks arrive.
+Remix incrementally **buffers each _part_ in memory** compared to ovr's incremental processing of each _chunk_. This makes Remix [unable to stream extremely large files](https://github.com/remix-run/remix/pull/10764) if your server cannot hold them in memory, it requires them to be fully buffered before use.
 
 ### SvelteKit
 
