@@ -15,7 +15,7 @@ const Badge = (props: { href: string; children: JSX.Element }) => {
 };
 
 export const Version = () => {
-	return <Badge href="https://www.npmjs.com/package/ovr">v{version}</Badge>;
+	return <Badge href="https://www.npmjs.com/package/ovr">ovr@{version}</Badge>;
 };
 
 export const Size = () => {

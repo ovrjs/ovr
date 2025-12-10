@@ -1,3 +1,4 @@
+import logo from "@/assets/ovr.png";
 import * as content from "@/lib/content";
 import * as demos from "@/server/demo";
 import * as docs from "@/server/docs";
@@ -132,8 +133,11 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 
 const HomeLink = () => {
 	return (
-		<a href="/" class="font-headings pl-2 text-lg font-bold no-underline">
-			ovr
+		<a
+			href="/"
+			class="font-headings flex items-center gap-2 pl-2 text-xl font-bold no-underline"
+		>
+			<img src={logo} alt="ovr" class="size-8" />
 		</a>
 	);
 };

@@ -10,10 +10,7 @@ export const page = o.Route.get("/", (c) => {
 		<Layout head={<Meta {...result.frontmatter} />}>
 			<h1>{result.frontmatter.title}</h1>
 
-			<p class="text-lg">
-				A lightweight server framework <strong>optimized for streaming</strong>{" "}
-				with asynchronous generator JSX.
-			</p>
+			<p class="text-lg">The Streaming Framework</p>
 
 			<hr />
 
