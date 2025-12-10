@@ -97,7 +97,7 @@ Route.get("/api/:id", (c) => {
 	c.json(data, status); // JSON
 	c.redirect(location, status); // redirect
 
-	c.cookie.set(name, value); // set cookie
+	c.cookie.set(name, value, options); // set cookie
 
 	if (c.etag(str)) return; // ETag - sets 304 if match
 

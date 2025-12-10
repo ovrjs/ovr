@@ -31,6 +31,11 @@ class PreparedResponse {
 	headers = new Headers();
 }
 
+export namespace Context {
+	// gives users access to Middleware.Context.Cookie.Options
+	export type Cookie = InstanceType<typeof Cookie>;
+}
+
 /**
  * Request context.
  *
