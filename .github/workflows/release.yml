@@ -8,7 +8,7 @@ on:
 permissions: {}
 jobs:
   release:
-    if: github.repository == 'ovrjs/ovr' # only this repo
+    if: github.repository == 'ovrjs/ovr'
     permissions:
       id-token: write
       contents: write
