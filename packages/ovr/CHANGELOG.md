@@ -1,5 +1,131 @@
 # ovr
 
+## 6.0.0
+
+### Major Changes
+
+- 3b6e581: remove!: Remove `Context.page`, `Context.head`, `Context.layouts`, and `Context.base`
+
+  BREAKING CHANGES: ovr now expects the full page to be returned from each handler. This makes ovr more type safe and prevents bugs like forgetting to set the `head` elements on a page. Now wrap each page in a `Layout` component.
+
+- 3b6e581: refactor(Render)!: Refactor `toGenerator`, `toStream`, and `toString` into a `Render` async iterable class.
+
+  BREAKING CHANGES: Rendering functions are now all included within the `Render` class, `Chunk` methods are now also included here as well for everything to be accessible in one place.
+
+  ```diff
+  - import { toGenerator, toString, toStream, Chunk } from "ovr";
+  + import { Render } from "ovr";
+
+  - toGenerator(el);
+  + new Render(el);
+
+  - toStream(el);
+  + Render.stream(el);
+
+  - toString(el);
+  + Render.string(el);
+
+  - Chunk.safe(el);
+  + Render.html(el);
+
+  - Chunk.escape(el);
+  + Render.escape(el);
+  ```
+
+- 3b6e581: refactor(context)!: Move `body`, `status`, and `headers` into a separate `res` object. Removes the `res` method.
+
+  ```ts
+  Route.get("/api/:id", (c) => {
+  	c.res.body = "# Markdown"; // BodyInit | null | undefined
+  	c.res.status = 200; // number | undefined
+  	c.res.headers.set("content-type", "text/markdown; charset=utf-8"); // Headers
+  });
+  ```
+
+- 3b6e581: refactor!: The same `Route` class is now used within the router and app. `Route` can now be used to create a route with any method.
+
+  BREAKING CHANGES:
+  - Makes router `Trie` class private
+  - `Get` and `Post` helpers are now `Route.get` and `Route.post` respectively.
+  - POST Route components (`<Form>`/`<Button>`) default to set `enctype=multipart/form-data`
+
+  ```diff
+  - import { Get, Post } from "ovr";
+  + import { Route } from "ovr";
+
+  - const page = new Get("/", () => {})
+  + const page = Route.get("/", () => {})
+
+  - const post = new Post(() => {})
+  + const post = Route.post(() => {})
+
+  + const route = new Route("DELETE", "/delete", () => {})
+  ```
+
+- 3b6e581: remove(memo)!: Removes `Memo` from the library.
+
+  BREAKING CHANGE: See this [blog post](https://blog.robino.dev/posts/simple-memo) if you want to implement your own.
+
+- 3b6e581: refactor(app)!: Merge `App.add` and `App.on/get/post` with `App.use`.
+
+  `App.use` is now the single way to add middleware and routes to an app. Routes are now exclusively created using the `Route` class and then added to the app.
+
+  ```ts
+  import { App, type Middleware, Route } from "ovr";
+
+  const app = new App();
+
+  const mw: Middleware = (c, next) => {
+  	console.log(c.req.method);
+  	return next();
+  };
+
+  const route = Route.get("/", () => "hello world");
+
+  app.use(mw, route);
+  ```
+
+  ```diff
+  - app.get("/", () => {});
+  + app.use(Route.get("/", () => {}));
+  ```
+
+### Minor Changes
+
+- 3b6e581: feat: HEAD Request handling
+
+  ovr now automatically handles [`HEAD`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/HEAD) requests, each will be routed to the corresponding `GET` route. Middleware will execute but `Context.res.body` will cleaned up and set to `null` before building the final response.
+
+- 3b6e581: feat(Multipart): Adds streaming `Multipart` form data parser to handle large file uploads.
+
+  [See documentation here](https://ovrjs.com/06-multipart)
+
+- a6f763d: feat(Cookie): Adds `Context.cookie` class to easily get cookies from the current request headers, and set them on the response.
+
+  ```ts
+  import { Route } from "ovr";
+
+  const route = Route.get("/", (c) => {
+  	c.cookie.get(name);
+  	c.cookie.set(name, value, options);
+  });
+  ```
+
+### Patch Changes
+
+- 3b6e581: fix: refactor `Route.Params` into a helper type to extract the params.
+
+  This fixes an issue where `Route.Params` was interpreted as a runtime property instead of a type.
+
+  ```diff
+  import { Route } from "ovr";
+
+  const page = Route.get("/:name", (c) => c.params.name);
+
+  - type PageParams = typeof page.Params;
+  + type PageParams = Route.Params<typeof page>;
+  ```
+
 ## 5.0.0
 
 ### Major Changes
