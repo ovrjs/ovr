@@ -7,32 +7,28 @@ import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
 import { Hash, Header } from "../util/index.js";
 
-export namespace Context {
-	/** Properties to build the final `Response` with once middleware has run. */
-	export type PreparedResponse = {
-		/**
-		 * `body` used to create the `Response`.
-		 *
-		 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Response/Response#body)
-		 */
-		body?: BodyInit | null;
+/** Properties to build the final `Response` with once middleware has run. */
+class PreparedResponse {
+	/**
+	 * `body` used to create the `Response`.
+	 *
+	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Response/Response#body)
+	 */
+	body?: BodyInit | null;
 
-		/**
-		 * `status` used to create the `Response`.
-		 *
-		 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
-		 */
-		status?: number;
+	/**
+	 * `status` used to create the `Response`.
+	 *
+	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
+	 */
+	status?: number;
 
-		/**
-		 * `Headers` used to create the `Response`.
-		 *
-		 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Headers)
-		 */
-		headers: Headers;
-	};
-
-	export type Cookie = InstanceType<typeof Cookie>;
+	/**
+	 * `Headers` used to create the `Response`.
+	 *
+	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Headers)
+	 */
+	headers = new Headers();
 }
 
 /**
@@ -62,7 +58,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	readonly route?: Route;
 
 	/** Contains the arguments to used create the final `Response` */
-	readonly res: Context.PreparedResponse = { headers: new Headers() };
+	readonly res = new PreparedResponse();
 
 	/** Get, set, and delete cookies. */
 	readonly cookie = new Cookie(this);
