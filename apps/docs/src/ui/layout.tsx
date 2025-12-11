@@ -1,5 +1,4 @@
 import * as content from "@/lib/content";
-import { logo } from "@/lib/logo";
 import * as demos from "@/server/demo";
 import * as docs from "@/server/docs";
 import * as homeResult from "@/server/home/index.md";
@@ -19,9 +18,6 @@ const Assets = () => {
 			{import.meta.env.DEV && (
 				<link rel="stylesheet" href="/client/tailwind.css" />
 			)}
-			{Object.values(logo).map((href) => {
-				return <link rel="preload" href={href} as="image" />;
-			})}
 			{o.Render.html(tags)}
 		</>
 	);
@@ -218,6 +214,8 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 					<badge.Size />
 				</li>
 			</ul>
+
+			<doc-search></doc-search>
 		</>
 	);
 };

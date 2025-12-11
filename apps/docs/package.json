@@ -10,6 +10,8 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
+		"@docsearch/css": "^4.3.2",
+		"@docsearch/js": "^4.3.2",
 		"@fontsource-variable/inconsolata": "^5.2.8",
 		"@fontsource-variable/literata": "^5.2.8",
 		"@ovrjs/size": "0.0.1",

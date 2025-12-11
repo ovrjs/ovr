@@ -1,13 +1,10 @@
 /** General utility types */
 export namespace Util {
-	export type MaybePromise<T> = T | Promise<T>;
-	export type MaybeFunction<T> = T | (() => T);
 	export type DeepArray<T> = T | DeepArray<T>[];
 }
 
 /** Header parsing utils */
 export class Header {
-	// shared content type header to minify better
 	static readonly contentType = "content-type";
 
 	/**

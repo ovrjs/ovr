@@ -54,10 +54,10 @@ new App({
 _Use_ the `use` method to register [routes](/04-route) and [middleware](/05-middleware) to your application.
 
 ```tsx
-app.add(page); // single
-app.add(page, login, mw); // multiple
-app.add({ page, login, mw }); // object
-app.add([page, login, mw]); // array
+app.use(page); // single
+app.use(page, login, mw); // multiple
+app.use({ page, login, mw }); // object
+app.use([page, login, mw]); // array
 // any combination of these also works
 ```
 
@@ -76,13 +76,13 @@ export const login = Route.post((c) => {
 });
 ```
 
-and then add them all at once:
+and then use them all at once:
 
 ```tsx
 // app.tsx
 import * as home from "./home";
 
-app.add(home); // adds all exports
+app.use(home); // uses all exports
 ```
 
 ## Fetch
