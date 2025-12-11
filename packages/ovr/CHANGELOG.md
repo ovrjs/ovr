@@ -1,5 +1,12 @@
 # ovr
 
+## 6.0.1
+
+### Patch Changes
+
+- 60c2595: fix(multipart): Support other `multipart/*` types than just form data
+- e2bb168: fix: Util type export issues
+
 ## 6.0.0
 
 ### Major Changes
