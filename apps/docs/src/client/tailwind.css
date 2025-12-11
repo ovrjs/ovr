@@ -199,4 +199,22 @@
 	.button {
 		@apply font-headings font-medium transition-colors ease-out active:scale-99;
 	}
+
+	doc-search {
+		button {
+			@apply bg-background text-foreground border-secondary w-full border;
+
+			.DocSearch-Button-Container {
+				@apply flex w-full gap-2;
+			}
+
+			.DocSearch-Button-Keys {
+				@apply flex gap-1;
+
+				kbd {
+					@apply border-secondary rounded-sm border;
+				}
+			}
+		}
+	}
 }

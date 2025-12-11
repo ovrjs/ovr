@@ -215,7 +215,7 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 				</li>
 			</ul>
 
-			<doc-search></doc-search>
+			<doc-search />
 		</>
 	);
 };

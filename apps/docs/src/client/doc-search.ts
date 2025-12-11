@@ -1,4 +1,5 @@
-import "@docsearch/css";
+import "@docsearch/css/dist/_variables.css";
+import "@docsearch/css/dist/modal.css";
 import docsearch from "@docsearch/js";
 
 export class DocSearch extends HTMLElement {
