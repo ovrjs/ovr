@@ -161,7 +161,6 @@ export namespace Multipart {
 export class Multipart extends Request {
 	static readonly #kb = 1024;
 	static readonly #mb = 1024 ** 2;
-	static #multipartType = "multipart/form-data";
 
 	/** New line needle to share across requests and parts */
 	static readonly #newLine = new Needle("\r\n\r\n");
@@ -217,7 +216,7 @@ export class Multipart extends Request {
 
 		const [type, params] = Header.shift(this.headers.get(Header.contentType));
 
-		if (type !== Multipart.#multipartType) {
+		if (!type?.startsWith("multipart/")) {
 			throw new TypeError("Unsupported Media Type");
 		}
 

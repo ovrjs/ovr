@@ -2,7 +2,7 @@ import "@docsearch/css";
 import docsearch from "@docsearch/js";
 
 export class DocSearch extends HTMLElement {
-	closeOtherPopovers() {
+	#closeOtherPopovers() {
 		const popovers = document.querySelectorAll<HTMLElement>("[popover]");
 
 		for (const popover of popovers) {
@@ -11,7 +11,7 @@ export class DocSearch extends HTMLElement {
 	}
 
 	connectedCallback() {
-		this.addEventListener("click", this.closeOtherPopovers);
+		this.addEventListener("click", this.#closeOtherPopovers);
 
 		docsearch({
 			container: this,
