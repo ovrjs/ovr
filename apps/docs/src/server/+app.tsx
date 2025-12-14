@@ -4,11 +4,12 @@ import * as docs from "@/server/docs";
 import * as home from "@/server/home";
 import * as notFound from "@/server/mw/not-found";
 import * as redirect from "@/server/mw/redirect";
+import * as seo from "@/server/seo";
 import * as o from "ovr";
 
 const app = new o.App();
 
-app.use(redirect, notFound, home, docs, demo);
+app.use(redirect, notFound, home, docs, demo, seo);
 
 if (import.meta.env.DEV) {
 	app.use(
@@ -33,14 +34,18 @@ if (import.meta.env.DEV) {
 	);
 }
 
-const docPrerender = content.slugs().map((slug) => "/" + slug);
-
 export default {
 	fetch: app.fetch,
-	prerender: [
-		home.page.pathname(),
-		docs.llms.pathname(),
-		...docPrerender,
-		...docPrerender.map((p) => p + ".md"),
-	],
+	prerender: () => {
+		const docPrerender = content.slugs().map((slug) => "/" + slug);
+
+		return [
+			home.page.pathname(),
+			docs.llms.pathname(),
+			seo.robots.pathname(),
+			seo.sitemap.pathname(),
+			...docPrerender,
+			...docPrerender.map((p) => p + ".md"),
+		];
+	},
 };

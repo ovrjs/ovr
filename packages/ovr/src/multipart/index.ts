@@ -1,4 +1,4 @@
-import { Codec, Header } from "../util/index.js";
+import { Codec, Header, Mime } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
 class Needle extends Uint8Array {
@@ -50,6 +50,7 @@ class Part extends Request {
 	 */
 	readonly filename: string | null;
 
+	// this is named `type` instead of `mime` to align with `Blob.type`
 	/**
 	 * Media type of the part
 	 *
@@ -91,10 +92,10 @@ class Part extends Request {
 			duplex: "half",
 		});
 
-		[this.type] = Header.shift(this.headers.get(Header.contentType));
+		[this.type] = Header.shift(this.headers.get(Header.type));
 
 		({ name: this.name = null, filename: this.filename = null } = Header.params(
-			this.headers.get("content-disposition"),
+			this.headers.get(Header.disposition),
 		));
 	}
 }
@@ -214,11 +215,9 @@ export class Multipart extends Request {
 	constructor(req: Request, options?: Multipart.Options) {
 		super(req);
 
-		const [type, params] = Header.shift(this.headers.get(Header.contentType));
+		const [mime, params] = Header.shift(this.headers.get(Header.type));
 
-		if (!type?.startsWith("multipart/")) {
-			throw new TypeError("Unsupported Media Type");
-		}
+		if (!Mime.multipart(mime)) throw new TypeError("Unsupported Media Type");
 
 		const { boundary } = Header.params(params);
 
@@ -467,7 +466,7 @@ export class Multipart extends Request {
 			if (part.name) {
 				let value: string | File;
 
-				if (part.filename || part.type === "application/octet-stream") {
+				if (part.filename || part.type === Mime.stream) {
 					const blob = await part.blob();
 					value = new File([blob], part.filename ?? "blob", {
 						type: blob.type,

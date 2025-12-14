@@ -1,6 +1,6 @@
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
-import type { Method } from "../types/index.js";
+import { Method } from "../util/index.js";
 import { App } from "./index.js";
 import { describe, expect, test } from "vitest";
 
@@ -15,7 +15,7 @@ const notFound: Middleware = async (c, next) => {
 	}
 };
 
-const appFetch = (pathname: string, method: Method = "GET") =>
+const appFetch = (pathname: string, method: Route.Method = Method.get) =>
 	app.fetch("http://localhost:5173" + pathname, { method });
 
 test("context", () => {
@@ -59,7 +59,7 @@ test("GET /", async () => {
 });
 
 test("HEAD /", async () => {
-	const res = await appFetch("/", "HEAD");
+	const res = await appFetch("/", Method.head);
 
 	expect(res.status).toBe(200);
 	expect(res.headers.get("hello")).toBe("world");

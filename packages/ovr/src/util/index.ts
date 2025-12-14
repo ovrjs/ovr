@@ -3,9 +3,70 @@ export namespace Util {
 	export type DeepArray<T> = T | DeepArray<T>[];
 }
 
+/** Media type utils */
+export class Mime {
+	static readonly html = Mime.#text("html");
+	static readonly text = Mime.#text("plain");
+	static readonly json = Mime.#application("json");
+	static readonly stream = Mime.#application("octet-stream");
+	static readonly #multipartBase = "multipart/";
+	static readonly multipartFormData = Mime.#multipart("form-data");
+
+	static #text<T extends string>(type: T) {
+		return `text/${type}` as const;
+	}
+
+	static #application<T extends string>(type: T) {
+		return `application/${type}` as const;
+	}
+
+	static #multipart<T extends string>(type: T) {
+		return `${Mime.#multipartBase}${type}` as const;
+	}
+
+	static readonly #markup = new Set<string>([
+		Mime.html,
+		Mime.#text("xml"),
+		Mime.#application("xml"),
+	]);
+
+	/**
+	 * @param mime Media type
+	 * @returns `true` if the mime is markup
+	 */
+	static markup(mime: string) {
+		return (
+			Mime.#markup.has(mime) ||
+			// covers other xml types like svg
+			mime.includes("+xml")
+		);
+	}
+
+	/**
+	 * @param mime Media type
+	 * @returns `true` if the mime is multipart
+	 */
+	static multipart(mime: string | null) {
+		return mime?.startsWith(Mime.#multipartBase);
+	}
+}
+
 /** Header parsing utils */
 export class Header {
-	static readonly contentType = "content-type";
+	static readonly type = "content-type";
+	static readonly disposition = "content-disposition";
+	static readonly etag = "etag";
+	static readonly ifNoneMatch = "if-none-match";
+	static readonly cookie = "cookie";
+	static readonly setCookie = "set-cookie";
+
+	/**
+	 * @param mime
+	 * @returns mime; charset=utf-8
+	 */
+	static utf8<M extends string>(mime: M) {
+		return `${mime}; charset=utf-8` as const;
+	}
 
 	/**
 	 * @param header header value to parse
@@ -106,4 +167,11 @@ export class Codec {
 
 	/** DO NOT USE FOR STREAMS */
 	static decode = (input?: Uint8Array) => Codec.#decoder.decode(input);
+}
+
+/** HTTP methods */
+export class Method {
+	static readonly get = "GET";
+	static readonly post = "POST";
+	static readonly head = "HEAD";
 }

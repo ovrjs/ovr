@@ -1,10 +1,7 @@
 import fs from "node:fs/promises";
 import { build } from "rolldown";
 
-const result = await build({
-	input: "entry.js",
-	output: { format: "esm", minify: true },
-});
+const result = await build({ input: "entry.js", output: { minify: true } });
 
 const bytes = result.output[0].code.length;
 

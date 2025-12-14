@@ -146,9 +146,9 @@ export class Cookie {
 	 * @returns Value of the cookie, or `undefined` if not found
 	 */
 	get(name: string) {
-		return (this.#parsed ??= Header.params(this.#c.req.headers.get("cookie")))[
-			name
-		];
+		return (this.#parsed ??= Header.params(
+			this.#c.req.headers.get(Header.cookie),
+		))[name];
 	}
 
 	/**
@@ -184,6 +184,6 @@ export class Cookie {
 		if (options.expires)
 			cookie.push(`Expires=${options.expires.toUTCString()}`);
 
-		this.#c.res.headers.append("set-cookie", cookie.join("; "));
+		this.#c.res.headers.append(Header.setCookie, cookie.join("; "));
 	}
 }

@@ -469,69 +469,66 @@ type LabelAttributes = Attributes<{ for: string }>;
 
 type LiAttributes = Attributes<{ value: string | number }>;
 
-type LinkAttributes = Attributes<
-	{
-		as:
-			| "audio"
-			| "document"
-			| "embed"
-			| "fetch"
-			| "font"
-			| "image"
-			| "object"
-			| "script"
-			| "style"
-			| "track"
-			| "video"
-			| "worker";
-		blocking: SharedAttributes["blocking"];
-		crossorigin: SharedAttributes["crossorigin"];
-		disabled: boolean;
-		fetchpriority: SharedAttributes["fetchpriority"];
-		href: string;
-		hreflang: string;
-		imagesizes: string;
-		imagesrcset: string;
-		integrity: string;
-		media: string;
-		// not all the same options as others
-		referrerpolicy:
-			| "no-referrer"
-			| "no-referrer-when-downgrade"
-			| "origin"
-			| "origin-when-cross-origin"
-			| "unsafe-url";
-		// not all the same options as others
-		rel:
-			| "alternate"
-			| "author"
-			| "canonical"
-			| "dns-prefetch"
-			| "expect"
-			| "help"
-			| "icon"
-			| "license"
-			| "manifest"
-			| "me"
-			| "modulepreload"
-			| "next"
-			| "pingback"
-			| "preconnect"
-			| "prefetch"
-			| "preload"
-			| "prerender"
-			| "prev"
-			| "privacy-policy"
-			| "search"
-			| "stylesheet"
-			| "terms-of-service"
-			// allows multiple
-			| (string & {});
-		sizes: string;
-		type: string;
-	},
-	undefined
->;
+type LinkAttributes = Attributes<{
+	as:
+		| "audio"
+		| "document"
+		| "embed"
+		| "fetch"
+		| "font"
+		| "image"
+		| "object"
+		| "script"
+		| "style"
+		| "track"
+		| "video"
+		| "worker";
+	blocking: SharedAttributes["blocking"];
+	crossorigin: SharedAttributes["crossorigin"];
+	disabled: boolean;
+	fetchpriority: SharedAttributes["fetchpriority"];
+	href: string;
+	hreflang: string;
+	imagesizes: string;
+	imagesrcset: string;
+	integrity: string;
+	media: string;
+	// not all the same options as others
+	referrerpolicy:
+		| "no-referrer"
+		| "no-referrer-when-downgrade"
+		| "origin"
+		| "origin-when-cross-origin"
+		| "unsafe-url";
+	// not all the same options as others
+	rel:
+		| "alternate"
+		| "author"
+		| "canonical"
+		| "dns-prefetch"
+		| "expect"
+		| "help"
+		| "icon"
+		| "license"
+		| "manifest"
+		| "me"
+		| "modulepreload"
+		| "next"
+		| "pingback"
+		| "preconnect"
+		| "prefetch"
+		| "preload"
+		| "prerender"
+		| "prev"
+		| "privacy-policy"
+		| "search"
+		| "stylesheet"
+		| "terms-of-service"
+		// allows multiple
+		| (string & {});
+	sizes: string;
+	type: string;
+}>; // not strictly a void element since it can have children in XML
 
 type MapAttributes = Attributes<{ name: string }>;
 
@@ -713,7 +710,234 @@ type VideoAttributes = Attributes<{
 	width: string | number;
 }>;
 
-/** Standard HTML elements */
+// XML
+type XMLAttributes<
+	P extends JSX.Props = JSX.Props,
+	Children = JSX.Element,
+> = Partial<{ children: Children; xmlns: string }> & JSX.Props & Partial<P>;
+
+type XMLDeclarationAttributes = {
+	version?: "1.0" | (string & {});
+	encoding?: "utf-8" | (string & {});
+	standalone?: "yes" | "no";
+};
+
+type RSSAttributes = XMLAttributes<{
+	version: "2.0" | (string & {});
+	"xmlns:atom": string;
+}>;
+
+type AtomLinkAttributes = {
+	href: string;
+	rel?: "alternate" | "related" | "self" | "enclosure" | "via" | (string & {});
+	type?:
+		| "application/atom+xml"
+		| "application/rss+xml"
+		| "application/xml"
+		| "text/xml"
+		| "text/html"
+		| (string & {});
+	hreflang?: string;
+	title?: string;
+	length?: string | number;
+};
+
+// SVG
+// SVG
+type SvgAttributes<
+	P extends JSX.Props = JSX.Props,
+	Children = JSX.Element,
+> = Partial<{
+	children: Children;
+	// Core attributes
+	id: string;
+	class: string;
+	style: string;
+	// Presentation attributes
+	fill: string;
+	"fill-opacity": string | number;
+	"fill-rule": "nonzero" | "evenodd";
+	stroke: string;
+	"stroke-width": string | number;
+	"stroke-opacity": string | number;
+	"stroke-linecap": "butt" | "round" | "square";
+	"stroke-linejoin": "miter" | "round" | "bevel";
+	"stroke-dasharray": string;
+	"stroke-dashoffset": string | number;
+	opacity: string | number;
+	transform: string;
+	"transform-origin": string;
+	// Clipping / masking
+	"clip-path": string;
+	"clip-rule": "nonzero" | "evenodd";
+	mask: string;
+}> &
+	JSX.Props &
+	Partial<P>;
+
+type SvgRootAttributes = SvgAttributes<{
+	xmlns: string;
+	"xmlns:xlink": string;
+	width: string | number;
+	height: string | number;
+	viewBox: string;
+	preserveAspectRatio:
+		| "none"
+		| "xMinYMin"
+		| "xMidYMin"
+		| "xMaxYMin"
+		| "xMinYMid"
+		| "xMidYMid"
+		| "xMaxYMid"
+		| "xMinYMax"
+		| "xMidYMax"
+		| "xMaxYMax"
+		| (string & {});
+}>;
+
+type SvgPathAttributes = SvgAttributes<{ d: string }>;
+
+type SvgCircleAttributes = SvgAttributes<{
+	cx: string | number;
+	cy: string | number;
+	r: string | number;
+}>;
+
+type SvgEllipseAttributes = SvgAttributes<{
+	cx: string | number;
+	cy: string | number;
+	rx: string | number;
+	ry: string | number;
+}>;
+
+type SvgRectAttributes = SvgAttributes<{
+	x: string | number;
+	y: string | number;
+	width: string | number;
+	height: string | number;
+	rx: string | number;
+	ry: string | number;
+}>;
+
+type SvgLineAttributes = SvgAttributes<{
+	x1: string | number;
+	y1: string | number;
+	x2: string | number;
+	y2: string | number;
+}>;
+
+type SvgPolylineAttributes = SvgAttributes<{ points: string }>;
+
+type SvgPolygonAttributes = SvgAttributes<{ points: string }>;
+
+type SvgTextAttributes = SvgAttributes<{
+	x: string | number;
+	y: string | number;
+	dx: string | number;
+	dy: string | number;
+	"text-anchor": "start" | "middle" | "end";
+	"dominant-baseline":
+		| "auto"
+		| "middle"
+		| "hanging"
+		| "mathematical"
+		| "text-top"
+		| "text-bottom"
+		| (string & {});
+	"font-family": string;
+	"font-size": string | number;
+	"font-weight": string | number;
+	"letter-spacing": string | number;
+}>;
+
+type SvgTspanAttributes = SvgAttributes<{
+	x: string | number;
+	y: string | number;
+	dx: string | number;
+	dy: string | number;
+}>;
+
+type SvgUseAttributes = SvgAttributes<{
+	href: string;
+	"xlink:href": string;
+	x: string | number;
+	y: string | number;
+	width: string | number;
+	height: string | number;
+}>;
+
+type SvgSymbolAttributes = SvgAttributes<{
+	viewBox: string;
+	preserveAspectRatio: SvgRootAttributes["preserveAspectRatio"];
+}>;
+
+type SvgImageAttributes = SvgAttributes<{
+	href: string;
+	"xlink:href": string;
+	x: string | number;
+	y: string | number;
+	width: string | number;
+	height: string | number;
+	preserveAspectRatio: SvgRootAttributes["preserveAspectRatio"];
+}>;
+
+type SvgLinearGradientAttributes = SvgAttributes<
+	{
+		x1: string | number;
+		y1: string | number;
+		x2: string | number;
+		y2: string | number;
+		gradientUnits: "userSpaceOnUse" | "objectBoundingBox";
+		gradientTransform: string;
+		spreadMethod: "pad" | "reflect" | "repeat";
+	},
+	undefined
+>;
+
+type SvgRadialGradientAttributes = SvgAttributes<
+	{
+		cx: string | number;
+		cy: string | number;
+		r: string | number;
+		fx: string | number;
+		fy: string | number;
+		gradientUnits: "userSpaceOnUse" | "objectBoundingBox";
+		gradientTransform: string;
+		spreadMethod: "pad" | "reflect" | "repeat";
+	},
+	undefined
+>;
+
+type SvgStopAttributes = SvgAttributes<
+	{
+		offset: string | number;
+		"stop-color": string;
+		"stop-opacity": string | number;
+	},
+	undefined
+>;
+
+type SvgClipPathAttributes = SvgAttributes<{
+	clipPathUnits: "userSpaceOnUse" | "objectBoundingBox";
+}>;
+
+type SvgMaskAttributes = SvgAttributes<{
+	x: string | number;
+	y: string | number;
+	width: string | number;
+	height: string | number;
+	maskUnits: "userSpaceOnUse" | "objectBoundingBox";
+	maskContentUnits: "userSpaceOnUse" | "objectBoundingBox";
+}>;
+
+type SvgForeignObjectAttributes = SvgAttributes<{
+	x: string | number;
+	y: string | number;
+	width: string | number;
+	height: string | number;
+}>;
+
+/** Standard HTML/XML elements */
 export type IntrinsicElements =
 	// allows custom elements
 	Record<string, Attributes> & {
@@ -828,4 +1052,36 @@ export type IntrinsicElements =
 		var: Attributes;
 		video: VideoAttributes;
 		wbr: Attributes<JSX.Props, undefined>;
+
+		// XML that have xmlns or more
+		// custom are still allowed so they are covered
+		xml: XMLDeclarationAttributes;
+		rss: RSSAttributes;
+		channel: XMLAttributes;
+		item: XMLAttributes;
+		urlset: XMLAttributes;
+		"atom:link": AtomLinkAttributes;
+
+		// SVG
+		svg: SvgRootAttributes;
+		g: SvgAttributes;
+		defs: SvgAttributes;
+		path: SvgPathAttributes;
+		circle: SvgCircleAttributes;
+		ellipse: SvgEllipseAttributes;
+		rect: SvgRectAttributes;
+		line: SvgLineAttributes;
+		polyline: SvgPolylineAttributes;
+		polygon: SvgPolygonAttributes;
+		text: SvgTextAttributes;
+		tspan: SvgTspanAttributes;
+		use: SvgUseAttributes;
+		symbol: SvgSymbolAttributes;
+		image: SvgImageAttributes;
+		linearGradient: SvgLinearGradientAttributes;
+		radialGradient: SvgRadialGradientAttributes;
+		stop: SvgStopAttributes;
+		clipPath: SvgClipPathAttributes;
+		mask: SvgMaskAttributes;
+		foreignObject: SvgForeignObjectAttributes;
 	};

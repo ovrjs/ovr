@@ -1,9 +1,10 @@
 import { Context } from "../context/index.js";
 import { Route } from "../route/index.js";
+import { Method } from "../util/index.js";
 import { Trie } from "./index.js";
 import { expect, test } from "vitest";
 
-const c = new Context(new Request("https://localhost/"));
+const c = new Context(new Request("https://localhost/"), {});
 
 const trie = new Trie()
 	.add(Route.get("/", () => "/"))
@@ -117,7 +118,7 @@ test("/static//static", () => {
 });
 
 test("Empty path", () => {
-	const result = trie.find("GET");
+	const result = trie.find(Method.get);
 	expect(result).toBe(null);
 });
 
