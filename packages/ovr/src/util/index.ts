@@ -15,7 +15,11 @@ export class Mime {
 	 * @returns `true` if the mime is markup
 	 */
 	static markup(mime: string) {
-		return Mime.#markup.includes(mime) || mime.includes("+xml");
+		return (
+			Mime.#markup.includes(mime) ||
+			// covers other xml types like svg
+			mime.includes("+xml")
+		);
 	}
 
 	/**
