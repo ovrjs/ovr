@@ -4,11 +4,24 @@ export namespace Util {
 }
 
 export class Mime {
-	static readonly html = "text/html";
-	static readonly json = "application/json";
-	static readonly text = "text/plain";
-	static readonly stream = "application/octet-stream";
-	static readonly #markup = [Mime.html, "application/xml", "text/xml"];
+	static readonly html = Mime.#text("html");
+	static readonly text = Mime.#text("plain");
+	static readonly json = Mime.#application("json");
+	static readonly stream = Mime.#application("octet-stream");
+
+	static readonly #markup = new Set<string>([
+		Mime.html,
+		Mime.#text("xml"),
+		Mime.#application("xml"),
+	]);
+
+	static #text<T extends string>(type: T) {
+		return `text/${type}` as const;
+	}
+
+	static #application<T extends string>(type: T) {
+		return `application/${type}` as const;
+	}
 
 	/**
 	 * @param mime Media type
@@ -16,7 +29,7 @@ export class Mime {
 	 */
 	static markup(mime: string) {
 		return (
-			Mime.#markup.includes(mime) ||
+			Mime.#markup.has(mime) ||
 			// covers other xml types like svg
 			mime.includes("+xml")
 		);
@@ -41,8 +54,8 @@ export class Header {
 	 * @param mime
 	 * @returns mime; charset=utf-8
 	 */
-	static utf8(mime: string) {
-		return `${mime}; charset=utf-8`;
+	static utf8<M extends string>(mime: M) {
+		return `${mime}; charset=utf-8` as const;
 	}
 
 	/**
