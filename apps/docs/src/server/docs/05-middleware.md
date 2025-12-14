@@ -108,39 +108,20 @@ Route.get("/api/:id", (c) => {
 
 ### Return value
 
-ovr handles the return value from middleware in two ways.
+ovr handles the return value from middleware in one of two ways.
 
-1. **Response** - If a `Response` is returned from middleware, `Context.res.body`, `Context.res.status` will be set to the response's values, and its `headers` will be merged into `Context.res.headers`.
+#### Response
+
+If a `Response` is returned from middleware, `Context.res.body`, `Context.res.status` will be set to the response's values, and its `headers` will be merged into `Context.res.headers`.
 
 ```ts
 app.use(() => new Response("Hello world"));
 ```
 
-2. **Stream**
+#### Stream
 
 Any value that is returned from middleware will be passed into [`Render.stream`](/02-render#stream) and assigned to `Context.res.body`.
 
-Returning a value sets the content type header to HTML unless it has already been set. HTML will be escaped during the render while other content types will not.
+Returning a value sets the `content-type` header to `html` unless it has already been set. Markup content types such as `html`, `xml`, and `svg` will be escaped during the render while other content types will not.
 
-This makes it easy to stream other types of content than HTML. For example, to create a [server sent event](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events) stream, simply set the content type header and return a generator function:
-
-```ts
-// simulate latency
-const delay = () => new Promise((r) => setTimeout(r, 500));
-
-Route.get("/api/:id", (c) => {
-	// set the content type header to create a SSE
-	c.res.headers.set("content-type", "text/event-stream");
-
-	// passed into `render.stream`
-	return async function* () {
-		yield "data: server\n\n";
-		await delay();
-		yield "data: sent\n\n";
-		await delay();
-		yield "data: event\n\n";
-	};
-});
-```
-
-> ovr JSX can be used to create streams of other types of content too without using the intrinsic HTML elements.
+> Middleware's flexible return type makes it easy to stream other types of content than HTML. Simply set the `content-type` header before returning. Check out the demos for [SSE](/demo/sse) or [XML](/demo/seo) for examples.

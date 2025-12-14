@@ -1,9 +1,11 @@
-import { DocSearch } from "@/client/doc-search";
 import "@/client/tailwind.css";
 import "drab/prefetch/define";
 import "drab/share/define";
 
-customElements.define("doc-search", DocSearch);
+customElements.define(
+	"doc-search",
+	(await import("@/client/doc-search")).DocSearch,
+);
 
 if (import.meta.env.DEV) {
 	const o = await import("ovr");

@@ -176,7 +176,13 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 				{Object.values(demos)
 					.sort((a, b) => a.pattern.localeCompare(b.pattern))
 					.map((demo) => {
-						if (!("Anchor" in demo)) return; // filter out post
+						if (!("Anchor" in demo)) return;
+
+						const pathname = demo.pathname();
+
+						if (!pathname.startsWith("/demo")) return;
+
+						const text = pathname.split("/").at(2);
 
 						return (
 							<li>
@@ -184,10 +190,11 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 									data-no-prefetch
 									class={clsx(
 										"button secondary justify-start capitalize",
-										demo.pattern !== c.url.pathname && "ghost",
+										(text === "seo" || text === "sse") && "uppercase",
+										pathname !== c.url.pathname && "ghost",
 									)}
 								>
-									{demo.pattern.split("/").at(2)}
+									{text}
 								</demo.Anchor>
 							</li>
 						);

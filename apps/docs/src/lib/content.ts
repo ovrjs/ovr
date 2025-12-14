@@ -6,13 +6,17 @@ export const content = import.meta.glob<Result<typeof FrontmatterSchema>>(
 	{ eager: true },
 );
 
-export const slugs = () => {
-	return Object.keys(content)
-		.map((path) => {
-			let slug = path.split("/").at(3)?.split(".").at(0);
-			return slug;
-		})
-		.filter(Boolean);
+export const slugs = (all?: boolean) => {
+	return Object.keys(all ? { ...content, ...demos } : content)
+		.map((path) =>
+			path
+				.split("/", 4)
+				.slice(path.startsWith("/server/demo") ? 2 : 3)
+				.join("/")
+				.split(".")
+				.at(0),
+		)
+		.filter(Boolean) as string[];
 };
 
 export const get = (slug: string) => content[`/server/docs/${slug}.md`];

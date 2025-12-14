@@ -49,6 +49,7 @@ export class JSX {
 		"source",
 		"track",
 		"wbr",
+		"xml",
 	]);
 
 	/**
@@ -72,11 +73,9 @@ export class JSX {
 			return;
 		}
 
-		if (tag === "html") yield Render.html("<!doctype html>");
-
 		// intrinsic element
 		// faster to concatenate attributes than to yield them as separate chunks
-		let attributes = "";
+		let opening = tag;
 
 		for (const key in props) {
 			// more memory efficient to skip children instead of destructuring and using ...rest
@@ -86,18 +85,27 @@ export class JSX {
 
 			if (value === true) {
 				// just put the key without the value
-				attributes += ` ${key}`;
+				opening += ` ${key}`;
 			} else if (typeof value === "string") {
-				attributes += ` ${key}="${Render.escape(value, true)}"`;
+				opening += ` ${key}="${Render.escape(value, true)}"`;
 			} else if (typeof value === "number" || typeof value === "bigint") {
-				attributes += ` ${key}="${value}"`;
+				opening += ` ${key}="${value}"`;
 			}
 			// otherwise, don't include the attribute
 		}
 
-		yield Render.html(`<${tag}${attributes}>`);
+		if (tag === "html") {
+			yield Render.html(`<!doctype html><${opening}>`);
+		} else if (tag === "xml") {
+			yield Render.html(`<?${opening}?>`);
+		} else {
+			yield Render.html(`<${opening}>`);
+		}
 
-		if (JSX.#void.has(tag)) return;
+		// if children and a void element, render it like normal
+		// to account for cases like XML <link>content</link>
+		// assumes the user knows what they are doing
+		if (props.children == null && JSX.#void.has(tag)) return;
 
 		yield* new Render(props.children);
 

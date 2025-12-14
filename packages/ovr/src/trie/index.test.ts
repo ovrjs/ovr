@@ -3,7 +3,7 @@ import { Route } from "../route/index.js";
 import { Trie } from "./index.js";
 import { expect, test } from "vitest";
 
-const c = new Context(new Request("https://localhost/"));
+const c = new Context(new Request("https://localhost/"), {});
 
 const trie = new Trie()
 	.add(Route.get("/", () => "/"))

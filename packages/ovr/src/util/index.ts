@@ -3,9 +3,35 @@ export namespace Util {
 	export type DeepArray<T> = T | DeepArray<T>[];
 }
 
+export class Mime {
+	static readonly html = "text/html";
+	static readonly json = "application/json";
+	static readonly text = "text/plain";
+
+	static readonly #markup = [Mime.html, "application/xml", "text/xml"];
+
+	/**
+	 * @param mime Media type
+	 * @returns `true` if the mime is markup
+	 */
+	static markup(mime: string) {
+		return Mime.#markup.includes(mime) || mime.includes("+xml");
+	}
+}
+
 /** Header parsing utils */
 export class Header {
 	static readonly contentType = "content-type";
+	static readonly etag = "etag";
+	static readonly ifNoneMatch = "if-none-match";
+
+	/**
+	 * @param mime
+	 * @returns mime; charset=utf-8
+	 */
+	static utf8(mime: string) {
+		return `${mime}; charset=utf-8`;
+	}
 
 	/**
 	 * @param header header value to parse

@@ -5,7 +5,7 @@ import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
-import { Hash, Header } from "../util/index.js";
+import { Hash, Header, Mime } from "../util/index.js";
 
 /** Properties to build the final `Response` with once middleware has run. */
 class PreparedResponse {
@@ -71,17 +71,12 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/** Forwarded app options */
 	readonly #options: App.Options;
 
-	// for reuse across methods
-	static readonly #textHtml = "text/html";
-	static readonly #utf8 = "charset=utf-8";
-	static readonly #htmlType = `${Context.#textHtml}; ${Context.#utf8}`;
-
 	/**
 	 * Creates a new `Context` with the current `Request`.
 	 *
 	 * @param req Request
 	 */
-	constructor(req: Request, options: App.Options = {}) {
+	constructor(req: Request, options: App.Options) {
 		this.req = req;
 		this.url = new URL(req.url);
 		this.#options = options;
@@ -96,7 +91,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	html(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.contentType, Context.#htmlType);
+		this.res.headers.set(Header.contentType, Header.utf8(Mime.html));
 	}
 
 	/**
@@ -105,22 +100,22 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * @param data passed into JSON.stringify to create the body
 	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 */
-	json(data: unknown, status?: number) {
+	json<D>(data: D extends bigint ? never : D, status?: number) {
 		this.res.body = JSON.stringify(data);
 		this.res.status = status;
-		this.res.headers.set(Header.contentType, "application/json");
+		this.res.headers.set(Header.contentType, Mime.json);
 	}
 
 	/**
 	 * Creates a plain text response.
 	 *
-	 * @param body response body
+	 * @param body text body
 	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 */
-	text(body: BodyInit, status?: number) {
+	text(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.contentType, `text/plain; ${Context.#utf8}`);
+		this.res.headers.set(Header.contentType, Header.utf8(Mime.text));
 	}
 
 	/**
@@ -153,9 +148,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	etag(string: string) {
 		const etag = `"${Hash.djb2(string)}"`;
 
-		this.res.headers.set("etag", etag);
+		this.res.headers.set(Header.etag, etag);
 
-		if (this.req.headers.get("if-none-match") === etag) {
+		if (this.req.headers.get(Header.ifNoneMatch) === etag) {
 			this.res.body = null;
 			this.res.status = 304;
 
@@ -220,16 +215,16 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			}
 		} else if (r !== undefined) {
 			// something to stream
-			const type = this.res.headers.get(Header.contentType);
+			const [mime] = Header.shift(this.res.headers.get(Header.contentType));
 
 			this.res.body = Render.stream(r, {
 				// other defined types are safe
-				safe: Boolean(type && !type.startsWith(Context.#textHtml)),
+				safe: Boolean(mime && !Mime.markup(mime)),
 			});
 
-			if (!type) {
+			if (!mime) {
 				// default to HTML
-				this.res.headers.set(Header.contentType, Context.#htmlType);
+				this.res.headers.set(Header.contentType, Header.utf8(Mime.html));
 			}
 
 			// do not overwrite/remove status - that way user can set it before returning
@@ -255,8 +250,10 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			c.res.body = null;
 		}
 
-		Object.freeze(c.res);
-
-		return new Response(c.res.body, c.res);
+		return new Response(
+			c.res.body,
+			// prevents users from setting the response during the stream
+			Object.freeze(c.res),
+		);
 	}
 }
