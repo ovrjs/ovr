@@ -7,7 +7,7 @@ export class Mime {
 	static readonly html = "text/html";
 	static readonly json = "application/json";
 	static readonly text = "text/plain";
-
+	static readonly stream = "application/octet-stream";
 	static readonly #markup = [Mime.html, "application/xml", "text/xml"];
 
 	/**
@@ -16,6 +16,14 @@ export class Mime {
 	 */
 	static markup(mime: string) {
 		return Mime.#markup.includes(mime) || mime.includes("+xml");
+	}
+
+	/**
+	 * @param mime Media type
+	 * @returns `true` if the mime is multipart
+	 */
+	static multipart(mime: string | null) {
+		return mime?.startsWith("multipart/");
 	}
 }
 

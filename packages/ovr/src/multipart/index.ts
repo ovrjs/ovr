@@ -1,4 +1,4 @@
-import { Codec, Header } from "../util/index.js";
+import { Codec, Header, Mime } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
 class Needle extends Uint8Array {
@@ -214,11 +214,9 @@ export class Multipart extends Request {
 	constructor(req: Request, options?: Multipart.Options) {
 		super(req);
 
-		const [type, params] = Header.shift(this.headers.get(Header.contentType));
+		const [mime, params] = Header.shift(this.headers.get(Header.contentType));
 
-		if (!type?.startsWith("multipart/")) {
-			throw new TypeError("Unsupported Media Type");
-		}
+		if (!Mime.multipart(mime)) throw new TypeError("Unsupported Media Type");
 
 		const { boundary } = Header.params(params);
 
@@ -467,7 +465,7 @@ export class Multipart extends Request {
 			if (part.name) {
 				let value: string | File;
 
-				if (part.filename || part.type === "application/octet-stream") {
+				if (part.filename || part.type === Mime.stream) {
 					const blob = await part.blob();
 					value = new File([blob], part.filename ?? "blob", {
 						type: blob.type,
