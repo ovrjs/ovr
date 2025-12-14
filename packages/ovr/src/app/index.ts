@@ -3,7 +3,7 @@ import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
-import type { Util } from "../util/index.js";
+import { Method, type Util } from "../util/index.js";
 
 export namespace App {
 	export namespace Options {
@@ -121,7 +121,8 @@ export class App {
 				// match
 				this.#trie.find(
 					// use GET for HEAD requests to find the correct route
-					(c.req.method === "HEAD" ? "GET" : c.req.method) + c.url.pathname,
+					(c.req.method === Method.head ? Method.get : c.req.method) +
+						c.url.pathname,
 				),
 			),
 			this.#global.concat(c.route?.middleware ?? []),
@@ -131,8 +132,8 @@ export class App {
 	/** Basic CSRF middleware */
 	static #csrf(c: Middleware.Context, next: Middleware.Next) {
 		if (
-			c.req.method === "GET" ||
-			c.req.method === "HEAD" ||
+			c.req.method === Method.get ||
+			c.req.method === Method.head ||
 			c.req.headers.get("sec-fetch-site") === "same-origin" ||
 			c.req.headers.get("origin") === c.url.origin
 		) {

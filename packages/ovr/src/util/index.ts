@@ -3,17 +3,14 @@ export namespace Util {
 	export type DeepArray<T> = T | DeepArray<T>[];
 }
 
+/** Media type utils */
 export class Mime {
 	static readonly html = Mime.#text("html");
 	static readonly text = Mime.#text("plain");
 	static readonly json = Mime.#application("json");
 	static readonly stream = Mime.#application("octet-stream");
-
-	static readonly #markup = new Set<string>([
-		Mime.html,
-		Mime.#text("xml"),
-		Mime.#application("xml"),
-	]);
+	static readonly #multipartBase = "multipart/";
+	static readonly multipartFormData = Mime.#multipart("form-data");
 
 	static #text<T extends string>(type: T) {
 		return `text/${type}` as const;
@@ -22,6 +19,16 @@ export class Mime {
 	static #application<T extends string>(type: T) {
 		return `application/${type}` as const;
 	}
+
+	static #multipart<T extends string>(type: T) {
+		return `${Mime.#multipartBase}${type}` as const;
+	}
+
+	static readonly #markup = new Set<string>([
+		Mime.html,
+		Mime.#text("xml"),
+		Mime.#application("xml"),
+	]);
 
 	/**
 	 * @param mime Media type
@@ -40,15 +47,18 @@ export class Mime {
 	 * @returns `true` if the mime is multipart
 	 */
 	static multipart(mime: string | null) {
-		return mime?.startsWith("multipart/");
+		return mime?.startsWith(Mime.#multipartBase);
 	}
 }
 
 /** Header parsing utils */
 export class Header {
-	static readonly contentType = "content-type";
+	static readonly type = "content-type";
+	static readonly disposition = "content-disposition";
 	static readonly etag = "etag";
 	static readonly ifNoneMatch = "if-none-match";
+	static readonly cookie = "cookie";
+	static readonly setCookie = "set-cookie";
 
 	/**
 	 * @param mime
@@ -157,4 +167,11 @@ export class Codec {
 
 	/** DO NOT USE FOR STREAMS */
 	static decode = (input?: Uint8Array) => Codec.#decoder.decode(input);
+}
+
+/** HTTP methods */
+export class Method {
+	static readonly get = "GET";
+	static readonly post = "POST";
+	static readonly head = "HEAD";
 }

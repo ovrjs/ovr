@@ -5,7 +5,7 @@ import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
-import { Hash, Header, Mime } from "../util/index.js";
+import { Hash, Header, Method, Mime } from "../util/index.js";
 
 /** Properties to build the final `Response` with once middleware has run. */
 class PreparedResponse {
@@ -91,7 +91,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	html(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.contentType, Header.utf8(Mime.html));
+		this.res.headers.set(Header.type, Header.utf8(Mime.html));
 	}
 
 	/**
@@ -103,7 +103,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	json<D>(data: D extends bigint ? never : D, status?: number) {
 		this.res.body = JSON.stringify(data);
 		this.res.status = status;
-		this.res.headers.set(Header.contentType, Mime.json);
+		this.res.headers.set(Header.type, Mime.json);
 	}
 
 	/**
@@ -115,7 +115,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	text(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.contentType, Header.utf8(Mime.text));
+		this.res.headers.set(Header.type, Header.utf8(Mime.text));
 	}
 
 	/**
@@ -215,7 +215,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			}
 		} else if (r !== undefined) {
 			// something to stream
-			const [mime] = Header.shift(this.res.headers.get(Header.contentType));
+			const [mime] = Header.shift(this.res.headers.get(Header.type));
 
 			this.res.body = Render.stream(r, {
 				// other defined types are safe
@@ -224,7 +224,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 
 			if (!mime) {
 				// default to HTML
-				this.res.headers.set(Header.contentType, Header.utf8(Mime.html));
+				this.res.headers.set(Header.type, Header.utf8(Mime.html));
 			}
 
 			// do not overwrite/remove status - that way user can set it before returning
@@ -241,10 +241,10 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	static async compose(c: Context, middleware: Middleware[]) {
 		await c.#run(middleware);
 
-		if (c.req.method === "HEAD") {
+		if (c.req.method === Method.head) {
 			if (c.res.body instanceof ReadableStream) {
 				// cancel unused stream to prevent leaks
-				await c.res.body.cancel("HEAD");
+				await c.res.body.cancel(Method.head);
 			}
 
 			c.res.body = null;

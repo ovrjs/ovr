@@ -1,7 +1,7 @@
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Trie } from "../trie/index.js";
-import { Hash } from "../util/index.js";
+import { Hash, Method, Mime } from "../util/index.js";
 
 /** Helper type to extract the route params (`:slug`) into a record */
 export type ExtractParams<Pattern extends string = string> =
@@ -247,7 +247,8 @@ export class Route<Pattern extends string = string> {
 	 * @returns Route with added components
 	 */
 	static #withComponents<Pattern extends string>(route: Route<Pattern>) {
-		const enctype = route.method === "POST" ? "multipart/form-data" : undefined;
+		const enctype =
+			route.method === Method.post ? Mime.multipartFormData : undefined;
 
 		return Object.assign(route, {
 			Button: (({ params, search, hash, ...rest }) =>
@@ -285,7 +286,7 @@ export class Route<Pattern extends string = string> {
 		WithForm<Pattern> &
 		WithAnchor<Pattern> {
 		const route = Route.#withComponents(
-			new Route("GET", pattern, ...middleware),
+			new Route(Method.get, pattern, ...middleware),
 		);
 
 		return Object.assign(route, {
@@ -327,6 +328,8 @@ export class Route<Pattern extends string = string> {
 			pattern = `/_p/${Hash.djb2(middleware.join())}` as Pattern;
 		}
 
-		return Route.#withComponents(new Route("POST", pattern, ...middleware));
+		return Route.#withComponents(
+			new Route(Method.post, pattern, ...middleware),
+		);
 	}
 }
