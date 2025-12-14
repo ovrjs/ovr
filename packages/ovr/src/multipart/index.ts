@@ -50,6 +50,7 @@ class Part extends Request {
 	 */
 	readonly filename: string | null;
 
+	// this is named `type` instead of `mime` to align with `Blob.type`
 	/**
 	 * Media type of the part
 	 *
