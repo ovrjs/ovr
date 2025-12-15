@@ -10,7 +10,7 @@
 		"ovr": "*"
 	},
 	"devDependencies": {
-		"rolldown": "^1.0.0-beta.53",
+		"rolldown": "^1.0.0-beta.54",
 		"typescript": "^5.9.3"
 	},
 	"exports": {

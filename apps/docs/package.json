@@ -26,11 +26,11 @@
 	},
 	"devDependencies": {
 		"@domcojs/vercel": "^3.1.1",
-		"@iconify-json/lucide": "^1.2.79",
+		"@iconify-json/lucide": "^1.2.81",
 		"@iconify/tailwind4": "^1.2.0",
-		"@tailwindcss/vite": "^4.1.17",
+		"@tailwindcss/vite": "^4.1.18",
 		"domco": "^4.5.2",
-		"tailwindcss": "^4.1.17",
+		"tailwindcss": "^4.1.18",
 		"vite": "^7.2.7",
 		"vite-imagetools": "^9.0.2"
 	}

@@ -35,11 +35,14 @@ export const Popover = (props: PopoverProps) => {
 			>
 				<div class="flex items-center justify-between">
 					{titleHref ? (
-						<a href={titleHref} class="text-xl font-semibold no-underline">
+						<a
+							href={titleHref}
+							class="font-headings text-xl font-semibold no-underline"
+						>
 							{titleContent}
 						</a>
 					) : (
-						<div class="cursor-default text-xl font-semibold">
+						<div class="font-headings cursor-default text-xl font-semibold">
 							{titleContent}
 						</div>
 					)}
