@@ -1,7 +1,6 @@
 import * as chatContent from "@/server/demo/chat/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import "dotenv/config";
 import * as ovr from "ovr";
 import * as z from "zod";
 

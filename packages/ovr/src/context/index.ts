@@ -1,4 +1,5 @@
 import type { App } from "../app/index.js";
+import { Auth } from "../auth/index.js";
 import { Cookie } from "../cookie/index.js";
 import { type Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -70,6 +71,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 
 	/** Forwarded app options */
 	readonly #options: App.Options;
+
+	/** Cached auth instance */
+	#auth?: Auth;
 
 	/**
 	 * Creates a new `Context` with the current `Request`.
@@ -184,6 +188,12 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			this.req,
 			Object.assign({}, this.#options.form, options),
 		);
+	}
+
+	get auth() {
+		if (!this.#options.auth) throw new Error("Set App.Options.auth to enable");
+
+		return (this.#auth ??= new Auth(this, this.#options.auth));
 	}
 
 	/**

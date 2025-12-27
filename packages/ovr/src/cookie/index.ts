@@ -92,7 +92,7 @@ export namespace Cookie {
 
 	type InsecureOptions = BaseOptions & {
 		/** Limits the scope of the cookie to a secure context (HTTPS). */
-		readonly secure?: false;
+		readonly secure?: boolean;
 
 		/**
 		 * Controls whether the cookie is sent with cross-site requests.

@@ -1,3 +1,4 @@
+import { Auth } from "../auth/index.js";
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
@@ -44,6 +45,9 @@ export namespace App {
 		 * (overridden by options passed into `Context.form(options)`)
 		 */
 		readonly form?: Multipart.Options;
+
+		/** Authentication options */
+		readonly auth?: Auth.Options;
 	};
 }
 

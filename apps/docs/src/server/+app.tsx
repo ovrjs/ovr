@@ -5,9 +5,14 @@ import * as home from "@/server/home";
 import * as notFound from "@/server/mw/not-found";
 import * as redirect from "@/server/mw/redirect";
 import * as seo from "@/server/seo";
+import "dotenv/config";
 import * as o from "ovr";
 
-const app = new o.App();
+if (!process.env.AUTH_SECRET) throw new Error("No auth secret set");
+
+const app = new o.App({
+	auth: { secret: process.env.AUTH_SECRET, secure: import.meta.env.PROD },
+});
 
 app.use(redirect, notFound, home, docs, demo, seo);
 
