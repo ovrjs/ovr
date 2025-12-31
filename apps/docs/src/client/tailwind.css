@@ -101,7 +101,7 @@
 @layer base {
 	:root {
 		--accent: var(--base-500);
-		--light-end: 0.002;
+		--light-end: 0.05;
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;

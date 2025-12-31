@@ -6,7 +6,7 @@ import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
-import { Hash, Header, Method, Mime } from "../util/index.js";
+import { Checksum, Header, Method, Mime } from "../util/index.js";
 
 /** Properties to build the final `Response` with once middleware has run. */
 class PreparedResponse {
@@ -30,11 +30,6 @@ class PreparedResponse {
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Headers)
 	 */
 	headers = new Headers();
-}
-
-export namespace Context {
-	// gives users access to Middleware.Context.Cookie.Options
-	export type Cookie = InstanceType<typeof Cookie>;
 }
 
 /**
@@ -141,16 +136,16 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	}
 
 	/**
-	 * Generates an etag from a hash of the string provided.
+	 * Generates an etag from a checksum of the string provided.
 	 * If the etag matches, sets the response to not modified.
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag)
 	 *
-	 * @param string string to hash
+	 * @param string string to check
 	 * @returns `true` if the etag matches, `false` otherwise
 	 */
 	etag(string: string) {
-		const etag = `"${Hash.djb2(string)}"`;
+		const etag = `"${Checksum.djb2(string)}"`;
 
 		this.res.headers.set(Header.etag, etag);
 

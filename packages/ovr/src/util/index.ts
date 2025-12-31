@@ -140,21 +140,21 @@ export class Header {
 	}
 }
 
-/** Hash util */
-export class Hash {
+/** Checksum util */
+export class Checksum {
 	/**
-	 * Fast hashing algorithm - [djb2](http://www.cse.yorku.ca/~oz/hash.html)
+	 * Fast checksum algorithm - [djb2](http://www.cse.yorku.ca/~oz/hash.html)
 	 *
-	 * @param s String to hash
-	 * @returns Hashed string
+	 * @param s String to check
+	 * @returns Checksum
 	 */
 	static djb2(s: string) {
-		let hash = 5381;
+		let c = 5381;
 		let i = s.length;
 
-		while (i) hash = (hash * 33) ^ s.charCodeAt(--i);
+		while (i) c = (c * 33) ^ s.charCodeAt(--i);
 
-		return (hash >>> 0).toString(36);
+		return (c >>> 0).toString(36);
 	}
 }
 
@@ -163,10 +163,49 @@ export class Codec {
 	static #encoder = new TextEncoder();
 	static #decoder = new TextDecoder("utf-8", { fatal: true });
 
-	static encode = (s: string) => Codec.#encoder.encode(s);
+	/**
+	 * Encodes a string into UTF-8 bytes.
+	 *
+	 * @param s String to encode
+	 * @returns UTF-8 bytes
+	 */
+	static encode(s: string) {
+		return Codec.#encoder.encode(s);
+	}
 
-	/** DO NOT USE FOR STREAMS */
-	static decode = (input?: Uint8Array) => Codec.#decoder.decode(input);
+	/**
+	 * Decodes UTF-8 bytes into a string.
+	 *
+	 * Note: do not use this for incremental/stream decoding.
+	 *
+	 * @param bytes UTF-8 bytes
+	 * @returns Decoded string
+	 */
+	static decode(bytes?: Uint8Array) {
+		return Codec.#decoder.decode(bytes);
+	}
+
+	static base64 = {
+		/**
+		 * Encodes bytes into a base64 string.
+		 *
+		 * @param bytes Bytes to encode
+		 * @returns Base64 string
+		 */
+		encode(bytes: Uint8Array) {
+			return btoa(String.fromCharCode(...bytes));
+		},
+
+		/**
+		 * Decodes a base64 string into bytes.
+		 *
+		 * @param s Base64 string
+		 * @returns Decoded bytes
+		 */
+		decode(s: string) {
+			return new Uint8Array(Array.from(atob(s), (c) => c.charCodeAt(0)));
+		},
+	};
 }
 
 /** HTTP methods */
@@ -174,4 +213,13 @@ export class Method {
 	static readonly get = "GET";
 	static readonly post = "POST";
 	static readonly head = "HEAD";
+}
+
+/** Times in milliseconds */
+export class Time {
+	static readonly second = 1000;
+	static readonly minute = 60 * Time.second;
+	static readonly hour = 60 * Time.minute;
+	static readonly day = 24 * Time.hour;
+	static readonly week = 7 * Time.day;
 }

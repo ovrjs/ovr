@@ -1,7 +1,19 @@
+import type { Auth as AuthType } from "../auth/index.js";
 import type { Context } from "../context/index.js";
+import type { Cookie as CookieType } from "../cookie/index.js";
 import type { Trie } from "../trie/index.js";
 
 export namespace Middleware {
+	export namespace Context {
+		export namespace Cookie {
+			export type Options = CookieType.Options;
+		}
+
+		export namespace Auth {
+			export type Session = AuthType.Session;
+		}
+	}
+
 	/**
 	 * Middleware context.
 	 *

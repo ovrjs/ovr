@@ -17,8 +17,8 @@ export const codeControls: PluginSimple = (md: MarkdownIt) => {
 		const escaped = Render.escape(token.content, true);
 
 		return /* html */ `
-<div class="bg-base-800 rounded-none sm:rounded-md my-6 -mx-4 sm:mx-0 shadow-sm selection:bg-base-50 selection:text-base-900">
-	<div class="flex justify-between items-center pt-px px-4 sm:px-2 border-b border-base-700 gap-2">
+<div class="bg-base-800 rounded-none sm:rounded-md my-6 -mx-4 sm:mx-0 shadow-sm selection:bg-base-50 selection:text-base-900 border border-base-800">
+	<div class="flex justify-between items-center pt-px px-4 sm:px-2 gap-2">
 		<div class="font-mono px-2 text-base-200 text-sm">${lang}</div>
 		${Share(escaped)}
 	</div>

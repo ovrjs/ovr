@@ -1,7 +1,7 @@
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Trie } from "../trie/index.js";
-import { Hash, Method, Mime } from "../util/index.js";
+import { Checksum, Method, Mime } from "../util/index.js";
 
 /** Helper type to extract the route params (`:slug`) into a record */
 export type ExtractParams<Pattern extends string = string> =
@@ -325,7 +325,7 @@ export class Route<Pattern extends string = string> {
 			pattern = patternOrMiddleware;
 		} else {
 			middleware.unshift(patternOrMiddleware);
-			pattern = `/_p/${Hash.djb2(middleware.join())}` as Pattern;
+			pattern = `/_p/${Checksum.djb2(middleware.join())}` as Pattern;
 		}
 
 		return Route.#withComponents(
