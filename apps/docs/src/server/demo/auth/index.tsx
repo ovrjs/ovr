@@ -1,7 +1,7 @@
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Crypto, JSX, type Middleware, Render, Route } from "ovr";
+import { Auth, JSX, type Middleware, Render, Route } from "ovr";
 import { z } from "zod";
 
 /** In-memory user list (demo only) */
@@ -108,7 +108,7 @@ export const login = Route.post(async (c) => {
 		return;
 	}
 
-	const valid = await Crypto.verify(password, user.passwordHash);
+	const valid = await Auth.Password.verify(password, user.passwordHash);
 
 	if (!valid) {
 		c.redirect(auth.url({ search: { error: "1" } }), 303);
@@ -139,7 +139,7 @@ export const signup = Route.post(async (c) => {
 	const user = {
 		id: crypto.randomUUID(),
 		email,
-		passwordHash: await Crypto.hash(password),
+		passwordHash: await Auth.Password.hash(password),
 	};
 
 	users.push(user);

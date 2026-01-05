@@ -1,5 +1,6 @@
 import type { Context } from "../context/index.js";
 import { Codec, Time } from "../util/index.js";
+import { Password } from "./password.js";
 
 export namespace Auth {
 	export type Options = {
@@ -53,6 +54,9 @@ export namespace Auth {
  * Sessions use a sliding window and are extended on each valid access.
  */
 export class Auth {
+	/** Hash and verify low-entropy secrets (passwords, PINs, etc.) */
+	static readonly Password = Password;
+
 	/** Cache of imported Web Crypto keys */
 	static readonly #keys = new Map<string, Promise<CryptoKey>>();
 
@@ -78,6 +82,21 @@ export class Auth {
 				secure: true,
 			} satisfies Omit<Auth.Options, "secret">,
 			options,
+		);
+	}
+
+	/**
+	 * Generate a cryptographically secure random secret.
+	 *
+	 * Intended for use as application-level secrets such as
+	 * `App.Options.auth.secret`. This value should be generated once and
+	 * stored securely (for example, in an environment variable).
+	 *
+	 * @returns Random base64-encoded secret
+	 */
+	static secret() {
+		return btoa(
+			String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))),
 		);
 	}
 

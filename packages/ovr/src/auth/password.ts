@@ -1,17 +1,6 @@
 import { Codec } from "../util/index.js";
 
-/**
- * Cryptographic primitives.
- *
- * Provides utilities for:
- * - Hashing and verifying low-entropy secrets (passwords, PINs, etc.)
- * - Generating cryptographically secure random secrets
- *
- * This module is intentionally minimal and stateless. It does not manage
- * users, sessions, or authentication flows. Higher-level authentication
- * concerns are handled elsewhere.
- */
-export class Crypto {
+export class Password {
 	/**
 	 * PBKDF2 hashing parameters.
 	 *
@@ -52,9 +41,9 @@ export class Crypto {
 		const iterations = Number(iter);
 
 		if (
-			name === Crypto.#params.name &&
-			hash === Crypto.#params.hash &&
-			iterations === Crypto.#params.iterations &&
+			name === Password.#params.name &&
+			hash === Password.#params.hash &&
+			iterations === Password.#params.iterations &&
 			saltB64 &&
 			derivedB64
 		) {
@@ -89,18 +78,18 @@ export class Crypto {
 		const salt = crypto.getRandomValues(new Uint8Array(16));
 
 		return [
-			Crypto.#params.name,
-			Crypto.#params.hash,
-			Crypto.#params.iterations,
+			Password.#params.name,
+			Password.#params.hash,
+			Password.#params.iterations,
 			Codec.base64.encode(salt),
 			Codec.base64.encode(
 				new Uint8Array(
 					await crypto.subtle.deriveBits(
-						{ ...Crypto.#params, salt },
+						{ ...Password.#params, salt },
 						await crypto.subtle.importKey(
 							"raw",
 							Codec.encode(secret),
-							Crypto.#params.name,
+							Password.#params.name,
 							false,
 							["deriveBits"],
 						),
@@ -119,12 +108,12 @@ export class Crypto {
 	 * @returns `true` if the secret matches the stored hash, otherwise `false`
 	 */
 	static async verify(secret: string, stored: string) {
-		const parse = Crypto.#parse(stored);
+		const parse = Password.#parse(stored);
 		if (!parse) return false;
 
 		const { expected, ...params } = parse;
 
-		return Crypto.#timingSafeEqual(
+		return Password.#timingSafeEqual(
 			new Uint8Array(
 				await crypto.subtle.deriveBits(
 					params,
@@ -139,21 +128,6 @@ export class Crypto {
 				),
 			),
 			expected,
-		);
-	}
-
-	/**
-	 * Generate a cryptographically secure random secret.
-	 *
-	 * Intended for use as application-level secrets such as
-	 * `App.Options.auth.secret`. This value should be generated once and
-	 * stored securely (for example, in an environment variable).
-	 *
-	 * @returns Random base64-encoded secret
-	 */
-	static secret() {
-		return btoa(
-			String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))),
 		);
 	}
 }
