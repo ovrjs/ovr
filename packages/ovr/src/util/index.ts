@@ -206,6 +206,21 @@ export class Codec {
 			return new Uint8Array(Array.from(atob(s), (c) => c.charCodeAt(0)));
 		},
 	};
+
+	static base64url = {
+		encode(bytes: Uint8Array) {
+			return btoa(String.fromCharCode(...bytes))
+				.replace(/\+/g, "-")
+				.replace(/\//g, "_")
+				.replace(/=+$/, "");
+		},
+
+		decode(s: string) {
+			const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+			const pad = b64.length % 4;
+			return Codec.base64.decode(pad ? b64 + "=".repeat(4 - pad) : b64);
+		},
+	};
 }
 
 /** HTTP methods */

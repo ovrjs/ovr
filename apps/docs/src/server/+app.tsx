@@ -10,9 +10,7 @@ import * as o from "ovr";
 
 if (!process.env.AUTH_SECRET) throw new Error("No auth secret set");
 
-const app = new o.App({
-	auth: { secret: process.env.AUTH_SECRET, secure: import.meta.env.PROD },
-});
+const app = new o.App({ auth: { secret: process.env.AUTH_SECRET } });
 
 app.use(redirect, notFound, home, docs, demo, seo);
 
