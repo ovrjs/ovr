@@ -285,7 +285,14 @@ export namespace Passkey {
 	};
 }
 
-/** WebAuthn passkey authentication */
+/**
+ * WebAuthn passkey authentication.
+ *
+ * Implementation constraints:
+ * - Only ES256 (alg -7, P-256 ECDSA) algorithm supported (https://www.rfc-editor.org/rfc/rfc8152#section-8.1)
+ * - Signature counter not validated (assumes platform-bound credentials, no cloning)
+ * - Discoverable/resident credentials not required (counter validation unsafe without support)
+ */
 export class Passkey {
 	/** Error thrown when credential parsing fails */
 	static readonly #invalidCredential = new TypeError("Invalid credential");
@@ -575,6 +582,9 @@ export class Passkey {
 	/**
 	 * Generate options for `navigator.credentials.create()`.
 	 *
+	 * Only ES256 (alg -7) is supported. Platform authenticators typically support this modern algorithm.
+	 * Resident key is a hint only; counter validation is not performed due to stateless design.
+	 *
 	 * @param user - User information for registration
 	 * @param excludeCredentialIds - Optional list of credential IDs to exclude from registration. Prevents duplicate registration of the same authenticator.
 	 * @returns WebAuthn credential creation options
@@ -595,7 +605,6 @@ export class Passkey {
 			excludeCredentials: excludeCredentialIds?.map((id) => ({
 				type: "public-key",
 				id,
-				transports: ["internal", "hybrid", "usb"],
 			})),
 			authenticatorSelection: {
 				residentKey: "preferred",
@@ -671,6 +680,9 @@ export class Passkey {
 
 	/**
 	 * Verify an authentication response and return the authenticated user ID.
+	 *
+	 * Signature counter is not validated. This is safe because the implementation assumes platform-bound
+	 * credentials and does not support discoverable/resident keys (which could be cloned).
 	 *
 	 * @param credential - Authentication credential response from authenticator
 	 * @param stored - Stored credential data from database
@@ -794,6 +806,9 @@ class AuthData {
 	/**
 	 * Parse authenticator data from binary format.
 	 *
+	 * Note: Signature counter is extracted but not validated. The stateless design assumes
+	 * platform-bound credentials and does not support discoverable keys (which could be cloned).
+	 *
 	 * @param data - Raw authenticator data bytes
 	 * @returns Parsed authenticator data with flags and optional credential data
 	 */
@@ -905,6 +920,9 @@ class COSE {
 
 	/**
 	 * Convert COSE public key to SPKI format.
+	 *
+	 * Only EC2 keys with P-256 curve (ES256, alg -7) are supported. This is the standard modern algorithm
+	 * supported by virtually all platform authenticators (https://www.rfc-editor.org/rfc/rfc8152#section-8.1).
 	 *
 	 * @param cose - COSE key map with type, curve, and coordinates
 	 * @returns SPKI encoded public key as bytes
