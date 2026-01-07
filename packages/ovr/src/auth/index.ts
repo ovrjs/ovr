@@ -97,7 +97,7 @@ export class Auth {
 	 * @returns HMAC signed `payload.signature` with auth secret
 	 */
 	async sign(payload: string) {
-		return `${payload}.${Codec.base64.encode(
+		return `${payload}.${Codec.base64url.encode(
 			new Uint8Array(
 				await crypto.subtle.sign(
 					"HMAC",
@@ -113,7 +113,11 @@ export class Auth {
 	 * @returns payload if valid, otherwise null
 	 */
 	async verify(token: string) {
-		const [payload, sig] = token.split(".", 2);
+		const dot = token.lastIndexOf(".");
+		if (dot === -1) return null;
+
+		const payload = token.slice(0, dot);
+		const sig = token.slice(dot + 1);
 
 		if (payload && sig) {
 			try {
@@ -121,7 +125,7 @@ export class Auth {
 					await crypto.subtle.verify(
 						"HMAC",
 						await this.#key,
-						Codec.base64.decode(sig),
+						Codec.base64url.decode(sig),
 						Codec.encode(payload),
 					)
 				) {
@@ -134,19 +138,16 @@ export class Auth {
 	}
 
 	/**
-	 * Set the auth session cookie
+	 * Set/expire the auth session cookie
 	 *
 	 * @param session
 	 */
-	#setCookie(session: Auth.Session): Promise<Auth.Session>;
-	/** Expire the auth session cookie */
-	#setCookie(session?: undefined): Promise<null>;
-	async #setCookie(session?: Auth.Session) {
+	async #setCookie<S extends Auth.Session | null>(session: S): Promise<S> {
 		this.#c.cookie.set(
 			this.options.cookie,
 			session
 				? await this.sign(
-						Codec.base64.encode(Codec.encode(JSON.stringify(session))),
+						Codec.base64url.encode(Codec.encode(JSON.stringify(session))),
 					)
 				: "",
 			{
@@ -157,7 +158,7 @@ export class Auth {
 			},
 		);
 
-		return session ?? null;
+		return session;
 	}
 
 	/**
@@ -174,7 +175,7 @@ export class Auth {
 		if (payload) {
 			try {
 				const session = JSON.parse(
-					Codec.decode(Codec.base64.decode(payload)),
+					Codec.decode(Codec.base64url.decode(payload)),
 				) as Auth.Session;
 
 				if (Date.now() < session.expiration) {
@@ -204,7 +205,7 @@ export class Auth {
 
 	/** Logs out the user by expiring the session cookie */
 	logout() {
-		return this.#setCookie();
+		return this.#setCookie(null);
 	}
 }
 
@@ -264,8 +265,8 @@ export namespace Passkey {
 		/** Associated user ID */
 		userId: string;
 
-		/** Signature counter for clone detection */
-		counter: number;
+		/** Signature counter */
+		// counter: number;
 	};
 
 	/** Registration verification result */
@@ -277,7 +278,7 @@ export namespace Passkey {
 		publicKey: string;
 
 		/** Initial signature counter */
-		counter: number;
+		// counter: number;
 	};
 
 	/** Authentication assertion result */
@@ -289,7 +290,7 @@ export namespace Passkey {
 		userId: string;
 
 		/** Updated signature counter */
-		counter: number;
+		// counter: number;
 	};
 }
 
@@ -321,6 +322,20 @@ export class Passkey {
 	}
 
 	/**
+	 * Create secure cookie options for WebAuthn operations
+	 *
+	 * @param maxAge
+	 */
+	static #challengeOptions(maxAge: number) {
+		return {
+			httpOnly: true,
+			secure: true,
+			sameSite: "Strict",
+			maxAge,
+		} as const;
+	}
+
+	/**
 	 * Constant-time comparison of two byte arrays.
 	 *
 	 * @param a - First byte array
@@ -349,7 +364,7 @@ export class Passkey {
 		this.#c.cookie.set(
 			this.#challengeCookie,
 			await this.#auth.sign(challenge),
-			{ httpOnly: true, secure: true, sameSite: "Strict", maxAge: 300 },
+			Passkey.#challengeOptions(300),
 		);
 
 		return challenge;
@@ -361,14 +376,9 @@ export class Passkey {
 	 * @returns Challenge bytes if valid, otherwise null
 	 */
 	async #consumeChallenge() {
-		this.#c.cookie.set(this.#challengeCookie, "", {
-			httpOnly: true,
-			secure: true,
-			sameSite: "Strict",
-			maxAge: 0,
-		});
-
 		const token = this.#c.cookie.get(this.#challengeCookie);
+
+		this.#c.cookie.set(this.#challengeCookie, "", Passkey.#challengeOptions(0));
 
 		if (token) {
 			const payload = await this.#auth.verify(token);
@@ -394,6 +404,19 @@ export class Passkey {
 		) {
 			throw new Error("RP ID mismatch");
 		}
+	}
+
+	/**
+	 * Parse client data JSON from base64url encoded string
+	 *
+	 * @param data client data JSON
+	 */
+	#parseClientData(data: string) {
+		return JSON.parse(Codec.decode(Codec.base64url.decode(data))) as {
+			type: string;
+			challenge: string;
+			origin: string;
+		};
 	}
 
 	/**
@@ -459,7 +482,7 @@ export class Passkey {
 			})),
 			authenticatorSelection: {
 				residentKey: "preferred",
-				userVerification: "preferred",
+				userVerification: "required",
 			},
 			timeout: 300000,
 			attestation: "none",
@@ -476,16 +499,26 @@ export class Passkey {
 	async verify(
 		credential: Passkey.RegistrationCredentialJSON,
 	): Promise<Passkey.VerifyResult> {
+		if (credential.type !== "public-key") {
+			throw new TypeError("Invalid credential type");
+		}
+
+		const rawIdBytes = Codec.base64url.decode(credential.rawId);
+
+		if (
+			!Passkey.#timingSafeEqual(
+				Codec.base64url.decode(credential.id),
+				rawIdBytes,
+			)
+		) {
+			throw new Error("Credential ID mismatch");
+		}
+
 		const challenge = await this.#consumeChallenge();
 		if (!challenge) throw new Error("Challenge expired or missing");
 
 		this.#verifyClientData(
-			// client data
-			JSON.parse(
-				Codec.decode(
-					Codec.base64url.decode(credential.response.clientDataJSON),
-				),
-			),
+			this.#parseClientData(credential.response.clientDataJSON),
 			"webauthn.create",
 			challenge,
 		);
@@ -500,18 +533,28 @@ export class Passkey {
 
 		if (!(authData.flags & 0x01)) throw new Error("User not present");
 
+		if (!(authData.flags & 0x04)) throw new Error("User not verified");
+
 		if (!authData.attestedCredentialData) {
 			throw new Error("Missing credential data");
 		}
 
+		if (
+			!Passkey.#timingSafeEqual(
+				authData.attestedCredentialData.credentialId,
+				rawIdBytes,
+			)
+		) {
+			throw new Error("Attested credential ID mismatch");
+		}
+
 		return {
-			credentialId: credential.id,
-			publicKey:
-				credential.response.publicKey ??
-				Codec.base64url.encode(
-					COSE.toSPKI(authData.attestedCredentialData.publicKey),
-				),
-			counter: authData.signCount,
+			credentialId: Codec.base64url.encode(
+				authData.attestedCredentialData.credentialId,
+			),
+			publicKey: Codec.base64url.encode(
+				COSE.toSPKI(authData.attestedCredentialData.publicKey),
+			),
 		};
 	}
 
@@ -525,7 +568,7 @@ export class Passkey {
 			challenge: await this.#newChallenge(),
 			rpId: this.#rpId,
 			timeout: 300000,
-			userVerification: "preferred" as const,
+			userVerification: "required",
 		};
 	}
 
@@ -535,28 +578,44 @@ export class Passkey {
 	 * @param credential - Authentication credential response from authenticator
 	 * @param stored - Stored credential data from database
 	 * @returns Authentication assertion result containing credential ID, user ID, and updated counter
-	 * @throws Error if challenge expired, RP ID mismatch, user not present, possible clone detected, or signature invalid
+	 * @throws Error if challenge expired, RP ID mismatch, user not present, or signature invalid
 	 */
 	async assert(
 		credential: Passkey.AuthenticationCredentialJSON,
 		stored: Passkey.Credential,
 	): Promise<Passkey.AssertResult> {
-		const cred = credential;
+		if (credential.type !== "public-key") {
+			throw new TypeError("Invalid credential type");
+		}
+
+		const rawIdBytes = Codec.base64url.decode(credential.rawId);
+
+		if (
+			!Passkey.#timingSafeEqual(
+				Codec.base64url.decode(credential.id),
+				rawIdBytes,
+			)
+		) {
+			throw new Error("Credential ID mismatch");
+		}
+
+		const storedIdBytes = Codec.base64url.decode(stored.id);
+
+		if (!Passkey.#timingSafeEqual(rawIdBytes, storedIdBytes)) {
+			throw new Error("Credential ID mismatch");
+		}
 
 		const challenge = await this.#consumeChallenge();
 		if (!challenge) throw new Error("Challenge expired or missing");
 
-		const clientDataJSON = Codec.base64url.decode(cred.response.clientDataJSON);
-		const clientData = JSON.parse(Codec.decode(clientDataJSON)) as {
-			type: string;
-			challenge: string;
-			origin: string;
-		};
-
-		this.#verifyClientData(clientData, "webauthn.get", challenge);
+		this.#verifyClientData(
+			this.#parseClientData(credential.response.clientDataJSON),
+			"webauthn.get",
+			challenge,
+		);
 
 		const authDataBytes = Codec.base64url.decode(
-			cred.response.authenticatorData,
+			credential.response.authenticatorData,
 		);
 		const authData = AuthData.parse(authDataBytes);
 
@@ -566,7 +625,13 @@ export class Passkey {
 			throw new Error("User not present");
 		}
 
-		const clientDataHash = await Passkey.#sha256(clientDataJSON);
+		if (!(authData.flags & 0x04)) {
+			throw new Error("User not verified");
+		}
+
+		const clientDataHash = await Passkey.#sha256(
+			Codec.base64url.decode(credential.response.clientDataJSON),
+		);
 
 		const signedData = new Uint8Array(
 			authDataBytes.length + clientDataHash.length,
@@ -574,29 +639,29 @@ export class Passkey {
 		signedData.set(authDataBytes);
 		signedData.set(clientDataHash, authDataBytes.length);
 
-		const publicKey = await crypto.subtle.importKey(
-			"spki",
-			Codec.base64url.decode(stored.publicKey),
-			{ name: "ECDSA", namedCurve: "P-256" },
-			false,
-			["verify"],
-		);
-
-		const valid = await crypto.subtle.verify(
-			{ name: "ECDSA", hash: "SHA-256" },
-			publicKey,
-			DER.unwrap(Codec.base64url.decode(cred.response.signature)),
-			signedData,
-		);
-
-		if (!valid) throw new Error("Invalid signature");
+		if (
+			!(await crypto.subtle.verify(
+				{ name: "ECDSA", hash: "SHA-256" },
+				// public key
+				await crypto.subtle.importKey(
+					"spki",
+					Codec.base64url.decode(stored.publicKey),
+					{ name: "ECDSA", namedCurve: "P-256" },
+					false,
+					["verify"],
+				),
+				DER.unwrap(Codec.base64url.decode(credential.response.signature)),
+				signedData,
+			))
+		) {
+			throw new Error("Invalid signature");
+		}
 
 		await this.#auth.login(stored.userId);
 
 		return {
-			credentialId: cred.id,
+			credentialId: Codec.base64url.encode(storedIdBytes),
 			userId: stored.userId,
-			counter: authData.signCount,
 		};
 	}
 }
@@ -613,21 +678,13 @@ namespace AuthData {
 	};
 }
 
-/**
- * Parser for WebAuthn authenticator data structure.
- */
+/** Parser for WebAuthn authenticator data structure */
 class AuthData {
 	/** RP ID hash length in bytes */
 	static readonly #rpIdHashLength = 32;
 
 	/** Byte offset of flags field */
 	static readonly #flagsOffset = 32;
-
-	/** Byte offset of signature counter */
-	static readonly #signCountOffset = 33;
-
-	/** Signature counter length in bytes */
-	static readonly #signCountLength = 4;
 
 	/** Start byte offset of AAGUID */
 	static readonly #aaguidStart = 37;
@@ -654,37 +711,32 @@ class AuthData {
 	 * @returns Parsed authenticator data with flags, counters, and optional credential data
 	 */
 	static parse(data: Uint8Array) {
-		const flags = data[this.#flagsOffset]!;
+		const flags = data[AuthData.#flagsOffset]!;
 
 		let attestedCredentialData: AuthData.AttestedCredentialData | null = null;
 
-		if (flags & this.#attestedCredentialFlag) {
+		if (flags & AuthData.#attestedCredentialFlag) {
 			const credIdLen = new DataView(
 				data.buffer,
-				data.byteOffset + this.#credIdLengthOffset,
-				this.#credIdLengthSize,
+				data.byteOffset + AuthData.#credIdLengthOffset,
+				AuthData.#credIdLengthSize,
 			).getUint16(0);
 
 			attestedCredentialData = {
-				aaguid: data.slice(this.#aaguidStart, this.#aaguidEnd),
+				aaguid: data.slice(AuthData.#aaguidStart, AuthData.#aaguidEnd),
 				credentialId: data.slice(
-					this.#credIdStart,
-					this.#credIdStart + credIdLen,
+					AuthData.#credIdStart,
+					AuthData.#credIdStart + credIdLen,
 				),
 				publicKey: new CBOR(
-					data.slice(this.#credIdStart + credIdLen),
+					data.slice(AuthData.#credIdStart + credIdLen),
 				).decodeCOSEKey(),
 			};
 		}
 
 		return {
-			rpIdHash: data.slice(0, this.#rpIdHashLength),
+			rpIdHash: data.slice(0, AuthData.#rpIdHashLength),
 			flags,
-			signCount: new DataView(
-				data.buffer,
-				data.byteOffset + this.#signCountOffset,
-				this.#signCountLength,
-			).getUint32(0),
 			attestedCredentialData,
 		};
 	}
@@ -747,37 +799,37 @@ class COSE {
 	 * @throws Error if key type or curve not supported
 	 */
 	static toSPKI(cose: Map<number, number | Uint8Array>) {
-		const kty = cose.get(this.#kty);
-		if (kty !== this.#ktyEc2) throw new Error("Only EC2 keys supported");
+		const kty = cose.get(COSE.#kty);
+		if (kty !== COSE.#ktyEc2) throw new Error("Only EC2 keys supported");
 
-		const crv = cose.get(this.#crv);
-		if (crv !== this.#crvP256) throw new Error("Only P-256 supported");
+		const crv = cose.get(COSE.#crv);
+		if (crv !== COSE.#crvP256) throw new Error("Only P-256 supported");
 
-		const x = cose.get(this.#x);
-		const y = cose.get(this.#y);
+		const x = cose.get(COSE.#x);
+		const y = cose.get(COSE.#y);
 
 		if (!(x instanceof Uint8Array) || !(y instanceof Uint8Array)) {
 			throw new Error("Invalid COSE key coordinates");
 		}
 
-		const uncompressed = new Uint8Array(this.#uncompressedPointLength);
-		uncompressed[0] = this.#uncompressedPointPrefix;
-		uncompressed.set(x, this.#xCoordinateOffset);
-		uncompressed.set(y, this.#yCoordinateOffset);
+		const uncompressed = new Uint8Array(COSE.#uncompressedPointLength);
+		uncompressed[0] = COSE.#uncompressedPointPrefix;
+		uncompressed.set(x, COSE.#xCoordinateOffset);
+		uncompressed.set(y, COSE.#yCoordinateOffset);
 
 		const bitString = new Uint8Array(3 + uncompressed.length);
-		bitString[0] = this.#bitStringTag;
+		bitString[0] = COSE.#bitStringTag;
 		bitString[1] = uncompressed.length + 1;
-		bitString[2] = this.#bitStringPadding;
+		bitString[2] = COSE.#bitStringPadding;
 		bitString.set(uncompressed, 3);
 
 		const spki = new Uint8Array(
-			2 + this.#algorithmId.length + bitString.length,
+			2 + COSE.#algorithmId.length + bitString.length,
 		);
-		spki[0] = this.#sequenceTag;
-		spki[1] = this.#algorithmId.length + bitString.length;
-		spki.set(this.#algorithmId, 2);
-		spki.set(bitString, 2 + this.#algorithmId.length);
+		spki[0] = COSE.#sequenceTag;
+		spki[1] = COSE.#algorithmId.length + bitString.length;
+		spki.set(COSE.#algorithmId, 2);
+		spki.set(bitString, 2 + COSE.#algorithmId.length);
 
 		return spki;
 	}
@@ -811,12 +863,12 @@ class DER {
 	static unwrap(der: Uint8Array<ArrayBuffer>) {
 		const view = new DataView(der.buffer, der.byteOffset, der.byteLength);
 
-		if (view.getUint8(0) !== this.#sequenceTag) return der;
+		if (view.getUint8(0) !== DER.#sequenceTag) return der;
 
 		let offset = 2;
 
-		if (view.getUint8(1) & this.#longFormLengthFlag) {
-			offset += view.getUint8(1) & this.#longFormLengthMask;
+		if (view.getUint8(1) & DER.#longFormLengthFlag) {
+			offset += view.getUint8(1) & DER.#longFormLengthMask;
 		}
 
 		const rLen = view.getUint8(offset + 1);
@@ -826,12 +878,12 @@ class DER {
 		const sLen = view.getUint8(offset + 1);
 		let s = der.slice(offset + 2, offset + 2 + sLen);
 
-		while (r.length > this.#coordinateLength && r[0] === 0) r = r.slice(1);
-		while (s.length > this.#coordinateLength && s[0] === 0) s = s.slice(1);
+		while (r.length > DER.#coordinateLength && r[0] === 0) r = r.slice(1);
+		while (s.length > DER.#coordinateLength && s[0] === 0) s = s.slice(1);
 
-		const raw = new Uint8Array(this.#signatureLength);
-		raw.set(r, this.#signatureLength / 2 - r.length);
-		raw.set(s, this.#signatureLength - s.length);
+		const raw = new Uint8Array(DER.#signatureLength);
+		raw.set(r, DER.#signatureLength / 2 - r.length);
+		raw.set(s, DER.#signatureLength - s.length);
 		return raw;
 	}
 }
@@ -869,6 +921,12 @@ class CBOR {
 		const value = this.#parseNext();
 
 		if (!(value instanceof Map)) throw new TypeError("Expected CBOR map");
+
+		const fmt = value.get("fmt");
+
+		if (fmt !== "none") {
+			throw new TypeError("Unsupported attestation format");
+		}
 
 		const authData = value.get("authData");
 
@@ -916,9 +974,7 @@ class CBOR {
 	 * @returns Slice of data
 	 */
 	#read(n: number) {
-		const slice = this.#data.slice(this.#offset, this.#offset + n);
-		this.#offset += n;
-		return slice;
+		return this.#data.slice(this.#offset, (this.#offset += n));
 	}
 
 	/**
@@ -969,15 +1025,11 @@ class CBOR {
 			throw new Error("CBOR: unsupported length");
 		}
 
-		if (major === 0) {
-			return length;
-		} else if (major === 1) {
-			return -1 - length;
-		} else if (major === 2) {
-			return this.#read(length);
-		} else if (major === 3) {
-			return Codec.decode(this.#read(length));
-		} else if (major === 5) {
+		if (major === 0) return length;
+		if (major === 1) return -1 - length;
+		if (major === 2) return this.#read(length);
+		if (major === 3) return Codec.decode(this.#read(length));
+		if (major === 5) {
 			const map = new Map<CBOR.Key, CBOR.Value>();
 
 			for (let i = 0; i < length; i++) {
