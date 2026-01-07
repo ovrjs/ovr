@@ -393,16 +393,37 @@ export class Passkey {
 	}
 
 	/**
-	 * Parse client data JSON from base64url encoded string
+	 * Type predicate for client data JSON structure.
+	 */
+	static #isClientData(
+		input: unknown,
+	): input is { type: string; challenge: string; origin: string } {
+		return (
+			typeof input === "object" &&
+			input !== null &&
+			"type" in input &&
+			typeof input.type === "string" &&
+			"challenge" in input &&
+			typeof input.challenge === "string" &&
+			"origin" in input &&
+			typeof input.origin === "string"
+		);
+	}
+
+	/**
+	 * Parse and validate client data JSON from base64url encoded string.
 	 *
 	 * @param data client data JSON
+	 * @throws TypeError if client data is invalid
 	 */
 	#parseClientData(data: string) {
-		return JSON.parse(Codec.decode(Codec.base64url.decode(data))) as {
-			type: string;
-			challenge: string;
-			origin: string;
-		};
+		const parsed: unknown = JSON.parse(
+			Codec.decode(Codec.base64url.decode(data)),
+		);
+
+		if (!Passkey.#isClientData(parsed)) throw Passkey.#invalidCredential;
+
+		return parsed;
 	}
 
 	/**
@@ -771,7 +792,10 @@ class AuthData {
 	 * @returns Parsed authenticator data with flags, counters, and optional credential data
 	 */
 	static parse(data: Uint8Array) {
-		const flags = data[AuthData.#flagsOffset]!;
+		const flags = data[AuthData.#flagsOffset];
+		if (flags === undefined) {
+			throw new TypeError("Invalid credential");
+		}
 
 		let attestedCredentialData: AuthData.AttestedCredentialData | null = null;
 

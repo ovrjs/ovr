@@ -1,22 +1,27 @@
-import { Render, Route } from "ovr";
+import { type Middleware, Render, Route } from "ovr";
+import { z } from "zod";
+
+// Validate the credential coming from the browser
+const BrowserCredentialSchema = z.object({ id: z.string() }).loose();
 
 // TODO: Implement these in your application
-const storeCredential = async (_verified: any) => {};
-const getCredential = async (_id: string) => {
+async function storeCredential(_credential: any) {}
+async function getCredential(_id: string): Promise<any> {
 	return {} as any;
-};
+}
 
-const parseCredential = (data: FormData) => {
-	const value = data.get("credential");
+// Parse and validate credential from form data
+async function parseCredential(c: Middleware.Context) {
+	const value = (await c.form().data()).get("credential");
 
-	if (typeof value !== "string") return null;
-
-	try {
-		return JSON.parse(value);
-	} catch {
-		return null;
+	if (typeof value === "string") {
+		try {
+			return BrowserCredentialSchema.parse(JSON.parse(value));
+		} catch {}
 	}
-};
+
+	return null;
+}
 
 export const register = Route.get("/register", async (c) => {
 	const user = { id: `user-${crypto.randomUUID()}` };
@@ -41,9 +46,7 @@ export const register = Route.get("/register", async (c) => {
 });
 
 export const registerVerify = Route.post(async (c) => {
-	const data = await c.form().data();
-
-	const credential = parseCredential(data);
+	const credential = await parseCredential(c);
 
 	if (!credential) return c.text("Invalid request", 400);
 
@@ -71,9 +74,7 @@ export const login = Route.get("/login", async (c) => {
 });
 
 export const loginVerify = Route.post(async (c) => {
-	const data = await c.form().data();
-
-	const credential = parseCredential(data);
+	const credential = await parseCredential(c);
 
 	if (!credential) return c.text("Invalid request", 400);
 
