@@ -264,9 +264,6 @@ export namespace Passkey {
 
 		/** Associated user ID */
 		userId: string;
-
-		/** Signature counter */
-		// counter: number;
 	};
 
 	/** Registration verification result */
@@ -276,9 +273,6 @@ export namespace Passkey {
 
 		/** SPKI encoded public key as base64url */
 		publicKey: string;
-
-		/** Initial signature counter */
-		// counter: number;
 	};
 
 	/** Authentication assertion result */
@@ -288,9 +282,6 @@ export namespace Passkey {
 
 		/** Associated user ID */
 		userId: string;
-
-		/** Updated signature counter */
-		// counter: number;
 	};
 }
 
@@ -604,7 +595,7 @@ export class Passkey {
 			excludeCredentials: excludeCredentialIds?.map((id) => ({
 				type: "public-key",
 				id,
-				transports: ["internal", "hybrid"],
+				transports: ["internal", "hybrid", "usb"],
 			})),
 			authenticatorSelection: {
 				residentKey: "preferred",
@@ -723,20 +714,35 @@ export class Passkey {
 		signedData.set(authDataBytes);
 		signedData.set(clientDataHash, authDataBytes.length);
 
-		if (
-			!(await crypto.subtle.verify(
+		const key = await crypto.subtle.importKey(
+			"spki",
+			Codec.base64url.decode(stored.publicKey),
+			{ name: "ECDSA", namedCurve: "P-256" },
+			false,
+			["verify"],
+		);
+
+		const sig = Codec.base64url.decode(credential.response.signature);
+
+		const verify = (signature: BufferSource) =>
+			crypto.subtle.verify(
 				{ name: "ECDSA", hash: "SHA-256" },
-				await crypto.subtle.importKey(
-					"spki",
-					Codec.base64url.decode(stored.publicKey),
-					{ name: "ECDSA", namedCurve: "P-256" },
-					false,
-					["verify"],
-				),
-				DER.unwrap(Codec.base64url.decode(credential.response.signature)),
+				key,
+				signature,
 				signedData,
-			))
-		) {
+			);
+
+		let ok = await verify(sig);
+
+		if (!ok) {
+			try {
+				ok = await verify(DER.unwrap(sig));
+			} catch {
+				ok = false;
+			}
+		}
+
+		if (!ok) {
 			throw new Error("Invalid signature");
 		}
 
@@ -789,9 +795,15 @@ class AuthData {
 	 * Parse authenticator data from binary format.
 	 *
 	 * @param data - Raw authenticator data bytes
-	 * @returns Parsed authenticator data with flags, counters, and optional credential data
+	 * @returns Parsed authenticator data with flags and optional credential data
 	 */
 	static parse(data: Uint8Array) {
+		// Need rpIdHash (32) + flags (1) + signCount (4) at least
+		// Offsets assume at least 37 bytes to reach AAGUID
+		if (data.length < AuthData.#aaguidStart) {
+			throw new TypeError("Invalid credential");
+		}
+
 		const flags = data[AuthData.#flagsOffset];
 		if (flags === undefined) {
 			throw new TypeError("Invalid credential");
@@ -800,26 +812,42 @@ class AuthData {
 		let attestedCredentialData: AuthData.AttestedCredentialData | null = null;
 
 		if (flags & AuthData.#attestedCredentialFlag) {
+			// Need through credential length field + start of credId
+			if (data.length < AuthData.#credIdStart) {
+				throw new TypeError("Invalid credential");
+			}
+
+			const credIdLenEnd =
+				AuthData.#credIdLengthOffset + AuthData.#credIdLengthSize;
+			if (data.length < credIdLenEnd) {
+				throw new TypeError("Invalid credential");
+			}
+
 			const credIdLen = new DataView(
 				data.buffer,
 				data.byteOffset + AuthData.#credIdLengthOffset,
 				AuthData.#credIdLengthSize,
-			).getUint16(0);
+			).getUint16(0, false);
+
+			const credIdEnd = AuthData.#credIdStart + credIdLen;
+			if (credIdLen === 0 || credIdEnd > data.length) {
+				throw new TypeError("Invalid credential");
+			}
+
+			const coseBytes = data.subarray(credIdEnd);
+			if (coseBytes.length === 0) {
+				throw new TypeError("Invalid credential");
+			}
 
 			attestedCredentialData = {
-				aaguid: data.slice(AuthData.#aaguidStart, AuthData.#aaguidEnd),
-				credentialId: data.slice(
-					AuthData.#credIdStart,
-					AuthData.#credIdStart + credIdLen,
-				),
-				publicKey: new CBOR(
-					data.slice(AuthData.#credIdStart + credIdLen),
-				).decodeCOSEKey(),
+				aaguid: data.subarray(AuthData.#aaguidStart, AuthData.#aaguidEnd),
+				credentialId: data.subarray(AuthData.#credIdStart, credIdEnd),
+				publicKey: new CBOR(coseBytes).decodeCOSEKey(),
 			};
 		}
 
 		return {
-			rpIdHash: data.slice(0, AuthData.#rpIdHashLength),
+			rpIdHash: data.subarray(0, AuthData.#rpIdHashLength),
 			flags,
 			attestedCredentialData,
 		};
@@ -956,14 +984,14 @@ class DER {
 		}
 
 		const rLen = view.getUint8(offset + 1);
-		let r = der.slice(offset + 2, offset + 2 + rLen);
+		let r = der.subarray(offset + 2, offset + 2 + rLen);
 		offset += 2 + rLen;
 
 		const sLen = view.getUint8(offset + 1);
-		let s = der.slice(offset + 2, offset + 2 + sLen);
+		let s = der.subarray(offset + 2, offset + 2 + sLen);
 
-		while (r.length > DER.#coordinateLength && r[0] === 0) r = r.slice(1);
-		while (s.length > DER.#coordinateLength && s[0] === 0) s = s.slice(1);
+		while (r.length > DER.#coordinateLength && r[0] === 0) r = r.subarray(1);
+		while (s.length > DER.#coordinateLength && s[0] === 0) s = s.subarray(1);
 
 		const raw = new Uint8Array(DER.#signatureLength);
 		raw.set(r, DER.#signatureLength / 2 - r.length);
@@ -998,27 +1026,23 @@ class CBOR {
 	/**
 	 * Decode attestation object and extract authenticator data.
 	 *
+	 * Only supports fmt === "none", other formats may throw earlier depending on CBOR contents
+	 *
 	 * @returns Authenticator data bytes
 	 * @throws TypeError if CBOR structure is invalid
 	 */
 	decodeAttestation() {
 		const value = this.#parseNext();
 
-		if (!(value instanceof Map)) throw new TypeError("Expected CBOR map");
+		if (value instanceof Map) {
+			const authData = value.get("authData");
 
-		const fmt = value.get("fmt");
-
-		if (fmt !== "none") {
-			throw new TypeError("Unsupported attestation format");
+			if (value.get("fmt") === "none" && authData instanceof Uint8Array) {
+				return authData;
+			}
 		}
 
-		const authData = value.get("authData");
-
-		if (!(authData instanceof Uint8Array)) {
-			throw new TypeError("Expected CBOR map");
-		}
-
-		return authData;
+		throw new TypeError("Invalid credential");
 	}
 
 	/**
@@ -1055,16 +1079,22 @@ class CBOR {
 	 * Read n bytes and advance offset.
 	 *
 	 * @param n - Number of bytes to read
-	 * @returns Slice of data
+	 * @returns Subarray of data
 	 */
 	#read(n: number) {
-		return this.#data.slice(this.#offset, (this.#offset += n));
+		const end = this.#offset + n;
+
+		if (end > this.#data.length) {
+			throw new Error("CBOR stream ended unexpectedly");
+		}
+
+		return this.#data.subarray(this.#offset, (this.#offset = end));
 	}
 
 	/**
-	 * Read unsigned integer from n bytes.
+	 * Read unsigned integer from n bytes using DataView.
 	 *
-	 * @param bytes - Number of bytes to read
+	 * @param bytes - Number of bytes to read (1, 2, or 4)
 	 * @returns Decoded unsigned integer
 	 * @throws Error if stream ended unexpectedly
 	 */
@@ -1073,12 +1103,24 @@ class CBOR {
 			throw new Error("CBOR stream ended unexpectedly");
 		}
 
-		let value = 0;
-		for (let i = 0; i < bytes; i++) {
-			value = value * 256 + this.#data[this.#offset++]!;
-		}
+		const view = new DataView(
+			this.#data.buffer,
+			this.#data.byteOffset + this.#offset,
+			bytes,
+		);
 
-		return value;
+		this.#offset += bytes;
+
+		switch (bytes) {
+			case 1:
+				return view.getUint8(0);
+			case 2:
+				return view.getUint16(0, false);
+			case 4:
+				return view.getUint32(0, false);
+			default:
+				throw new Error("CBOR: unsupported integer size");
+		}
 	}
 
 	/**
