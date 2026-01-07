@@ -402,9 +402,16 @@ export class PublicKey {
 		}
 	}
 
-	/** Generate options for `navigator.credentials.create()`. */
+	/**
+	 * Generate options for `navigator.credentials.create()`.
+	 *
+	 * @param user - User information for registration
+	 * @param excludeCredentialIds - Optional list of credential IDs to exclude from registration. Prevents duplicate registration of the same authenticator.
+	 * @returns WebAuthn credential creation options
+	 */
 	async create(
 		user: PublicKey.User,
+		excludeCredentialIds?: string[],
 	): Promise<PublicKeyCredentialCreationOptionsJSON> {
 		const challenge = crypto.getRandomValues(new Uint8Array(32));
 
@@ -418,20 +425,27 @@ export class PublicKey {
 				name: user.name,
 				displayName: user.displayName,
 			},
-			pubKeyCredParams: [
-				{ type: "public-key" as const, alg: -7 },
-				{ type: "public-key" as const, alg: -257 },
-			],
+			pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+			excludeCredentials: excludeCredentialIds?.map((id) => ({
+				type: "public-key",
+				id,
+			})),
 			authenticatorSelection: {
-				residentKey: "preferred" as const,
-				userVerification: "preferred" as const,
+				residentKey: "preferred",
+				userVerification: "preferred",
 			},
 			timeout: 300000,
-			attestation: "none" as const,
+			attestation: "none",
 		};
 	}
 
-	/** Verify a registration response and return credential data to store. */
+	/**
+	 * Verify a registration response and return credential data to store.
+	 *
+	 * @param credential - Registration credential response from authenticator
+	 * @returns Credential verification result containing ID, public key, and counter
+	 * @throws Error if challenge expired, RP ID mismatch, user not present, or credential data missing
+	 */
 	async verify(
 		credential: PublicKey.RegistrationCredentialJSON,
 	): Promise<PublicKey.VerifyResult> {
@@ -470,7 +484,11 @@ export class PublicKey {
 		};
 	}
 
-	/** Generate options for `navigator.credentials.get()`. */
+	/**
+	 * Generate options for `navigator.credentials.get()`.
+	 *
+	 * @returns WebAuthn credential request options
+	 */
 	async get(): Promise<PublicKeyCredentialRequestOptionsJSON> {
 		const challenge = crypto.getRandomValues(new Uint8Array(32));
 
@@ -484,7 +502,14 @@ export class PublicKey {
 		};
 	}
 
-	/** Verify an authentication response and create a session. */
+	/**
+	 * Verify an authentication response and create a session.
+	 *
+	 * @param credential - Authentication credential response from authenticator
+	 * @param stored - Stored credential data from database
+	 * @returns Authentication assertion result containing credential ID, user ID, and updated counter
+	 * @throws Error if challenge expired, RP ID mismatch, user not present, possible clone detected, or signature invalid
+	 */
 	async assert(
 		credential: PublicKey.AuthenticationCredentialJSON,
 		stored: PublicKey.Credential,
