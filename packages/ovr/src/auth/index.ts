@@ -53,6 +53,12 @@ export class Auth {
 	/** PublicKey methods */
 	readonly publicKey: PublicKey;
 
+	/**
+	 * Create a new auth instance
+	 *
+	 * @param c Request context
+	 * @param options Auth options
+	 */
 	constructor(c: Context, options: Auth.Options) {
 		this.#c = c;
 		this.options = Object.assign(
@@ -804,6 +810,11 @@ class CBOR {
 	/** Current read position in data */
 	#offset: number;
 
+	/**
+	 * Create a new CBOR instance
+	 *
+	 * @param data WebAuthn data
+	 */
 	constructor(data: Uint8Array) {
 		this.#data = data;
 		this.#offset = 0;
