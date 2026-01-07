@@ -50,8 +50,8 @@ export class Auth {
 	/** Auth user options */
 	readonly options;
 
-	/** PublicKey methods */
-	readonly publicKey: PublicKey;
+	/** Passkey methods */
+	readonly passkey: Passkey;
 
 	/**
 	 * Create a new auth instance
@@ -69,7 +69,7 @@ export class Auth {
 			} satisfies Omit<Auth.Options, "secret">,
 			options,
 		);
-		this.publicKey = new PublicKey(c, this);
+		this.passkey = new Passkey(c, this);
 	}
 
 	/** Gets the corresponding key for the app handling the request */
@@ -94,7 +94,7 @@ export class Auth {
 
 	/**
 	 * @param payload
-	 * @returns HMAC signed `payload.signature`
+	 * @returns HMAC signed `payload.signature` with auth secret
 	 */
 	async sign(payload: string) {
 		return `${payload}.${Codec.base64.encode(
@@ -208,7 +208,7 @@ export class Auth {
 	}
 }
 
-export namespace PublicKey {
+export namespace Passkey {
 	/** Helper type to convert Buffers into strings for sending as JSON */
 	type ToJSON<T> = {
 		[K in keyof T]: T[K] extends ArrayBuffer | Uint8Array | BufferSource
@@ -218,9 +218,16 @@ export namespace PublicKey {
 
 	/** Base credential type */
 	type CredentialJSON<TResponse> = {
+		/** Credential ID as base64url string */
 		id: Base64URLString;
+
+		/** Raw credential ID as base64url string */
 		rawId: Base64URLString;
+
+		/** Credential type identifier */
 		type: "public-key";
+
+		/** Authenticator response data */
 		response: TResponse;
 	};
 
@@ -238,8 +245,10 @@ export namespace PublicKey {
 	export type User = {
 		/** Unique user identifier */
 		id: string;
+
 		/** User name/username */
 		name: string;
+
 		/** Human readable display name */
 		displayName: string;
 	};
@@ -248,10 +257,13 @@ export namespace PublicKey {
 	export type Credential = {
 		/** Credential ID */
 		id: string;
+
 		/** SPKI encoded public key as base64url */
 		publicKey: string;
+
 		/** Associated user ID */
 		userId: string;
+
 		/** Signature counter for clone detection */
 		counter: number;
 	};
@@ -260,8 +272,10 @@ export namespace PublicKey {
 	export type VerifyResult = {
 		/** Credential ID from registration */
 		credentialId: string;
+
 		/** SPKI encoded public key as base64url */
 		publicKey: string;
+
 		/** Initial signature counter */
 		counter: number;
 	};
@@ -270,17 +284,17 @@ export namespace PublicKey {
 	export type AssertResult = {
 		/** Credential ID used for authentication */
 		credentialId: string;
+
 		/** Associated user ID */
 		userId: string;
+
 		/** Updated signature counter */
 		counter: number;
 	};
 }
 
-/**
- * WebAuthn passkey authentication.
- */
-export class PublicKey {
+/** WebAuthn passkey authentication */
+export class Passkey {
 	/** Auth instance for managing sessions */
 	readonly #auth: Auth;
 
@@ -290,10 +304,20 @@ export class PublicKey {
 	/** Cookie name for storing WebAuthn challenges */
 	readonly #challengeCookie: string;
 
+	/** The relying party ID from the request hostname */
+	readonly #rpId: string;
+
+	/**
+	 * Create a new Passkey instance
+	 *
+	 * @param c Request context
+	 * @param auth Auth instance
+	 */
 	constructor(c: Context, auth: Auth) {
 		this.#c = c;
 		this.#auth = auth;
 		this.#challengeCookie = `${this.#auth.options.cookie}-challenge`;
+		this.#rpId = this.#c.url.hostname;
 	}
 
 	/**
@@ -305,27 +329,30 @@ export class PublicKey {
 	 */
 	static #timingSafeEqual(a: Uint8Array, b: Uint8Array) {
 		if (a.length !== b.length) return false;
+
 		let result = 0;
 		for (let i = 0; i < a.length; i++) result |= a[i]! ^ b[i]!;
+
 		return result === 0;
 	}
 
-	/** Gets the relying party ID from the request hostname. */
-	get #rpId() {
-		return this.#c.url.hostname;
-	}
-
 	/**
-	 * Store a WebAuthn challenge in a signed cookie.
+	 * Store a WebAuthn challenge in a signed cookie
 	 *
-	 * @param challenge - Random bytes to sign and store
+	 * @returns Random bytes that are signed and stored
 	 */
-	async #setChallenge(challenge: Uint8Array) {
+	async #newChallenge() {
+		const challenge = Codec.base64url.encode(
+			crypto.getRandomValues(new Uint8Array(32)),
+		);
+
 		this.#c.cookie.set(
 			this.#challengeCookie,
-			await this.#auth.sign(Codec.base64url.encode(challenge)),
+			await this.#auth.sign(challenge),
 			{ httpOnly: true, secure: true, sameSite: "Strict", maxAge: 300 },
 		);
+
+		return challenge;
 	}
 
 	/**
@@ -334,8 +361,6 @@ export class PublicKey {
 	 * @returns Challenge bytes if valid, otherwise null
 	 */
 	async #consumeChallenge() {
-		const token = this.#c.cookie.get(this.#challengeCookie);
-
 		this.#c.cookie.set(this.#challengeCookie, "", {
 			httpOnly: true,
 			secure: true,
@@ -343,8 +368,11 @@ export class PublicKey {
 			maxAge: 0,
 		});
 
+		const token = this.#c.cookie.get(this.#challengeCookie);
+
 		if (token) {
 			const payload = await this.#auth.verify(token);
+
 			if (payload) return Codec.base64url.decode(payload);
 		}
 
@@ -359,11 +387,9 @@ export class PublicKey {
 	 */
 	async #verifyRpIdHash(hash: Uint8Array) {
 		if (
-			!PublicKey.#timingSafeEqual(
+			!Passkey.#timingSafeEqual(
 				hash,
-				new Uint8Array(
-					await crypto.subtle.digest("SHA-256", Codec.encode(this.#rpId)),
-				),
+				await Passkey.#sha256(Codec.encode(this.#rpId)),
 			)
 		) {
 			throw new Error("RP ID mismatch");
@@ -389,7 +415,7 @@ export class PublicKey {
 		}
 
 		if (
-			!PublicKey.#timingSafeEqual(
+			!Passkey.#timingSafeEqual(
 				Codec.base64url.decode(clientData.challenge),
 				challenge,
 			)
@@ -402,6 +428,10 @@ export class PublicKey {
 		}
 	}
 
+	static async #sha256(data: Uint8Array<ArrayBuffer>) {
+		return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+	}
+
 	/**
 	 * Generate options for `navigator.credentials.create()`.
 	 *
@@ -410,15 +440,11 @@ export class PublicKey {
 	 * @returns WebAuthn credential creation options
 	 */
 	async create(
-		user: PublicKey.User,
+		user: Passkey.User,
 		excludeCredentialIds?: string[],
 	): Promise<PublicKeyCredentialCreationOptionsJSON> {
-		const challenge = crypto.getRandomValues(new Uint8Array(32));
-
-		await this.#setChallenge(challenge);
-
 		return {
-			challenge: Codec.base64url.encode(challenge),
+			challenge: await this.#newChallenge(),
 			rp: { id: this.#rpId, name: this.#rpId },
 			user: {
 				id: Codec.base64url.encode(Codec.encode(user.id)),
@@ -429,6 +455,7 @@ export class PublicKey {
 			excludeCredentials: excludeCredentialIds?.map((id) => ({
 				type: "public-key",
 				id,
+				transports: ["internal", "hybrid"],
 			})),
 			authenticatorSelection: {
 				residentKey: "preferred",
@@ -447,16 +474,21 @@ export class PublicKey {
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or credential data missing
 	 */
 	async verify(
-		credential: PublicKey.RegistrationCredentialJSON,
-	): Promise<PublicKey.VerifyResult> {
+		credential: Passkey.RegistrationCredentialJSON,
+	): Promise<Passkey.VerifyResult> {
 		const challenge = await this.#consumeChallenge();
 		if (!challenge) throw new Error("Challenge expired or missing");
 
-		const clientData = JSON.parse(
-			Codec.decode(Codec.base64url.decode(credential.response.clientDataJSON)),
+		this.#verifyClientData(
+			// client data
+			JSON.parse(
+				Codec.decode(
+					Codec.base64url.decode(credential.response.clientDataJSON),
+				),
+			),
+			"webauthn.create",
+			challenge,
 		);
-
-		this.#verifyClientData(clientData, "webauthn.create", challenge);
 
 		const authData = AuthData.parse(
 			new CBOR(
@@ -466,9 +498,8 @@ export class PublicKey {
 
 		await this.#verifyRpIdHash(authData.rpIdHash);
 
-		if (!(authData.flags & 0x01)) {
-			throw new Error("User not present");
-		}
+		if (!(authData.flags & 0x01)) throw new Error("User not present");
+
 		if (!authData.attestedCredentialData) {
 			throw new Error("Missing credential data");
 		}
@@ -490,12 +521,8 @@ export class PublicKey {
 	 * @returns WebAuthn credential request options
 	 */
 	async get(): Promise<PublicKeyCredentialRequestOptionsJSON> {
-		const challenge = crypto.getRandomValues(new Uint8Array(32));
-
-		await this.#setChallenge(challenge);
-
 		return {
-			challenge: Codec.base64url.encode(challenge),
+			challenge: await this.#newChallenge(),
 			rpId: this.#rpId,
 			timeout: 300000,
 			userVerification: "preferred" as const,
@@ -511,9 +538,9 @@ export class PublicKey {
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, possible clone detected, or signature invalid
 	 */
 	async assert(
-		credential: PublicKey.AuthenticationCredentialJSON,
-		stored: PublicKey.Credential,
-	): Promise<PublicKey.AssertResult> {
+		credential: Passkey.AuthenticationCredentialJSON,
+		stored: Passkey.Credential,
+	): Promise<Passkey.AssertResult> {
 		const cred = credential;
 
 		const challenge = await this.#consumeChallenge();
@@ -538,13 +565,9 @@ export class PublicKey {
 		if (!(authData.flags & 0x01)) {
 			throw new Error("User not present");
 		}
-		if (authData.signCount > 0 && authData.signCount <= stored.counter) {
-			throw new Error("Possible credential clone detected");
-		}
 
-		const clientDataHash = new Uint8Array(
-			await crypto.subtle.digest("SHA-256", clientDataJSON),
-		);
+		const clientDataHash = await Passkey.#sha256(clientDataJSON);
+
 		const signedData = new Uint8Array(
 			authDataBytes.length + clientDataHash.length,
 		);
@@ -847,7 +870,7 @@ class CBOR {
 
 		if (!(value instanceof Map)) throw new TypeError("Expected CBOR map");
 
-		const authData = value.get(0x22);
+		const authData = value.get("authData");
 
 		if (!(authData instanceof Uint8Array)) {
 			throw new TypeError("Expected CBOR map");

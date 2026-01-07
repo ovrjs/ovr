@@ -9,7 +9,7 @@ const CredentialSchema = z
 export const register = Route.get("/register", async (c) => {
 	const user = { id: `user-${crypto.randomUUID()}` };
 
-	const publicKey = await c.auth.publicKey.create({
+	const publicKey = await c.auth.passkey.create({
 		id: user.id,
 		name: `user-${user.id}`,
 		displayName: "Account",
@@ -35,7 +35,7 @@ export const registerVerify = Route.post(async (c) => {
 
 	if (!parsed.success) return c.text("Invalid request", 400);
 
-	const verified = await c.auth.publicKey.verify(parsed.data);
+	const verified = await c.auth.passkey.verify(parsed.data);
 
 	// TODO: Implement your credential storage
 	await storeCredential(verified);
@@ -44,7 +44,7 @@ export const registerVerify = Route.post(async (c) => {
 });
 
 export const login = Route.get("/login", async (c) => {
-	const publicKey = await c.auth.publicKey.get();
+	const publicKey = await c.auth.passkey.get();
 
 	return (
 		<>
@@ -69,7 +69,7 @@ export const loginVerify = Route.post(async (c) => {
 	// TODO: Implement your credential lookup
 	const stored = await getCredential(parsed.data.id);
 
-	await c.auth.publicKey.assert(parsed.data, stored);
+	await c.auth.passkey.assert(parsed.data, stored);
 
 	c.redirect("/", 303);
 });
