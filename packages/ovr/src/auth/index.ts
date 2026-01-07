@@ -390,23 +390,6 @@ export class Passkey {
 	}
 
 	/**
-	 * Verify that the authenticator data RP ID hash matches the request origin.
-	 *
-	 * @param hash - RP ID hash from authenticator data
-	 * @throws Error if RP ID mismatch
-	 */
-	async #verifyRpIdHash(hash: Uint8Array) {
-		if (
-			!Passkey.#timingSafeEqual(
-				hash,
-				await Passkey.#sha256(Codec.encode(this.#rpId)),
-			)
-		) {
-			throw new Error("RP ID mismatch");
-		}
-	}
-
-	/**
 	 * Parse client data JSON from base64url encoded string
 	 *
 	 * @param data client data JSON
@@ -456,6 +439,74 @@ export class Passkey {
 	}
 
 	/**
+	 * Common credential verification logic shared by verify() and assert().
+	 *
+	 * @param credential - Base credential data from authenticator
+	 * @param ceremonyType - Expected WebAuthn ceremony type
+	 * @returns Decoded rawId bytes for further verification
+	 */
+	async #verifyCredentialBase(
+		credential: {
+			type: string;
+			id: string;
+			rawId: string;
+			response: { clientDataJSON: string };
+		},
+		ceremonyType: "webauthn.create" | "webauthn.get",
+	) {
+		if (credential.type !== "public-key") {
+			throw new TypeError("Invalid credential type");
+		}
+
+		const rawIdBytes = Codec.base64url.decode(credential.rawId);
+
+		if (
+			!Passkey.#timingSafeEqual(
+				Codec.base64url.decode(credential.id),
+				rawIdBytes,
+			)
+		) {
+			throw new Error("Credential ID mismatch");
+		}
+
+		const challenge = await this.#consumeChallenge();
+		if (!challenge) throw new Error("Challenge expired or missing");
+
+		this.#verifyClientData(
+			this.#parseClientData(credential.response.clientDataJSON),
+			ceremonyType,
+			challenge,
+		);
+
+		return rawIdBytes;
+	}
+
+	/**
+	 * Verify authenticator data flags and RP ID hash.
+	 *
+	 * @param authData - Parsed authenticator data
+	 * @throws Error if RP ID mismatch, user not present, or user not verified
+	 */
+	async #verifyAuthData(authData: { rpIdHash: Uint8Array; flags: number }) {
+		if (
+			!Passkey.#timingSafeEqual(
+				authData.rpIdHash,
+				await Passkey.#sha256(Codec.encode(this.#rpId)),
+			)
+		) {
+			throw new Error("RP ID mismatch");
+		}
+
+		if (!(authData.flags & 0x01)) {
+			throw new Error("User not present");
+		}
+
+		if (!(authData.flags & 0x04)) {
+			throw new Error("User not verified");
+		}
+	}
+
+	/**
 	 * Generate options for `navigator.credentials.create()`.
 	 *
 	 * @param user - User information for registration
@@ -493,34 +544,15 @@ export class Passkey {
 	 * Verify a registration response and return credential data to store.
 	 *
 	 * @param credential - Registration credential response from authenticator
-	 * @returns Credential verification result containing ID, public key, and counter
+	 * @returns Credential verification result containing ID and public key
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or credential data missing
 	 */
 	async verify(
 		credential: Passkey.RegistrationCredentialJSON,
 	): Promise<Passkey.VerifyResult> {
-		if (credential.type !== "public-key") {
-			throw new TypeError("Invalid credential type");
-		}
-
-		const rawIdBytes = Codec.base64url.decode(credential.rawId);
-
-		if (
-			!Passkey.#timingSafeEqual(
-				Codec.base64url.decode(credential.id),
-				rawIdBytes,
-			)
-		) {
-			throw new Error("Credential ID mismatch");
-		}
-
-		const challenge = await this.#consumeChallenge();
-		if (!challenge) throw new Error("Challenge expired or missing");
-
-		this.#verifyClientData(
-			this.#parseClientData(credential.response.clientDataJSON),
+		const rawIdBytes = await this.#verifyCredentialBase(
+			credential,
 			"webauthn.create",
-			challenge,
 		);
 
 		const authData = AuthData.parse(
@@ -529,11 +561,7 @@ export class Passkey {
 			).decodeAttestation(),
 		);
 
-		await this.#verifyRpIdHash(authData.rpIdHash);
-
-		if (!(authData.flags & 0x01)) throw new Error("User not present");
-
-		if (!(authData.flags & 0x04)) throw new Error("User not verified");
+		await this.#verifyAuthData(authData);
 
 		if (!authData.attestedCredentialData) {
 			throw new Error("Missing credential data");
@@ -573,31 +601,21 @@ export class Passkey {
 	}
 
 	/**
-	 * Verify an authentication response and create a session.
+	 * Verify an authentication response and return the authenticated user ID.
 	 *
 	 * @param credential - Authentication credential response from authenticator
 	 * @param stored - Stored credential data from database
-	 * @returns Authentication assertion result containing credential ID, user ID, and updated counter
+	 * @returns Authentication assertion result containing credential ID and user ID
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or signature invalid
 	 */
 	async assert(
 		credential: Passkey.AuthenticationCredentialJSON,
 		stored: Passkey.Credential,
 	): Promise<Passkey.AssertResult> {
-		if (credential.type !== "public-key") {
-			throw new TypeError("Invalid credential type");
-		}
-
-		const rawIdBytes = Codec.base64url.decode(credential.rawId);
-
-		if (
-			!Passkey.#timingSafeEqual(
-				Codec.base64url.decode(credential.id),
-				rawIdBytes,
-			)
-		) {
-			throw new Error("Credential ID mismatch");
-		}
+		const rawIdBytes = await this.#verifyCredentialBase(
+			credential,
+			"webauthn.get",
+		);
 
 		const storedIdBytes = Codec.base64url.decode(stored.id);
 
@@ -605,29 +623,12 @@ export class Passkey {
 			throw new Error("Credential ID mismatch");
 		}
 
-		const challenge = await this.#consumeChallenge();
-		if (!challenge) throw new Error("Challenge expired or missing");
-
-		this.#verifyClientData(
-			this.#parseClientData(credential.response.clientDataJSON),
-			"webauthn.get",
-			challenge,
-		);
-
 		const authDataBytes = Codec.base64url.decode(
 			credential.response.authenticatorData,
 		);
 		const authData = AuthData.parse(authDataBytes);
 
-		await this.#verifyRpIdHash(authData.rpIdHash);
-
-		if (!(authData.flags & 0x01)) {
-			throw new Error("User not present");
-		}
-
-		if (!(authData.flags & 0x04)) {
-			throw new Error("User not verified");
-		}
+		await this.#verifyAuthData(authData);
 
 		const clientDataHash = await Passkey.#sha256(
 			Codec.base64url.decode(credential.response.clientDataJSON),
@@ -642,7 +643,6 @@ export class Passkey {
 		if (
 			!(await crypto.subtle.verify(
 				{ name: "ECDSA", hash: "SHA-256" },
-				// public key
 				await crypto.subtle.importKey(
 					"spki",
 					Codec.base64url.decode(stored.publicKey),
@@ -656,8 +656,6 @@ export class Passkey {
 		) {
 			throw new Error("Invalid signature");
 		}
-
-		await this.#auth.login(stored.userId);
 
 		return {
 			credentialId: Codec.base64url.encode(storedIdBytes),

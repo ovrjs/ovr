@@ -6,6 +6,12 @@ const CredentialSchema = z
 	.min(100)
 	.transform((s) => JSON.parse(s) as unknown);
 
+// TODO: Implement these in your application
+async function storeCredential(_verified: any) {}
+async function getCredential(_id: string) {
+	return {} as any;
+}
+
 export const register = Route.get("/register", async (c) => {
 	const user = { id: `user-${crypto.randomUUID()}` };
 
@@ -35,7 +41,7 @@ export const registerVerify = Route.post(async (c) => {
 
 	if (!parsed.success) return c.text("Invalid request", 400);
 
-	const verified = await c.auth.passkey.verify(parsed.data);
+	const verified = await c.auth.passkey.verify(parsed.data as any);
 
 	// TODO: Implement your credential storage
 	await storeCredential(verified);
@@ -67,9 +73,11 @@ export const loginVerify = Route.post(async (c) => {
 	if (!parsed.success) return c.text("Invalid request", 400);
 
 	// TODO: Implement your credential lookup
-	const stored = await getCredential(parsed.data.id);
+	const stored = await getCredential((parsed.data as any).id);
 
-	await c.auth.passkey.assert(parsed.data, stored);
+	const result = await c.auth.passkey.assert(parsed.data as any, stored);
+
+	await c.auth.login(result.userId);
 
 	c.redirect("/", 303);
 });
@@ -87,9 +95,13 @@ document
 	.addEventListener("submit", async (e) => {
 		e.preventDefault();
 		const credential = await navigator.credentials.${props.method}({ publicKey: ${JSON.stringify(props.publicKey)} });
-		const data = new FormData();
-		data.append("credential", JSON.stringify(credential));
-		e.currentTarget.submit(data);
+		const json = credential.toJSON();
+		const input = document.createElement("input");
+		input.type = "hidden";
+		input.name = "credential";
+		input.value = JSON.stringify(json);
+		e.currentTarget.appendChild(input);
+		e.currentTarget.submit();
 	});
 `)}
 		</script>
