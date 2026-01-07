@@ -28,17 +28,29 @@ export namespace Auth {
 		readonly refresh?: number;
 	};
 
-	export type Session = { readonly id: string; readonly expiration: number };
+	export type Session = {
+		/** Session ID */
+		readonly id: string;
+
+		/** Session expiration time */
+		readonly expiration: number;
+	};
 }
 
 /**
  * Stateless authentication helper with passkey support.
  */
 export class Auth {
+	/** Cached auth keys in case of multiple App instances */
 	static readonly #keys = new Map<string, Promise<CryptoKey>>();
 
+	/** Request context */
 	readonly #c: Context;
+
+	/** Auth user options */
 	readonly options;
+
+	/** PublicKey methods */
 	readonly publicKey: PublicKey;
 
 	constructor(c: Context, options: Auth.Options) {
@@ -48,14 +60,16 @@ export class Auth {
 				cookie: "__Host-session",
 				duration: Time.week,
 				refresh: (options.duration ?? Time.week) / 4,
-			},
+			} satisfies Omit<Auth.Options, "secret">,
 			options,
-		) satisfies Omit<Auth.Options, "secret">;
+		);
 		this.publicKey = new PublicKey(c, this);
 	}
 
+	/** Gets the corresponding key for the app handling the request */
 	get #key() {
 		let key = Auth.#keys.get(this.options.secret);
+
 		if (!key) {
 			Auth.#keys.set(
 				this.options.secret,
@@ -68,9 +82,14 @@ export class Auth {
 				)),
 			);
 		}
+
 		return key;
 	}
 
+	/**
+	 * @param payload
+	 * @returns HMAC signed `payload.signature`
+	 */
 	async sign(payload: string) {
 		return `${payload}.${Codec.base64.encode(
 			new Uint8Array(
@@ -83,8 +102,13 @@ export class Auth {
 		)}`;
 	}
 
-	async verifySignature(token: string) {
+	/**
+	 * @param token signed token
+	 * @returns payload if valid, otherwise null
+	 */
+	async verify(token: string) {
 		const [payload, sig] = token.split(".", 2);
+
 		if (payload && sig) {
 			try {
 				if (
@@ -99,10 +123,17 @@ export class Auth {
 				}
 			} catch {}
 		}
+
 		return null;
 	}
 
+	/**
+	 * Set the auth session cookie
+	 *
+	 * @param session
+	 */
 	#setCookie(session: Auth.Session): Promise<Auth.Session>;
+	/** Expire the auth session cookie */
 	#setCookie(session?: undefined): Promise<null>;
 	async #setCookie(session?: Auth.Session) {
 		this.#c.cookie.set(
@@ -123,11 +154,17 @@ export class Auth {
 		return session ?? null;
 	}
 
+	/**
+	 * Reads the current auth session from the cookie
+	 *
+	 * @returns current or null
+	 */
 	async session() {
 		const token = this.#c.cookie.get(this.options.cookie);
 		if (!token) return null;
 
-		const payload = await this.verifySignature(token);
+		const payload = await this.verify(token);
+
 		if (payload) {
 			try {
 				const session = JSON.parse(
@@ -144,9 +181,14 @@ export class Auth {
 				}
 			} catch {}
 		}
+
 		return this.logout();
 	}
 
+	/**
+	 * @param id user ID to login
+	 * @returns new session
+	 */
 	login(id: string) {
 		return this.#setCookie({
 			id,
@@ -154,18 +196,21 @@ export class Auth {
 		});
 	}
 
+	/** Logs out the user by expiring the session cookie */
 	logout() {
 		return this.#setCookie();
 	}
 }
 
 export namespace PublicKey {
+	/** Helper type to convert Buffers into strings for sending as JSON */
 	type ToJSON<T> = {
 		[K in keyof T]: T[K] extends ArrayBuffer | Uint8Array | BufferSource
 			? Base64URLString
 			: T[K];
 	};
 
+	/** Base credential type */
 	type CredentialJSON<TResponse> = {
 		id: Base64URLString;
 		rawId: Base64URLString;
@@ -173,16 +218,33 @@ export namespace PublicKey {
 		response: TResponse;
 	};
 
+	/** Registration credential response from authenticator */
 	export type RegistrationCredentialJSON = CredentialJSON<
 		ToJSON<AuthenticatorAttestationResponse> & { publicKey?: Base64URLString }
 	>;
 
+	/** Authentication credential response from authenticator */
 	export type AuthenticationCredentialJSON = CredentialJSON<
 		ToJSON<AuthenticatorAssertionResponse>
 	>;
 
+	/**
+	 * User for registration
+	 *
+	 * @field id - Unique user identifier
+	 * @field name - User name/username
+	 * @field displayName - Human readable display name
+	 */
 	export type User = { id: string; name: string; displayName: string };
 
+	/**
+	 * Stored credential data
+	 *
+	 * @field id - Credential ID
+	 * @field publicKey - SPKI encoded public key as base64url
+	 * @field userId - Associated user ID
+	 * @field counter - Signature counter for clone detection
+	 */
 	export type Credential = {
 		id: string;
 		publicKey: string;
@@ -190,12 +252,26 @@ export namespace PublicKey {
 		counter: number;
 	};
 
+	/**
+	 * Registration verification result
+	 *
+	 * @field credentialId - Credential ID from registration
+	 * @field publicKey - SPKI encoded public key as base64url
+	 * @field counter - Initial signature counter
+	 */
 	export type VerifyResult = {
 		credentialId: string;
 		publicKey: string;
 		counter: number;
 	};
 
+	/**
+	 * Authentication assertion result
+	 *
+	 * @field credentialId - Credential ID used for authentication
+	 * @field userId - Associated user ID
+	 * @field counter - Updated signature counter
+	 */
 	export type AssertResult = {
 		credentialId: string;
 		userId: string;
@@ -207,8 +283,13 @@ export namespace PublicKey {
  * WebAuthn passkey authentication.
  */
 export class PublicKey {
+	/** Auth instance for managing sessions */
 	readonly #auth: Auth;
+
+	/** Request context */
 	readonly #c: Context;
+
+	/** Cookie name for storing WebAuthn challenges */
 	readonly #challengeCookie: string;
 
 	constructor(c: Context, auth: Auth) {
@@ -217,6 +298,13 @@ export class PublicKey {
 		this.#challengeCookie = `${this.#auth.options.cookie}-challenge`;
 	}
 
+	/**
+	 * Constant-time comparison of two byte arrays.
+	 *
+	 * @param a - First byte array
+	 * @param b - Second byte array
+	 * @returns true if arrays are equal, false otherwise
+	 */
 	static #timingSafeEqual(a: Uint8Array, b: Uint8Array) {
 		if (a.length !== b.length) return false;
 		let result = 0;
@@ -224,10 +312,16 @@ export class PublicKey {
 		return result === 0;
 	}
 
+	/** Gets the relying party ID from the request hostname. */
 	get #rpId() {
 		return this.#c.url.hostname;
 	}
 
+	/**
+	 * Store a WebAuthn challenge in a signed cookie.
+	 *
+	 * @param challenge - Random bytes to sign and store
+	 */
 	async #setChallenge(challenge: Uint8Array) {
 		this.#c.cookie.set(
 			this.#challengeCookie,
@@ -236,6 +330,11 @@ export class PublicKey {
 		);
 	}
 
+	/**
+	 * Retrieve and clear the stored WebAuthn challenge.
+	 *
+	 * @returns Challenge bytes if valid, otherwise null
+	 */
 	async #consumeChallenge() {
 		const token = this.#c.cookie.get(this.#challengeCookie);
 
@@ -247,13 +346,19 @@ export class PublicKey {
 		});
 
 		if (token) {
-			const payload = await this.#auth.verifySignature(token);
+			const payload = await this.#auth.verify(token);
 			if (payload) return Codec.base64url.decode(payload);
 		}
 
 		return null;
 	}
 
+	/**
+	 * Verify that the authenticator data RP ID hash matches the request origin.
+	 *
+	 * @param hash - RP ID hash from authenticator data
+	 * @throws Error if RP ID mismatch
+	 */
 	async #verifyRpIdHash(hash: Uint8Array) {
 		if (
 			!PublicKey.#timingSafeEqual(
@@ -267,6 +372,15 @@ export class PublicKey {
 		}
 	}
 
+	/**
+	 * Verify client data JSON matches expected values.
+	 *
+	 * @param clientData - Parsed client data JSON
+	 * @param expectedType - Expected ceremony type (webauthn.create or webauthn.get)
+	 * @param challenge - Expected challenge bytes
+	 * @throws TypeError if ceremony type mismatch
+	 * @throws Error if challenge or origin mismatch
+	 */
 	#verifyClientData(
 		clientData: { type: string; challenge: string; origin: string },
 		expectedType: string,
@@ -332,11 +446,11 @@ export class PublicKey {
 
 		this.#verifyClientData(clientData, "webauthn.create", challenge);
 
-		const attestation = CBOR.decodeAttestation(
-			Codec.base64url.decode(credential.response.attestationObject),
+		const authData = AuthData.parse(
+			new CBOR(
+				Codec.base64url.decode(credential.response.attestationObject),
+			).decodeAttestation(),
 		);
-
-		const authData = AuthData.parse(attestation.authData);
 
 		await this.#verifyRpIdHash(authData.rpIdHash);
 
@@ -352,7 +466,7 @@ export class PublicKey {
 			publicKey:
 				credential.response.publicKey ??
 				Codec.base64url.encode(
-					COSE.toSpki(authData.attestedCredentialData.publicKey),
+					COSE.toSPKI(authData.attestedCredentialData.publicKey),
 				),
 			counter: authData.signCount,
 		};
@@ -442,6 +556,13 @@ export class PublicKey {
 }
 
 namespace AuthData {
+	/**
+	 * Attested credential public key data from authenticator
+	 *
+	 * @field aaguid - Authenticator AAGUID
+	 * @field credentialId - Credential ID bytes
+	 * @field publicKey - COSE public key map
+	 */
 	export type AttestedCredentialData = {
 		aaguid: Uint8Array;
 		credentialId: Uint8Array;
@@ -449,18 +570,46 @@ namespace AuthData {
 	};
 }
 
+/**
+ * Parser for WebAuthn authenticator data structure.
+ */
 class AuthData {
+	/** RP ID hash length in bytes */
 	static readonly #rpIdHashLength = 32;
+
+	/** Byte offset of flags field */
 	static readonly #flagsOffset = 32;
+
+	/** Byte offset of signature counter */
 	static readonly #signCountOffset = 33;
+
+	/** Signature counter length in bytes */
 	static readonly #signCountLength = 4;
+
+	/** Start byte offset of AAGUID */
 	static readonly #aaguidStart = 37;
+
+	/** End byte offset of AAGUID */
 	static readonly #aaguidEnd = 53;
+
+	/** Byte offset of credential ID length field */
 	static readonly #credIdLengthOffset = 53;
+
+	/** Credential ID length field size in bytes */
 	static readonly #credIdLengthSize = 2;
+
+	/** Start byte offset of credential ID data */
 	static readonly #credIdStart = 55;
+
+	/** Flag bit indicating attested credential data is present */
 	static readonly #attestedCredentialFlag = 0x40;
 
+	/**
+	 * Parse authenticator data from binary format.
+	 *
+	 * @param data - Raw authenticator data bytes
+	 * @returns Parsed authenticator data with flags, counters, and optional credential data
+	 */
 	static parse(data: Uint8Array) {
 		const flags = data[this.#flagsOffset]!;
 
@@ -479,9 +628,9 @@ class AuthData {
 					this.#credIdStart,
 					this.#credIdStart + credIdLen,
 				),
-				publicKey: CBOR.decodeCOSEKey(
+				publicKey: new CBOR(
 					data.slice(this.#credIdStart + credIdLen),
-				),
+				).decodeCOSEKey(),
 			};
 		}
 
@@ -498,33 +647,63 @@ class AuthData {
 	}
 }
 
+/**
+ * COSE (CBOR Object Signing and Encryption) key format utilities.
+ */
 class COSE {
-	// COSE key labels
+	/** COSE key type label */
 	static readonly #kty = 1;
+
+	/** COSE key curve label */
 	static readonly #crv = -1;
+
+	/** COSE key X coordinate label */
 	static readonly #x = -2;
+
+	/** COSE key Y coordinate label */
 	static readonly #y = -3;
 
-	// COSE key type values
+	/** EC2 key type value */
 	static readonly #ktyEc2 = 2;
+
+	/** P-256 curve value */
 	static readonly #crvP256 = 1;
 
-	// SPKI encoding constants
+	/** DER SPKI algorithm identifier for P-256 ECDSA */
 	static readonly #algorithmId = new Uint8Array([
 		0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06,
 		0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
 	]);
 
+	/** Uncompressed point prefix byte for elliptic curves */
 	static readonly #uncompressedPointPrefix = 0x04;
+
+	/** Uncompressed point length for P-256 (1 + 32 + 32 bytes) */
 	static readonly #uncompressedPointLength = 65;
+
+	/** Offset of X coordinate in uncompressed point */
 	static readonly #xCoordinateOffset = 1;
+
+	/** Offset of Y coordinate in uncompressed point */
 	static readonly #yCoordinateOffset = 33;
 
+	/** DER BIT STRING tag */
 	static readonly #bitStringTag = 0x03;
+
+	/** DER SEQUENCE tag */
 	static readonly #sequenceTag = 0x30;
+
+	/** BIT STRING padding byte value */
 	static readonly #bitStringPadding = 0x00;
 
-	static toSpki(cose: Map<number, number | Uint8Array>) {
+	/**
+	 * Convert COSE public key to SPKI format.
+	 *
+	 * @param cose - COSE key map with type, curve, and coordinates
+	 * @returns SPKI encoded public key as bytes
+	 * @throws Error if key type or curve not supported
+	 */
+	static toSPKI(cose: Map<number, number | Uint8Array>) {
 		const kty = cose.get(this.#kty);
 		if (kty !== this.#ktyEc2) throw new Error("Only EC2 keys supported");
 
@@ -561,13 +740,31 @@ class COSE {
 	}
 }
 
+/**
+ * DER (Distinguished Encoding Rules) format utilities for signatures.
+ */
 class DER {
+	/** DER SEQUENCE tag */
 	static readonly #sequenceTag = 0x30;
+
+	/** Flag bit indicating long form length encoding */
 	static readonly #longFormLengthFlag = 0x80;
+
+	/** Mask for extracting length bytes count in long form */
 	static readonly #longFormLengthMask = 0x7f;
+
+	/** P-256 coordinate length in bytes */
 	static readonly #coordinateLength = 32;
+
+	/** ECDSA raw signature length (r + s coordinates) */
 	static readonly #signatureLength = 64;
 
+	/**
+	 * Convert DER encoded signature to raw format.
+	 *
+	 * @param der - DER encoded ECDSA signature
+	 * @returns Raw signature (r and s coordinates concatenated)
+	 */
 	static unwrap(der: Uint8Array<ArrayBuffer>) {
 		const view = new DataView(der.buffer, der.byteOffset, der.byteLength);
 
@@ -599,25 +796,49 @@ namespace CBOR {
 	export type Value = number | string | Uint8Array | Map<Key, Value>;
 }
 
+/** CBOR (Concise Binary Object Representation) decoder for WebAuthn data */
 class CBOR {
-	static decodeAttestation(data: Uint8Array) {
-		const value = CBOR.#parse(data);
+	/** Encoded data to decode */
+	readonly #data: Uint8Array;
+
+	/** Current read position in data */
+	#offset: number;
+
+	constructor(data: Uint8Array) {
+		this.#data = data;
+		this.#offset = 0;
+	}
+
+	/**
+	 * Decode attestation object and extract authenticator data.
+	 *
+	 * @returns Authenticator data bytes
+	 * @throws TypeError if CBOR structure is invalid
+	 */
+	decodeAttestation(): Uint8Array {
+		const value = this.#parseNext();
 
 		if (!(value instanceof Map)) {
 			throw new TypeError("Expected CBOR map");
 		}
 
-		const authData = value.get("authData") ?? value.get(0x22);
+		const authData = value.get(0x22);
 
 		if (!(authData instanceof Uint8Array)) {
 			throw new TypeError("Expected CBOR map");
 		}
 
-		return { authData };
+		return authData;
 	}
 
-	static decodeCOSEKey(data: Uint8Array): Map<number, number | Uint8Array> {
-		const value = CBOR.#parse(data);
+	/**
+	 * Decode COSE key from CBOR format.
+	 *
+	 * @returns COSE key map with numeric labels
+	 * @throws TypeError if CBOR structure is invalid
+	 */
+	decodeCOSEKey(): Map<number, number | Uint8Array> {
+		const value = this.#parseNext();
 
 		if (!(value instanceof Map)) {
 			throw new TypeError("Expected CBOR map");
@@ -636,69 +857,86 @@ class CBOR {
 		return result;
 	}
 
-	static #parse(data: Uint8Array) {
-		let offset = 0;
+	/**
+	 * Read n bytes and advance offset.
+	 *
+	 * @param n - Number of bytes to read
+	 * @returns Slice of data
+	 */
+	#read(n: number) {
+		const slice = this.#data.slice(this.#offset, this.#offset + n);
+		this.#offset += n;
+		return slice;
+	}
 
-		const read = (n: number) => {
-			const slice = data.slice(offset, offset + n);
-			offset += n;
-			return slice;
-		};
+	/**
+	 * Read unsigned integer from n bytes.
+	 *
+	 * @param bytes - Number of bytes to read
+	 * @returns Decoded unsigned integer
+	 * @throws Error if stream ended unexpectedly
+	 */
+	#readUint(bytes: number) {
+		if (this.#offset + bytes > this.#data.length) {
+			throw new Error("CBOR stream ended unexpectedly");
+		}
 
-		const readUint = (bytes: number) => {
-			if (offset + bytes > data.length) {
-				throw new Error("CBOR stream ended unexpectedly");
-			}
-			let value = 0;
-			for (let i = 0; i < bytes; i++) value = value * 256 + data[offset++]!;
-			return value;
-		};
+		let value = 0;
+		for (let i = 0; i < bytes; i++) {
+			value = value * 256 + this.#data[this.#offset++]!;
+		}
 
-		const parse = () => {
-			if (offset >= data.length) {
-				throw new Error("CBOR stream ended unexpectedly");
-			}
+		return value;
+	}
 
-			const initial = data[offset++]!;
-			const major = initial >> 5;
-			const minor = initial & 0x1f;
+	/**
+	 * Parse next CBOR value from stream.
+	 *
+	 * @returns Decoded value (primitives, Uint8Array, or Map)
+	 * @throws Error if stream is malformed
+	 */
+	#parseNext(): CBOR.Value {
+		if (this.#offset >= this.#data.length) {
+			throw new Error("CBOR stream ended unexpectedly");
+		}
 
-			let length: number;
-			if (minor < 24) length = minor;
-			else if (minor === 24) length = readUint(1);
-			else if (minor === 25) length = readUint(2);
-			else if (minor === 26) length = readUint(4);
-			else throw new Error("CBOR: unsupported length");
+		const initial = this.#data[this.#offset++]!;
+		const major = initial >> 5;
+		const minor = initial & 0x1f;
 
-			switch (major) {
-				case 0:
-					return length;
-				case 1:
-					return -1 - length;
-				case 2:
-					return read(length);
-				case 3:
-					return Codec.decode(read(length));
-				case 5: {
-					const map = new Map<CBOR.Key, CBOR.Value>();
+		let length: number;
+		if (minor < 24) length = minor;
+		else if (minor === 24) length = this.#readUint(1);
+		else if (minor === 25) length = this.#readUint(2);
+		else if (minor === 26) length = this.#readUint(4);
+		else throw new Error("CBOR: unsupported length");
 
-					for (let i = 0; i < length; i++) {
-						const k = parse();
+		switch (major) {
+			case 0:
+				return length;
+			case 1:
+				return -1 - length;
+			case 2:
+				return this.#read(length);
+			case 3:
+				return Codec.decode(this.#read(length));
+			case 5: {
+				const map = new Map<CBOR.Key, CBOR.Value>();
 
-						if (typeof k !== "number" && typeof k !== "string") {
-							throw new TypeError("CBOR map key must be number or string");
-						}
+				for (let i = 0; i < length; i++) {
+					const k = this.#parseNext();
 
-						map.set(k, parse());
+					if (typeof k !== "number" && typeof k !== "string") {
+						throw new TypeError("CBOR map key must be number or string");
 					}
 
-					return map;
+					map.set(k, this.#parseNext());
 				}
-				default:
-					throw new Error(`CBOR: unsupported major type ${major}`);
-			}
-		};
 
-		return parse();
+				return map;
+			}
+			default:
+				throw new Error(`CBOR: unsupported major type ${major}`);
+		}
 	}
 }
