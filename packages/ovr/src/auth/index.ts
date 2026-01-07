@@ -832,9 +832,10 @@ class AuthData {
 				throw new TypeError("Invalid credential");
 			}
 
-			const credIdLenEnd =
-				AuthData.#credIdLengthOffset + AuthData.#credIdLengthSize;
-			if (data.length < credIdLenEnd) {
+			if (
+				data.length <
+				AuthData.#credIdLengthOffset + AuthData.#credIdLengthSize
+			) {
 				throw new TypeError("Invalid credential");
 			}
 
