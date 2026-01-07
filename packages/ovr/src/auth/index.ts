@@ -916,38 +916,42 @@ class CBOR {
 		const minor = initial & 0x1f;
 
 		let length: number;
-		if (minor < 24) length = minor;
-		else if (minor === 24) length = this.#readUint(1);
-		else if (minor === 25) length = this.#readUint(2);
-		else if (minor === 26) length = this.#readUint(4);
-		else throw new Error("CBOR: unsupported length");
+		if (minor < 24) {
+			length = minor;
+		} else if (minor === 24) {
+			length = this.#readUint(1);
+		} else if (minor === 25) {
+			length = this.#readUint(2);
+		} else if (minor === 26) {
+			length = this.#readUint(4);
+		} else {
+			throw new Error("CBOR: unsupported length");
+		}
 
-		switch (major) {
-			case 0:
-				return length;
-			case 1:
-				return -1 - length;
-			case 2:
-				return this.#read(length);
-			case 3:
-				return Codec.decode(this.#read(length));
-			case 5: {
-				const map = new Map<CBOR.Key, CBOR.Value>();
+		if (major === 0) {
+			return length;
+		} else if (major === 1) {
+			return -1 - length;
+		} else if (major === 2) {
+			return this.#read(length);
+		} else if (major === 3) {
+			return Codec.decode(this.#read(length));
+		} else if (major === 5) {
+			const map = new Map<CBOR.Key, CBOR.Value>();
 
-				for (let i = 0; i < length; i++) {
-					const k = this.#parseNext();
+			for (let i = 0; i < length; i++) {
+				const k = this.#parseNext();
 
-					if (typeof k !== "number" && typeof k !== "string") {
-						throw new TypeError("CBOR map key must be number or string");
-					}
-
-					map.set(k, this.#parseNext());
+				if (typeof k !== "number" && typeof k !== "string") {
+					throw new TypeError("CBOR map key must be number or string");
 				}
 
-				return map;
+				map.set(k, this.#parseNext());
 			}
-			default:
-				throw new Error(`CBOR: unsupported major type ${major}`);
+
+			return map;
 		}
+
+		throw new TypeError(`CBOR: unsupported major type ${major}`);
 	}
 }
