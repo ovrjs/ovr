@@ -234,53 +234,45 @@ export namespace PublicKey {
 		ToJSON<AuthenticatorAssertionResponse>
 	>;
 
-	/**
-	 * User for registration
-	 *
-	 * @field id - Unique user identifier
-	 * @field name - User name/username
-	 * @field displayName - Human readable display name
-	 */
-	export type User = { id: string; name: string; displayName: string };
-
-	/**
-	 * Stored credential data
-	 *
-	 * @field id - Credential ID
-	 * @field publicKey - SPKI encoded public key as base64url
-	 * @field userId - Associated user ID
-	 * @field counter - Signature counter for clone detection
-	 */
-	export type Credential = {
+	/** User for registration */
+	export type User = {
+		/** Unique user identifier */
 		id: string;
+		/** User name/username */
+		name: string;
+		/** Human readable display name */
+		displayName: string;
+	};
+
+	/** Stored credential data */
+	export type Credential = {
+		/** Credential ID */
+		id: string;
+		/** SPKI encoded public key as base64url */
 		publicKey: string;
+		/** Associated user ID */
 		userId: string;
+		/** Signature counter for clone detection */
 		counter: number;
 	};
 
-	/**
-	 * Registration verification result
-	 *
-	 * @field credentialId - Credential ID from registration
-	 * @field publicKey - SPKI encoded public key as base64url
-	 * @field counter - Initial signature counter
-	 */
+	/** Registration verification result */
 	export type VerifyResult = {
+		/** Credential ID from registration */
 		credentialId: string;
+		/** SPKI encoded public key as base64url */
 		publicKey: string;
+		/** Initial signature counter */
 		counter: number;
 	};
 
-	/**
-	 * Authentication assertion result
-	 *
-	 * @field credentialId - Credential ID used for authentication
-	 * @field userId - Associated user ID
-	 * @field counter - Updated signature counter
-	 */
+	/** Authentication assertion result */
 	export type AssertResult = {
+		/** Credential ID used for authentication */
 		credentialId: string;
+		/** Associated user ID */
 		userId: string;
+		/** Updated signature counter */
 		counter: number;
 	};
 }
@@ -562,16 +554,13 @@ export class PublicKey {
 }
 
 namespace AuthData {
-	/**
-	 * Attested credential public key data from authenticator
-	 *
-	 * @field aaguid - Authenticator AAGUID
-	 * @field credentialId - Credential ID bytes
-	 * @field publicKey - COSE public key map
-	 */
+	/** Attested credential public key data from authenticator */
 	export type AttestedCredentialData = {
+		/** Authenticator AAGUID */
 		aaguid: Uint8Array;
+		/** Credential ID bytes */
 		credentialId: Uint8Array;
+		/** COSE public key map */
 		publicKey: Map<number, number | Uint8Array>;
 	};
 }
@@ -777,8 +766,10 @@ class DER {
 		if (view.getUint8(0) !== this.#sequenceTag) return der;
 
 		let offset = 2;
-		if (view.getUint8(1) & this.#longFormLengthFlag)
+
+		if (view.getUint8(1) & this.#longFormLengthFlag) {
 			offset += view.getUint8(1) & this.#longFormLengthMask;
+		}
 
 		const rLen = view.getUint8(offset + 1);
 		let r = der.slice(offset + 2, offset + 2 + rLen);
@@ -826,12 +817,10 @@ class CBOR {
 	 * @returns Authenticator data bytes
 	 * @throws TypeError if CBOR structure is invalid
 	 */
-	decodeAttestation(): Uint8Array {
+	decodeAttestation() {
 		const value = this.#parseNext();
 
-		if (!(value instanceof Map)) {
-			throw new TypeError("Expected CBOR map");
-		}
+		if (!(value instanceof Map)) throw new TypeError("Expected CBOR map");
 
 		const authData = value.get(0x22);
 
@@ -848,7 +837,7 @@ class CBOR {
 	 * @returns COSE key map with numeric labels
 	 * @throws TypeError if CBOR structure is invalid
 	 */
-	decodeCOSEKey(): Map<number, number | Uint8Array> {
+	decodeCOSEKey() {
 		const value = this.#parseNext();
 
 		if (!(value instanceof Map)) {
@@ -856,15 +845,19 @@ class CBOR {
 		}
 
 		const result = new Map<number, number | Uint8Array>();
+
 		for (const [k, v] of value) {
 			if (typeof k !== "number") {
 				throw new TypeError("COSE key must have integer labels");
 			}
+
 			if (typeof v !== "number" && !(v instanceof Uint8Array)) {
 				throw new TypeError("COSE key value must be number or bytes");
 			}
+
 			result.set(k, v);
 		}
+
 		return result;
 	}
 
