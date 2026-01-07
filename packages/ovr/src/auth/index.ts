@@ -296,6 +296,9 @@ export namespace Passkey {
 
 /** WebAuthn passkey authentication */
 export class Passkey {
+	/** Error thrown when credential parsing fails */
+	static readonly #invalidCredential = new TypeError("Invalid credential");
+
 	/** Auth instance for managing sessions */
 	readonly #auth: Auth;
 
@@ -439,25 +442,76 @@ export class Passkey {
 	}
 
 	/**
+	 * Type predicate for base credential structure shared by registration and authentication.
+	 */
+	static #isCredentialBase(
+		input: unknown,
+	): input is {
+		type: "public-key";
+		id: string;
+		rawId: string;
+		response: { clientDataJSON: string };
+	} {
+		return (
+			typeof input === "object" &&
+			input !== null &&
+			"type" in input &&
+			input.type === "public-key" &&
+			"id" in input &&
+			typeof input.id === "string" &&
+			"rawId" in input &&
+			typeof input.rawId === "string" &&
+			"response" in input &&
+			typeof input.response === "object" &&
+			input.response !== null &&
+			"clientDataJSON" in input.response &&
+			typeof input.response.clientDataJSON === "string"
+		);
+	}
+
+	/**
+	 * Type predicate for registration credential.
+	 */
+	static #isRegistrationCredential(
+		input: unknown,
+	): input is Passkey.RegistrationCredentialJSON {
+		return (
+			Passkey.#isCredentialBase(input) &&
+			"attestationObject" in input.response &&
+			typeof input.response.attestationObject === "string"
+		);
+	}
+
+	/**
+	 * Type predicate for authentication credential.
+	 */
+	static #isAuthenticationCredential(
+		input: unknown,
+	): input is Passkey.AuthenticationCredentialJSON {
+		return (
+			Passkey.#isCredentialBase(input) &&
+			"authenticatorData" in input.response &&
+			typeof input.response.authenticatorData === "string" &&
+			"signature" in input.response &&
+			typeof input.response.signature === "string"
+		);
+	}
+
+	/**
 	 * Common credential verification logic shared by verify() and assert().
 	 *
-	 * @param credential - Base credential data from authenticator
+	 * @param credential - Validated credential data from authenticator
 	 * @param ceremonyType - Expected WebAuthn ceremony type
 	 * @returns Decoded rawId bytes for further verification
 	 */
 	async #verifyCredentialBase(
 		credential: {
-			type: string;
 			id: string;
 			rawId: string;
 			response: { clientDataJSON: string };
 		},
 		ceremonyType: "webauthn.create" | "webauthn.get",
 	) {
-		if (credential.type !== "public-key") {
-			throw new TypeError("Invalid credential type");
-		}
-
 		const rawIdBytes = Codec.base64url.decode(credential.rawId);
 
 		if (
@@ -545,11 +599,14 @@ export class Passkey {
 	 *
 	 * @param credential - Registration credential response from authenticator
 	 * @returns Credential verification result containing ID and public key
+	 * @throws TypeError if credential is not a valid credential
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or credential data missing
 	 */
-	async verify(
-		credential: Passkey.RegistrationCredentialJSON,
-	): Promise<Passkey.VerifyResult> {
+	async verify(credential: unknown): Promise<Passkey.VerifyResult> {
+		if (!Passkey.#isRegistrationCredential(credential)) {
+			throw Passkey.#invalidCredential;
+		}
+
 		const rawIdBytes = await this.#verifyCredentialBase(
 			credential,
 			"webauthn.create",
@@ -606,12 +663,17 @@ export class Passkey {
 	 * @param credential - Authentication credential response from authenticator
 	 * @param stored - Stored credential data from database
 	 * @returns Authentication assertion result containing credential ID and user ID
+	 * @throws TypeError if credential is not a valid credential
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or signature invalid
 	 */
 	async assert(
-		credential: Passkey.AuthenticationCredentialJSON,
+		credential: unknown,
 		stored: Passkey.Credential,
 	): Promise<Passkey.AssertResult> {
+		if (!Passkey.#isAuthenticationCredential(credential)) {
+			throw Passkey.#invalidCredential;
+		}
+
 		const rawIdBytes = await this.#verifyCredentialBase(
 			credential,
 			"webauthn.get",

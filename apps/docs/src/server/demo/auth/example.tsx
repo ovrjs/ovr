@@ -1,21 +1,27 @@
 import { Render, Route } from "ovr";
-import { z } from "zod";
-
-const CredentialSchema = z
-	.string()
-	.min(100)
-	.transform((s) => JSON.parse(s) as unknown);
 
 // TODO: Implement these in your application
-async function storeCredential(_verified: any) {}
-async function getCredential(_id: string) {
+const storeCredential = async (_verified: any) => {};
+const getCredential = async (_id: string) => {
 	return {} as any;
-}
+};
+
+const parseCredential = (data: FormData) => {
+	const value = data.get("credential");
+
+	if (typeof value !== "string") return null;
+
+	try {
+		return JSON.parse(value);
+	} catch {
+		return null;
+	}
+};
 
 export const register = Route.get("/register", async (c) => {
 	const user = { id: `user-${crypto.randomUUID()}` };
 
-	const publicKey = await c.auth.passkey.create({
+	const passkey = await c.auth.passkey.create({
 		id: user.id,
 		name: `user-${user.id}`,
 		displayName: "Account",
@@ -29,7 +35,7 @@ export const register = Route.get("/register", async (c) => {
 				<button>Create passkey</button>
 			</registerVerify.Form>
 
-			<WebAuthn route={registerVerify} method="create" publicKey={publicKey} />
+			<WebAuthn route={registerVerify} method="create" passkey={passkey} />
 		</>
 	);
 });
@@ -37,20 +43,19 @@ export const register = Route.get("/register", async (c) => {
 export const registerVerify = Route.post(async (c) => {
 	const data = await c.form().data();
 
-	const parsed = CredentialSchema.safeParse(data.get("credential"));
+	const credential = parseCredential(data);
 
-	if (!parsed.success) return c.text("Invalid request", 400);
+	if (!credential) return c.text("Invalid request", 400);
 
-	const verified = await c.auth.passkey.verify(parsed.data as any);
+	const verified = await c.auth.passkey.verify(credential);
 
-	// TODO: Implement your credential storage
 	await storeCredential(verified);
 
 	c.redirect("/login", 303);
 });
 
 export const login = Route.get("/login", async (c) => {
-	const publicKey = await c.auth.passkey.get();
+	const passkey = await c.auth.passkey.get();
 
 	return (
 		<>
@@ -60,7 +65,7 @@ export const login = Route.get("/login", async (c) => {
 				<button>Sign in with passkey</button>
 			</loginVerify.Form>
 
-			<WebAuthn route={loginVerify} method="get" publicKey={publicKey} />
+			<WebAuthn route={loginVerify} method="get" passkey={passkey} />
 		</>
 	);
 });
@@ -68,14 +73,13 @@ export const login = Route.get("/login", async (c) => {
 export const loginVerify = Route.post(async (c) => {
 	const data = await c.form().data();
 
-	const parsed = CredentialSchema.safeParse(data.get("credential"));
+	const credential = parseCredential(data);
 
-	if (!parsed.success) return c.text("Invalid request", 400);
+	if (!credential) return c.text("Invalid request", 400);
 
-	// TODO: Implement your credential lookup
-	const stored = await getCredential((parsed.data as any).id);
+	const stored = await getCredential(credential.id);
 
-	const result = await c.auth.passkey.assert(parsed.data as any, stored);
+	const result = await c.auth.passkey.assert(credential, stored);
 
 	await c.auth.login(result.userId);
 
@@ -85,7 +89,7 @@ export const loginVerify = Route.post(async (c) => {
 const WebAuthn = (props: {
 	route: Route;
 	method: "create" | "get";
-	publicKey: unknown;
+	passkey: unknown;
 }) => (
 	<>
 		<script type="module">
@@ -94,12 +98,11 @@ document
 	.querySelector('form[action="${props.route.url()}"]')
 	.addEventListener("submit", async (e) => {
 		e.preventDefault();
-		const credential = await navigator.credentials.${props.method}({ publicKey: ${JSON.stringify(props.publicKey)} });
-		const json = credential.toJSON();
+		const credential = await navigator.credentials.${props.method}({ publicKey: ${JSON.stringify(props.passkey)} });
 		const input = document.createElement("input");
 		input.type = "hidden";
 		input.name = "credential";
-		input.value = JSON.stringify(json);
+		input.value = JSON.stringify(credential.toJSON());
 		e.currentTarget.appendChild(input);
 		e.currentTarget.submit();
 	});
