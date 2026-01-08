@@ -1,26 +1,60 @@
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Auth, JSX, type Middleware, Render, Route } from "ovr";
-import { z } from "zod";
+import { JSX, type Middleware, Render, Route } from "ovr";
 
-/** In-memory user list (demo only) */
-const users: { id: string; email: string; passwordHash: string }[] = [];
+/** Stored credential data */
+type StoredCredential = { id: string; publicKey: string };
 
-const Credentials = z.object({
-	email: z.email(),
-	password: z.string().min(8, "Password must be at least 8 characters"),
-});
+/** User with passkey credentials */
+type User = { id: string; credentials: StoredCredential[] };
 
-const parseCredentials = async (c: Middleware.Context) => {
-	const data = await c.form().data();
+/** In-memory user store (demo only) */
+const users = new Set<User>();
 
-	return Credentials.safeParse({
-		email: data.get("email"),
-		password: data.get("password"),
+/** Parse and validate credential from form data */
+const parseCredential = (formData: FormData) => {
+	const value = formData.get("credential");
+
+	if (typeof value === "string") {
+		try {
+			const parsed = JSON.parse(value);
+			if (typeof parsed?.id === "string") {
+				return parsed;
+			}
+		} catch {}
+	}
+
+	return null;
+};
+
+/** Store a credential for a user during registration */
+const storeCredential = async (userId: string, verified: any) => {
+	const user = users.values().find((u) => u.id === userId);
+	if (!user) return;
+
+	user.credentials.push({
+		id: verified.credentialId,
+		publicKey: verified.publicKey,
 	});
 };
 
+/** Get a credential by ID and return both credential and associated user */
+const getCredentialById = (credentialId: string) => {
+	for (const user of users) {
+		const credential = user.credentials.find((c) => c.id === credentialId);
+		if (credential) return { user, credential };
+	}
+	return null;
+};
+
+/** Get all credentials for a user */
+const getUserCredentials = (userId: string): StoredCredential[] => {
+	const user = users.values().find((u) => u.id === userId);
+	return user?.credentials ?? [];
+};
+
+/** Middleware to protect routes - require authentication */
 const withAuth = (
 	handler: (
 		c: Middleware.Context,
@@ -44,16 +78,17 @@ const withAuth = (
 	};
 };
 
+/** Landing page - registration + sign in options */
 export const auth = Route.get("/demo/auth", async (c) => {
-	const error = c.url.searchParams.get("error");
 	const Layout = createLayout(c);
 
-	const session = await c.auth.session();
-
-	if (session) {
-		c.redirect(admin.url(), 303);
-		return;
-	}
+	// Generate passkey options for registration
+	const userId = crypto.randomUUID();
+	const createOptions = await c.auth.passkey.create({
+		id: userId,
+		name: `user-${userId}`,
+		displayName: "Passkey",
+	});
 
 	return (
 		<Layout head={<Meta {...content.frontmatter} />}>
@@ -61,103 +96,116 @@ export const auth = Route.get("/demo/auth", async (c) => {
 
 			{Render.html(content.html)}
 
-			{error === "1" && <p>Invalid email or password</p>}
-			{error === "2" && <p>Email already registered</p>}
-			{error === "3" && <p>Invalid input</p>}
+			<div class="mb-4 flex gap-2">
+				<registerVerify.Form>
+					<button>Create passkey</button>
+				</registerVerify.Form>
 
-			<form class="mb-8 grid max-w-sm gap-4">
-				<div>
-					<label for="email">Email</label>
-					<input id="email" name="email" type="email" required />
-				</div>
-				<div>
-					<label for="password">Password</label>
-					<input
-						id="password"
-						name="password"
-						type="password"
-						required
-						minlength={8}
-					/>
-				</div>
-
-				<div class="flex gap-2">
-					<login.Button>Log in</login.Button>
-					<signup.Button class="secondary">Sign up</signup.Button>
-				</div>
-			</form>
+				<login.Anchor class="button secondary">Sign in</login.Anchor>
+			</div>
 
 			<admin.Anchor>Admin</admin.Anchor>
+
+			<WebAuthn
+				route={registerVerify}
+				method="create"
+				passkey={createOptions}
+				userId={userId}
+			/>
 		</Layout>
 	);
 });
 
-export const login = Route.post(async (c) => {
-	const result = await parseCredentials(c);
+/** Verify registration - create user, parse credential, verify, store, login */
+export const registerVerify = Route.post(async (c) => {
+	const formData = await c.form().data();
 
-	if (!result.success) {
-		c.redirect(auth.url({ search: { error: "3" } }), 303);
-		return;
+	const credential = await parseCredential(formData);
+	if (!credential) return c.text("Invalid request", 400);
+
+	const verified = await c.auth.passkey.verify(credential);
+
+	// Get userId from form data
+	const userId = formData.get("userId");
+
+	if (typeof userId !== "string") {
+		return c.text("Invalid request", 400);
 	}
 
-	const { email, password } = result.data;
-	const user = users.find((u) => u.email === email);
-
-	if (!user) {
-		c.redirect(auth.url({ search: { error: "1" } }), 303);
-		return;
+	// Create user in store if doesn't exist
+	if (!users.values().find((u) => u.id === userId)) {
+		users.add({ id: userId, credentials: [] });
 	}
 
-	const valid = await Auth.Password.verify(password, user.passwordHash);
+	await storeCredential(userId, verified);
 
-	if (!valid) {
-		c.redirect(auth.url({ search: { error: "1" } }), 303);
-		return;
-	}
-
-	await c.auth.login({ id: user.id });
+	await c.auth.login(userId);
 
 	c.redirect(admin.url(), 303);
 });
 
-export const signup = Route.post(async (c) => {
-	const result = await parseCredentials(c);
+/** Login page - create passkey options for authentication */
+export const login = Route.get("/auth/login", async (c) => {
+	const Layout = createLayout(c);
+	const session = await c.auth.session();
 
-	if (!result.success) {
-		c.redirect(auth.url({ search: { error: "3" } }), 303);
+	if (session) {
+		c.redirect(admin.url(), 303);
 		return;
 	}
 
-	const { email, password } = result.data;
-	const existing = users.find((u) => u.email === email);
+	const getOptions = await c.auth.passkey.get();
 
-	if (existing) {
-		c.redirect(auth.url({ search: { error: "2" } }), 303);
-		return;
-	}
+	return (
+		<Layout head={<Meta {...content.frontmatter} />}>
+			<h1>Sign in with passkey</h1>
 
-	const user = {
-		id: crypto.randomUUID(),
-		email,
-		passwordHash: await Auth.Password.hash(password),
+			<loginVerify.Form>
+				<button>Sign in</button>
+			</loginVerify.Form>
+
+			<WebAuthn route={loginVerify} method="get" passkey={getOptions} />
+		</Layout>
+	);
+});
+
+/** Verify login - parse credential, lookup, verify, login */
+export const loginVerify = Route.post(async (c) => {
+	const credential = parseCredential(await c.form().data());
+
+	if (!credential) return c.text("Invalid request", 400);
+
+	const lookup = getCredentialById(credential.id);
+
+	if (!lookup) return c.text("Invalid credential", 400);
+
+	const { credential: storedCred } = lookup;
+
+	// Build full Passkey.Credential with userId
+	const stored = {
+		id: storedCred.id,
+		publicKey: storedCred.publicKey,
+		userId: lookup.user.id,
 	};
 
-	users.push(user);
+	const result = await c.auth.passkey.assert(credential, stored);
 
-	await c.auth.login({ id: user.id });
+	await c.auth.login(result.userId);
 
 	c.redirect(admin.url(), 303);
 });
 
+/** Logout - clear session */
 export const logout = Route.post((c) => {
 	c.auth.logout();
 	c.redirect(auth.url(), 303);
 });
 
+/** Admin page - show user ID and credentials */
 export const admin = Route.get(
 	"/admin",
 	withAuth(async (c, session) => {
-		const user = users.find((u) => session.id === u.id);
+		const credentials = getUserCredentials(session.id);
 		const Layout = createLayout(c);
 
 		return (
@@ -166,7 +214,18 @@ export const admin = Route.get(
 					return (
 						<>
 							<h1>Admin</h1>
-							<p>Hello, {user?.email ?? session.id}</p>
+							<p>User ID: {session.id}</p>
+
+							{credentials.length > 0 && (
+								<>
+									<h2>Registered credentials</h2>
+									<ul>
+										{credentials.map((cred) => (
+											<li key={cred.id}>{cred.id}</li>
+										))}
+									</ul>
+								</>
+							)}
 
 							<form>
 								<logout.Button>Logout</logout.Button>
@@ -177,4 +236,66 @@ export const admin = Route.get(
 			</Layout>
 		);
 	}),
+);
+
+/** WebAuthn client-side integration - handles passkey creation/authentication */
+const WebAuthn = (props: {
+	route: Route;
+	method: "create" | "get";
+	passkey: unknown;
+	userId?: string;
+}) => (
+	<>
+		<script type="module">
+			{Render.html(`
+function decodeBase64Url(str) {
+	const binary = atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+	return new Uint8Array([...binary].map(c => c.charCodeAt(0)));
+}
+
+function decodeOptions(obj, parentKey = '') {
+	if (typeof obj !== 'object' || obj === null) return obj;
+	if (Array.isArray(obj)) return obj.map(item => decodeOptions(item, parentKey));
+	if (obj instanceof Uint8Array) return obj;
+	
+	const decoded = {};
+	for (const [key, value] of Object.entries(obj)) {
+		if (typeof value === 'string') {
+			// Only decode specific known binary fields
+			if (key === 'challenge' || (parentKey === 'user' && key === 'id')) {
+				decoded[key] = decodeBase64Url(value);
+			} else {
+				decoded[key] = value;
+			}
+		} else {
+			decoded[key] = decodeOptions(value, key);
+		}
+	}
+	return decoded;
+}
+
+const options = ${JSON.stringify(props.passkey)};
+const decodedOptions = decodeOptions(options);
+
+const form = document.querySelector('form[action="${props.route.url()}"]')
+
+form.addEventListener("submit", async (e) => {
+	e.preventDefault();
+
+	const credential = await navigator.credentials.${props.method}({ publicKey: decodedOptions });
+
+	const { action, method } = form;
+	
+	const body = new FormData();
+	body.append("credential", JSON.stringify(credential.toJSON()));
+	body.append("userId", "${props.userId}")
+
+	const res = await fetch(action, { method, body });
+
+	if (res.ok) window.location.href = res.url;
+});
+`)}
+		</script>
+		<noscript>JavaScript is required for authentication.</noscript>
+	</>
 );
