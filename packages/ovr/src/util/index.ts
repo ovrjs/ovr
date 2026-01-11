@@ -185,16 +185,16 @@ export class Codec {
 		return Codec.#decoder.decode(bytes);
 	}
 
-	static base64 = {
+	static base64 = class {
 		/**
 		 * Encodes bytes into a base64 string.
 		 *
 		 * @param bytes Bytes to encode
 		 * @returns Base64 string
 		 */
-		encode(bytes: Uint8Array) {
+		static encode(bytes: Uint8Array) {
 			return btoa(String.fromCharCode(...bytes));
-		},
+		}
 
 		/**
 		 * Decodes a base64 string into bytes.
@@ -202,24 +202,23 @@ export class Codec {
 		 * @param s Base64 string
 		 * @returns Decoded bytes
 		 */
-		decode(s: string) {
+		static decode(s: string) {
 			return new Uint8Array(Array.from(atob(s), (c) => c.charCodeAt(0)));
-		},
+		}
 	};
 
-	static base64url = {
-		encode(bytes: Uint8Array) {
+	static base64url = class {
+		static encode(bytes: Uint8Array) {
 			return btoa(String.fromCharCode(...bytes))
-				.replace(/\+/g, "-")
-				.replace(/\//g, "_")
+				.replace(/[+/]/g, (c) => (c === "+" ? "-" : "_"))
 				.replace(/=+$/, "");
-		},
+		}
 
-		decode(s: string) {
-			const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+		static decode(s: string) {
+			const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
 			const pad = b64.length % 4;
 			return Codec.base64.decode(pad ? b64 + "=".repeat(4 - pad) : b64);
-		},
+		}
 	};
 }
 

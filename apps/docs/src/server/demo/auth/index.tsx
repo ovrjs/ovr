@@ -1,7 +1,8 @@
 import * as content from "@/server/demo/auth/index.md";
+import * as passkey from "@/server/demo/auth/passkey";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { JSX, type Middleware, Render, Route } from "ovr";
+import { type JSX, type Middleware, Render, Route } from "ovr";
 
 /** Stored credential data */
 type StoredCredential = { id: string; publicKey: string };
@@ -97,21 +98,19 @@ export const auth = Route.get("/demo/auth", async (c) => {
 			{Render.html(content.html)}
 
 			<div class="mb-4 flex gap-2">
-				<registerVerify.Form>
+				<Auth
+					route={registerVerify}
+					method="create"
+					passkey={createOptions}
+					userId={userId}
+				>
 					<button>Create passkey</button>
-				</registerVerify.Form>
+				</Auth>
 
 				<login.Anchor class="button secondary">Sign in</login.Anchor>
 			</div>
 
 			<admin.Anchor>Admin</admin.Anchor>
-
-			<WebAuthn
-				route={registerVerify}
-				method="create"
-				passkey={createOptions}
-				userId={userId}
-			/>
 		</Layout>
 	);
 });
@@ -160,11 +159,9 @@ export const login = Route.get("/auth/login", async (c) => {
 		<Layout head={<Meta {...content.frontmatter} />}>
 			<h1>Sign in with passkey</h1>
 
-			<loginVerify.Form>
+			<Auth route={loginVerify} method="get" passkey={getOptions}>
 				<button>Sign in</button>
-			</loginVerify.Form>
-
-			<WebAuthn route={loginVerify} method="get" passkey={getOptions} />
+			</Auth>
 		</Layout>
 	);
 });
@@ -238,64 +235,32 @@ export const admin = Route.get(
 	}),
 );
 
-/** WebAuthn client-side integration - handles passkey creation/authentication */
-const WebAuthn = (props: {
-	route: Route;
-	method: "create" | "get";
-	passkey: unknown;
-	userId?: string;
-}) => (
-	<>
-		<script type="module">
-			{Render.html(`
-function decodeBase64Url(str) {
-	const binary = atob(str.replace(/-/g, '+').replace(/_/g, '/'));
-	return new Uint8Array([...binary].map(c => c.charCodeAt(0)));
-}
+const Auth = (
+	props: { route: Route.Post; children: JSX.Element } & (
+		| {
+				method: "create";
+				passkey: PublicKeyCredentialCreationOptionsJSON;
+				userId: string;
+		  }
+		| { method: "get"; passkey: PublicKeyCredentialRequestOptionsJSON }
+	),
+) => {
+	const { route, children, ...rest } = props;
+	const options: passkey.Options = { action: route.url(), ...rest };
 
-function decodeOptions(obj, parentKey = '') {
-	if (typeof obj !== 'object' || obj === null) return obj;
-	if (Array.isArray(obj)) return obj.map(item => decodeOptions(item, parentKey));
-	if (obj instanceof Uint8Array) return obj;
-	
-	const decoded = {};
-	for (const [key, value] of Object.entries(obj)) {
-		if (typeof value === 'string') {
-			// Only decode specific known binary fields
-			if (key === 'challenge' || (parentKey === 'user' && key === 'id')) {
-				decoded[key] = decodeBase64Url(value);
-			} else {
-				decoded[key] = value;
-			}
-		} else {
-			decoded[key] = decodeOptions(value, key);
-		}
-	}
-	return decoded;
-}
-
-const options = ${JSON.stringify(props.passkey)};
-const decodedOptions = decodeOptions(options);
-
-const form = document.querySelector('form[action="${props.route.url()}"]')
-
-form.addEventListener("submit", async (e) => {
-	e.preventDefault();
-
-	const credential = await navigator.credentials.${props.method}({ publicKey: decodedOptions });
-
-	const { action, method } = form;
-	
-	const body = new FormData();
-	body.append("credential", JSON.stringify(credential.toJSON()));
-	body.append("userId", "${props.userId}")
-
-	const res = await fetch(action, { method, body });
-
-	if (res.ok) window.location.href = res.url;
-});
+	return (
+		<route.Form>
+			{children}
+			<script type="module">
+				{Render.html(`
+(async function() {
+	document.querySelector('form[action="${options.action}"]').addEventListener("submit", (${
+		passkey.handler
+	})(${JSON.stringify(options)}));
+})();
 `)}
-		</script>
-		<noscript>JavaScript is required for authentication.</noscript>
-	</>
-);
+			</script>
+			<noscript>JavaScript is required for authentication.</noscript>
+		</route.Form>
+	);
+};

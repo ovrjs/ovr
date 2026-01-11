@@ -45,6 +45,8 @@ export namespace Route {
 		| "PATCH"
 		| (string & {});
 
+	export type Post = Route & WithButton & WithForm;
+
 	/**
 	 * Options to construct a relative URL from the route.
 	 *
