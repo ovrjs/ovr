@@ -19,7 +19,6 @@ ovr is open source with the MIT license. Feel free to create an issue on GitHub 
 
 - `npm run test` - Run all tests
 - `npm run test:dev` - Run tests in watch mode
-- `npm run bench` - Run benchmarks
 - Run a single test: `npm test -- <test-file>` (e.g., `npm test -- packages/ovr/src/app/index.test.ts`)
 
 ## Conventions
@@ -44,9 +43,8 @@ ovr is open source with the MIT license. Feel free to create an issue on GitHub 
 
 ## Notes for Agents
 
-- This is a streaming-first web framework - prioritize streaming over buffering
 - The codebase heavily uses private `#` class syntax - respect this pattern
 - Always include `.js` extensions in imports
 - Type safety is paramount - use generics and `readonly` appropriately
-- Tests are comprehensive - follow existing patterns when adding new tests
 - The framework is minimal and leverages Web Standards extensively
+- Full documentation for ovr in markdown can be found at https://ovrjs.com/llms.txt
