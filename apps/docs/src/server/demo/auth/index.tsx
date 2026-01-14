@@ -38,7 +38,7 @@ const withAuth = (
 };
 
 /** Landing page - registration + sign in options */
-export const auth = Route.get("/demo/auth", async (c) => {
+export const auth = Route.get("/demo/auth", (c) => {
 	const Layout = createLayout(c);
 
 	// Generate passkey forms for both registration and login
@@ -81,7 +81,7 @@ export const logout = Route.post((c) => {
 /** Admin page - show user ID and credentials */
 export const admin = Route.get(
 	"/admin",
-	withAuth(async (c, session) => {
+	withAuth((c, session) => {
 		const credentials = getUserCredentials(session.id);
 		const Layout = createLayout(c);
 
