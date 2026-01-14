@@ -78,6 +78,10 @@ export class App {
 		if (this.#options.trailingSlash !== "ignore") {
 			this.#global.push(App.#createTrailingSlash(this.#options.trailingSlash));
 		}
+
+		if (this.#options.auth) {
+			this.use(Auth.routes(this.#options.auth));
+		}
 	}
 
 	/**

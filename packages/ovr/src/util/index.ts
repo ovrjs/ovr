@@ -203,7 +203,7 @@ export class Codec {
 		 * @returns Decoded bytes
 		 */
 		static decode(s: string) {
-			return new Uint8Array(Array.from(atob(s), (c) => c.charCodeAt(0)));
+			return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 		}
 	};
 
