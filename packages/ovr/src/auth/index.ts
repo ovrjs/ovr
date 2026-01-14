@@ -38,25 +38,25 @@ export namespace Auth {
 			 * Called after successful registration to store the credential.
 			 * The credential data should be persisted for login verification.
 			 *
-			 * @param result - Registration result containing credentialId, publicKey, and userId
+			 * @param credential - Registration credential containing id, publicKey, and userId
 			 */
-			readonly store: (result: Passkey.Verification) => Promise<void> | void;
+			readonly store: (credential: Passkey.Credential) => Promise<void> | void;
 
 			/**
 			 * Lookup a stored credential by ID for login verification.
 			 *
-			 * @param credentialId - The credential ID from the authenticator
+			 * @param id - The credential ID from the authenticator
 			 * @returns The stored credential with userId, or null if not found
 			 */
 			readonly get: (
-				credentialId: string,
+				id: string,
 			) => Promise<Passkey.Credential | null> | Passkey.Credential | null;
 		};
 	};
 
 	export type Session = {
 		/** User ID */
-		readonly userId: string;
+		readonly id: string;
 
 		/** Session expiration time */
 		readonly expiration: number;
@@ -76,7 +76,7 @@ export class Auth {
 	static readonly action = {
 		register: "/_auth/register",
 		login: "/_auth/login",
-	};
+	} as const;
 
 	/** Request context */
 	readonly #c: Context;
@@ -152,18 +152,16 @@ export class Auth {
 		if (dot !== -1) {
 			const payload = token.slice(0, dot);
 
-			try {
-				if (
-					await crypto.subtle.verify(
-						Auth.#hmac,
-						await this.#key,
-						Codec.base64url.decode(token.slice(dot + 1)), // signature
-						Codec.encode(payload),
-					)
-				) {
-					return payload;
-				}
-			} catch {}
+			if (
+				await crypto.subtle.verify(
+					Auth.#hmac,
+					await this.#key,
+					Codec.base64url.decode(token.slice(dot + 1)), // signature
+					Codec.encode(payload),
+				)
+			) {
+				return payload;
+			}
 		}
 
 		throw new Error("Invalid token");
@@ -202,39 +200,37 @@ export class Auth {
 		const token = this.#c.cookie.get(Auth.#cookieName);
 		if (!token) return null;
 
-		try {
-			const payload = await this.verify(token);
+		const payload = await this.verify(token);
 
-			if (payload) {
-				const now = Date.now();
-				const session = JSON.parse(
-					Codec.decode(Codec.base64url.decode(payload)),
-				) as Auth.Session;
+		if (payload) {
+			const now = Date.now();
+			const session = JSON.parse(
+				Codec.decode(Codec.base64url.decode(payload)),
+			) as Auth.Session;
 
-				if (now < session.expiration) {
-					// has not expired
-					return session.expiration - now < this.options.refresh
-						? // refresh
-							this.#setCookie({
-								...session,
-								expiration: now + this.options.duration,
-							})
-						: // return as is
-							session;
-				}
+			if (now < session.expiration) {
+				// has not expired
+				return session.expiration - now < this.options.refresh
+					? // refresh
+						this.#setCookie({
+							...session,
+							expiration: now + this.options.duration,
+						})
+					: // return as is
+						session;
 			}
-		} catch {}
+		}
 
 		return this.logout();
 	}
 
 	/**
-	 * @param userId user ID to login
+	 * @param id user ID to login
 	 * @returns new session
 	 */
-	login(userId: string) {
+	login(id: string) {
 		return this.#setCookie({
-			userId,
+			id,
 			expiration: Date.now() + this.options.duration,
 		});
 	}
@@ -278,7 +274,6 @@ export class Auth {
 
 				// user callback to store the credential
 				await options.credential.store(verification);
-
 				await c.auth.login(verification.userId);
 
 				c.redirect(options.redirect.register, 303);
@@ -290,9 +285,12 @@ export class Auth {
 				const stored = await options.credential.get(form.credential.id);
 				if (!stored) throw new Error("Credential not found");
 
-				await c.auth.passkey.assert(form.credential, form.signed, stored);
-
-				await c.auth.login(stored.userId);
+				const verified = await c.auth.passkey.assert(
+					form.credential,
+					form.signed,
+					stored,
+				);
+				await c.auth.login(verified.userId);
 
 				c.redirect(options.redirect.login, 303);
 			}),

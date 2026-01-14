@@ -33,18 +33,6 @@ export namespace Passkey {
 		userId: string;
 	};
 
-	/** Registration verification result */
-	export type Verification = {
-		/** Credential ID from registration */
-		credentialId: string;
-
-		/** SPKI encoded public key as base64url */
-		publicKey: string;
-
-		/** Associated user ID from the signed options */
-		userId: string;
-	};
-
 	/** Form component returned by `create()` or `get()` */
 	export type AuthForm = (props: JSX.IntrinsicElements["form"]) => JSX.Element;
 }
@@ -504,7 +492,7 @@ export class Passkey {
 	async verify(
 		credential: unknown,
 		signed: string,
-	): Promise<Passkey.Verification> {
+	): Promise<Passkey.Credential> {
 		const parsed = Passkey.RegistrationCredential.parse(credential);
 
 		const options = await this.#verifyCredentialBase("create", parsed, signed);
@@ -522,9 +510,7 @@ export class Passkey {
 		}
 
 		return {
-			credentialId: Codec.base64url.encode(
-				authData.attestedCredentialData.credentialId,
-			),
+			id: Codec.base64url.encode(authData.attestedCredentialData.credentialId),
 			publicKey: Codec.base64url.encode(
 				COSE.toSPKI(authData.attestedCredentialData.publicKey),
 			),
@@ -600,5 +586,7 @@ export class Passkey {
 		let ok = await verify(sig);
 		if (!ok) ok = await verify(DER.unwrap(sig));
 		if (!ok) throw new Error("Invalid signature");
+
+		return stored;
 	}
 }

@@ -81,7 +81,7 @@ export const logout = Route.post((c) => {
 export const admin = Route.get(
 	"/admin",
 	withAuth(async (c, session) => {
-		const credentials = getUserCredentials(session.userId);
+		const credentials = getUserCredentials(session.id);
 		const Layout = createLayout(c);
 
 		return (
@@ -90,7 +90,7 @@ export const admin = Route.get(
 					return (
 						<>
 							<h1>Admin</h1>
-							<p>User ID: {session.userId}</p>
+							<p>User ID: {session.id}</p>
 
 							{credentials.length > 0 && (
 								<>

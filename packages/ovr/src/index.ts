@@ -1,5 +1,4 @@
 export { App } from "./app/index.js";
-export { Auth } from "./auth/index.js";
 export { Route } from "./route/index.js";
 export { Multipart } from "./multipart/index.js";
 export { JSX } from "./jsx/index.js";
