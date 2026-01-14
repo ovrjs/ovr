@@ -8,8 +8,8 @@ import { type JSX, type Middleware, Render, Route } from "ovr";
 type StoredCredential = { id: string; publicKey: string };
 
 /** Get all credentials for a user */
-const getUserCredentials = (userId: string): StoredCredential[] => {
-	const user = users.values().find((u) => u.id === userId);
+const getUserCredentials = (id: string): StoredCredential[] => {
+	const user = users.values().find((u) => u.id === id);
 	return user?.credentials ?? [];
 };
 
@@ -42,10 +42,11 @@ export const auth = Route.get("/demo/auth", async (c) => {
 	const Layout = createLayout(c);
 
 	// Generate passkey forms for both registration and login
-	const userId = crypto.randomUUID();
+	const id = crypto.randomUUID();
+
 	const Register = c.auth.passkey.create({
-		id: userId,
-		name: `user-${userId}`,
+		id,
+		name: `user-${id}`,
 		displayName: "Passkey",
 	});
 	const Login = c.auth.passkey.get();

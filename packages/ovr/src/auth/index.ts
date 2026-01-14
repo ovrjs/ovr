@@ -5,7 +5,7 @@ import { Codec, Time } from "../util/index.js";
 import { Passkey } from "./passkey.js";
 
 export namespace Auth {
-	export type Options = {
+	export interface Options {
 		/** Secret key for signing sessions and challenges */
 		readonly secret: string;
 
@@ -38,7 +38,7 @@ export namespace Auth {
 			 * Called after successful registration to store the credential.
 			 * The credential data should be persisted for login verification.
 			 *
-			 * @param credential - Registration credential containing id, publicKey, and userId
+			 * @param credential - Registration credential containing id, publicKey, and id
 			 */
 			readonly store: (credential: Passkey.Credential) => Promise<void> | void;
 
@@ -46,21 +46,21 @@ export namespace Auth {
 			 * Lookup a stored credential by ID for login verification.
 			 *
 			 * @param id - The credential ID from the authenticator
-			 * @returns The stored credential with userId, or null if not found
+			 * @returns The stored credential with id, or null if not found
 			 */
 			readonly get: (
 				id: string,
 			) => Promise<Passkey.Credential | null> | Passkey.Credential | null;
 		};
-	};
+	}
 
-	export type Session = {
+	export interface Session {
 		/** User ID */
 		readonly id: string;
 
 		/** Session expiration time */
 		readonly expiration: number;
-	};
+	}
 }
 
 /**
@@ -274,7 +274,7 @@ export class Auth {
 
 				// user callback to store the credential
 				await options.credential.store(verification);
-				await c.auth.login(verification.userId);
+				await c.auth.login(verification.user);
 
 				c.redirect(options.redirect.register, 303);
 			}),
@@ -290,7 +290,7 @@ export class Auth {
 					form.signed,
 					stored,
 				);
-				await c.auth.login(verified.userId);
+				await c.auth.login(verified.user);
 
 				c.redirect(options.redirect.login, 303);
 			}),

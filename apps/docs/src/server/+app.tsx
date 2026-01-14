@@ -26,21 +26,18 @@ const app = new o.App({
 		credential: {
 			store(result) {
 				// Create user if doesn't exist
-				let user = users.values().find((u) => u.id === result.userId);
+				let user = users.values().find((u) => u.id === result.user);
 				if (!user) {
-					user = { id: result.userId, credentials: [] };
+					user = { id: result.user, credentials: [] };
 					users.add(user);
 				}
 				// Store credential
-				user.credentials.push({
-					id: result.credentialId,
-					publicKey: result.publicKey,
-				});
+				user.credentials.push({ id: result.id, publicKey: result.publicKey });
 			},
 			get(credentialId) {
 				for (const user of users) {
 					const cred = user.credentials.find((c) => c.id === credentialId);
-					if (cred) return { ...cred, userId: user.id };
+					if (cred) return { ...cred, user: user.id };
 				}
 				return null;
 			},

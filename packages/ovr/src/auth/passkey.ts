@@ -10,7 +10,7 @@ import { Auth } from "./index.js";
 
 export namespace Passkey {
 	/** User for registration */
-	export type User = {
+	export interface User {
 		/** Unique user identifier */
 		id: string;
 
@@ -19,10 +19,10 @@ export namespace Passkey {
 
 		/** Human readable display name */
 		displayName: string;
-	};
+	}
 
 	/** Stored credential data */
-	export type Credential = {
+	export interface Credential {
 		/** Credential ID */
 		id: string;
 
@@ -30,11 +30,18 @@ export namespace Passkey {
 		publicKey: string;
 
 		/** Associated user ID */
-		userId: string;
-	};
+		user: string;
+	}
+
+	export interface GetChallenge {
+		challenge: string;
+	}
+	export interface CreateChallenge extends GetChallenge {
+		user: string;
+	}
 
 	/** Form component returned by `create()` or `get()` */
-	export type AuthForm = (props: JSX.IntrinsicElements["form"]) => JSX.Element;
+	export type Form = (props: JSX.IntrinsicElements["form"]) => JSX.Element;
 }
 
 /**
@@ -274,10 +281,7 @@ export class Passkey {
 	 * @param excludeCredentialIds Optional list of credential IDs to exclude from registration. Prevents duplicate registration of the same authenticator.
 	 * @returns `<RegisterForm />` component for passkey registration containing the client script with embedded and signed options.
 	 */
-	create(
-		user: Passkey.User,
-		excludeCredentialIds?: string[],
-	): Passkey.AuthForm {
+	create(user: Passkey.User, excludeCredentialIds?: string[]): Passkey.Form {
 		return (props) => {
 			const challenge = Passkey.#newChallenge();
 
@@ -295,7 +299,10 @@ export class Passkey {
 								Passkey.#script(
 									// signed
 									await this.#auth.sign(
-										JSON.stringify({ challenge, userId: user.id }),
+										JSON.stringify({
+											challenge,
+											user: user.id,
+										} satisfies Passkey.CreateChallenge),
 									),
 									// passkey
 									{
@@ -337,7 +344,7 @@ export class Passkey {
 	 *
 	 * @returns A form component for passkey login
 	 */
-	get(): Passkey.AuthForm {
+	get(): Passkey.Form {
 		return (props) => {
 			const challenge = Passkey.#newChallenge();
 
@@ -354,7 +361,11 @@ export class Passkey {
 							Render.html(
 								Passkey.#script(
 									// signed
-									await this.#auth.sign(JSON.stringify({ challenge })),
+									await this.#auth.sign(
+										JSON.stringify({
+											challenge,
+										} satisfies Passkey.GetChallenge),
+									),
 									// passkey
 									{
 										challenge,
@@ -424,8 +435,8 @@ export class Passkey {
 	async #verifyCredentialBase<
 		C extends "create" | "get",
 		O extends C extends "create"
-			? { challenge: string; userId: string }
-			: { challenge: string },
+			? Passkey.CreateChallenge
+			: Passkey.GetChallenge,
 	>(
 		ceremony: C,
 		credential:
@@ -445,6 +456,7 @@ export class Passkey {
 			throw new TypeError("Invalid ceremony type");
 		}
 
+		// no need to parse since its signed
 		const options: O = JSON.parse(await this.#auth.verify(signed));
 
 		if (
@@ -485,7 +497,7 @@ export class Passkey {
 	 *
 	 * @param credential Registration credential response from authenticator - untrusted
 	 * @param signed Signed options string from form submission
-	 * @returns Credential verification result containing ID, public key, and userId
+	 * @returns Verified credential
 	 * @throws TypeError if credential is not a valid credential
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or credential data missing
 	 */
@@ -514,7 +526,7 @@ export class Passkey {
 			publicKey: Codec.base64url.encode(
 				COSE.toSPKI(authData.attestedCredentialData.publicKey),
 			),
-			userId: options.userId,
+			user: options.user,
 		};
 	}
 
