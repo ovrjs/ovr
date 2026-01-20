@@ -577,7 +577,7 @@ export class Form<Shape extends Form.Shape> {
 	 * @returns Parsed result
 	 * @throws `Schema.Error` when the first encountered parse fails
 	 */
-	parse(data: FormData, path: Schema.Path = []): Form.Infer<Shape> {
+	parse(data: FormData, path: Schema.Path = []) {
 		const out: Record<string, unknown> = {};
 
 		for (const key in this.fields) {
@@ -624,7 +624,7 @@ export class Form<Shape extends Form.Shape> {
 	};
 
 	/** Text input field. */
-	static text(options: Form.Options.Input = {}): Field<string> {
+	static text(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "text";
@@ -633,7 +633,7 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Email input field. */
-	static email(options: Form.Options.Input = {}): Field<string> {
+	static email(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "email";
@@ -642,7 +642,7 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Password input field. */
-	static password(options: Form.Options.Input = {}): Field<string> {
+	static password(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "password";
@@ -651,7 +651,7 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** URL input field. */
-	static url(options: Form.Options.Input = {}): Field<string> {
+	static url(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "url";
@@ -660,7 +660,7 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Hidden input field. */
-	static hidden(options: Form.Options.Input = {}): Field<string> {
+	static hidden(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "hidden";
@@ -669,7 +669,7 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Number input field. Coerces strings to numbers. */
-	static number(options: Form.Options.Input = {}): Field<number> {
+	static number(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "number";
@@ -678,7 +678,7 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Date input field. Coerces strings to Dates. */
-	static date(options: Form.Options.Input = {}): Field<Date> {
+	static date(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "date";
@@ -693,7 +693,7 @@ export class Form<Shape extends Form.Shape> {
 	 * - unchecked => key missing => false
 	 * - checked => key present => true
 	 */
-	static checkbox(options: Form.Options.Input = {}): Field<boolean> {
+	static checkbox(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "checkbox";
@@ -733,7 +733,7 @@ export class Form<Shape extends Form.Shape> {
 	static radio<const T extends string>(
 		values: readonly [T, ...T[]],
 		options: Form.Options.Input = {},
-	): Field<T> {
+	) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "radio";
@@ -742,7 +742,7 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Textarea field. */
-	static textarea(options: Form.Options.Textarea = {}): Field<string> {
+	static textarea(options: Form.Options.Textarea = {}) {
 		const { label, ...attrs } = options;
 
 		attrs.type ??= "textarea";
@@ -754,7 +754,7 @@ export class Form<Shape extends Form.Shape> {
 	static select<const T extends string>(
 		values: readonly [T, ...T[]],
 		options: Form.Options.Select = {},
-	): Field<T> {
+	) {
 		const { label, ...attrs } = options;
 
 		return new Field(
