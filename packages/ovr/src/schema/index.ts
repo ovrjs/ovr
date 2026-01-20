@@ -337,12 +337,17 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		});
 	}
 
-	static #Object = class<const Shape extends Schema.Shape> extends Schema<
+	static #ObjectSchema = class<const Shape extends Schema.Shape> extends Schema<
 		Schema.Infer<Shape>,
 		unknown
 	> {
+		/** Object schema's shape (user input object) */
 		readonly shape: Shape;
 
+		/**
+		 * @param shape Schema shape
+		 * @param parse Function to parse the data into the specified shape
+		 */
 		constructor(
 			shape: Shape,
 			parse: (v: unknown, path: Schema.Path) => Schema.Infer<Shape>,
@@ -376,7 +381,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	static object<const Shape extends Schema.Shape>(
 		shape: Shape,
 	): Schema.Object<Shape> {
-		return new Schema.#Object(shape, (v, path) => {
+		return new Schema.#ObjectSchema(shape, (v, path) => {
 			if (typeof v !== "object" || v === null) {
 				throw new Schema.Error("Expected object", path);
 			}
@@ -392,37 +397,111 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	}
 
 	/** Coercion schemas that apply JavaScript type coercion before validation. */
-	static coerce = {
+	static coerce = class {
 		/** Coerce to string using `String(value)`. */
-		string: () =>
+		static string = () =>
 			new Schema<string, unknown>((v, path) =>
 				Schema.string().parse(String(v), path),
-			),
+			);
 
 		/** Coerce to number using `Number(value)`. */
-		number: () =>
+		static number = () =>
 			new Schema<number, unknown>((v, path) =>
 				Schema.number().parse(Number(v), path),
-			),
+			);
 
 		/** Coerce to boolean using `Boolean(value)`. */
-		boolean: () => new Schema<boolean, unknown>((v) => Boolean(v)),
+		static boolean = () => new Schema<boolean, unknown>((v) => Boolean(v));
 
 		/** Coerce to Date using `new Date(value)`. Rejects invalid dates. */
-		date: () =>
+		static date = () =>
 			new Schema<Date, unknown>((v, path) =>
 				Schema.date().parse(new Date(String(v)), path),
-			),
+			);
 	};
+}
+
+namespace Field {
+	export type Read = (data: FormData, name: string) => unknown;
+
+	export interface Options<Output> {
+		parse: (value: unknown, path: Schema.Path) => Output;
+		read?: Field.Read;
+		tag: "input" | "textarea" | "select";
+		type?: string;
+		label?: string;
+		values?: readonly string[];
+		attrs?: Record<string, unknown>;
+	}
+}
+
+/** Represents a form field with parsing logic and rendering metadata. */
+class Field<Output> extends Schema<Output> {
+	/** Read the value from form data */
+	readonly read: Field.Read;
+
+	/** HTML tag to render. */
+	readonly tag: "input" | "textarea" | "select";
+
+	/** Input type attribute (for input elements). */
+	readonly type?: string;
+
+	/** Field label (falls back to field name). */
+	readonly label?: string;
+
+	/** Values for select/radio fields. */
+	readonly values?: readonly string[];
+
+	/** Additional HTML attributes. */
+	readonly attrs?: Record<string, unknown>;
+
+	constructor(options: Field.Options<Output>) {
+		const { parse, read, tag, ...rest } = options;
+
+		super(parse);
+
+		this.tag = tag;
+		this.read =
+			read ??
+			// default to FormData.get
+			((data, name) => {
+				const v = data.get(name);
+				return v == null ? undefined : v;
+			});
+
+		Object.assign(this, rest);
+	}
+
+	/** Make this field optional. */
+	override optional(): Field<Output | undefined> {
+		return new Field({
+			...this,
+			parse: (v, path) => {
+				if (v === undefined) return undefined;
+				return this.parse(v, path);
+			},
+		});
+	}
+
+	/** Provide a default value when undefined. */
+	override default(value: Output): Field<Output> {
+		return new Field({
+			...this,
+			parse: (v, path) => {
+				if (v === undefined) return value;
+				return this.parse(v, path);
+			},
+		});
+	}
 }
 
 export namespace Form {
 	/** Form field shape. */
-	export type Shape = Record<string, FormField<unknown>>;
+	export type Shape = Record<string, Field<unknown>>;
 
 	/** Infer the output type of a form shape. */
 	export type Infer<S extends Shape> = {
-		[K in keyof S]: S[K] extends FormField<infer O> ? O : never;
+		[K in keyof S]: S[K] extends Field<infer O> ? O : never;
 	};
 
 	/** Field option types. */
@@ -441,80 +520,6 @@ export namespace Form {
 	}
 }
 
-namespace FormField {
-	export type Read = (data: FormData, name: string) => unknown;
-
-	export interface Options<Output> {
-		parse: (value: unknown, path: Schema.Path) => Output;
-		read?: FormField.Read;
-		tag: "input" | "textarea" | "select";
-		type?: string;
-		label?: string;
-		values?: readonly string[];
-		attrs?: Record<string, unknown>;
-	}
-}
-
-/** Represents a form field with parsing logic and rendering metadata. */
-export class FormField<Output> extends Schema<Output> {
-	/** Read the value from form data */
-	readonly read: FormField.Read;
-
-	/** HTML tag to render. */
-	readonly tag: "input" | "textarea" | "select";
-
-	/** Input type attribute (for input elements). */
-	readonly type?: string;
-
-	/** Field label (falls back to field name). */
-	readonly label?: string;
-
-	/** Values for select/radio fields. */
-	readonly values?: readonly string[];
-
-	/** Additional HTML attributes. */
-	readonly attrs?: Record<string, unknown>;
-
-	constructor(options: FormField.Options<Output>) {
-		const { parse, read, tag, ...rest } = options;
-
-		super(parse);
-
-		this.tag = tag;
-		this.read =
-			read ??
-			// default to FormData.get
-			((data, name) => {
-				const v = data.get(name);
-				return v == null ? undefined : v;
-			});
-
-		Object.assign(this, rest);
-	}
-
-	/** Make this field optional. */
-	override optional(): FormField<Output | undefined> {
-		return new FormField({
-			...this,
-			parse: (v, path) => {
-				if (v === undefined) return undefined;
-				return this.parse(v, path);
-			},
-		});
-	}
-
-	/** Provide a default value when undefined. */
-	override default(value: Output): FormField<Output> {
-		return new FormField({
-			...this,
-			parse: (v, path) => {
-				if (v === undefined) return value;
-				return this.parse(v, path);
-			},
-		});
-	}
-}
-
 /**
  * Form schema with JSX rendering capabilities.
  *
@@ -525,14 +530,14 @@ export class FormField<Output> extends Schema<Output> {
  * const User = new Form({
  *   username: Form.text({ label: "Username" }),
  *   admin: Form.checkbox(),
- *   age: Form.number({ min: 0 })
+ *   age: Form.number(),
  * })
  *
- * // Parse FormData
+ * // parse FormData
  * const data = User.parse(formData)
  *
- * // Render fields
- * <User.Fieldset legend="User Info" />
+ * // render fields
+ * <User.Fieldset />
  * <User.Field name="username" />
  * ```
  */
@@ -629,10 +634,10 @@ export class Form<Shape extends Form.Shape> {
 	};
 
 	/** Text input field. */
-	static text(options: Form.Options.Input = {}): FormField<string> {
+	static text(options: Form.Options.Input = {}): Field<string> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.string().parse(v, path),
 			tag: "input",
 			type: "text",
@@ -642,10 +647,10 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Email input field. */
-	static email(options: Form.Options.Input = {}): FormField<string> {
+	static email(options: Form.Options.Input = {}): Field<string> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.string().parse(v, path),
 			tag: "input",
 			type: "email",
@@ -655,10 +660,10 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Password input field. */
-	static password(options: Form.Options.Input = {}): FormField<string> {
+	static password(options: Form.Options.Input = {}): Field<string> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.string().parse(v, path),
 			tag: "input",
 			type: "password",
@@ -668,10 +673,10 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** URL input field. */
-	static url(options: Form.Options.Input = {}): FormField<string> {
+	static url(options: Form.Options.Input = {}): Field<string> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.string().parse(v, path),
 			tag: "input",
 			type: "url",
@@ -681,10 +686,10 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Hidden input field. */
-	static hidden(options: Form.Options.Input = {}): FormField<string> {
+	static hidden(options: Form.Options.Input = {}): Field<string> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.string().parse(v, path),
 			tag: "input",
 			type: "hidden",
@@ -694,10 +699,10 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Number input field. Coerces strings to numbers. */
-	static number(options: Form.Options.Input = {}): FormField<number> {
+	static number(options: Form.Options.Input = {}): Field<number> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.coerce.number().parse(v, path),
 			tag: "input",
 			type: "number",
@@ -707,10 +712,10 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Date input field. Coerces strings to Dates. */
-	static date(options: Form.Options.Input = {}): FormField<Date> {
+	static date(options: Form.Options.Input = {}): Field<Date> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.coerce.date().parse(v, path),
 			tag: "input",
 			type: "date",
@@ -726,10 +731,10 @@ export class Form<Shape extends Form.Shape> {
 	 * - unchecked => key missing => false
 	 * - checked => key present => true
 	 */
-	static checkbox(options: Form.Options.Input = {}): FormField<boolean> {
+	static checkbox(options: Form.Options.Input = {}): Field<boolean> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.coerce.boolean().parse(v, path),
 			read: (formData, name) => formData.has(name),
 			tag: "input",
@@ -740,10 +745,10 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Textarea field. */
-	static textarea(options: Form.Options.Textarea = {}): FormField<string> {
+	static textarea(options: Form.Options.Textarea = {}): Field<string> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.string().parse(v, path),
 			tag: "textarea",
 			type: "textarea",
@@ -753,16 +758,14 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/** Single file input field. */
-	static file(options?: Form.Options.Input): FormField<File>;
+	static file(options?: Form.Options.Input): Field<File>;
 	/** Multiple file input field. */
-	static file(
-		options: Form.Options.Input & { multiple: true },
-	): FormField<File[]>;
+	static file(options: Form.Options.Input & { multiple: true }): Field<File[]>;
 	static file(options: Form.Options.Input = {}) {
 		const { label, ...attrs } = options;
 
 		if (attrs.multiple) {
-			return new FormField<File[]>({
+			return new Field<File[]>({
 				parse: (v, path) => Schema.array(Schema.file()).parse(v, [...path]),
 				read: (data, name) => data.getAll(name),
 				tag: "input",
@@ -772,7 +775,7 @@ export class Form<Shape extends Form.Shape> {
 			});
 		}
 
-		return new FormField<File>({
+		return new Field<File>({
 			parse: (v, path) => Schema.file().parse(v, path),
 			read: (data, name) => data.get(name),
 			tag: "input",
@@ -786,10 +789,10 @@ export class Form<Shape extends Form.Shape> {
 	static select<const T extends string>(
 		values: readonly [T, ...T[]],
 		options: Form.Options.Select = {},
-	): FormField<T> {
+	): Field<T> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.enum(values).parse(v, path),
 			tag: "select",
 			type: "select",
@@ -803,10 +806,10 @@ export class Form<Shape extends Form.Shape> {
 	static radio<const T extends string>(
 		values: readonly [T, ...T[]],
 		options: Form.Options.Input = {},
-	): FormField<T> {
+	): Field<T> {
 		const { label, ...attrs } = options;
 
-		return new FormField({
+		return new Field({
 			parse: (v, path) => Schema.enum(values).parse(v, path),
 			tag: "input",
 			type: "radio",
