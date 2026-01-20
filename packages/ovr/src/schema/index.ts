@@ -67,6 +67,16 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	} as const;
 
 	/**
+	 * Parse and validate an unknown value.
+	 *
+	 * @param value Unknown value to parse
+	 * @param path Internal path reference
+	 * @returns Parsed result
+	 * @throws `Schema.Error` when the first encountered parse fails
+	 */
+	parse: (value: unknown, path?: Schema.Path) => Output;
+
+	/**
 	 * Construct a new schema - used internally.
 	 *
 	 * Use static methods on `Schema` to make a new schema.
@@ -76,16 +86,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	constructor(parse: (value: unknown, path: Schema.Path) => Output) {
 		this.parse = (value, path = []) => parse(value, path);
 	}
-
-	/**
-	 * Parse and validate an unknown value.
-	 *
-	 * @param value Unknown value to parse
-	 * @param path Internal path reference
-	 * @returns Parsed result
-	 * @throws `Schema.Error` when the first encountered parse fails
-	 */
-	parse: (value: unknown, path?: Schema.Path) => Output;
 
 	/** Optional schema */
 	optional() {
@@ -493,6 +493,46 @@ class Field<Output> extends Schema<Output> {
 			},
 		});
 	}
+
+	/**
+	 * @param name Field `name` attribute
+	 * @returns JSX Component that renders the HTML field
+	 */
+	render(name: string) {
+		return jsx("div", {
+			children:
+				this.type === "radio"
+					? [
+							jsx("span", { children: this.label ?? name }),
+							this.values?.map((value) =>
+								jsx("label", {
+									children: [
+										jsx(this.tag, {
+											type: this.type,
+											name,
+											value,
+											...this.attrs,
+										}),
+										jsx("span", { children: value }),
+									],
+								}),
+							),
+						]
+					: [
+							jsx("label", { for: name, children: this.label ?? name }),
+							jsx(this.tag, {
+								name,
+								id: name,
+								type: this.type, // ignored if undefined
+								...this.attrs,
+								// select options
+								children: this.values?.map((value) =>
+									jsx("option", { value, children: value }),
+								),
+							}),
+						],
+		});
+	}
 }
 
 export namespace Form {
@@ -552,18 +592,18 @@ export class Form<Shape extends Form.Shape> {
 	/**
 	 * Parse and validate FormData.
 	 *
-	 * @param value FormData to parse
+	 * @param data FormData to parse
 	 * @param path Internal path reference
 	 * @returns Parsed result
 	 * @throws `Schema.Error` when the first encountered parse fails
 	 */
-	parse(value: FormData, path: Schema.Path = []): Form.Infer<Shape> {
+	parse(data: FormData, path: Schema.Path = []): Form.Infer<Shape> {
 		const out: Record<string, unknown> = {};
 
 		for (const key in this.fields) {
 			const schema = this.fields[key]!;
 
-			out[key] = schema.parse(schema.read(value, key), [...path, key]);
+			out[key] = schema.parse(schema.read(data, key), [...path, key]);
 		}
 
 		return out as Form.Infer<Shape>;
@@ -578,44 +618,11 @@ export class Form<Shape extends Form.Shape> {
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	Field = ({ name }: { name: Extract<keyof Shape, string> }) => {
-		const field = this.fields[name]!;
-		const label = field.label ?? name;
-
-		return jsx("div", {
-			children:
-				field.type === "radio"
-					? [
-							jsx("span", { children: label }),
-							field.values?.map((value) =>
-								jsx("label", {
-									children: [
-										jsx(field.tag, {
-											type: field.type,
-											name,
-											value,
-											...field.attrs,
-										}),
-										jsx("span", { children: value }),
-									],
-								}),
-							),
-						]
-					: [
-							jsx("label", { for: name, children: label }),
-							jsx(field.tag, {
-								name,
-								id: name,
-								type: field.type, // ignored if undefined
-								...field.attrs,
-								// select options
-								children: field.values?.map((value) =>
-									jsx("option", { value, children: value }),
-								),
-							}),
-						],
-		});
-	};
+	Field = (
+		props: {
+			name: Extract<keyof Shape, string>;
+		} & JSX.IntrinsicElements["input"],
+	) => this.fields[props.name]!.render(props.name);
 
 	/**
 	 * Render all form fields in a fieldset.
@@ -628,7 +635,10 @@ export class Form<Shape extends Form.Shape> {
 	 */
 	Fieldset = (props: JSX.IntrinsicElements["fieldset"] = {}) => {
 		const children = [props.children];
-		for (const name in this.fields) children.push(this.Field({ name }));
+
+		for (const [name, field] of Object.entries(this.fields)) {
+			children.push(field.render(name));
+		}
 
 		return jsx("fieldset", { ...props, children });
 	};
