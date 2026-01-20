@@ -526,7 +526,7 @@ export namespace Form {
  * Parses `FormData` and generates form field components.
  *
  * @example
- * ```ts
+ * ```tsx
  * const User = new Form({
  *   username: Form.text({ label: "Username" }),
  *   admin: Form.checkbox(),
@@ -815,7 +815,7 @@ export class Form<Shape extends Form.Shape> {
 			type: "radio",
 			label,
 			values,
-			...attrs,
+			attrs,
 		});
 	}
 }
