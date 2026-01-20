@@ -70,6 +70,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/** Cached auth instance */
 	#auth?: Auth;
 
+	/** Cached multipart instance */
+	#multipart?: Multipart;
+
 	/**
 	 * Creates a new `Context` with the current `Request`.
 	 *
@@ -129,10 +132,16 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * - [307 Temporary Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/307)
 	 * - [308 Permanent Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/308)
 	 */
-	redirect(location: string | URL, status: 301 | 302 | 303 | 307 | 308 = 302) {
+	redirect(
+		location: string | URL | Route,
+		status: 301 | 302 | 303 | 307 | 308 = 302,
+	) {
 		this.res.body = null;
 		this.res.status = status;
-		this.res.headers.set("location", String(location));
+		this.res.headers.set(
+			"location",
+			location instanceof Route ? location.pathname() : String(location),
+		);
 	}
 
 	/**
@@ -162,6 +171,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/**
 	 * Parse multipart requests.
 	 *
+	 * If called multiple times in the same request context, the
+	 * same cached instance will be used with the original options.
+	 *
 	 * @yields Multipart request `Part`(s)
 	 *
 	 * @example
@@ -179,10 +191,10 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * ```
 	 */
 	form(options?: Multipart.Options) {
-		return new Multipart(
+		return (this.#multipart ??= new Multipart(
 			this.req,
 			Object.assign({}, this.#options.form, options),
-		);
+		));
 	}
 
 	get auth() {

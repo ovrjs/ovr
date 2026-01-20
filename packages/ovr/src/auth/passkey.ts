@@ -1,38 +1,15 @@
 import type { Context } from "../context/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Render } from "../render/index.js";
-import { S } from "../schema/index.js";
-import { Codec, Mime } from "../util/index.js";
+import type { Route } from "../route/index.js";
+import { Schema } from "../schema/index.js";
+import { Codec } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
 import { DER } from "./der.js";
-import { Auth } from "./index.js";
+import type { Auth } from "./index.js";
 
 export namespace Passkey {
-	/** User for registration */
-	export interface User {
-		/** Unique user identifier */
-		id: string;
-
-		/** User name/username */
-		name: string;
-
-		/** Human readable display name */
-		displayName: string;
-	}
-
-	/** Stored credential data */
-	export interface Credential {
-		/** Credential ID */
-		id: string;
-
-		/** SPKI encoded public key as base64url */
-		publicKey: string;
-
-		/** Associated user ID */
-		user: string;
-	}
-
 	export interface GetChallenge {
 		challenge: string;
 	}
@@ -141,94 +118,96 @@ export class Passkey {
 				};
 			}
 
-			static #decodeCreationOptions = ({
+			static #decodeCreationOptions({
 				challenge,
 				user,
 				excludeCredentials,
 				attestation,
 				extensions, // unused
 				...rest
-			}: PublicKeyCredentialCreationOptionsJSON): PublicKeyCredentialCreationOptions => ({
-				challenge: Client.#decodeBase64Url(challenge),
-				user: {
-					id: Client.#decodeBase64Url(user.id),
-					name: user.name,
-					displayName: user.displayName,
-				},
-				excludeCredentials: excludeCredentials?.map(Client.#decodeCredential),
-				attestation: Client.#isAttestation(attestation)
-					? attestation
-					: undefined,
-				...rest,
-			});
+			}: PublicKeyCredentialCreationOptionsJSON): PublicKeyCredentialCreationOptions {
+				return {
+					challenge: Client.#decodeBase64Url(challenge),
+					user: {
+						id: Client.#decodeBase64Url(user.id),
+						name: user.name,
+						displayName: user.displayName,
+					},
+					excludeCredentials: excludeCredentials?.map(Client.#decodeCredential),
+					attestation: Client.#isAttestation(attestation)
+						? attestation
+						: undefined,
+					...rest,
+				};
+			}
 
-			static #decodeRequestOptions = ({
+			static #decodeRequestOptions({
 				challenge,
 				allowCredentials,
 				userVerification,
 				extensions, // unused
 				...rest
-			}: PublicKeyCredentialRequestOptionsJSON): PublicKeyCredentialRequestOptions => ({
-				challenge: Client.#decodeBase64Url(challenge),
-				allowCredentials: allowCredentials?.map(Client.#decodeCredential),
-				userVerification: Client.#isVerification(userVerification)
-					? userVerification
-					: undefined,
-				...rest,
-			});
+			}: PublicKeyCredentialRequestOptionsJSON): PublicKeyCredentialRequestOptions {
+				return {
+					challenge: Client.#decodeBase64Url(challenge),
+					allowCredentials: allowCredentials?.map(Client.#decodeCredential),
+					userVerification: Client.#isVerification(userVerification)
+						? userVerification
+						: undefined,
+					...rest,
+				};
+			}
 
-			#forms = document.querySelectorAll(
+			#form = document.querySelector(
 				'form[action="' + action + '"]',
-			) as NodeListOf<HTMLFormElement>;
+			) as HTMLFormElement;
 
-			#loading = false;
+			static #loading = false;
 
 			addEventListeners() {
-				for (const f of this.#forms) {
-					if (!f.hasAttribute("data-auth")) {
-						f.dataset.auth = "";
+				if (!this.#form.hasAttribute("data-auth")) {
+					this.#form.dataset.auth = "";
 
-						f.addEventListener("formdata", (e: FormDataEvent) =>
-							e.formData.append("signed", signed),
-						);
+					this.#form.addEventListener("formdata", (e: FormDataEvent) =>
+						e.formData.append("signed", signed),
+					);
 
-						f.addEventListener("submit", async (e) => {
-							e.preventDefault();
+					this.#form.addEventListener("submit", async (e) => {
+						e.preventDefault();
 
-							if (this.#loading) return;
+						if (Client.#loading) return;
 
-							this.#loading = true;
+						Client.#loading = true;
 
-							try {
-								const input = document.createElement("input");
-								input.type = "hidden";
-								input.name = "credential";
-								input.value = JSON.stringify(
-									await navigator.credentials[method]({
-										publicKey: (method === "create"
-											? Client.#decodeCreationOptions(options)
-											: Client.#decodeRequestOptions(
-													options,
-												)) as PublicKeyCredentialCreationOptions &
-											PublicKeyCredentialRequestOptions,
-									}),
-								);
-								f.append(input);
+						try {
+							const input = document.createElement("input");
+							input.type = "hidden";
+							input.name = "credential";
+							input.value = JSON.stringify(
+								await navigator.credentials[method]({
+									publicKey: (method === "create"
+										? Client.#decodeCreationOptions(options)
+										: Client.#decodeRequestOptions(
+												options,
+											)) as PublicKeyCredentialCreationOptions &
+										PublicKeyCredentialRequestOptions,
+								}),
+							);
+							this.#form.append(input);
 
-								f.submit();
-								return;
-							} catch (e) {
-								if (
-									!(e instanceof DOMException) ||
-									e.name !== "NotAllowedError"
-								) {
-									throw e;
-								}
+							this.#form.submit();
+							return;
+						} catch (e) {
+							if (
+								!(e instanceof DOMException) ||
+								e.name !== "NotAllowedError"
+							) {
+								throw e;
 							}
+						}
 
-							this.#loading = false;
-						});
-					}
+						Client.#loading = false;
+					});
 				}
 			}
 		}
@@ -249,11 +228,12 @@ export class Passkey {
 		options:
 			| PublicKeyCredentialCreationOptionsJSON
 			| PublicKeyCredentialRequestOptionsJSON,
-		action: typeof Auth.action.register | typeof Auth.action.login,
+		action: string,
+		method: "create" | "get",
 	) {
 		return `(${Passkey.#addEventListeners})('${signed}',${JSON.stringify(
 			options,
-		)},"${action}","${action === Auth.action.register ? "create" : "get"}")`;
+		)},"${action}","${method}")`;
 	}
 
 	/**
@@ -277,31 +257,33 @@ export class Passkey {
 	 * Only ES256 (alg -7) is supported. Platform authenticators typically support this modern algorithm.
 	 * Resident key is a hint only; counter validation is not performed due to stateless design.
 	 *
-	 * @param user User information for registration
-	 * @param excludeCredentialIds Optional list of credential IDs to exclude from registration. Prevents duplicate registration of the same authenticator.
-	 * @returns `<RegisterForm />` component for passkey registration containing the client script with embedded and signed options.
+	 * @param route Route to handle/verify the registration
+	 * @param exclude Optional list of credential IDs to exclude from registration. Prevents duplicate registration of the same authenticator.
+	 * @param user User ID for registration, defaults to `crypto.randomUUID()`
+	 * @returns `<Register />` component for passkey registration containing the client script with embedded and signed options.
 	 */
-	create(user: Passkey.User, excludeCredentialIds?: string[]): Passkey.Form {
+	create(
+		route: Route.Post,
+		exclude?: string[],
+		user = crypto.randomUUID(),
+	): Passkey.Form {
 		return (props) => {
-			const challenge = Passkey.#newChallenge();
-
-			return jsx("form", {
-				action: Auth.action.register,
-				method: "post",
-				enctype: Mime.multipartFormData,
+			return route.Form({
 				...props,
 				children: [
-					props.children,
+					props.children ?? jsx("button", { children: "Register" }),
 					jsx("script", {
 						type: "module",
-						children: async () =>
-							Render.html(
+						children: async () => {
+							const challenge = Passkey.#newChallenge();
+
+							return Render.html(
 								Passkey.#script(
 									// signed
 									await this.#auth.sign(
 										JSON.stringify({
 											challenge,
-											user: user.id,
+											user,
 										} satisfies Passkey.CreateChallenge),
 									),
 									// passkey
@@ -309,11 +291,12 @@ export class Passkey {
 										challenge,
 										rp: { id: this.#rpId, name: this.#rpId },
 										user: {
-											...user,
-											id: Codec.base64url.encode(Codec.encode(user.id)),
+											id: Codec.base64url.encode(Codec.encode(user)),
+											name: user,
+											displayName: user,
 										},
 										pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-										excludeCredentials: excludeCredentialIds?.map((id) => ({
+										excludeCredentials: exclude?.map((id) => ({
 											type: "public-key",
 											id,
 										})),
@@ -325,9 +308,11 @@ export class Passkey {
 										attestation: "none",
 									} satisfies PublicKeyCredentialCreationOptionsJSON,
 									// action
-									Auth.action.register,
+									route.pathname(),
+									"create",
 								),
-							),
+							);
+						},
 					}),
 					Passkey.#NoScript,
 				],
@@ -342,23 +327,21 @@ export class Passkey {
 	 * The options are signed and embedded directly in the client script.
 	 * The signature is verified during credential assertion to prevent tampering.
 	 *
-	 * @returns A form component for passkey login
+	 * @param route Route to handle the login
+	 * @returns `<Login />` component for passkey login
 	 */
-	get(): Passkey.Form {
+	get(route: Route.Post): Passkey.Form {
 		return (props) => {
-			const challenge = Passkey.#newChallenge();
-
-			return jsx("form", {
-				action: Auth.action.login,
-				method: "post",
-				enctype: Mime.multipartFormData,
+			return route.Form({
 				...props,
 				children: [
-					props.children,
+					props.children ?? jsx("button", { children: "Log in" }),
 					jsx("script", {
 						type: "module",
-						children: async () =>
-							Render.html(
+						children: async () => {
+							const challenge = Passkey.#newChallenge();
+
+							return Render.html(
 								Passkey.#script(
 									// signed
 									await this.#auth.sign(
@@ -373,9 +356,11 @@ export class Passkey {
 										timeout: 300000,
 										userVerification: "required",
 									} satisfies PublicKeyCredentialRequestOptionsJSON,
-									Auth.action.login,
+									route.pathname(),
+									"get",
 								),
-							),
+							);
+						},
 					}),
 					Passkey.#NoScript,
 				],
@@ -387,24 +372,24 @@ export class Passkey {
 		return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
 	}
 
-	static #ClientData = S.object({
-		type: S.string(),
-		challenge: S.string(),
-		origin: S.string(),
+	static #ClientData = Schema.object({
+		type: Schema.string(),
+		challenge: Schema.string(),
+		origin: Schema.string(),
 	});
-	static #Credential = S.object({
-		type: S.string("public-key"),
-		id: S.string(),
-		rawId: S.string(),
+	static Credential = Schema.object({
+		type: Schema.literal("public-key"),
+		id: Schema.string(),
+		rawId: Schema.string(),
 	});
-	static #Response = S.object({ clientDataJSON: S.string() });
-	static RegistrationCredential = Passkey.#Credential.extend({
-		response: Passkey.#Response.extend({ attestationObject: S.string() }),
+	static #Response = Schema.object({ clientDataJSON: Schema.string() });
+	static RegistrationCredential = Passkey.Credential.extend({
+		response: Passkey.#Response.extend({ attestationObject: Schema.string() }),
 	});
-	static AuthenticationCredential = Passkey.#Credential.extend({
+	static AuthenticationCredential = Passkey.Credential.extend({
 		response: Passkey.#Response.extend({
-			authenticatorData: S.string(),
-			signature: S.string(),
+			authenticatorData: Schema.string(),
+			signature: Schema.string(),
 		}),
 	});
 
@@ -424,6 +409,24 @@ export class Passkey {
 		return result === 0;
 	}
 
+	static #FormData = Schema.object({
+		credential: Passkey.Credential,
+		signed: Schema.string(),
+	});
+
+	/**
+	 * @param c - Request context
+	 * @returns Object with credential and options, or null if invalid
+	 */
+	async #parseForm() {
+		const data = await this.#c.form().data();
+
+		return Passkey.#FormData.parse({
+			credential: JSON.parse(Schema.string().parse(data.get("credential"))),
+			signed: data.get("signed"),
+		});
+	}
+
 	/**
 	 * Common credential verification logic shared by verify() and assert().
 	 *
@@ -440,8 +443,8 @@ export class Passkey {
 	>(
 		ceremony: C,
 		credential:
-			| S.Infer<typeof Passkey.RegistrationCredential>
-			| S.Infer<typeof Passkey.AuthenticationCredential>,
+			| Schema.Infer<typeof Passkey.RegistrationCredential>
+			| Schema.Infer<typeof Passkey.AuthenticationCredential>,
 		signed: string,
 	) {
 		const clientData = Passkey.#ClientData.parse(
@@ -495,16 +498,13 @@ export class Passkey {
 	/**
 	 * Verify a registration response and return credential data to store.
 	 *
-	 * @param credential Registration credential response from authenticator - untrusted
-	 * @param signed Signed options string from form submission
 	 * @returns Verified credential
 	 * @throws TypeError if credential is not a valid credential
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or credential data missing
 	 */
-	async verify(
-		credential: unknown,
-		signed: string,
-	): Promise<Passkey.Credential> {
+	async verify(): Promise<Auth.Credential> {
+		const { credential, signed } = await this.#parseForm();
+
 		const parsed = Passkey.RegistrationCredential.parse(credential);
 
 		const options = await this.#verifyCredentialBase("create", parsed, signed);
@@ -536,19 +536,29 @@ export class Passkey {
 	 * Signature counter is not validated. This is safe because the implementation assume
 	 * platform-bound credentials and does not support discoverable/resident keys.
 	 *
-	 * @param credential - Authentication credential response from authenticator - untrusted
-	 * @param signed - Signed options string from form submission
-	 * @param stored - Stored credential data from database
+	 * @param find - Stored credential data from database
 	 * @returns Authentication assertion result containing credential ID and user ID
 	 * @throws TypeError if credential is not a valid credential
 	 * @throws Error if challenge expired, RP ID mismatch, user not present, or signature invalid
 	 */
 	async assert(
-		credential: unknown,
-		signed: string,
-		stored: Passkey.Credential,
+		find: (
+			id: Auth.Credential["id"],
+		) =>
+			| Promise<Auth.Credential | null | undefined>
+			| Auth.Credential
+			| null
+			| undefined,
 	) {
+		const { credential, signed } = await this.#parseForm();
+
 		const parsed = Passkey.AuthenticationCredential.parse(credential);
+
+		const stored = await find(parsed.id);
+
+		if (!stored) {
+			throw new Error("Credential not found");
+		}
 
 		await this.#verifyCredentialBase("get", parsed, signed);
 

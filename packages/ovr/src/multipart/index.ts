@@ -197,6 +197,9 @@ export class Multipart extends Request {
 	/** Total bytes read from the stream */
 	#payloadSize = 0;
 
+	/** Cached form data so users can call `data` multiple times */
+	#formData?: FormData;
+
 	/**
 	 * Split a multipart request into parts.
 	 *
@@ -460,25 +463,27 @@ export class Multipart extends Request {
 	 * @returns Buffered `FormData`
 	 */
 	async data() {
-		const data = new FormData();
+		if (!this.#formData) {
+			this.#formData = new FormData();
 
-		for await (const part of this) {
-			if (part.name) {
-				let value: string | File;
+			for await (const part of this) {
+				if (part.name) {
+					let value: string | File;
 
-				if (part.filename || part.type === Mime.stream) {
-					const blob = await part.blob();
-					value = new File([blob], part.filename ?? "blob", {
-						type: blob.type,
-					});
-				} else {
-					value = await part.text();
+					if (part.filename || part.type === Mime.stream) {
+						const blob = await part.blob();
+						value = new File([blob], part.filename ?? "blob", {
+							type: blob.type,
+						});
+					} else {
+						value = await part.text();
+					}
+
+					this.#formData.append(part.name, value);
 				}
-
-				data.append(part.name, value);
 			}
 		}
 
-		return data;
+		return this.#formData;
 	}
 }

@@ -1,17 +1,11 @@
-import { users } from "@/server/+app";
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { type JSX, type Middleware, Render, Route } from "ovr";
+import { type Auth, type JSX, type Middleware, Render, Route } from "ovr";
+import * as z from "zod";
 
-/** Stored credential data */
-type StoredCredential = { id: string; publicKey: string };
-
-/** Get all credentials for a user */
-const getUserCredentials = (id: string): StoredCredential[] => {
-	const user = users.values().find((u) => u.id === id);
-	return user?.credentials ?? [];
-};
+const users: { id: string; email: string }[] = [];
+const credentials: Auth.Credential[] = [];
 
 /** Middleware to protect routes - require authentication */
 const withAuth = (
@@ -41,15 +35,8 @@ const withAuth = (
 export const auth = Route.get("/demo/auth", (c) => {
 	const Layout = createLayout(c);
 
-	// Generate passkey forms for both registration and login
-	const id = crypto.randomUUID();
-
-	const Register = c.auth.passkey.create({
-		id,
-		name: `user-${id}`,
-		displayName: "Passkey",
-	});
-	const Login = c.auth.passkey.get();
+	const Register = c.auth.passkey.create(register);
+	const Login = c.auth.passkey.get(login);
 
 	return (
 		<Layout head={<Meta {...content.frontmatter} />}>
@@ -57,17 +44,21 @@ export const auth = Route.get("/demo/auth", (c) => {
 
 			{Render.html(content.html)}
 
-			<div class="mb-4 flex gap-2">
-				<Register>
-					<button>Create passkey</button>
-				</Register>
+			<div class="mt-24 flex justify-center">
+				<div class="border-secondary grid max-w-3xs rounded-md border p-4">
+					<Register class="grid gap-4">
+						<div>
+							<label for="email">Email</label>
+							<input type="email" name="email" />
+						</div>
+						<button class="secondary">Register</button>
+					</Register>
 
-				<Login>
-					<button class="secondary">Sign in</button>
-				</Login>
+					<hr class="my-4" />
+
+					<Login class="grid" />
+				</div>
 			</div>
-
-			<admin.Anchor>Admin</admin.Anchor>
 		</Layout>
 	);
 });
@@ -75,14 +66,16 @@ export const auth = Route.get("/demo/auth", (c) => {
 /** Logout - clear session */
 export const logout = Route.post((c) => {
 	c.auth.logout();
-	c.redirect(auth.url(), 303);
+	c.redirect(auth, 303);
 });
 
 /** Admin page - show user ID and credentials */
 export const admin = Route.get(
 	"/admin",
 	withAuth((c, session) => {
-		const credentials = getUserCredentials(session.id);
+		const user = users.find((u) => u.id === session.id)!;
+		const userCredentials = credentials.filter((c) => c.user === user.id);
+
 		const Layout = createLayout(c);
 
 		return (
@@ -91,22 +84,24 @@ export const admin = Route.get(
 					return (
 						<>
 							<h1>Admin</h1>
-							<p>User ID: {session.id}</p>
 
-							{credentials.length > 0 && (
-								<>
-									<h2>Registered credentials</h2>
-									<ul>
-										{credentials.map((cred) => (
-											<li key={cred.id}>{cred.id}</li>
-										))}
-									</ul>
-								</>
-							)}
+							<p>Hello, {user.email}</p>
 
-							<form>
-								<logout.Button>Logout</logout.Button>
-							</form>
+							<h2>Session</h2>
+							<pre>
+								<code>{JSON.stringify(session, null, 4)}</code>
+							</pre>
+
+							<h2>Registered credentials</h2>
+							<ul>
+								{userCredentials.map((c) => (
+									<li key={c.id}>{c.id}</li>
+								))}
+							</ul>
+
+							<logout.Form>
+								<button>Logout</button>
+							</logout.Form>
 						</>
 					);
 				}}
@@ -114,3 +109,32 @@ export const admin = Route.get(
 		);
 	}),
 );
+
+export const register = Route.post(async (c) => {
+	const data = await c.form().data();
+	const email = z.email().parse(data.get("email"));
+
+	const credential = await c.auth.passkey.verify();
+	credentials.push(credential);
+
+	let user = users.find((u) => u.id === credential.user);
+
+	if (!user) {
+		user = { email, id: credential.user };
+		users.push(user);
+	}
+
+	await c.auth.login(user.id);
+
+	c.redirect(admin, 303);
+});
+
+export const login = Route.post(async (c) => {
+	const credential = await c.auth.passkey.assert((id) =>
+		credentials.find((c) => id === c.id),
+	);
+
+	await c.auth.login(credential.user);
+
+	c.redirect(admin, 303);
+});

@@ -10,40 +10,7 @@ import * as o from "ovr";
 
 if (!process.env.AUTH_SECRET) throw new Error("No auth secret set");
 
-/** Stored credential data */
-type Credential = { id: string; publicKey: string };
-
-/** User with passkey credentials */
-type User = { id: string; credentials: Credential[] };
-
-/** In-memory user store (demo only) */
-export const users = new Set<User>();
-
-const app = new o.App({
-	auth: {
-		secret: process.env.AUTH_SECRET,
-		redirect: { register: "/admin", login: "/admin" },
-		credential: {
-			store(result) {
-				// Create user if doesn't exist
-				let user = users.values().find((u) => u.id === result.user);
-				if (!user) {
-					user = { id: result.user, credentials: [] };
-					users.add(user);
-				}
-				// Store credential
-				user.credentials.push({ id: result.id, publicKey: result.publicKey });
-			},
-			get(credentialId) {
-				for (const user of users) {
-					const cred = user.credentials.find((c) => c.id === credentialId);
-					if (cred) return { ...cred, user: user.id };
-				}
-				return null;
-			},
-		},
-	},
-});
+const app = new o.App({ auth: { secret: process.env.AUTH_SECRET } });
 
 app.use(redirect, notFound, home, docs, demo, seo);
 

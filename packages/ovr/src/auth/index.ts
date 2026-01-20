@@ -1,6 +1,4 @@
 import type { Context } from "../context/index.js";
-import { Route } from "../route/index.js";
-import { S } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
 import { Passkey } from "./passkey.js";
 
@@ -22,36 +20,6 @@ export namespace Auth {
 		 * @default duration / 4
 		 */
 		readonly refresh?: number;
-
-		/** Redirect URLs after authentication */
-		readonly redirect: {
-			/** URL to redirect to after successful registration */
-			readonly register: string | URL;
-
-			/** URL to redirect to after successful login */
-			readonly login: string | URL;
-		};
-
-		/** Credential storage and lookup callbacks */
-		readonly credential: {
-			/**
-			 * Called after successful registration to store the credential.
-			 * The credential data should be persisted for login verification.
-			 *
-			 * @param credential - Registration credential containing id, publicKey, and id
-			 */
-			readonly store: (credential: Passkey.Credential) => Promise<void> | void;
-
-			/**
-			 * Lookup a stored credential by ID for login verification.
-			 *
-			 * @param id - The credential ID from the authenticator
-			 * @returns The stored credential with id, or null if not found
-			 */
-			readonly get: (
-				id: string,
-			) => Promise<Passkey.Credential | null> | Passkey.Credential | null;
-		};
 	}
 
 	export interface Session {
@@ -60,6 +28,18 @@ export namespace Auth {
 
 		/** Session expiration time */
 		readonly expiration: number;
+	}
+
+	/** Stored credential data */
+	export interface Credential {
+		/** Credential ID */
+		id: string;
+
+		/** Associated user ID */
+		user: string;
+
+		/** SPKI encoded public key as base64url */
+		publicKey: string;
 	}
 }
 
@@ -71,12 +51,6 @@ export class Auth {
 	static readonly #keys = new Map<string, Promise<CryptoKey>>();
 	static readonly #cookieName = "__Host-auth-session";
 	static readonly #hmac = "HMAC";
-
-	/** Route actions */
-	static readonly action = {
-		register: "/_auth/register",
-		login: "/_auth/login",
-	} as const;
 
 	/** Request context */
 	readonly #c: Context;
@@ -99,7 +73,7 @@ export class Auth {
 			{
 				duration: Time.week,
 				refresh: (options.duration ?? Time.week) / 4,
-			} satisfies Omit<Auth.Options, "secret" | "redirect" | "credential">,
+			} satisfies Pick<Auth.Options, "duration" | "refresh">,
 			options,
 		);
 		this.passkey = new Passkey(c, this);
@@ -238,62 +212,5 @@ export class Auth {
 	/** Logs out the user by expiring the session cookie */
 	logout() {
 		return this.#setCookie(null);
-	}
-
-	static #FormData = S.object({
-		credential: S.object({ id: S.string() }),
-		signed: S.string(),
-	});
-
-	/**
-	 * @param c - Request context
-	 * @returns Object with credential and options, or null if invalid
-	 */
-	static async #parseForm(c: Context) {
-		const data = await c.form().data();
-
-		return Auth.#FormData.parse({
-			credential: JSON.parse(S.string().parse(data.get("credential"))),
-			signed: data.get("signed"),
-		});
-	}
-
-	/**
-	 * @param options - Auth options with redirect configuration
-	 * @returns Routes for passkey registration and login
-	 */
-	static routes(options: Auth.Options) {
-		return [
-			Route.post(Auth.action.register, async (c) => {
-				const form = await Auth.#parseForm(c);
-
-				const verification = await c.auth.passkey.verify(
-					form.credential,
-					form.signed,
-				);
-
-				// user callback to store the credential
-				await options.credential.store(verification);
-				await c.auth.login(verification.user);
-
-				c.redirect(options.redirect.register, 303);
-			}),
-			Route.post(Auth.action.login, async (c) => {
-				const form = await Auth.#parseForm(c);
-
-				// user callback to get the stored credential
-				const stored = await options.credential.get(form.credential.id);
-				if (!stored) throw new Error("Credential not found");
-
-				const verified = await c.auth.passkey.assert(
-					form.credential,
-					form.signed,
-					stored,
-				);
-				await c.auth.login(verified.user);
-
-				c.redirect(options.redirect.login, 303);
-			}),
-		];
 	}
 }
