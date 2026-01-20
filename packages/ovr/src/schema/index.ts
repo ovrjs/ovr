@@ -48,7 +48,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		constructor(message: string, path: Schema.Path = []) {
 			super(message);
-			this.name = "S.Error";
+			this.name = "Schema.Error";
 			this.path = path;
 		}
 	};
