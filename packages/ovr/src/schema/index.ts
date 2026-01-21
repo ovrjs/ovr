@@ -27,6 +27,13 @@ export namespace Schema {
 		readonly shape: S;
 		extend<E extends Shape>(extra: E): Object<Merge<S, E>>;
 	};
+
+	export type Derived<From, Output> =
+		From extends Field<unknown>
+			? Field<Output>
+			: From extends Schema<unknown, infer Input>
+				? Schema<Output, Input>
+				: never;
 }
 
 /**
@@ -94,9 +101,16 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		this.parse = (value, path = []) => parse(value, path);
 	}
 
+	/** Create a new schema */
+	create<NextOutput>(parse: Schema.Parse<NextOutput>) {
+		return new Schema<NextOutput, Input>(parse);
+	}
+
 	/** Optional schema */
-	optional() {
-		return new Schema<Output | undefined, Input>((v, path) => {
+	optional(this: Field<Output>): Field<Output | undefined>;
+	optional(this: Schema<Output, Input>): Schema<Output | undefined, Input>;
+	optional(this: Schema<Output, Input>) {
+		return this.create((v, path) => {
 			if (v === undefined) return v;
 			return this.parse(v, path);
 		});
@@ -107,8 +121,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 *
 	 * @param value Default value to use when input is undefined
 	 */
-	default(value: Output) {
-		return new Schema<Output, Input>((v, path) => {
+	default(this: Field<Output>, value: Output): Field<Output>;
+	default(this: Schema<Output, Input>, value: Output): Schema<Output, Input>;
+	default(this: Schema<Output, Input>, value: Output) {
+		return this.create((v, path) => {
 			if (v === undefined) return value;
 			return this.parse(v, path);
 		});
@@ -123,8 +139,19 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 *
 	 * @param fn Transform function to apply to parsed output
 	 */
-	transform<NextOutput>(fn: (value: Output) => NextOutput) {
-		return new Schema<NextOutput, Input>((v, path) => fn(this.parse(v, path)));
+	transform<NextOutput>(
+		this: Field<Output>,
+		fn: (value: Output) => NextOutput,
+	): Field<NextOutput>;
+	transform<NextOutput>(
+		this: Schema<Output, Input>,
+		fn: (value: Output) => NextOutput,
+	): Schema<NextOutput, Input>;
+	transform<NextOutput>(
+		this: Schema<Output, Input>,
+		fn: (value: Output) => NextOutput,
+	) {
+		return this.create((v, path) => fn(this.parse(v, path)));
 	}
 
 	/**
@@ -135,10 +162,19 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 *
 	 * @param next Schema to validate the result with
 	 */
-	pipe<NextOutput>(next: Schema<NextOutput, unknown>) {
-		return new Schema<NextOutput, Input>((v, path) =>
-			next.parse(this.parse(v, path), path),
-		);
+	pipe<NextOutput>(
+		this: Field<Output>,
+		next: Schema<NextOutput, unknown>,
+	): Field<NextOutput>;
+	pipe<NextOutput>(
+		this: Schema<Output, Input>,
+		next: Schema<NextOutput, unknown>,
+	): Schema<NextOutput, Input>;
+	pipe<NextOutput>(
+		this: Schema<Output, Input>,
+		next: Schema<NextOutput, unknown>,
+	) {
+		return this.create((v, path) => next.parse(this.parse(v, path), path));
 	}
 
 	/**
@@ -150,8 +186,22 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param check Validation function that returns false to fail
 	 * @param message Error message when validation fails
 	 */
-	refine(check: (value: Output) => boolean, message: string) {
-		return new Schema<Output, Input>((v, path) => {
+	refine(
+		this: Field<Output>,
+		check: (value: Output) => boolean,
+		message: string,
+	): Field<Output>;
+	refine(
+		this: Schema<Output, Input>,
+		check: (value: Output) => boolean,
+		message: string,
+	): Schema<Output, Input>;
+	refine(
+		this: Schema<Output, Input>,
+		check: (value: Output) => boolean,
+		message: string,
+	) {
+		return this.create((v, path) => {
 			const out = this.parse(v, path);
 			if (!check(out)) throw new Schema.Error(message, path);
 			return out;
@@ -204,7 +254,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 	/** Number schema */
 	static number() {
-		return new Schema<number, unknown>((v, path) => {
+		return new Schema((v, path) => {
 			if (typeof v !== "number" || Number.isNaN(v)) {
 				throw new Schema.Error("Expected number", path);
 			}
@@ -224,7 +274,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * Accepts only valid `Date` instances. Rejects invalid dates.
 	 */
 	static date() {
-		return new Schema<Date, unknown>((v, path) => {
+		return new Schema((v, path) => {
 			if (
 				!(v instanceof Date) ||
 				// ex: new Date("nope")
@@ -243,7 +293,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param literal Exact value to match
 	 */
 	static literal<const Literal>(literal: Literal) {
-		return new Schema<Literal, unknown>((v, path) => {
+		return new Schema((v, path) => {
 			if (v !== literal) {
 				throw new Schema.Error(`Expected ${JSON.stringify(literal)}`, path);
 			}
@@ -267,7 +317,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	static enum<const Allowed extends readonly [unknown, ...unknown[]]>(
 		allowed: Allowed,
 	) {
-		return new Schema<Allowed[number], unknown>((v, path) => {
+		return new Schema((v, path) => {
 			for (const a of allowed) {
 				if (v === a) return a as Allowed[number];
 			}
@@ -293,7 +343,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 			...Schema<unknown, unknown>[],
 		],
 	>(schemas: Schemas) {
-		return new Schema<Schema.Infer<Schemas[number]>, unknown>((v, path) => {
+		return new Schema((v, path) => {
 			for (const schema of schemas) {
 				try {
 					return schema.parse(v, path) as Schema.Infer<Schemas[number]>;
@@ -314,7 +364,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param inner Schema to validate the parsed JSON with
 	 */
 	static json<InnerOutput>(inner: Schema<InnerOutput, unknown>) {
-		return new Schema<InnerOutput, unknown>((v, path) => {
+		return new Schema((v, path) => {
 			let parsed: unknown;
 
 			try {
@@ -335,7 +385,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * For optional file inputs, use `Schema.file().optional()`.
 	 */
 	static file() {
-		return new Schema<File, unknown>((v, path) => {
+		return new Schema((v, path) => {
 			if (!(v instanceof File)) {
 				throw new Schema.Error("Expected file", path);
 			}
@@ -353,7 +403,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param item Schema for each array item
 	 */
 	static array<ItemOutput>(item: Schema<ItemOutput, unknown>) {
-		return new Schema<ItemOutput[], unknown>((v, path) => {
+		return new Schema((v, path) => {
 			if (v === undefined) return [];
 
 			if (!Array.isArray(v)) {
@@ -368,26 +418,22 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	static coerce = class {
 		/** Coerce to string using `String(value)`. */
 		static string() {
-			return new Schema<string, unknown>((v, path) =>
-				Schema.string().parse(String(v), path),
-			);
+			return new Schema((v, path) => Schema.string().parse(String(v), path));
 		}
 
 		/** Coerce to number using `Number(value)`. */
 		static number() {
-			return new Schema<number, unknown>((v, path) =>
-				Schema.number().parse(Number(v), path),
-			);
+			return new Schema((v, path) => Schema.number().parse(Number(v), path));
 		}
 
 		/** Coerce to boolean using `Boolean(value)`. */
 		static boolean() {
-			return new Schema<boolean, unknown>((v) => Boolean(v));
+			return new Schema((v) => Boolean(v));
 		}
 
 		/** Coerce to Date using `new Date(value)`. Rejects invalid dates. */
 		static date() {
-			return new Schema<Date, unknown>((v, path) =>
+			return new Schema((v, path) =>
 				Schema.date().parse(new Date(String(v)), path),
 			);
 		}
@@ -403,10 +449,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 */
 	static object<const Shape extends Schema.Shape>(shape: Shape) {
 		return new Obj(shape);
-	}
-
-	static form(fields: Form.Shape) {
-		return new Form(fields);
 	}
 }
 
@@ -452,12 +494,13 @@ class Obj<const Shape extends Schema.Shape> extends Schema<
 	 */
 	extend<const Extra extends Schema.Shape>(
 		extra: Extra,
-	): Schema.Object<Schema.Merge<Shape, Extra>> {
+	): // return type required
+	Schema.Object<Schema.Merge<Shape, Extra>> {
 		return Schema.object({ ...this.shape, ...extra });
 	}
 }
 
-namespace Field {
+export namespace Field {
 	export type Read = (data: FormData, name: string) => unknown;
 
 	export interface Options extends Form.Options {
@@ -486,7 +529,7 @@ namespace Field {
 }
 
 /** Represents a form field with parsing logic and rendering metadata. */
-class Field<Output> extends Schema<Output> {
+export class Field<Output> extends Schema<Output> {
 	/** Read the value from form data */
 	readonly read: Field.Read;
 
@@ -510,20 +553,8 @@ class Field<Output> extends Schema<Output> {
 			});
 	}
 
-	/** Make this field optional. */
-	override optional(): Field<Output | undefined> {
-		return new Field(this.options, (v, path) => {
-			if (v === undefined) return v;
-			return this.parse(v, path);
-		});
-	}
-
-	/** Provide a default value when undefined. */
-	override default(value: Output): Field<Output> {
-		return new Field(this.options, (v, path) => {
-			if (v === undefined) return value;
-			return this.parse(v, path);
-		});
+	override create<NextOutput>(parse: Schema.Parse<NextOutput>) {
+		return new Field<NextOutput>(this.options, parse, this.read);
 	}
 
 	/**
@@ -565,7 +596,7 @@ class Field<Output> extends Schema<Output> {
 	}
 }
 
-namespace Form {
+export namespace Form {
 	/** Form field shape. */
 	export type Shape = Record<string, Field<unknown>>;
 
@@ -601,7 +632,7 @@ namespace Form {
  * <User.Field name="username" />
  * ```
  */
-class Form<Shape extends Form.Shape> {
+export class Form<Shape extends Form.Shape> {
 	/** Field definitions. */
 	readonly fields: Shape;
 
