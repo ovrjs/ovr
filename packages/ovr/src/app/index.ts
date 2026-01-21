@@ -92,7 +92,7 @@ export class App {
 		for (const route of routes) {
 			if (route instanceof Route) {
 				this.#trie.add(route);
-			} else if (route instanceof Array) {
+			} else if (Array.isArray(route)) {
 				this.use(...route);
 			} else if (typeof route === "function") {
 				this.#global.push(route);
