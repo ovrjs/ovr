@@ -433,13 +433,11 @@ class Obj<const Shape extends Schema.Shape> extends Schema<
 namespace Field {
 	export type Read = (data: FormData, name: string) => unknown;
 
-	export interface Options {
+	export type Options = {
 		/** @default "input" */
-		tag: "input" | "textarea" | "select";
-		label?: string;
+		tag?: "input" | "textarea" | "select";
 		values?: readonly string[];
-		attrs?: Record<string, unknown>;
-	}
+	} & Form.Options.Union;
 }
 
 /** Represents a form field with parsing logic and rendering metadata. */
@@ -450,13 +448,14 @@ class Field<Output> extends Schema<Output> {
 	readonly options: Field.Options;
 
 	constructor(
-		options: Partial<Field.Options>,
+		options: Field.Options,
 		parse: Schema.Parse<Output>,
 		read?: Field.Read,
 	) {
 		super(parse);
 
-		this.options = { tag: "input", ...options };
+		this.options = options;
+
 		this.read =
 			read ??
 			// default to FormData.get
@@ -487,32 +486,30 @@ class Field<Output> extends Schema<Output> {
 	 * @returns JSX Component that renders the HTML field
 	 */
 	render(name: string) {
+		const { tag = "input", label = name, values, ...attrs } = this.options;
+
 		return jsx("div", {
 			children:
-				this.options.attrs?.type === "radio"
+				attrs.type === "radio"
 					? [
-							jsx("span", { children: this.options.label ?? name }),
-							this.options.values?.map((value) =>
+							jsx("span", { children: label }),
+							values?.map((value) =>
 								jsx("label", {
 									children: [
-										jsx(this.options.tag, {
-											name,
-											value,
-											...this.options.attrs,
-										}),
+										jsx(tag, { name, value, ...attrs }),
 										jsx("span", { children: value }),
 									],
 								}),
 							),
 						]
 					: [
-							jsx("label", { for: name, children: this.options.label ?? name }),
-							jsx(this.options.tag, {
+							jsx("label", { for: name, children: label }),
+							jsx(tag, {
 								name,
 								id: name,
-								...this.options.attrs,
-								// select options
-								children: this.options.values?.map((value) =>
+								...attrs,
+								// <select> options
+								children: values?.map((value) =>
 									jsx("option", { value, children: value }),
 								),
 							}),
@@ -543,6 +540,8 @@ namespace Form {
 
 		/** Select/radio field options. */
 		export type Select = Base & JSX.IntrinsicElements["select"];
+
+		export type Union = Input | Textarea | Select;
 	}
 }
 
@@ -631,65 +630,51 @@ class Form<Shape extends Form.Shape> {
 
 	/** Text input field. */
 	static text(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "text";
 
-		attrs.type ??= "text";
-
-		return new Field({ label, attrs }, Schema.string().parse);
+		return new Field(options, Schema.string().parse);
 	}
 
 	/** Email input field. */
 	static email(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "email";
 
-		attrs.type ??= "email";
-
-		return new Field({ label, attrs }, Schema.string().parse);
+		return new Field(options, Schema.string().parse);
 	}
 
 	/** Password input field. */
 	static password(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "password";
 
-		attrs.type ??= "password";
-
-		return new Field({ label, attrs }, Schema.string().parse);
+		return new Field(options, Schema.string().parse);
 	}
 
 	/** URL input field. */
 	static url(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "url";
 
-		attrs.type ??= "url";
-
-		return new Field({ label, attrs }, Schema.string().parse);
+		return new Field(options, Schema.string().parse);
 	}
 
 	/** Hidden input field. */
 	static hidden(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "hidden";
 
-		attrs.type ??= "hidden";
-
-		return new Field({ label, attrs }, Schema.string().parse);
+		return new Field(options, Schema.string().parse);
 	}
 
 	/** Number input field. Coerces strings to numbers. */
 	static number(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "number";
 
-		attrs.type ??= "number";
-
-		return new Field({ label, attrs }, Schema.coerce.number().parse);
+		return new Field(options, Schema.coerce.number().parse);
 	}
 
 	/** Date input field. Coerces strings to Dates. */
 	static date(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "date";
 
-		attrs.type ??= "date";
-
-		return new Field({ label, attrs }, Schema.coerce.date().parse);
+		return new Field(options, Schema.coerce.date().parse);
 	}
 
 	/**
@@ -700,14 +685,10 @@ class Form<Shape extends Form.Shape> {
 	 * - checked => key present => true
 	 */
 	static checkbox(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "checkbox";
 
-		attrs.type ??= "checkbox";
-
-		return new Field(
-			{ label, attrs },
-			Schema.coerce.boolean().parse,
-			(formData, name) => formData.has(name),
+		return new Field(options, Schema.coerce.boolean().parse, (formData, name) =>
+			formData.has(name),
 		);
 	}
 
@@ -716,23 +697,20 @@ class Form<Shape extends Form.Shape> {
 	/** Multiple file input field. */
 	static file(options: Form.Options.Input & { multiple: true }): Field<File[]>;
 	static file(options: Form.Options.Input = {}) {
-		const { label, ...attrs } = options;
+		options.type ??= "file";
 
-		attrs.type ??= "file";
+		let parse: Schema.Parse<File | File[]>;
+		let read: Field.Read;
 
-		if (attrs.multiple) {
-			return new Field<File[]>(
-				{ label, attrs },
-				Schema.array(Schema.file()).parse,
-				(data, name) => data.getAll(name),
-			);
+		if (options.multiple) {
+			parse = Schema.array(Schema.file()).parse;
+			read = (data, name) => data.getAll(name);
+		} else {
+			parse = Schema.file().parse;
+			read = (data, name) => data.get(name);
 		}
 
-		return new Field<File>(
-			{ label, attrs },
-			Schema.file().parse,
-			(data, name) => data.get(name),
-		);
+		return new Field(options, parse, read);
 	}
 
 	/** Radio button group field. */
@@ -740,20 +718,17 @@ class Form<Shape extends Form.Shape> {
 		values: readonly [T, ...T[]],
 		options: Form.Options.Input = {},
 	) {
-		const { label, ...attrs } = options;
+		options.values = values;
+		options.type ??= "radio";
 
-		attrs.type ??= "radio";
-
-		return new Field({ label, values, attrs }, Schema.enum(values).parse);
+		return new Field(options, Schema.enum(values).parse);
 	}
 
 	/** Textarea field. */
 	static textarea(options: Form.Options.Textarea = {}) {
-		const { label, ...attrs } = options;
+		options.tag = "textarea";
 
-		attrs.type ??= "textarea";
-
-		return new Field({ tag: "textarea", label, attrs }, Schema.string().parse);
+		return new Field(options, Schema.string().parse);
 	}
 
 	/** Select dropdown field. */
@@ -761,11 +736,8 @@ class Form<Shape extends Form.Shape> {
 		values: readonly [T, ...T[]],
 		options: Form.Options.Select = {},
 	) {
-		const { label, ...attrs } = options;
+		options.tag = "select";
 
-		return new Field(
-			{ tag: "select", label, values, attrs },
-			Schema.enum(values).parse,
-		);
+		return new Field(options, Schema.enum(values).parse);
 	}
 }
