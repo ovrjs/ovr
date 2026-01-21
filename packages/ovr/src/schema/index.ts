@@ -639,28 +639,28 @@ class Form<Shape extends Form.Shape> {
 	static email(options: Form.Options.Input = {}) {
 		options.type ??= "email";
 
-		return new Field(options, Schema.string().parse);
+		return this.text(options);
 	}
 
 	/** Password input field. */
 	static password(options: Form.Options.Input = {}) {
 		options.type ??= "password";
 
-		return new Field(options, Schema.string().parse);
+		return this.text(options);
 	}
 
 	/** URL input field. */
 	static url(options: Form.Options.Input = {}) {
 		options.type ??= "url";
 
-		return new Field(options, Schema.string().parse);
+		return this.text(options);
 	}
 
 	/** Hidden input field. */
 	static hidden(options: Form.Options.Input = {}) {
 		options.type ??= "hidden";
 
-		return new Field(options, Schema.string().parse);
+		return this.text(options);
 	}
 
 	/** Number input field. Coerces strings to numbers. */
