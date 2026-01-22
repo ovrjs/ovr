@@ -472,8 +472,8 @@ class Obj<const Shape extends Schema.Shape> extends Schema<
 
 			const out: Record<string, unknown> = {};
 
-			for (const key of Object.keys(shape)) {
-				out[key] = shape[key]!.parse((v as Record<string, unknown>)[key], [
+			for (const [key, schema] of Object.entries(shape)) {
+				out[key] = schema.parse((v as Record<string, unknown>)[key], [
 					...path,
 					key,
 				]);
@@ -656,8 +656,7 @@ export class Form<Shape extends Form.Shape> {
 	parse(data: FormData, path: Schema.Path = []) {
 		const out: Record<string, unknown> = {};
 
-		for (const key of Object.keys(this.fields)) {
-			const schema = this.fields[key]!;
+		for (const [key, schema] of Object.entries(this.fields)) {
 			out[key] = schema.parse(schema.read(data, key), [...path, key]);
 		}
 
