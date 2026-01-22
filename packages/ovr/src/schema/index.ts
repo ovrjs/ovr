@@ -558,10 +558,10 @@ export namespace Field {
 		/** Input `type` attribute value */
 		type?: JSX.IntrinsicElements["input"]["type"];
 
-		/** Values are used for `input[type=radio]`, and `select` elements */
+		/** Values are used for `input[type=radio|checkbox]`, and `select` elements */
 		values?: readonly string[];
 
-		/** Used for multiple file inputs */
+		/** Used for multiple-value inputs */
 		multiple?: boolean;
 	}
 
@@ -636,7 +636,7 @@ export class Field<Output> extends Schema<Output> {
 
 		return jsx("div", {
 			children:
-				type === "radio"
+				type === "radio" || (type === "checkbox" && values)
 					? [
 							jsx("span", { children: label }),
 							values?.map((value) =>
@@ -906,7 +906,7 @@ export class Form<Shape extends Form.Shape> {
 	 * @returns Number input field
 	 */
 	static number(options: Form.Options = {}) {
-		this.#number("number", options);
+		return this.#number("number", options);
 	}
 
 	/**
@@ -916,7 +916,7 @@ export class Form<Shape extends Form.Shape> {
 	 * @returns Range input field
 	 */
 	static range(options: Form.Options = {}) {
-		this.#number("range", options);
+		return this.#number("range", options);
 	}
 
 	/**
@@ -938,25 +938,37 @@ export class Form<Shape extends Form.Shape> {
 	 * @param options Field options
 	 * @returns File input field
 	 */
-	static file(options?: Field.Options): Field<File>;
+	static file(options: Form.Options = {}) {
+		return new Field({ type: "file", ...options }, Schema.file().parse);
+	}
+
 	/**
-	 * @param options Field options with `multiple: true`
+	 * @param options Field options
 	 * @returns Multiple file input field
 	 */
-	static file(options: Form.Options & { multiple: true }): Field<File[]>;
-	static file(options: Form.Options & { multiple?: boolean } = {}) {
-		let parse: Schema.Parse<File | File[]>;
-		let read: Field.Read;
+	static files(options: Form.Options = {}) {
+		return new Field(
+			{ type: "file", multiple: true, ...options },
+			Schema.array(Schema.file()).parse,
+			(formData, name) => formData.getAll(name),
+		);
+	}
 
-		if (options.multiple) {
-			parse = Schema.array(Schema.file()).parse;
-			read = (data, name) => data.getAll(name);
-		} else {
-			parse = Schema.file().parse;
-			read = (data, name) => data.get(name);
-		}
-
-		return new Field({ type: "file", ...options }, parse, read);
+	/**
+	 * @template V Value type
+	 * @param values Checkbox values
+	 * @param options Field options
+	 * @returns Checkbox group input field
+	 */
+	static checkboxes<const V extends string>(
+		values: readonly [V, ...V[]],
+		options: Form.Options = {},
+	) {
+		return new Field(
+			{ type: "checkbox", values, ...options },
+			Schema.array(Schema.enum(values)).parse,
+			(formData, name) => formData.getAll(name),
+		);
 	}
 
 	/**
@@ -981,6 +993,23 @@ export class Form<Shape extends Form.Shape> {
 	 */
 	static textarea(options: Form.Options = {}) {
 		return new Field({ tag: "textarea", ...options }, Schema.string().parse);
+	}
+
+	/**
+	 * @template V Value type
+	 * @param values Select options
+	 * @param options Field options
+	 * @returns Multi-select field
+	 */
+	static multiselect<const V extends string>(
+		values: readonly [V, ...V[]],
+		options: Form.Options = {},
+	) {
+		return new Field(
+			{ tag: "select", values, multiple: true, ...options },
+			Schema.array(Schema.enum(values)).parse,
+			(formData, name) => formData.getAll(name),
+		);
 	}
 
 	/**
