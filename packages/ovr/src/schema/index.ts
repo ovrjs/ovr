@@ -800,6 +800,30 @@ export class Form<Shape extends Form.Shape> {
 
 	/**
 	 * @param options Field options
+	 * @returns Search input field
+	 */
+	static search(options: Form.Options = {}) {
+		return this.#input("search", options);
+	}
+
+	/**
+	 * @param options Field options
+	 * @returns Telephone input field
+	 */
+	static tel(options: Form.Options = {}) {
+		return this.#input("tel", options);
+	}
+
+	/**
+	 * @param options Field options
+	 * @returns Color input field
+	 */
+	static color(options: Form.Options = {}) {
+		return this.#input("color", options);
+	}
+
+	/**
+	 * @param options Field options
 	 * @returns Hidden input field
 	 */
 	static hidden(options: Form.Options = {}) {
@@ -808,6 +832,48 @@ export class Form<Shape extends Form.Shape> {
 
 	/**
 	 * @param options Field options
+	 * @returns Date input field
+	 */
+	static date(options: Form.Options = {}) {
+		return this.#input("date", options);
+	}
+
+	/**
+	 * @param options Field options
+	 * @returns Datetime input field
+	 */
+	static datetime(options: Form.Options = {}) {
+		return this.#input("datetime-local", options);
+	}
+
+	/**
+	 * @param options Field options
+	 * @returns Month input field
+	 */
+	static month(options: Form.Options = {}) {
+		return this.#input("month", options);
+	}
+
+	/**
+	 * @param options Field options
+	 * @returns Week input field
+	 */
+	static week(options: Form.Options = {}) {
+		return this.#input("week", options);
+	}
+
+	/**
+	 * @param options Field options
+	 * @returns Time input field
+	 */
+	static time(options: Form.Options = {}) {
+		return this.#input("time", options);
+	}
+
+	/**
+	 * Validates email string.
+	 *
+	 * @param options Field options
 	 * @returns Email input field
 	 */
 	static email(options: Form.Options = {}) {
@@ -815,6 +881,8 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/**
+	 * Validates parsable URL.
+	 *
 	 * @param options Field options
 	 * @returns URL input field
 	 */
@@ -823,39 +891,32 @@ export class Form<Shape extends Form.Shape> {
 	}
 
 	/**
-	 * Coerces strings to numbers.
+	 * @param type Type attribute value
+	 * @param options Field options
+	 * @returns Input field
+	 */
+	static #number(type: "number" | "range", options: Form.Options = {}) {
+		return new Field({ type, ...options }, Schema.coerce.number().parse);
+	}
+
+	/**
+	 * Coerces to number.
 	 *
 	 * @param options Field options
 	 * @returns Number input field
 	 */
 	static number(options: Form.Options = {}) {
-		return new Field(
-			{ type: "number", ...options },
-			Schema.coerce.number().parse,
-		);
+		this.#number("number", options);
 	}
 
 	/**
-	 * Coerces strings to numbers.
+	 * Coerces to number.
 	 *
 	 * @param options Field options
 	 * @returns Range input field
 	 */
 	static range(options: Form.Options = {}) {
-		return new Field(
-			{ type: "range", ...options },
-			Schema.coerce.number().parse,
-		);
-	}
-
-	/**
-	 * Coerces strings to Dates.
-	 *
-	 * @param options Field options
-	 * @returns Date input field
-	 */
-	static date(options: Form.Options = {}) {
-		return new Field({ type: "date", ...options }, Schema.coerce.date().parse);
+		this.#number("range", options);
 	}
 
 	/**
