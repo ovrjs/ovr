@@ -44,6 +44,23 @@ export namespace Schema {
 		readonly shape: S;
 		extend<E extends Shape>(extra: E): Object<Merge<S, E>>;
 	};
+
+	export namespace Form {
+		export type Instance<Shape extends Form.Shape> = InstanceType<
+			typeof Form<Shape>
+		>;
+		/** Form field shape. */
+		export type Shape = Record<string, Field<unknown>>;
+
+		/**
+		 * Infer Output type of a form shape.
+		 *
+		 * @template S Shape type
+		 */
+		export type Infer<S extends Shape> = {
+			[K in keyof S]: S[K] extends Field<infer O> ? O : never;
+		};
+	}
 }
 
 /**
@@ -437,8 +454,50 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		});
 	}
 
+	/**
+	 * Validates each key in the shape and returns a new object of parsed outputs.
+	 * Missing keys are passed as `undefined` so `.optional()` / `.default()` work.
+	 *
+	 * @template S Shape type
+	 * @param shape Object shape with schemas for each key
+	 * @returns Object schema
+	 */
+	static object<const S extends Schema.Shape>(shape: S) {
+		return new ObjectSchema(shape);
+	}
+
+	/**
+	 * Form schema with JSX rendering capabilities.
+	 *
+	 * Parses `FormData` and generates form field components.
+	 *
+	 * @template Shape Form field shape type
+	 * @param fields Form fields
+	 * @example
+	 *
+	 * ```tsx
+	 * const User = Schema.form({
+	 *   username: Schema.Field.text({ label: "Username" }),
+	 *   admin: Schema.Field.checkbox(),
+	 *   age: Schema.Field.number(),
+	 * })
+	 *
+	 * // parse FormData
+	 * const data = User.parse(formData)
+	 *
+	 * // render fields
+	 * <User.Fieldset />
+	 * <User.Field name="username" />
+	 * ```
+	 */
+	static form<Shape extends Schema.Form.Shape>(
+		fields: Shape,
+	): Schema.Form.Instance<Shape> {
+		return new Form(fields);
+	}
+
 	/** Coercion schemas that apply JavaScript type coercion before validation. */
-	static coerce = class {
+	static Coerce = class {
 		/**
 		 * Coerce to string using `String(value)`.
 		 *
@@ -478,17 +537,268 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		}
 	};
 
-	/**
-	 * Validates each key in the shape and returns a new object of parsed outputs.
-	 * Missing keys are passed as `undefined` so `.optional()` / `.default()` work.
-	 *
-	 * @template S Shape type
-	 * @param shape Object shape with schemas for each key
-	 * @returns Object schema
-	 */
-	static object<const S extends Schema.Shape>(shape: S) {
-		return new Obj(shape);
-	}
+	static Field = class {
+		/**
+		 * @param type Type attribute value
+		 * @param options Field options
+		 * @returns Generic input field
+		 */
+		static #input(
+			type: JSX.IntrinsicElements["input"]["type"],
+			options: Field.Options = {},
+		) {
+			return new Field({ type, ...options }, Schema.string().parse);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Text input field
+		 */
+		static text(options: Field.Options = {}) {
+			return Schema.Field.#input("text", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Password input field
+		 */
+		static password(options: Field.Options = {}) {
+			return Schema.Field.#input("password", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Search input field
+		 */
+		static search(options: Field.Options = {}) {
+			return Schema.Field.#input("search", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Telephone input field
+		 */
+		static tel(options: Field.Options = {}) {
+			return Schema.Field.#input("tel", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Color input field
+		 */
+		static color(options: Field.Options = {}) {
+			return Schema.Field.#input("color", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Hidden input field
+		 */
+		static hidden(options: Field.Options = {}) {
+			return Schema.Field.#input("hidden", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Date input field
+		 */
+		static date(options: Field.Options = {}) {
+			return new Field(
+				{ type: "date", ...options },
+				Schema.Coerce.date().parse,
+			);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Datetime input field
+		 */
+		static datetime(options: Field.Options = {}) {
+			return Schema.Field.#input("datetime-local", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Month input field
+		 */
+		static month(options: Field.Options = {}) {
+			return Schema.Field.#input("month", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Week input field
+		 */
+		static week(options: Field.Options = {}) {
+			return Schema.Field.#input("week", options);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Time input field
+		 */
+		static time(options: Field.Options = {}) {
+			return Schema.Field.#input("time", options);
+		}
+
+		/**
+		 * Validates email string.
+		 *
+		 * @param options Field options
+		 * @returns Email input field
+		 */
+		static email(options: Field.Options = {}) {
+			return new Field({ type: "email", ...options }, Schema.email().parse);
+		}
+
+		/**
+		 * Validates parsable URL.
+		 *
+		 * @param options Field options
+		 * @returns URL input field
+		 */
+		static url(options: Field.Options = {}) {
+			return new Field({ type: "url", ...options }, Schema.url().parse);
+		}
+
+		/**
+		 * @param type Type attribute value
+		 * @param options Field options
+		 * @returns Input field
+		 */
+		static #number(type: "number" | "range", options: Field.Options = {}) {
+			return new Field({ type, ...options }, Schema.Coerce.number().parse);
+		}
+
+		/**
+		 * Coerces to number.
+		 *
+		 * @param options Field options
+		 * @returns Number input field
+		 */
+		static number(options: Field.Options = {}) {
+			return Schema.Field.#number("number", options);
+		}
+
+		/**
+		 * Coerces to number.
+		 *
+		 * @param options Field options
+		 * @returns Range input field
+		 */
+		static range(options: Field.Options = {}) {
+			return Schema.Field.#number("range", options);
+		}
+
+		/**
+		 * - unchecked => key missing => `false`
+		 * - checked => key present => `true`
+		 *
+		 * @param options Field options
+		 * @returns Checkbox input field
+		 */
+		static checkbox(options: Field.Options = {}) {
+			return new Field(
+				{ type: "checkbox", ...options },
+				Schema.Coerce.boolean().parse,
+				(formData, name) => formData.has(name),
+			);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns File input field
+		 */
+		static file(options: Field.Options = {}) {
+			return new Field({ type: "file", ...options }, Schema.file().parse);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Multiple file input field
+		 */
+		static files(options: Field.Options = {}) {
+			return new Field(
+				{ type: "file", multiple: true, ...options },
+				Schema.array(Schema.file()).parse,
+				(formData, name) => formData.getAll(name),
+			);
+		}
+
+		/**
+		 * @template V Value type
+		 * @param values Checkbox values
+		 * @param options Field options
+		 * @returns Checkbox group input field
+		 */
+		static checkboxes<const V extends string>(
+			values: readonly [V, ...V[]],
+			options: Field.Options = {},
+		) {
+			return new Field(
+				{ type: "checkbox", values, ...options },
+				Schema.array(Schema.enum(values)).parse,
+				(formData, name) => formData.getAll(name),
+			);
+		}
+
+		/**
+		 * @template V Value type
+		 * @param values Radio button values
+		 * @param options Field options
+		 * @returns Radio group input field
+		 */
+		static radio<const V extends string>(
+			values: readonly [V, ...V[]],
+			options: Field.Options = {},
+		) {
+			return new Field(
+				{ type: "radio", values, ...options },
+				Schema.enum(values).parse,
+			);
+		}
+
+		/**
+		 * @param options Field options
+		 * @returns Textarea field
+		 */
+		static textarea(options: Field.Options = {}) {
+			return new Field({ tag: "textarea", ...options }, Schema.string().parse);
+		}
+
+		/**
+		 * @template V Value type
+		 * @param values Select options
+		 * @param options Field options
+		 * @returns Multi-select field
+		 */
+		static multiselect<const V extends string>(
+			values: readonly [V, ...V[]],
+			options: Field.Options = {},
+		) {
+			return new Field(
+				{ tag: "select", values, multiple: true, ...options },
+				Schema.array(Schema.enum(values)).parse,
+				(formData, name) => formData.getAll(name),
+			);
+		}
+
+		/**
+		 * @template V Value type
+		 * @param values Select options
+		 * @param options Field options
+		 * @returns Select field
+		 */
+		static select<const V extends string>(
+			values: readonly [V, ...V[]],
+			options: Field.Options = {},
+		) {
+			return new Field(
+				{ tag: "select", values, ...options },
+				Schema.enum(values).parse,
+			);
+		}
+	};
 }
 
 /**
@@ -496,7 +806,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
  *
  * @template Shape Shape type
  */
-class Obj<const Shape extends Schema.Shape> extends Schema<
+class ObjectSchema<const Shape extends Schema.Shape> extends Schema<
 	Schema.Infer<Shape>,
 	unknown
 > {
@@ -547,7 +857,10 @@ class Obj<const Shape extends Schema.Shape> extends Schema<
 export namespace Field {
 	export type Read = (data: FormData, name: string) => unknown;
 
-	export interface Options extends Form.Options {
+	export interface Options {
+		/** Field label. */
+		label?: string;
+
 		/**
 		 * Tag name.
 		 *
@@ -630,7 +943,7 @@ export class Field<Output> extends Schema<Output> {
 	 * @param props Field props including `name`
 	 * @returns JSX Component that renders the HTML field
 	 */
-	render<S extends Form.Shape>(props: Field.Props<S>) {
+	render<S extends Record<string, Field<unknown>>>(props: Field.Props<S>) {
 		const id = props.id ?? props.name;
 		const { tag = "input", label = id, type, values, multiple } = this.options;
 
@@ -665,49 +978,13 @@ export class Field<Output> extends Schema<Output> {
 	}
 }
 
-export namespace Form {
-	/** Form field shape. */
-	export type Shape = Record<string, Field<unknown>>;
-
-	/**
-	 * Infer Output type of a form shape.
-	 *
-	 * @template S Shape type
-	 */
-	export type Infer<S extends Shape> = {
-		[K in keyof S]: S[K] extends Field<infer O> ? O : never;
-	};
-
-	/** Field option types. */
-	export interface Options {
-		label?: string;
-	}
-}
-
 /**
- * Form schema with JSX rendering capabilities.
- *
- * Parses `FormData` and generates form field components.
+ * Form schema
  *
  * @template Shape Form field shape type
- * @example
- *
- * ```tsx
- * const User = Schema.form({
- *   username: Form.text({ label: "Username" }),
- *   admin: Form.checkbox(),
- *   age: Form.number(),
- * })
- *
- * // parse FormData
- * const data = User.parse(formData)
- *
- * // render fields
- * <User.Fieldset />
- * <User.Field name="username" />
- * ```
  */
-export class Form<Shape extends Form.Shape> {
+class Form<Shape extends Schema.Form.Shape> implements Schema.Form
+	.Instance<Shape> {
 	/** Field definitions. */
 	readonly fields: Shape;
 
@@ -731,11 +1008,12 @@ export class Form<Shape extends Form.Shape> {
 	parse(data: FormData, path: Schema.Path = []) {
 		const out: Record<string, unknown> = {};
 
-		for (const [key, schema] of Object.entries(this.fields)) {
+		for (const key in this.fields) {
+			const schema = this.fields[key]!;
 			out[key] = schema.parse(schema.read(data, key), [...path, key]);
 		}
 
-		return out as Form.Infer<Shape>;
+		return out as Schema.Form.Infer<Shape>;
 	}
 
 	/**
@@ -763,268 +1041,11 @@ export class Form<Shape extends Form.Shape> {
 	Fieldset = (props: JSX.IntrinsicElements["fieldset"] = {}) => {
 		const children = [props.children];
 
-		for (const [name, field] of Object.entries(this.fields)) {
+		for (const name in this.fields) {
+			const field = this.fields[name]!;
 			children.push(field.render({ name }));
 		}
 
 		return jsx("fieldset", { ...props, children });
 	};
-
-	/**
-	 * @param type Type attribute value
-	 * @param options Field options
-	 * @returns Generic input field
-	 */
-	static #input(
-		type: JSX.IntrinsicElements["input"]["type"],
-		options: Form.Options = {},
-	) {
-		return new Field({ type, ...options }, Schema.string().parse);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Text input field
-	 */
-	static text(options: Form.Options = {}) {
-		return this.#input("text", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Password input field
-	 */
-	static password(options: Form.Options = {}) {
-		return this.#input("password", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Search input field
-	 */
-	static search(options: Form.Options = {}) {
-		return this.#input("search", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Telephone input field
-	 */
-	static tel(options: Form.Options = {}) {
-		return this.#input("tel", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Color input field
-	 */
-	static color(options: Form.Options = {}) {
-		return this.#input("color", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Hidden input field
-	 */
-	static hidden(options: Form.Options = {}) {
-		return this.#input("hidden", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Date input field
-	 */
-	static date(options: Form.Options = {}) {
-		return this.#input("date", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Datetime input field
-	 */
-	static datetime(options: Form.Options = {}) {
-		return this.#input("datetime-local", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Month input field
-	 */
-	static month(options: Form.Options = {}) {
-		return this.#input("month", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Week input field
-	 */
-	static week(options: Form.Options = {}) {
-		return this.#input("week", options);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Time input field
-	 */
-	static time(options: Form.Options = {}) {
-		return this.#input("time", options);
-	}
-
-	/**
-	 * Validates email string.
-	 *
-	 * @param options Field options
-	 * @returns Email input field
-	 */
-	static email(options: Form.Options = {}) {
-		return new Field({ type: "email", ...options }, Schema.email().parse);
-	}
-
-	/**
-	 * Validates parsable URL.
-	 *
-	 * @param options Field options
-	 * @returns URL input field
-	 */
-	static url(options: Form.Options = {}) {
-		return new Field({ type: "url", ...options }, Schema.url().parse);
-	}
-
-	/**
-	 * @param type Type attribute value
-	 * @param options Field options
-	 * @returns Input field
-	 */
-	static #number(type: "number" | "range", options: Form.Options = {}) {
-		return new Field({ type, ...options }, Schema.coerce.number().parse);
-	}
-
-	/**
-	 * Coerces to number.
-	 *
-	 * @param options Field options
-	 * @returns Number input field
-	 */
-	static number(options: Form.Options = {}) {
-		return this.#number("number", options);
-	}
-
-	/**
-	 * Coerces to number.
-	 *
-	 * @param options Field options
-	 * @returns Range input field
-	 */
-	static range(options: Form.Options = {}) {
-		return this.#number("range", options);
-	}
-
-	/**
-	 * - unchecked => key missing => `false`
-	 * - checked => key present => `true`
-	 *
-	 * @param options Field options
-	 * @returns Checkbox input field
-	 */
-	static checkbox(options: Form.Options = {}) {
-		return new Field(
-			{ type: "checkbox", ...options },
-			Schema.coerce.boolean().parse,
-			(formData, name) => formData.has(name),
-		);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns File input field
-	 */
-	static file(options: Form.Options = {}) {
-		return new Field({ type: "file", ...options }, Schema.file().parse);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Multiple file input field
-	 */
-	static files(options: Form.Options = {}) {
-		return new Field(
-			{ type: "file", multiple: true, ...options },
-			Schema.array(Schema.file()).parse,
-			(formData, name) => formData.getAll(name),
-		);
-	}
-
-	/**
-	 * @template V Value type
-	 * @param values Checkbox values
-	 * @param options Field options
-	 * @returns Checkbox group input field
-	 */
-	static checkboxes<const V extends string>(
-		values: readonly [V, ...V[]],
-		options: Form.Options = {},
-	) {
-		return new Field(
-			{ type: "checkbox", values, ...options },
-			Schema.array(Schema.enum(values)).parse,
-			(formData, name) => formData.getAll(name),
-		);
-	}
-
-	/**
-	 * @template V Value type
-	 * @param values Radio button values
-	 * @param options Field options
-	 * @returns Radio group input field
-	 */
-	static radio<const V extends string>(
-		values: readonly [V, ...V[]],
-		options: Form.Options = {},
-	) {
-		return new Field(
-			{ type: "radio", values, ...options },
-			Schema.enum(values).parse,
-		);
-	}
-
-	/**
-	 * @param options Field options
-	 * @returns Textarea field
-	 */
-	static textarea(options: Form.Options = {}) {
-		return new Field({ tag: "textarea", ...options }, Schema.string().parse);
-	}
-
-	/**
-	 * @template V Value type
-	 * @param values Select options
-	 * @param options Field options
-	 * @returns Multi-select field
-	 */
-	static multiselect<const V extends string>(
-		values: readonly [V, ...V[]],
-		options: Form.Options = {},
-	) {
-		return new Field(
-			{ tag: "select", values, multiple: true, ...options },
-			Schema.array(Schema.enum(values)).parse,
-			(formData, name) => formData.getAll(name),
-		);
-	}
-
-	/**
-	 * @template V Value type
-	 * @param values Select options
-	 * @param options Field options
-	 * @returns Select field
-	 */
-	static select<const V extends string>(
-		values: readonly [V, ...V[]],
-		options: Form.Options = {},
-	) {
-		return new Field(
-			{ tag: "select", values, ...options },
-			Schema.enum(values).parse,
-		);
-	}
 }
