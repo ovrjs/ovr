@@ -35,6 +35,7 @@ export namespace Schema {
 	 */
 	export type Merge<A extends Shape, B extends Shape> = Omit<A, keyof B> & B;
 
+	// this is to improve inferred type performance to help ts infer objects
 	/**
 	 * Object schema with extend capability.
 	 *
