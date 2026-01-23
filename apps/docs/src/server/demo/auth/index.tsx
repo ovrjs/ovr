@@ -116,8 +116,7 @@ export const admin = Route.get(
 );
 
 export const register = Route.post(async (c) => {
-	const data = await c.form().data();
-	const { email } = User.parse(data);
+	const { email } = await c.form().parse(User);
 
 	const credential = await c.auth.passkey.verify();
 	credentials.push(credential);

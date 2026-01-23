@@ -1,3 +1,4 @@
+import { Schema } from "../schema/index.js";
 import { Codec, Header, Mime } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
@@ -485,5 +486,29 @@ export class Multipart extends Request {
 		}
 
 		return this.#formData;
+	}
+
+	/**
+	 * Buffer and parse `FormData` according to a specific schema.
+	 *
+	 * @param form Form schema
+	 * @returns Parsed form data
+	 */
+	async parse<S extends Schema.Form.Shape>(
+		form: Schema.Form<S>,
+	): Promise<Schema.Form.Infer<S>>;
+	/**
+	 * @param fields Form data fields to parse
+	 * @returns Parsed form data
+	 */
+	async parse<S extends Schema.Form.Shape>(
+		fields: S,
+	): Promise<Schema.Form.Infer<S>>;
+	async parse<S extends Schema.Form.Shape>(formOrFields: Schema.Form<S> | S) {
+		const data = await this.data();
+
+		return formOrFields instanceof Schema.Form
+			? formOrFields.parse(data)
+			: Schema.form(formOrFields).parse(data);
 	}
 }

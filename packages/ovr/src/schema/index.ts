@@ -81,6 +81,9 @@ export namespace Schema {
 		);
 	}
 
+	/** Schema.Form instance type */
+	export type Form<S extends Form.Shape> = InstanceType<typeof Schema.Form<S>>;
+
 	export namespace Form {
 		/** Form field shape. */
 		export type Shape = Record<string, Field<unknown>>;
@@ -504,7 +507,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 *
 	 * Parses `FormData` and generates form field components.
 	 *
-	 * @template Shape Form field shape type
+	 * @template S Form field shape type
 	 * @param fields Form fields
 	 * @example
 	 *
@@ -523,8 +526,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	static form<Shape extends Schema.Form.Shape>(fields: Shape): Form<Shape> {
-		return new Form(fields);
+	static form<S extends Schema.Form.Shape>(fields: S) {
+		return new Schema.Form(fields);
 	}
 
 	/** Coercion schemas that apply JavaScript type coercion before validation. */
@@ -833,6 +836,78 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 			);
 		}
 	};
+
+	/**
+	 * Form schema
+	 *
+	 * @template Shape Form field shape type
+	 */
+	static Form = class<Shape extends Schema.Form.Shape> {
+		/** Field definitions. */
+		readonly #fields: Shape;
+
+		/**
+		 * Create a new form schema validator.
+		 *
+		 * @param fields Form fields
+		 */
+		constructor(fields: Shape) {
+			this.#fields = fields;
+		}
+
+		/**
+		 * Parse and validate FormData.
+		 *
+		 * @param data FormData to parse
+		 * @param path Internal path reference
+		 * @returns Parsed result
+		 * @throws `Schema.Error` when the first encountered parse fails
+		 */
+		parse(data: FormData, path: Schema.Path = []) {
+			const out: Record<string, unknown> = {};
+
+			for (const key in this.#fields) {
+				const schema = this.#fields[key]!;
+				out[key] = schema.parse(schema.read(data, key), [...path, key]);
+			}
+
+			return out as Schema.Form.Infer<Shape>;
+		}
+
+		/**
+		 * Render a single form field.
+		 *
+		 * @param props Component props
+		 * @example
+		 *
+		 * ```tsx
+		 * <User.Field name="username" />
+		 * ```
+		 */
+		Field = (props: Schema.Field.Props<Shape>) =>
+			this.#fields[props.name]!.render(props);
+
+		/**
+		 * Render all form fields in a fieldset.
+		 *
+		 * @param props Component props
+		 * @example
+		 *
+		 * ```tsx
+		 * <User.Fieldset />
+		 * ```
+		 */
+		Fieldset = (props: JSX.IntrinsicElements["fieldset"] = {}) => {
+			const children = [props.children];
+
+			for (const name in this.#fields) {
+				const field = this.#fields[name]!;
+				children.push(field.render({ name }));
+			}
+
+			return jsx("fieldset", { ...props, children });
+		};
+	};
 }
 
 /**
@@ -945,7 +1020,7 @@ class Field<Output> extends Schema<Output> {
 		props: Schema.Field.Props<S>,
 	) {
 		const id = props.id ?? props.name;
-		const { tag = "input", label = id, type, values, multiple } = this.#options;
+		const { tag = "input", label = id, values, type, multiple } = this.#options;
 
 		return jsx("div", {
 			children:
@@ -976,76 +1051,4 @@ class Field<Output> extends Schema<Output> {
 						],
 		});
 	}
-}
-
-/**
- * Form schema
- *
- * @template Shape Form field shape type
- */
-class Form<Shape extends Schema.Form.Shape> {
-	/** Field definitions. */
-	readonly #fields: Shape;
-
-	/**
-	 * Create a new form schema validator.
-	 *
-	 * @param fields Form fields
-	 */
-	constructor(fields: Shape) {
-		this.#fields = fields;
-	}
-
-	/**
-	 * Parse and validate FormData.
-	 *
-	 * @param data FormData to parse
-	 * @param path Internal path reference
-	 * @returns Parsed result
-	 * @throws `Schema.Error` when the first encountered parse fails
-	 */
-	parse(data: FormData, path: Schema.Path = []) {
-		const out: Record<string, unknown> = {};
-
-		for (const key in this.#fields) {
-			const schema = this.#fields[key]!;
-			out[key] = schema.parse(schema.read(data, key), [...path, key]);
-		}
-
-		return out as Schema.Form.Infer<Shape>;
-	}
-
-	/**
-	 * Render a single form field.
-	 *
-	 * @param props Component props
-	 * @example
-	 *
-	 * ```tsx
-	 * <User.Field name="username" />
-	 * ```
-	 */
-	Field = (props: Schema.Field.Props<Shape>) =>
-		this.#fields[props.name]!.render(props);
-
-	/**
-	 * Render all form fields in a fieldset.
-	 *
-	 * @param props Component props
-	 * @example
-	 *
-	 * ```tsx
-	 * <User.Fieldset />
-	 * ```
-	 */
-	Fieldset = (props: JSX.IntrinsicElements["fieldset"] = {}) => {
-		const children = [props.children];
-
-		for (const name in this.#fields) {
-			const field = this.#fields[name]!;
-			children.push(field.render({ name }));
-		}
-
-		return jsx("fieldset", { ...props, children });
-	};
 }
