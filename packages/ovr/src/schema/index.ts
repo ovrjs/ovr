@@ -45,10 +45,43 @@ export namespace Schema {
 		extend<E extends Shape>(extra: E): Object<Merge<S, E>>;
 	};
 
+	export namespace Field {
+		export type Read = (data: FormData, name: string) => unknown;
+
+		export interface Options {
+			/** Field label. */
+			label?: string;
+
+			/**
+			 * Tag name.
+			 *
+			 * @default "input"
+			 */
+			tag?: "input" | "textarea" | "select";
+
+			/** Input `type` attribute value */
+			type?: JSX.IntrinsicElements["input"]["type"];
+
+			/** Values are used for `input[type=radio|checkbox]`, and `select` elements */
+			values?: readonly string[];
+
+			/** Used for multiple-value inputs */
+			multiple?: boolean;
+		}
+
+		/**
+		 * Props available to users to pass into the constructed `<Field />` component.
+		 *
+		 * @template S Shape type
+		 */
+		export type Props<S> = { name: Extract<keyof S, string> } & (
+			| JSX.IntrinsicElements["input"]
+			| JSX.IntrinsicElements["textarea"]
+			| JSX.IntrinsicElements["select"]
+		);
+	}
+
 	export namespace Form {
-		export type Instance<Shape extends Form.Shape> = InstanceType<
-			typeof Form<Shape>
-		>;
 		/** Form field shape. */
 		export type Shape = Record<string, Field<unknown>>;
 
@@ -462,7 +495,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param shape Object shape with schemas for each key
 	 * @returns Object schema
 	 */
-	static object<const S extends Schema.Shape>(shape: S) {
+	static object<const S extends Schema.Shape>(shape: S): Schema.Object<S> {
 		return new ObjectSchema(shape);
 	}
 
@@ -490,9 +523,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	static form<Shape extends Schema.Form.Shape>(
-		fields: Shape,
-	): Schema.Form.Instance<Shape> {
+	static form<Shape extends Schema.Form.Shape>(fields: Shape): Form<Shape> {
 		return new Form(fields);
 	}
 
@@ -545,7 +576,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static #input(
 			type: JSX.IntrinsicElements["input"]["type"],
-			options: Field.Options = {},
+			options: Schema.Field.Options = {},
 		) {
 			return new Field({ type, ...options }, Schema.string().parse);
 		}
@@ -554,7 +585,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Text input field
 		 */
-		static text(options: Field.Options = {}) {
+		static text(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("text", options);
 		}
 
@@ -562,7 +593,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Password input field
 		 */
-		static password(options: Field.Options = {}) {
+		static password(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("password", options);
 		}
 
@@ -570,7 +601,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Search input field
 		 */
-		static search(options: Field.Options = {}) {
+		static search(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("search", options);
 		}
 
@@ -578,7 +609,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Telephone input field
 		 */
-		static tel(options: Field.Options = {}) {
+		static tel(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("tel", options);
 		}
 
@@ -586,7 +617,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Color input field
 		 */
-		static color(options: Field.Options = {}) {
+		static color(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("color", options);
 		}
 
@@ -594,7 +625,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Hidden input field
 		 */
-		static hidden(options: Field.Options = {}) {
+		static hidden(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("hidden", options);
 		}
 
@@ -602,7 +633,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Date input field
 		 */
-		static date(options: Field.Options = {}) {
+		static date(options: Schema.Field.Options = {}) {
 			return new Field(
 				{ type: "date", ...options },
 				Schema.Coerce.date().parse,
@@ -613,7 +644,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Datetime input field
 		 */
-		static datetime(options: Field.Options = {}) {
+		static datetime(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("datetime-local", options);
 		}
 
@@ -621,7 +652,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Month input field
 		 */
-		static month(options: Field.Options = {}) {
+		static month(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("month", options);
 		}
 
@@ -629,7 +660,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Week input field
 		 */
-		static week(options: Field.Options = {}) {
+		static week(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("week", options);
 		}
 
@@ -637,7 +668,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Time input field
 		 */
-		static time(options: Field.Options = {}) {
+		static time(options: Schema.Field.Options = {}) {
 			return Schema.Field.#input("time", options);
 		}
 
@@ -647,7 +678,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Email input field
 		 */
-		static email(options: Field.Options = {}) {
+		static email(options: Schema.Field.Options = {}) {
 			return new Field({ type: "email", ...options }, Schema.email().parse);
 		}
 
@@ -657,7 +688,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns URL input field
 		 */
-		static url(options: Field.Options = {}) {
+		static url(options: Schema.Field.Options = {}) {
 			return new Field({ type: "url", ...options }, Schema.url().parse);
 		}
 
@@ -666,7 +697,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Input field
 		 */
-		static #number(type: "number" | "range", options: Field.Options = {}) {
+		static #number(
+			type: "number" | "range",
+			options: Schema.Field.Options = {},
+		) {
 			return new Field({ type, ...options }, Schema.Coerce.number().parse);
 		}
 
@@ -676,7 +710,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Number input field
 		 */
-		static number(options: Field.Options = {}) {
+		static number(options: Schema.Field.Options = {}) {
 			return Schema.Field.#number("number", options);
 		}
 
@@ -686,7 +720,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Range input field
 		 */
-		static range(options: Field.Options = {}) {
+		static range(options: Schema.Field.Options = {}) {
 			return Schema.Field.#number("range", options);
 		}
 
@@ -697,7 +731,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Checkbox input field
 		 */
-		static checkbox(options: Field.Options = {}) {
+		static checkbox(options: Schema.Field.Options = {}) {
 			return new Field(
 				{ type: "checkbox", ...options },
 				Schema.Coerce.boolean().parse,
@@ -709,7 +743,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns File input field
 		 */
-		static file(options: Field.Options = {}) {
+		static file(options: Schema.Field.Options = {}) {
 			return new Field({ type: "file", ...options }, Schema.file().parse);
 		}
 
@@ -717,7 +751,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Multiple file input field
 		 */
-		static files(options: Field.Options = {}) {
+		static files(options: Schema.Field.Options = {}) {
 			return new Field(
 				{ type: "file", multiple: true, ...options },
 				Schema.array(Schema.file()).parse,
@@ -733,7 +767,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static checkboxes<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Field.Options = {},
+			options: Schema.Field.Options = {},
 		) {
 			return new Field(
 				{ type: "checkbox", values, ...options },
@@ -750,7 +784,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static radio<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Field.Options = {},
+			options: Schema.Field.Options = {},
 		) {
 			return new Field(
 				{ type: "radio", values, ...options },
@@ -762,7 +796,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param options Field options
 		 * @returns Textarea field
 		 */
-		static textarea(options: Field.Options = {}) {
+		static textarea(options: Schema.Field.Options = {}) {
 			return new Field({ tag: "textarea", ...options }, Schema.string().parse);
 		}
 
@@ -774,7 +808,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static multiselect<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Field.Options = {},
+			options: Schema.Field.Options = {},
 		) {
 			return new Field(
 				{ tag: "select", values, multiple: true, ...options },
@@ -791,7 +825,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static select<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Field.Options = {},
+			options: Schema.Field.Options = {},
 		) {
 			return new Field(
 				{ tag: "select", values, ...options },
@@ -854,53 +888,17 @@ class ObjectSchema<const Shape extends Schema.Shape> extends Schema<
 	}
 }
 
-export namespace Field {
-	export type Read = (data: FormData, name: string) => unknown;
-
-	export interface Options {
-		/** Field label. */
-		label?: string;
-
-		/**
-		 * Tag name.
-		 *
-		 * @default "input"
-		 */
-		tag?: "input" | "textarea" | "select";
-
-		/** Input `type` attribute value */
-		type?: JSX.IntrinsicElements["input"]["type"];
-
-		/** Values are used for `input[type=radio|checkbox]`, and `select` elements */
-		values?: readonly string[];
-
-		/** Used for multiple-value inputs */
-		multiple?: boolean;
-	}
-
-	/**
-	 * Props available to users to pass into the constructed `<Field />` component.
-	 *
-	 * @template S Shape type
-	 */
-	export type Props<S> = { name: Extract<keyof S, string> } & (
-		| JSX.IntrinsicElements["input"]
-		| JSX.IntrinsicElements["textarea"]
-		| JSX.IntrinsicElements["select"]
-	);
-}
-
 /**
  * Represents a form field with parsing logic and rendering metadata.
  *
  * @template Output Output type of the field
  */
-export class Field<Output> extends Schema<Output> {
+class Field<Output> extends Schema<Output> {
 	/** Read the value from form data */
-	readonly read: Field.Read;
+	readonly read: Schema.Field.Read;
 
 	/** Field options */
-	readonly options: Field.Options;
+	readonly options: Schema.Field.Options;
 
 	/**
 	 * Create a new field.
@@ -910,9 +908,9 @@ export class Field<Output> extends Schema<Output> {
 	 * @param read How to read the data from `FormData`
 	 */
 	constructor(
-		options: Field.Options,
+		options: Schema.Field.Options,
 		parse: Schema.Parse<Output>,
-		read?: Field.Read,
+		read?: Schema.Field.Read,
 	) {
 		super(parse);
 
@@ -943,7 +941,9 @@ export class Field<Output> extends Schema<Output> {
 	 * @param props Field props including `name`
 	 * @returns JSX Component that renders the HTML field
 	 */
-	render<S extends Record<string, Field<unknown>>>(props: Field.Props<S>) {
+	render<S extends Record<string, Field<unknown>>>(
+		props: Schema.Field.Props<S>,
+	) {
 		const id = props.id ?? props.name;
 		const { tag = "input", label = id, type, values, multiple } = this.options;
 
@@ -983,8 +983,7 @@ export class Field<Output> extends Schema<Output> {
  *
  * @template Shape Form field shape type
  */
-class Form<Shape extends Schema.Form.Shape> implements Schema.Form
-	.Instance<Shape> {
+class Form<Shape extends Schema.Form.Shape> implements Form<Shape> {
 	/** Field definitions. */
 	readonly fields: Shape;
 
@@ -1026,7 +1025,8 @@ class Form<Shape extends Schema.Form.Shape> implements Schema.Form
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	Field = (props: Field.Props<Shape>) => this.fields[props.name]!.render(props);
+	Field = (props: Schema.Field.Props<Shape>) =>
+		this.fields[props.name]!.render(props);
 
 	/**
 	 * Render all form fields in a fieldset.

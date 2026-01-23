@@ -1,8 +1,14 @@
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { type Auth, type JSX, type Middleware, Render, Route } from "ovr";
-import * as z from "zod";
+import {
+	type Auth,
+	type JSX,
+	type Middleware,
+	Render,
+	Route,
+	Schema,
+} from "ovr";
 
 const users: { id: string; email: string }[] = [];
 const credentials: Auth.Credential[] = [];
@@ -31,6 +37,8 @@ const withAuth = (
 	};
 };
 
+const User = Schema.form({ email: Schema.Field.email() });
+
 /** Landing page - registration + sign in options */
 export const auth = Route.get("/demo/auth", (c) => {
 	const Layout = createLayout(c);
@@ -47,10 +55,7 @@ export const auth = Route.get("/demo/auth", (c) => {
 			<div class="mt-24 flex justify-center">
 				<div class="border-secondary grid max-w-3xs rounded-md border p-4">
 					<Register class="grid gap-4">
-						<div>
-							<label for="email">Email</label>
-							<input type="email" name="email" />
-						</div>
+						<User.Field name="email" />
 						<button class="secondary">Register</button>
 					</Register>
 
@@ -112,7 +117,7 @@ export const admin = Route.get(
 
 export const register = Route.post(async (c) => {
 	const data = await c.form().data();
-	const email = z.email().parse(data.get("email"));
+	const { email } = User.parse(data);
 
 	const credential = await c.auth.passkey.verify();
 	credentials.push(credential);
