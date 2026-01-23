@@ -49,9 +49,6 @@ export namespace Schema {
 		export type Read = (data: FormData, name: string) => unknown;
 
 		export interface Options {
-			/** Field label. */
-			label?: string;
-
 			/**
 			 * Tag name.
 			 *
@@ -59,26 +56,43 @@ export namespace Schema {
 			 */
 			tag?: "input" | "textarea" | "select";
 
-			/** Input `type` attribute value */
-			type?: JSX.IntrinsicElements["input"]["type"];
-
-			/** Values are used for `input[type=radio|checkbox]`, and `select` elements */
+			/**
+			 * Values are used for `input[type=radio|checkbox]`, and
+			 * `<select>` elements
+			 */
 			values?: readonly string[];
 
-			/** Used for multiple-value inputs */
-			multiple?: boolean;
+			/** Field props without `name` */
+			props?: Omit<Props<never>, "name">;
 		}
 
 		/**
-		 * Props available to users to pass into the constructed `<Field />` component.
+		 * Component props available to users to pass into the
+		 * constructed `<Field />` component.
 		 *
 		 * @template S Shape type
 		 */
-		export type Props<S> = { name: Extract<keyof S, string> } & (
-			| JSX.IntrinsicElements["input"]
-			| JSX.IntrinsicElements["textarea"]
-			| JSX.IntrinsicElements["select"]
-		);
+		export type Props<S> = {
+			/** Field name attribute */
+			name: Extract<keyof S, string>;
+		} & (Props.Input | Props.Select | Props.Textarea);
+
+		export namespace Props {
+			/** Extra props in addition to HTML attributes */
+			type Meta = {
+				/** Field label */
+				label?: string;
+			};
+
+			/** Props for `<input>` factories */
+			export type Input = Meta & JSX.IntrinsicElements["input"];
+
+			/** Props for `<select>` factories */
+			export type Select = Meta & JSX.IntrinsicElements["select"];
+
+			/** Props for `<textarea>` factory */
+			export type Textarea = Meta & JSX.IntrinsicElements["textarea"];
+		}
 	}
 
 	/** Schema.Form instance type */
@@ -111,7 +125,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	Input,
 	Output
 > {
-	/** [Reasonable Email Regex by Colin McDonnell](https://colinhacks.com/essays/reasonable-email-regex) */
 	static #emailRegex =
 		/^(?!\.)(?!.*\.\.)([a-z0-9_'+\-\.]*)[a-z0-9_'+\-]@([a-z0-9][a-z0-9\-]*\.)+[a-z]{2,}$/i;
 
@@ -297,6 +310,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 	/**
 	 * Validate an input is a valid email string.
+	 *
+	 * [Reasonable Email Regex by Colin McDonnell](https://colinhacks.com/essays/reasonable-email-regex)
 	 *
 	 * @returns Email schema
 	 */
@@ -573,184 +588,188 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 	static Field = class {
 		/**
-		 * @param type Type attribute value
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Generic input field
 		 */
-		static #input(
-			type: JSX.IntrinsicElements["input"]["type"],
-			label?: string,
-		) {
-			return new Field({ type, label }, Schema.string().parse);
+		static #input(props: Schema.Field.Props.Input) {
+			return new Field({ props }, Schema.string().parse);
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Text input field
 		 */
-		static text(label?: string) {
-			return Schema.Field.#input("text", label);
+		static text(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "text", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Password input field
 		 */
-		static password(label?: string) {
-			return Schema.Field.#input("password", label);
+		static password(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "password", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Search input field
 		 */
-		static search(label?: string) {
-			return Schema.Field.#input("search", label);
+		static search(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "search", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Telephone input field
 		 */
-		static tel(label?: string) {
-			return Schema.Field.#input("tel", label);
+		static tel(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "tel", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Color input field
 		 */
-		static color(label?: string) {
-			return Schema.Field.#input("color", label);
+		static color(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "color", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Hidden input field
 		 */
-		static hidden(label?: string) {
-			return Schema.Field.#input("hidden", label);
+		static hidden(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "hidden", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Date input field
 		 */
-		static date(label?: string) {
-			return new Field({ type: "date", label }, Schema.Coerce.date().parse);
+		static date(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "date", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Datetime input field
 		 */
-		static datetime(label?: string) {
-			return Schema.Field.#input("datetime-local", label);
+		static datetime(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "datetime-local", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Month input field
 		 */
-		static month(label?: string) {
-			return Schema.Field.#input("month", label);
+		static month(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "month", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Week input field
 		 */
-		static week(label?: string) {
-			return Schema.Field.#input("week", label);
+		static week(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "week", ...props });
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Time input field
 		 */
-		static time(label?: string) {
-			return Schema.Field.#input("time", label);
+		static time(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#input({ type: "time", ...props });
 		}
 
 		/**
 		 * Validates email string.
 		 *
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Email input field
 		 */
-		static email(label?: string) {
-			return new Field({ type: "email", label }, Schema.email().parse);
+		static email(props?: Schema.Field.Props.Input) {
+			return new Field(
+				{ props: { type: "email", ...props } },
+				Schema.email().parse,
+			);
 		}
 
 		/**
 		 * Validates parsable URL.
 		 *
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns URL input field
 		 */
-		static url(label?: string) {
-			return new Field({ type: "url", label }, Schema.url().parse);
+		static url(props?: Schema.Field.Props.Input) {
+			return new Field(
+				{ props: { type: "url", ...props } },
+				Schema.url().parse,
+			);
 		}
 
 		/**
-		 * @param type Type attribute value
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Input field
 		 */
-		static #number(type: "number" | "range", label?: string) {
-			return new Field({ type, label }, Schema.Coerce.number().parse);
+		static #number(props: Schema.Field.Props.Input) {
+			return new Field({ props }, Schema.Coerce.number().parse);
 		}
 
 		/**
 		 * Coerces to number.
 		 *
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Number input field
 		 */
-		static number(label?: string) {
-			return Schema.Field.#number("number", label);
+		static number(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#number({ type: "number", ...props });
 		}
 
 		/**
 		 * Coerces to number.
 		 *
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Range input field
 		 */
-		static range(label?: string) {
-			return Schema.Field.#number("range", label);
+		static range(props?: Schema.Field.Props.Input) {
+			return Schema.Field.#number({ type: "range", ...props });
 		}
 
 		/**
 		 * - unchecked => key missing => `false`
 		 * - checked => key present => `true`
 		 *
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Checkbox input field
 		 */
-		static checkbox(label?: string) {
+		static checkbox(props?: Schema.Field.Props.Input) {
 			return new Field(
-				{ type: "checkbox", label },
+				{ props: { type: "checkbox", ...props } },
 				Schema.Coerce.boolean().parse,
 				(formData, name) => formData.has(name),
 			);
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns File input field
 		 */
-		static file(label?: string) {
-			return new Field({ type: "file", label }, Schema.file().parse);
+		static file(props?: Schema.Field.Props.Input) {
+			return new Field(
+				{ props: { type: "file", ...props } },
+				Schema.file().parse,
+			);
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Multiple file input field
 		 */
-		static files(label?: string) {
+		static files(props?: Schema.Field.Props.Input) {
 			return new Field(
-				{ type: "file", multiple: true, label },
+				{ props: { type: "file", multiple: true, ...props } },
 				Schema.array(Schema.file()).parse,
 				(formData, name) => formData.getAll(name),
 			);
@@ -759,15 +778,15 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		/**
 		 * @template V Value type
 		 * @param values Checkbox values
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Checkbox group input field
 		 */
 		static checkboxes<const V extends string>(
 			values: readonly [V, ...V[]],
-			label?: string,
+			props?: Schema.Field.Props.Input,
 		) {
 			return new Field(
-				{ type: "checkbox", values, label },
+				{ values, props: { type: "checkbox", ...props } },
 				Schema.array(Schema.enum(values)).parse,
 				(formData, name) => formData.getAll(name),
 			);
@@ -776,57 +795,57 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		/**
 		 * @template V Value type
 		 * @param values Radio button values
-		 * @param label Label text
+		 * @param props Input props
 		 * @returns Radio group input field
 		 */
 		static radio<const V extends string>(
 			values: readonly [V, ...V[]],
-			label?: string,
+			props?: Schema.Field.Props.Input,
 		) {
 			return new Field(
-				{ type: "radio", values, label },
+				{ values, props: { type: "radio", ...props } },
 				Schema.enum(values).parse,
 			);
 		}
 
 		/**
-		 * @param label Label text
+		 * @param props Textarea props
 		 * @returns Textarea field
 		 */
-		static textarea(label?: string) {
-			return new Field({ tag: "textarea", label }, Schema.string().parse);
+		static textarea(props?: Schema.Field.Props.Input) {
+			return new Field({ tag: "textarea", props }, Schema.string().parse);
 		}
 
 		/**
 		 * @template V Value type
 		 * @param values Select options
-		 * @param label Label text
-		 * @returns Multi-select field
-		 */
-		static multiselect<const V extends string>(
-			values: readonly [V, ...V[]],
-			label?: string,
-		) {
-			return new Field(
-				{ tag: "select", values, multiple: true, label },
-				Schema.array(Schema.enum(values)).parse,
-				(formData, name) => formData.getAll(name),
-			);
-		}
-
-		/**
-		 * @template V Value type
-		 * @param values Select options
-		 * @param label Label text
+		 * @param props Select props
 		 * @returns Select field
 		 */
 		static select<const V extends string>(
 			values: readonly [V, ...V[]],
-			label?: string,
+			props?: Schema.Field.Props.Input,
 		) {
 			return new Field(
-				{ tag: "select", values, label },
+				{ tag: "select", values, props },
 				Schema.enum(values).parse,
+			);
+		}
+
+		/**
+		 * @template V Value type
+		 * @param values Select options
+		 * @param props Select props
+		 * @returns Multi-select field
+		 */
+		static multiselect<const V extends string>(
+			values: readonly [V, ...V[]],
+			props?: Schema.Field.Props.Input,
+		) {
+			return new Field(
+				{ tag: "select", values, props: { multiple: true, ...props } },
+				Schema.array(Schema.enum(values)).parse,
+				(formData, name) => formData.getAll(name),
 			);
 		}
 	};
@@ -882,25 +901,19 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 			this.#fields[props.name]!.render(props);
 
 		/**
-		 * Render all form fields in a fieldset.
+		 * Render all form fields.
 		 *
 		 * @param props Component props
 		 * @example
 		 *
 		 * ```tsx
-		 * <User.Fieldset />
+		 * <User.Fields />
 		 * ```
 		 */
-		Fieldset = (props: JSX.IntrinsicElements["fieldset"] = {}) => {
-			const children = [props.children];
-
-			for (const name in this.#fields) {
-				const field = this.#fields[name]!;
-				children.push(field.render({ name }));
-			}
-
-			return jsx("fieldset", { ...props, children });
-		};
+		Fields = () =>
+			Object.entries(this.#fields).map(([name, field]) =>
+				field.render({ name }),
+			);
 	};
 }
 
@@ -1007,37 +1020,40 @@ class Field<Output> extends Schema<Output> {
 
 	/**
 	 * @template S Shape type
-	 * @param props Field props including `name`
+	 * @param fieldProps Field props including `name`
 	 * @returns JSX Component that renders the HTML field
 	 */
 	render<S extends Record<string, Field<unknown>>>(
-		props: Schema.Field.Props<S>,
+		fieldProps: Schema.Field.Props<S>,
 	) {
-		const id = props.id ?? props.name;
-		const { tag = "input", label = id, values, type, multiple } = this.#options;
+		const { tag = "input", values, props: factoryProps } = this.#options;
+		const props = { ...factoryProps, ...fieldProps };
+		props.id ??= props.name;
+		props.label ??= props.name;
 
 		return jsx("div", {
 			children:
-				type === "radio" || (type === "checkbox" && values)
-					? [
-							jsx("span", { children: label }),
-							values?.map((value) =>
-								jsx("label", {
-									children: [
-										jsx(tag, { value, type, ...props }),
-										jsx("span", { children: value }),
-									],
-								}),
-							),
-						]
+				props.type === "radio" || (props.type === "checkbox" && values)
+					? jsx("fieldset", {
+							children: [
+								jsx("legend", { children: props.label }),
+								values?.map((value) =>
+									jsx("div", {
+										children() {
+											const id = `${props.id}-${value}`;
+											return [
+												jsx("label", { for: id, children: value }),
+												jsx(tag, { ...props, value, id }),
+											];
+										},
+									}),
+								),
+							],
+						})
 					: [
-							jsx("label", { for: id, children: label }),
+							jsx("label", { for: props.id, children: props.label }),
 							jsx(tag, {
-								id,
-								type,
-								multiple,
 								...props,
-								// <select> options
 								children: values?.map((value) =>
 									jsx("option", { value, children: value }),
 								),

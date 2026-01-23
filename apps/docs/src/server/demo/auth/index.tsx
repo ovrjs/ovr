@@ -37,7 +37,12 @@ const withAuth = (
 	};
 };
 
-const User = Schema.form({ email: Schema.Field.email("Email") });
+// TODO
+const User = Schema.form({
+	email: Schema.Field.email({ label: "Email" }),
+	picture: Schema.Field.file({ label: "Profile Picture" }),
+	date: Schema.Field.radio(["test", "hello"]),
+});
 
 /** Landing page - registration + sign in options */
 export const auth = Route.get("/demo/auth", (c) => {
@@ -55,7 +60,7 @@ export const auth = Route.get("/demo/auth", (c) => {
 			<div class="mt-24 flex justify-center">
 				<div class="border-secondary grid max-w-3xs rounded-md border p-4">
 					<Register class="grid gap-4">
-						<User.Field name="email" />
+						<User.Fields />
 						<button class="secondary">Register</button>
 					</Register>
 
