@@ -37,7 +37,7 @@ const withAuth = (
 	};
 };
 
-const User = Schema.form({ email: Schema.Field.email() });
+const User = Schema.form({ email: Schema.Field.email("Email") });
 
 /** Landing page - registration + sign in options */
 export const auth = Route.get("/demo/auth", (c) => {

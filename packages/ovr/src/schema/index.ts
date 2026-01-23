@@ -574,189 +574,183 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	static Field = class {
 		/**
 		 * @param type Type attribute value
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Generic input field
 		 */
 		static #input(
 			type: JSX.IntrinsicElements["input"]["type"],
-			options: Schema.Field.Options = {},
+			label?: string,
 		) {
-			return new Field({ type, ...options }, Schema.string().parse);
+			return new Field({ type, label }, Schema.string().parse);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Text input field
 		 */
-		static text(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("text", options);
+		static text(label?: string) {
+			return Schema.Field.#input("text", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Password input field
 		 */
-		static password(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("password", options);
+		static password(label?: string) {
+			return Schema.Field.#input("password", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Search input field
 		 */
-		static search(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("search", options);
+		static search(label?: string) {
+			return Schema.Field.#input("search", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Telephone input field
 		 */
-		static tel(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("tel", options);
+		static tel(label?: string) {
+			return Schema.Field.#input("tel", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Color input field
 		 */
-		static color(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("color", options);
+		static color(label?: string) {
+			return Schema.Field.#input("color", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Hidden input field
 		 */
-		static hidden(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("hidden", options);
+		static hidden(label?: string) {
+			return Schema.Field.#input("hidden", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Date input field
 		 */
-		static date(options: Schema.Field.Options = {}) {
-			return new Field(
-				{ type: "date", ...options },
-				Schema.Coerce.date().parse,
-			);
+		static date(label?: string) {
+			return new Field({ type: "date", label }, Schema.Coerce.date().parse);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Datetime input field
 		 */
-		static datetime(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("datetime-local", options);
+		static datetime(label?: string) {
+			return Schema.Field.#input("datetime-local", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Month input field
 		 */
-		static month(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("month", options);
+		static month(label?: string) {
+			return Schema.Field.#input("month", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Week input field
 		 */
-		static week(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("week", options);
+		static week(label?: string) {
+			return Schema.Field.#input("week", label);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Time input field
 		 */
-		static time(options: Schema.Field.Options = {}) {
-			return Schema.Field.#input("time", options);
+		static time(label?: string) {
+			return Schema.Field.#input("time", label);
 		}
 
 		/**
 		 * Validates email string.
 		 *
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Email input field
 		 */
-		static email(options: Schema.Field.Options = {}) {
-			return new Field({ type: "email", ...options }, Schema.email().parse);
+		static email(label?: string) {
+			return new Field({ type: "email", label }, Schema.email().parse);
 		}
 
 		/**
 		 * Validates parsable URL.
 		 *
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns URL input field
 		 */
-		static url(options: Schema.Field.Options = {}) {
-			return new Field({ type: "url", ...options }, Schema.url().parse);
+		static url(label?: string) {
+			return new Field({ type: "url", label }, Schema.url().parse);
 		}
 
 		/**
 		 * @param type Type attribute value
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Input field
 		 */
-		static #number(
-			type: "number" | "range",
-			options: Schema.Field.Options = {},
-		) {
-			return new Field({ type, ...options }, Schema.Coerce.number().parse);
+		static #number(type: "number" | "range", label?: string) {
+			return new Field({ type, label }, Schema.Coerce.number().parse);
 		}
 
 		/**
 		 * Coerces to number.
 		 *
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Number input field
 		 */
-		static number(options: Schema.Field.Options = {}) {
-			return Schema.Field.#number("number", options);
+		static number(label?: string) {
+			return Schema.Field.#number("number", label);
 		}
 
 		/**
 		 * Coerces to number.
 		 *
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Range input field
 		 */
-		static range(options: Schema.Field.Options = {}) {
-			return Schema.Field.#number("range", options);
+		static range(label?: string) {
+			return Schema.Field.#number("range", label);
 		}
 
 		/**
 		 * - unchecked => key missing => `false`
 		 * - checked => key present => `true`
 		 *
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Checkbox input field
 		 */
-		static checkbox(options: Schema.Field.Options = {}) {
+		static checkbox(label?: string) {
 			return new Field(
-				{ type: "checkbox", ...options },
+				{ type: "checkbox", label },
 				Schema.Coerce.boolean().parse,
 				(formData, name) => formData.has(name),
 			);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns File input field
 		 */
-		static file(options: Schema.Field.Options = {}) {
-			return new Field({ type: "file", ...options }, Schema.file().parse);
+		static file(label?: string) {
+			return new Field({ type: "file", label }, Schema.file().parse);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Multiple file input field
 		 */
-		static files(options: Schema.Field.Options = {}) {
+		static files(label?: string) {
 			return new Field(
-				{ type: "file", multiple: true, ...options },
+				{ type: "file", multiple: true, label },
 				Schema.array(Schema.file()).parse,
 				(formData, name) => formData.getAll(name),
 			);
@@ -765,15 +759,15 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		/**
 		 * @template V Value type
 		 * @param values Checkbox values
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Checkbox group input field
 		 */
 		static checkboxes<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Schema.Field.Options = {},
+			label?: string,
 		) {
 			return new Field(
-				{ type: "checkbox", values, ...options },
+				{ type: "checkbox", values, label },
 				Schema.array(Schema.enum(values)).parse,
 				(formData, name) => formData.getAll(name),
 			);
@@ -782,39 +776,39 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		/**
 		 * @template V Value type
 		 * @param values Radio button values
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Radio group input field
 		 */
 		static radio<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Schema.Field.Options = {},
+			label?: string,
 		) {
 			return new Field(
-				{ type: "radio", values, ...options },
+				{ type: "radio", values, label },
 				Schema.enum(values).parse,
 			);
 		}
 
 		/**
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Textarea field
 		 */
-		static textarea(options: Schema.Field.Options = {}) {
-			return new Field({ tag: "textarea", ...options }, Schema.string().parse);
+		static textarea(label?: string) {
+			return new Field({ tag: "textarea", label }, Schema.string().parse);
 		}
 
 		/**
 		 * @template V Value type
 		 * @param values Select options
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Multi-select field
 		 */
 		static multiselect<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Schema.Field.Options = {},
+			label?: string,
 		) {
 			return new Field(
-				{ tag: "select", values, multiple: true, ...options },
+				{ tag: "select", values, multiple: true, label },
 				Schema.array(Schema.enum(values)).parse,
 				(formData, name) => formData.getAll(name),
 			);
@@ -823,15 +817,15 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		/**
 		 * @template V Value type
 		 * @param values Select options
-		 * @param options Field options
+		 * @param label Label text
 		 * @returns Select field
 		 */
 		static select<const V extends string>(
 			values: readonly [V, ...V[]],
-			options: Schema.Field.Options = {},
+			label?: string,
 		) {
 			return new Field(
-				{ tag: "select", values, ...options },
+				{ tag: "select", values, label },
 				Schema.enum(values).parse,
 			);
 		}
@@ -978,7 +972,7 @@ class Field<Output> extends Schema<Output> {
 	/**
 	 * Create a new field.
 	 *
-	 * @param options Field options
+	 * @param options Field  options
 	 * @param parse How to validate the input
 	 * @param read How to read the data from `FormData`
 	 */
