@@ -41,7 +41,6 @@ export namespace Schema {
 	 * @template S Shape type
 	 */
 	export type Object<S extends Shape> = Schema<Infer<S>, unknown> & {
-		readonly shape: S;
 		extend<E extends Shape>(extra: E): Object<Merge<S, E>>;
 	};
 
@@ -845,7 +844,7 @@ class ObjectSchema<const Shape extends Schema.Shape> extends Schema<
 	unknown
 > {
 	/** Object schema's shape (user input object) */
-	readonly shape: Shape;
+	readonly #shape: Shape;
 
 	/**
 	 * Create a new object schema.
@@ -870,7 +869,7 @@ class ObjectSchema<const Shape extends Schema.Shape> extends Schema<
 			return out as Schema.Infer<Shape>;
 		});
 
-		this.shape = shape;
+		this.#shape = shape;
 	}
 
 	/**
@@ -884,7 +883,7 @@ class ObjectSchema<const Shape extends Schema.Shape> extends Schema<
 		extra: E,
 	): // return type required
 	Schema.Object<Schema.Merge<Shape, E>> {
-		return Schema.object({ ...this.shape, ...extra });
+		return Schema.object({ ...this.#shape, ...extra });
 	}
 }
 
@@ -898,7 +897,7 @@ class Field<Output> extends Schema<Output> {
 	readonly read: Schema.Field.Read;
 
 	/** Field options */
-	readonly options: Schema.Field.Options;
+	readonly #options: Schema.Field.Options;
 
 	/**
 	 * Create a new field.
@@ -914,7 +913,7 @@ class Field<Output> extends Schema<Output> {
 	) {
 		super(parse);
 
-		this.options = options;
+		this.#options = options;
 
 		this.read =
 			read ??
@@ -933,7 +932,7 @@ class Field<Output> extends Schema<Output> {
 	 * @returns New `Field` instance
 	 */
 	override derive<O>(parse: Schema.Parse<O>) {
-		return new Field<O>(this.options, parse, this.read);
+		return new Field<O>(this.#options, parse, this.read);
 	}
 
 	/**
@@ -945,7 +944,7 @@ class Field<Output> extends Schema<Output> {
 		props: Schema.Field.Props<S>,
 	) {
 		const id = props.id ?? props.name;
-		const { tag = "input", label = id, type, values, multiple } = this.options;
+		const { tag = "input", label = id, type, values, multiple } = this.#options;
 
 		return jsx("div", {
 			children:
@@ -985,7 +984,7 @@ class Field<Output> extends Schema<Output> {
  */
 class Form<Shape extends Schema.Form.Shape> {
 	/** Field definitions. */
-	readonly fields: Shape;
+	readonly #fields: Shape;
 
 	/**
 	 * Create a new form schema validator.
@@ -993,7 +992,7 @@ class Form<Shape extends Schema.Form.Shape> {
 	 * @param fields Form fields
 	 */
 	constructor(fields: Shape) {
-		this.fields = fields;
+		this.#fields = fields;
 	}
 
 	/**
@@ -1007,8 +1006,8 @@ class Form<Shape extends Schema.Form.Shape> {
 	parse(data: FormData, path: Schema.Path = []) {
 		const out: Record<string, unknown> = {};
 
-		for (const key in this.fields) {
-			const schema = this.fields[key]!;
+		for (const key in this.#fields) {
+			const schema = this.#fields[key]!;
 			out[key] = schema.parse(schema.read(data, key), [...path, key]);
 		}
 
@@ -1026,7 +1025,7 @@ class Form<Shape extends Schema.Form.Shape> {
 	 * ```
 	 */
 	Field = (props: Schema.Field.Props<Shape>) =>
-		this.fields[props.name]!.render(props);
+		this.#fields[props.name]!.render(props);
 
 	/**
 	 * Render all form fields in a fieldset.
@@ -1041,8 +1040,8 @@ class Form<Shape extends Schema.Form.Shape> {
 	Fieldset = (props: JSX.IntrinsicElements["fieldset"] = {}) => {
 		const children = [props.children];
 
-		for (const name in this.fields) {
-			const field = this.fields[name]!;
+		for (const name in this.#fields) {
+			const field = this.#fields[name]!;
 			children.push(field.render({ name }));
 		}
 
