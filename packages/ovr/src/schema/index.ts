@@ -983,7 +983,7 @@ class Field<Output> extends Schema<Output> {
  *
  * @template Shape Form field shape type
  */
-class Form<Shape extends Schema.Form.Shape> implements Form<Shape> {
+class Form<Shape extends Schema.Form.Shape> {
 	/** Field definitions. */
 	readonly fields: Shape;
 
