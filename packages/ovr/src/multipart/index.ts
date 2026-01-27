@@ -494,9 +494,9 @@ export class Multipart extends Request {
 	 * @param form Form schema
 	 * @returns Parsed form data
 	 */
-	async parse<S extends Schema.Form.Shape>(
-		form: Schema.Form<S>,
-	): Promise<Schema.Form.Infer<S>>;
+	async parse<
+		F extends { parse: (data: FormData, path?: Schema.Path) => unknown },
+	>(form: F): Promise<ReturnType<F["parse"]>>;
 	/**
 	 * @param fields Form data fields to parse
 	 * @returns Parsed form data

@@ -41,7 +41,7 @@ const withAuth = (
 const User = Schema.form({
 	email: Schema.Field.email({ label: "Email" }),
 	picture: Schema.Field.file({ label: "Profile Picture" }),
-	date: Schema.Field.radio(["test", "hello"]),
+	radio: Schema.Field.radio(["test", "hello"]),
 });
 
 /** Landing page - registration + sign in options */
@@ -58,9 +58,27 @@ export const auth = Route.get("/demo/auth", (c) => {
 			{Render.html(content.html)}
 
 			<div class="mt-24 flex justify-center">
-				<div class="border-secondary grid max-w-3xs rounded-md border p-4">
+				<div class="border-secondary bg-muted grid max-w-3xs rounded-md border p-4">
 					<Register class="grid gap-4">
-						<User.Fields />
+						<User.Field name="email" />
+						<User.Field name="picture" />
+
+						{() => {
+							const Radio = User.field("radio");
+
+							return (
+								<Radio.Root>
+									<Radio.Legend>Choose one</Radio.Legend>
+									{Radio.values.map((value) => (
+										<div class="flex items-center">
+											<Radio.Control value={value} />
+											<Radio.Label class="pl-2" value={value} />
+										</div>
+									))}
+								</Radio.Root>
+							);
+						}}
+
 						<button class="secondary">Register</button>
 					</Register>
 
