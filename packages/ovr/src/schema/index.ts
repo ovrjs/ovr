@@ -1051,6 +1051,13 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		}
 
 		/**
+		 * Field names in definition order.
+		 */
+		get names(): Array<Extract<keyof Shape, string>> {
+			return Object.keys(this.#fields) as Array<Extract<keyof Shape, string>>;
+		}
+
+		/**
 		 * Render a single form field.
 		 *
 		 * @param props Component props
@@ -1091,9 +1098,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * ```
 		 */
 		Fields = () =>
-			Object.entries(this.#fields).map(([name, field]) =>
-				field.render({ name }),
-			);
+			this.names.map((name) => this.#fields[name]!.render({ name }));
 	};
 }
 
