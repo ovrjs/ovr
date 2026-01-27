@@ -29,8 +29,8 @@ export const page = Route.get("/demo/schema", (c) => {
 	);
 });
 
-export const create = Route.post((c) => {
-	const data = c.form().parse(User);
+export const create = Route.post(async (c) => {
+	const data = await c.form().parse(User);
 	console.log(data);
 
 	return c.redirect(page);
