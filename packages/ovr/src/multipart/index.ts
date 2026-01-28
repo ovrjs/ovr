@@ -505,10 +505,6 @@ export class Multipart extends Request {
 		fields: S,
 	): Promise<Schema.Form.Infer<S>>;
 	async parse<S extends Schema.Form.Shape>(formOrFields: Schema.Form<S> | S) {
-		const data = await this.data();
-
-		return formOrFields instanceof Schema.Form
-			? formOrFields.parse(data)
-			: Schema.form(formOrFields).parse(data);
+		return Schema.form(formOrFields).parse(await this.data());
 	}
 }

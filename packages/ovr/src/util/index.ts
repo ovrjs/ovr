@@ -1,6 +1,7 @@
 /** General utility types */
 export namespace Util {
 	export type DeepArray<T> = T | DeepArray<T>[];
+	export type Prettify<T> = { [K in keyof T]: T[K] } & {};
 }
 
 /** Media type utils */

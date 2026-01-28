@@ -1,5 +1,6 @@
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
+import { type Field, Schema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Method, Mime } from "../util/index.js";
 
@@ -108,8 +109,12 @@ export namespace Route {
 		props: JSX.IntrinsicElements["form"] & URLOptions<ExtractParams<Pattern>>,
 	) => JSX.Element;
 
-	/** Extract params from a Route instance. */
-	export type Params<R> = R extends { pattern: infer P }
+	/**
+	 * Extract params from a Route instance.
+	 *
+	 * @template Route Route with pattern to extract params from
+	 */
+	export type Params<Route> = Route extends { pattern: infer P }
 		? P extends string
 			? ExtractParams<P>
 			: never
@@ -160,7 +165,7 @@ export class Route<Pattern extends string = string> {
 	readonly method: Route.Method;
 
 	/** Route middleware stack, runs after global middleware */
-	readonly middleware: Middleware<any>[]; // any so you can use other middleware
+	readonly middleware: Middleware<any, any>[]; // any so you can use other middleware
 
 	/** Pattern parts */
 	#parts: string[];
@@ -175,7 +180,7 @@ export class Route<Pattern extends string = string> {
 	constructor(
 		method: Route.Method,
 		pattern: Pattern,
-		...middleware: Middleware<ExtractParams<Pattern>>[]
+		...middleware: Middleware<ExtractParams<Pattern>, any>[]
 	) {
 		this.method = method;
 		this.pattern = pattern;
@@ -306,7 +311,27 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post(middleware: Middleware<{}>): Route & WithButton & WithForm;
+	static post(...middleware: Middleware<{}>[]): Route & WithButton & WithForm;
+	/**
+	 * @template S Form field shape
+	 * @param fields Form field shape
+	 * @param middleware POST middleware
+	 * @returns POST `Route` with added components
+	 */
+	static post<const S extends Record<string, Field.Any>>(
+		fields: S,
+		...middleware: Middleware<{}, Schema.Form.Infer<S>>[]
+	): Route & WithButton & WithForm & Schema.Form<S>;
+	/**
+	 * @template S Form field shape
+	 * @param form Form schema
+	 * @param middleware POST middleware
+	 * @returns POST `Route` with added components
+	 */
+	static post<S extends Schema.Form.Shape>(
+		form: Schema.Form<S>,
+		...middleware: Middleware<{}, Schema.Form.Infer<S>>[]
+	): Route & WithButton & WithForm & Schema.Form<S>;
 	/**
 	 * @template Pattern Route pattern
 	 * @param pattern Route pattern
@@ -317,21 +342,114 @@ export class Route<Pattern extends string = string> {
 		pattern: Pattern,
 		...middleware: Middleware<ExtractParams<Pattern>>[]
 	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern>;
+	/**
+	 * @template Pattern Route pattern
+	 * @template S Form field shape
+	 * @param pattern Route pattern
+	 * @param fields Form field shape
+	 * @param middleware POST middleware
+	 * @returns POST `Route` with added components
+	 */
+	static post<
+		Pattern extends string,
+		const S extends Record<string, Field.Any>,
+	>(
+		pattern: Pattern,
+		fields: S,
+		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
+	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern> & Schema.Form<S>;
+	/**
+	 * @template Pattern Route pattern
+	 * @template S Form field shape
+	 * @param pattern Route pattern
+	 * @param form Form schema
+	 * @param middleware POST middleware
+	 * @returns POST `Route` with added components
+	 */
+	static post<Pattern extends string, S extends Schema.Form.Shape>(
+		pattern: Pattern,
+		form: Schema.Form<S>,
+		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
+	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern> & Schema.Form<S>;
 	static post<Pattern extends string>(
-		patternOrMiddleware: Pattern | Middleware<ExtractParams<Pattern>>,
-		...middleware: Middleware<ExtractParams<Pattern>>[]
+		patternOrSchemaOrMiddleware:
+			| Pattern
+			| Schema.Form.Shape
+			| Schema.Form<Schema.Form.Shape>
+			| Middleware<ExtractParams<Pattern>>
+			| Middleware<
+					ExtractParams<Pattern>,
+					Schema.Form.Infer<Schema.Form.Shape>
+			  >,
+		schemaOrMiddleware?:
+			| Schema.Form.Shape
+			| Schema.Form<Schema.Form.Shape>
+			| Middleware<ExtractParams<Pattern>>
+			| Middleware<
+					ExtractParams<Pattern>,
+					Schema.Form.Infer<Schema.Form.Shape>
+			  >,
+		...middleware: (
+			| Middleware<ExtractParams<Pattern>>
+			| Middleware<ExtractParams<Pattern>, Schema.Form.Infer<Schema.Form.Shape>>
+		)[]
 	) {
-		let pattern: Pattern;
+		let pattern: Pattern | undefined;
+		let schema: Schema.Form<Schema.Form.Shape> | undefined;
 
-		if (typeof patternOrMiddleware === "string") {
-			pattern = patternOrMiddleware;
-		} else {
-			middleware.unshift(patternOrMiddleware);
+		const resolve = (
+			psm?:
+				| Pattern
+				| Schema.Form.Shape
+				| Schema.Form<Schema.Form.Shape>
+				| Middleware<ExtractParams<Pattern>>
+				| Middleware<
+						ExtractParams<Pattern>,
+						Schema.Form.Infer<Schema.Form.Shape>
+				  >,
+		) => {
+			if (psm) {
+				if (typeof psm === "string") {
+					pattern = psm;
+				} else if (typeof psm !== "function") {
+					schema = Schema.form(psm);
+				} else {
+					middleware.unshift(psm);
+				}
+			}
+		};
+
+		resolve(patternOrSchemaOrMiddleware);
+		resolve(schemaOrMiddleware);
+
+		if (!pattern) {
 			pattern = `/_p/${Checksum.djb2(middleware.join())}` as Pattern;
 		}
 
-		return Route.#withComponents(
+		const route = Route.#withComponents(
 			new Route(Method.post, pattern, ...middleware),
 		);
+
+		if (!schema) return route;
+
+		route.middleware.unshift((c, next) => {
+			c.data = () => c.form().parse(schema!);
+			return next();
+		});
+
+		const { Form } = route;
+
+		return Object.assign(route, schema, {
+			Form: ((props) => {
+				const p = { ...props };
+
+				p.children ??= [
+					schema!.Fields(),
+					jsx("button", { children: "Submit" }),
+				];
+
+				return Form(p);
+			}) as Route.Form<Pattern>,
+		});
 	}
 }

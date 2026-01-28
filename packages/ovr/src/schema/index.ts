@@ -45,140 +45,6 @@ export namespace Schema {
 		extend<E extends Shape>(extra: E): Object<Merge<S, E>>;
 	};
 
-	export namespace Field {
-		export type Read = (data: FormData, name: string) => unknown;
-
-		export type Tag = "input" | "textarea" | "select";
-
-		export type Type = JSX.IntrinsicElements["input"]["type"];
-
-		export type Values = readonly [string, ...string[]];
-
-		export type Any = Field<unknown, Tag, Type | undefined, Values | undefined>;
-
-		export type TagOf<F extends Any> =
-			F extends Field<
-				unknown,
-				infer T,
-				Schema.Field.Type | undefined,
-				Schema.Field.Values | undefined
-			>
-				? T
-				: Tag;
-
-		export type ValuesOf<F extends Any> =
-			F extends Field<
-				unknown,
-				Schema.Field.Tag,
-				Schema.Field.Type | undefined,
-				infer V
-			>
-				? V
-				: Values | undefined;
-
-		export type Root =
-			| JSX.IntrinsicElements["div"]
-			| JSX.IntrinsicElements["fieldset"];
-
-		export type Label = JSX.IntrinsicElements["label"] & { value?: string };
-
-		export type Legend = JSX.IntrinsicElements["legend"];
-
-		export type Error = JSX.IntrinsicElements["div"];
-
-		export type Control<T extends Tag> = T extends "textarea"
-			? JSX.IntrinsicElements["textarea"]
-			: T extends "select"
-				? JSX.IntrinsicElements["select"]
-				: JSX.IntrinsicElements["input"];
-
-		export type Opt<V extends Values> = JSX.IntrinsicElements["label"] & {
-			value: V[number];
-			control?: JSX.IntrinsicElements["input"];
-		};
-
-		export type OptSelect<V extends Values> =
-			JSX.IntrinsicElements["option"] & { value: V[number] };
-
-		export type Bound<F extends Any> = {
-			Root: (props?: Root) => JSX.Element;
-			Label: (props?: Label) => JSX.Element;
-			Control: (props?: Control<TagOf<F>>) => JSX.Element;
-			Error: (props?: Error) => JSX.Element;
-		} & (F extends Field<
-			unknown,
-			"select",
-			Schema.Field.Type | undefined,
-			infer V
-		>
-			? V extends Values
-				? { values: V; Option: (props: OptSelect<V>) => JSX.Element }
-				: {}
-			: F extends Field<
-						unknown,
-						"input",
-						Schema.Field.Type | undefined,
-						infer V
-				  >
-				? V extends Values
-					? {
-							values: V;
-							Option: (props: Opt<V>) => JSX.Element;
-							Legend: (props?: Legend) => JSX.Element;
-						}
-					: {}
-				: {});
-
-		export interface Options<
-			V extends Values | undefined = Values | undefined,
-			T extends Tag = Tag,
-		> {
-			/**
-			 * Tag name.
-			 *
-			 * @default "input"
-			 */
-			tag?: T;
-
-			/**
-			 * Values are used for `input[type=radio|checkbox]`, and
-			 * `<select>` elements
-			 */
-			values?: V;
-
-			/** Field props without `name` */
-			props?: Omit<Props<never>, "name">;
-		}
-
-		/**
-		 * Component props available to users to pass into the
-		 * constructed `<Field />` component.
-		 *
-		 * @template S Shape type
-		 */
-		export type Props<S> = {
-			/** Field name attribute */
-			name: Extract<keyof S, string>;
-		} & (Props.Input | Props.Select | Props.Textarea);
-
-		export namespace Props {
-			/** Extra props in addition to HTML attributes */
-			type Meta = {
-				/** Field label */
-				label?: string;
-			};
-
-			/** Props for `<input>` factories */
-			export type Input = Meta & JSX.IntrinsicElements["input"];
-
-			/** Props for `<select>` factories */
-			export type Select = Meta & JSX.IntrinsicElements["select"];
-
-			/** Props for `<textarea>` factory */
-			export type Textarea = Meta & JSX.IntrinsicElements["textarea"];
-		}
-	}
-
 	/** Schema.Form instance type */
 	export type Form<S extends Form.Shape> = InstanceType<typeof Schema.Form<S>>;
 
@@ -191,9 +57,7 @@ export namespace Schema {
 		 *
 		 * @template S Shape type
 		 */
-		export type Infer<S extends Shape> = {
-			[K in keyof S]: S[K] extends Field<infer O> ? O : never;
-		};
+		export type Infer<S extends Shape> = { [K in keyof S]: Schema.Infer<S[K]> };
 	}
 }
 
@@ -279,9 +143,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Optional field
 	 */
 	optional<
-		T extends Schema.Field.Tag,
-		U extends Schema.Field.Type | undefined,
-		V extends Schema.Field.Values | undefined,
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
 	>(this: Field<Output, T, U, V>): Field<Output | undefined, T, U, V>;
 	/**
 	 * @returns Optional schema
@@ -299,9 +163,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Field with default
 	 */
 	default<
-		T extends Schema.Field.Tag,
-		U extends Schema.Field.Type | undefined,
-		V extends Schema.Field.Values | undefined,
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
 	>(this: Field<Output, T, U, V>, value: Output): Field<Output, T, U, V>;
 	/**
 	 * @param value Default value to use when input is undefined
@@ -322,9 +186,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 */
 	transform<
 		O,
-		T extends Schema.Field.Tag,
-		U extends Schema.Field.Type | undefined,
-		V extends Schema.Field.Values | undefined,
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
 	>(this: Field<Output, T, U, V>, fn: (value: Output) => O): Field<O, T, U, V>;
 	/**
 	 * @template O Output type after transformation
@@ -346,9 +210,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 */
 	pipe<
 		O,
-		T extends Schema.Field.Tag,
-		U extends Schema.Field.Type | undefined,
-		V extends Schema.Field.Values | undefined,
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
 	>(this: Field<Output, T, U, V>, next: Schema<O, unknown>): Field<O, T, U, V>;
 	/**
 	 * @template O Output type after pipe
@@ -367,11 +231,16 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param check Validation function that returns `false` to fail
 	 * @param message Error message when validation fails
 	 * @returns Refined field
+	 * @example
+	 *
+	 * ```ts
+	 * Schema.number().refine(Number.isInteger, "Expected integer")
+	 * ```
 	 */
 	refine<
-		T extends Schema.Field.Tag,
-		U extends Schema.Field.Type | undefined,
-		V extends Schema.Field.Values | undefined,
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
 	>(
 		this: Field<Output, T, U, V>,
 		check: (value: Output) => boolean,
@@ -422,7 +291,13 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Email schema
 	 */
 	static email() {
-		return Schema.string().refine(Schema.#emailRegex.test, "Expected email");
+		return Schema.string().refine((s) => {
+			try {
+				return Schema.#emailRegex.test(s);
+			} catch {
+				return false;
+			}
+		}, "Expected email");
 	}
 
 	/**
@@ -464,15 +339,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 			return v;
 		});
-	}
-
-	/**
-	 * Validate an input is an integer.
-	 *
-	 * @returns Integer schema
-	 */
-	static int() {
-		return Schema.number().refine(Number.isInteger, "Expected integer");
 	}
 
 	/**
@@ -647,8 +513,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	static form<S extends Schema.Form.Shape>(fields: S): Schema.Form<S> {
-		return new Schema.Form(fields);
+	static form<S extends Schema.Form.Shape>(
+		fields: S | Schema.Form<S>,
+	): Schema.Form<S> {
+		return fields instanceof Schema.Form ? fields : new Schema.Form(fields);
 	}
 
 	/**
@@ -705,7 +573,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	};
 
 	/** Coercion schemas that apply JavaScript type coercion before validation. */
-	static Coerce = class {
+	static Coerce = class Coerce {
 		/**
 		 * Coerce to string using `String(value)`.
 		 *
@@ -745,14 +613,12 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		}
 	};
 
-	static Field = class {
+	static Field = class FieldFactory {
 		/**
 		 * @param props Input props
 		 * @returns Generic input field
 		 */
-		static #input(
-			props: Schema.Field.Props.Input & { type: Schema.Field.Type },
-		) {
+		static #input(props: Field.Props.Input & { type: Field.Type }) {
 			return new Field({ props }, Schema.string().parse);
 		}
 
@@ -760,7 +626,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Text input field
 		 */
-		static text(props?: Schema.Field.Props.Input) {
+		static text(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "text" });
 		}
 
@@ -768,7 +634,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Password input field
 		 */
-		static password(props?: Schema.Field.Props.Input) {
+		static password(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "password" });
 		}
 
@@ -776,7 +642,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Search input field
 		 */
-		static search(props?: Schema.Field.Props.Input) {
+		static search(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "search" });
 		}
 
@@ -784,7 +650,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Telephone input field
 		 */
-		static tel(props?: Schema.Field.Props.Input) {
+		static tel(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "tel" });
 		}
 
@@ -792,7 +658,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Color input field
 		 */
-		static color(props?: Schema.Field.Props.Input) {
+		static color(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "color" });
 		}
 
@@ -800,7 +666,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Hidden input field
 		 */
-		static hidden(props?: Schema.Field.Props.Input) {
+		static hidden(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "hidden" });
 		}
 
@@ -808,7 +674,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Date input field
 		 */
-		static date(props?: Schema.Field.Props.Input) {
+		static date(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "date" });
 		}
 
@@ -816,7 +682,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Datetime input field
 		 */
-		static datetime(props?: Schema.Field.Props.Input) {
+		static datetime(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "datetime-local" });
 		}
 
@@ -824,7 +690,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Month input field
 		 */
-		static month(props?: Schema.Field.Props.Input) {
+		static month(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "month" });
 		}
 
@@ -832,7 +698,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Week input field
 		 */
-		static week(props?: Schema.Field.Props.Input) {
+		static week(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "week" });
 		}
 
@@ -840,7 +706,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Time input field
 		 */
-		static time(props?: Schema.Field.Props.Input) {
+		static time(props?: Field.Props.Input) {
 			return Schema.Field.#input({ ...props, type: "time" });
 		}
 
@@ -850,7 +716,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Email input field
 		 */
-		static email(props?: Schema.Field.Props.Input) {
+		static email(props?: Field.Props.Input) {
 			return new Field(
 				{ props: { ...props, type: "email" } },
 				Schema.email().parse,
@@ -863,7 +729,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns URL input field
 		 */
-		static url(props?: Schema.Field.Props.Input) {
+		static url(props?: Field.Props.Input) {
 			return new Field(
 				{ props: { ...props, type: "url" } },
 				Schema.url().parse,
@@ -874,9 +740,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Input field
 		 */
-		static #number(
-			props: Schema.Field.Props.Input & { type: "number" | "range" },
-		) {
+		static #number(props: Field.Props.Input & { type: "number" | "range" }) {
 			return new Field({ props }, Schema.Coerce.number().parse);
 		}
 
@@ -886,7 +750,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Number input field
 		 */
-		static number(props?: Schema.Field.Props.Input) {
+		static number(props?: Field.Props.Input) {
 			return Schema.Field.#number({ ...props, type: "number" });
 		}
 
@@ -896,7 +760,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Range input field
 		 */
-		static range(props?: Schema.Field.Props.Input) {
+		static range(props?: Field.Props.Input) {
 			return Schema.Field.#number({ ...props, type: "range" });
 		}
 
@@ -907,7 +771,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Checkbox input field
 		 */
-		static checkbox(props?: Schema.Field.Props.Input) {
+		static checkbox(props?: Field.Props.Input) {
 			return new Field(
 				{ props: { ...props, type: "checkbox" } },
 				Schema.Coerce.boolean().parse,
@@ -919,7 +783,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns File input field
 		 */
-		static file(props?: Schema.Field.Props.Input) {
+		static file(props?: Field.Props.Input) {
 			return new Field(
 				{ props: { ...props, type: "file" } },
 				Schema.file().parse,
@@ -930,7 +794,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Input props
 		 * @returns Multiple file input field
 		 */
-		static files(props?: Schema.Field.Props.Input) {
+		static files(props?: Field.Props.Input) {
 			return new Field(
 				{ props: { ...props, type: "file", multiple: true } },
 				Schema.array(Schema.file()).parse,
@@ -946,7 +810,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static checkboxes<const V extends string>(
 			values: readonly [V, ...V[]],
-			props?: Schema.Field.Props.Input,
+			props?: Field.Props.Input,
 		) {
 			return new Field(
 				{ values, props: { ...props, type: "checkbox" } },
@@ -963,7 +827,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static radio<const V extends string>(
 			values: readonly [V, ...V[]],
-			props?: Schema.Field.Props.Input,
+			props?: Field.Props.Input,
 		) {
 			return new Field(
 				{ values, props: { ...props, type: "radio" } },
@@ -975,7 +839,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param props Textarea props
 		 * @returns Textarea field
 		 */
-		static textarea(props?: Schema.Field.Props.Textarea) {
+		static textarea(props?: Field.Props.Textarea) {
 			return new Field({ tag: "textarea", props }, Schema.string().parse);
 		}
 
@@ -987,7 +851,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static select<const V extends string>(
 			values: readonly [V, ...V[]],
-			props?: Schema.Field.Props.Select,
+			props?: Field.Props.Select,
 		) {
 			return new Field(
 				{ tag: "select", values, props },
@@ -1003,7 +867,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static multiselect<const V extends string>(
 			values: readonly [V, ...V[]],
-			props?: Schema.Field.Props.Select,
+			props?: Field.Props.Select,
 		) {
 			return new Field(
 				{ tag: "select", values, props: { ...props, multiple: true } },
@@ -1018,9 +882,12 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 *
 	 * @template Shape Form field shape type
 	 */
-	static Form = class<Shape extends Schema.Form.Shape> {
+	static Form = class Form<Shape extends Schema.Form.Shape> {
 		/** Field definitions. */
 		readonly #fields: Shape;
+
+		/** Field names in definition order */
+		readonly names: Extract<keyof Shape, string>[];
 
 		/**
 		 * Create a new form schema validator.
@@ -1029,6 +896,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		constructor(fields: Shape) {
 			this.#fields = fields;
+			this.names = Object.keys(this.#fields) as Extract<keyof Shape, string>[];
 		}
 
 		/**
@@ -1039,7 +907,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @returns Parsed result
 		 * @throws `Schema.Error` when the first encountered parse fails
 		 */
-		parse(data: FormData, path: Schema.Path = []) {
+		parse = (data: FormData, path: Schema.Path = []) => {
 			const out: Record<string, unknown> = {};
 
 			for (const key in this.#fields) {
@@ -1048,14 +916,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 			}
 
 			return out as Schema.Form.Infer<Shape>;
-		}
-
-		/**
-		 * Field names in definition order.
-		 */
-		get names(): Array<Extract<keyof Shape, string>> {
-			return Object.keys(this.#fields) as Array<Extract<keyof Shape, string>>;
-		}
+		};
 
 		/**
 		 * Render a single form field.
@@ -1067,11 +928,11 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * <User.Field name="username" />
 		 * ```
 		 */
-		Field = (props: Schema.Field.Props<Shape>) =>
+		Field = (props: Field.Props<Shape>) =>
 			this.#fields[props.name]!.render(props);
 
 		/**
-		 * Access bound subcomponents for a field.
+		 * Access bound sub-components for a field.
 		 *
 		 * @param name Field name
 		 * @example
@@ -1080,12 +941,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * const Radio = User.field("radio");
 		 * ```
 		 */
-		field<K extends Extract<keyof Shape, string>>(
+		field = <K extends Extract<keyof Shape, string>>(
 			name: K,
-		): Schema.Field.Bound<Shape[K]>;
-		field(name: Extract<keyof Shape, string>): unknown {
-			return this.#fields[name]!.bind(name);
-		}
+		): Field.Component<Shape[K]> =>
+			this.#fields[name]!.component(name) as Field.Component<Shape[K]>;
 
 		/**
 		 * Render all form fields.
@@ -1102,22 +961,228 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	};
 }
 
+export namespace Field {
+	/**
+	 * @param data Form data
+	 * @param name HTML name attribute
+	 * @returns Resolved value read from the form data
+	 */
+	export type Read = (data: FormData, name: string) => unknown;
+
+	/** Form field tag name */
+	export type Tag = "input" | "textarea" | "select";
+
+	/** `<input type=...>` */
+	export type Type = JSX.IntrinsicElements["input"]["type"];
+
+	/** Value type for select and radio options */
+	export type Values = readonly [string, ...string[]];
+
+	/** Any field - `<input type=...>` / `<select>` / `<textarea>` */
+	export type Any = Field<unknown, Tag, Type, Values | undefined>;
+
+	/**
+	 * Obtain the tag name of a field.
+	 *
+	 * @template F Field
+	 */
+	export type TagOf<F extends Any> =
+		F extends Field<unknown, infer T, Field.Type, Field.Values | undefined>
+			? T
+			: Tag;
+
+	/**
+	 * Obtain the values of a select or radio field - (undefined for other types)
+	 *
+	 * @template F Field
+	 */
+	export type ValuesOf<F extends Any> =
+		F extends Field<unknown, Field.Tag, Field.Type, infer V> ? V : undefined;
+
+	/**
+	 * Root element for the Field component - `<fieldset>` for
+	 * radio/checkboxes otherwise `<div>`
+	 */
+	export type Root =
+		| JSX.IntrinsicElements["div"]
+		| JSX.IntrinsicElements["fieldset"];
+
+	/** `<Field.Label />` component props */
+	export type Label = JSX.IntrinsicElements["label"] & { value?: string };
+
+	/** `<Field.Legend />` component props */
+	export type Legend = JSX.IntrinsicElements["legend"];
+
+	/** `<Field.Error />` component props */
+	export type Error = JSX.IntrinsicElements["div"];
+
+	/**
+	 * `<Field.Control />` component props
+	 *
+	 * @template T Tag name
+	 */
+	export type Control<T extends Tag> = T extends "textarea"
+		? JSX.IntrinsicElements["textarea"]
+		: T extends "select"
+			? JSX.IntrinsicElements["select"]
+			: JSX.IntrinsicElements["input"];
+
+	/**
+	 * `<Field.Option />` select component props
+	 *
+	 * @template V Values
+	 */
+	export type Option<V extends Values> = JSX.IntrinsicElements["option"] & {
+		/** Option value */
+		value: V[number];
+	};
+
+	/**
+	 * `<Field.Option />` input component props
+	 *
+	 * @template V Values
+	 */
+	export type InputOption<V extends Values> = JSX.IntrinsicElements["div"] & {
+		/** Option value */
+		value: V[number];
+	};
+
+	/**
+	 * Base Field component object that contains sub-components,
+	 * use for fine grained rendering control.
+	 *
+	 * @template F Field
+	 */
+	export type Component<F extends Any> = {
+		/**
+		 * @param props Root props
+		 * @returns Root container element
+		 */
+		Root: (props?: Root) => JSX.Element;
+
+		/**
+		 * @param props Label props
+		 * @returns Label element
+		 */
+		Label: (props?: Label) => JSX.Element;
+
+		/**
+		 * @param props Control props
+		 * @returns Control element (input, select, or textarea)
+		 */
+		Control: (props?: Control<TagOf<F>>) => JSX.Element;
+
+		/**
+		 * @param props Error props
+		 * @returns Error container element
+		 */
+		Error: (props?: Error) => JSX.Element;
+	} & (F extends Field<unknown, "select", Field.Type, infer V>
+		? V extends Values
+			? {
+					/** Select option values */
+					values: V;
+
+					/**
+					 * @param props Option props
+					 * @returns Select option element
+					 */
+					Option: (props: Option<V>) => JSX.Element;
+				}
+			: {}
+		: F extends Field<unknown, "input", Field.Type, infer V>
+			? V extends Values
+				? {
+						/** Input group values */
+						values: V;
+
+						/**
+						 * @param props Legend element props
+						 * @returns Legend element for radio/checkbox groups
+						 */
+						Legend: (props?: Legend) => JSX.Element;
+
+						/**
+						 * @param props Option props
+						 * @returns Label and input elements
+						 */
+						Option: (props: InputOption<V>) => JSX.Element;
+					}
+				: {}
+			: {});
+
+	/**
+	 * Base options to create a Field.
+	 *
+	 * @template V Type of the values for group inputs
+	 * @template T Tag name
+	 */
+	export interface Options<
+		V extends Values | undefined = undefined,
+		T extends Tag = Tag,
+	> {
+		/**
+		 * Tag name.
+		 *
+		 * @default "input"
+		 */
+		tag?: T;
+
+		/** Values are used for group inputs */
+		values?: V;
+
+		/** Field props without `name` */
+		props?: Omit<Props<never>, "name">;
+	}
+
+	/**
+	 * Component props available to users to pass into the
+	 * constructed `<Field />` component.
+	 *
+	 * @template S Shape type
+	 */
+	export type Props<S> = {
+		/** Field name attribute */
+		name: Extract<keyof S, string>;
+	} & Props.Any;
+
+	export namespace Props {
+		/** Extra props in addition to HTML attributes */
+		type Meta = {
+			/** Field label */
+			label?: string;
+		};
+
+		/** Props for `<input>` factories */
+		export type Input = Meta & JSX.IntrinsicElements["input"];
+
+		/** Props for `<select>` factories */
+		export type Select = Meta & JSX.IntrinsicElements["select"];
+
+		/** Props for `<textarea>` factory */
+		export type Textarea = Meta & JSX.IntrinsicElements["textarea"];
+
+		/** Props for any of the field factories */
+		export type Any = Props.Input | Props.Select | Props.Textarea;
+	}
+}
+
 /**
  * Represents a form field with parsing logic and rendering metadata.
  *
  * @template Output Output type of the field
  */
-class Field<
-	Output,
-	Tag extends Schema.Field.Tag = "input",
-	Type extends Schema.Field.Type | undefined = undefined,
-	Values extends Schema.Field.Values | undefined = undefined,
+export class Field<
+	Output = unknown,
+	Tag extends Field.Tag = "input",
+	Type extends Field.Type = Field.Type,
+	Values extends Field.Values | undefined = undefined,
 > extends Schema<Output> {
 	/** Read the value from form data */
-	readonly read: Schema.Field.Read;
+	readonly read: Field.Read;
 
 	/** Field options */
-	readonly #options: Schema.Field.Options<Values, Tag>;
+	readonly #options: Field.Options<Values, Tag>;
 
 	/** Field tag */
 	readonly tag: Tag;
@@ -1136,9 +1201,9 @@ class Field<
 	 * @param read How to read the data from `FormData`
 	 */
 	constructor(
-		options: Schema.Field.Options<Values, Tag>,
+		options: Field.Options<Values, Tag>,
 		parse: Schema.Parse<Output>,
-		read?: Schema.Field.Read,
+		read?: Field.Read,
 	) {
 		super(parse);
 
@@ -1154,12 +1219,11 @@ class Field<
 				return v == null ? undefined : v;
 			});
 
-		this.type = (options.props as Schema.Field.Props.Input | undefined)
-			?.type as Type;
+		this.type = options.props?.type as Type;
 	}
 
 	/**
-	 * Derive a new Field from the current.
+	 * Derive a new Field from the current instance type.
 	 *
 	 * @template O Output type of the new Field
 	 * @param parse Parse function that validates and transforms input
@@ -1169,114 +1233,108 @@ class Field<
 		return new Field<O, Tag, Type, Values>(this.#options, parse, this.read);
 	}
 
-	#props(name: string, props?: Omit<Schema.Field.Props<never>, "name">) {
-		const base: Schema.Field.Props<Record<string, never>> = {
-			...this.#options.props,
-			...props,
-			name,
-		};
-		base.id ??= name;
-		base.label ??= name;
-		if (this.tag === "input" && this.type && base.type == null) {
-			base.type = this.type;
-		}
-		return base;
+	#props(name: string, props?: Field.Props.Any) {
+		return { id: name, label: name, name, ...this.#options.props, ...props };
 	}
 
 	/**
 	 * @param name Field name
-	 * @returns Field sub components
+	 * @returns Field component with sub-components
 	 */
-	bind(
-		this: Field<Output, Tag, Type, Values>,
-		name: string,
-		props?: Omit<Schema.Field.Props<never>, "name">,
-	): Schema.Field.Bound<this>;
-	bind(name: string, props?: Omit<Schema.Field.Props<never>, "name">): unknown {
+	component(name: string, props?: Field.Props.Any): Field.Component<this>;
+	component(name: string, props?: Field.Props.Any): unknown {
 		const base = this.#props(name, props);
 		const id = base.id ?? name;
 
-		const Root = (data?: Schema.Field.Root) =>
+		const Root = (data?: Field.Root) =>
 			jsx(
 				this.type === "radio" || this.type === "checkbox" ? "fieldset" : "div",
 				data ?? {},
 			);
 
-		const Label = (data?: Schema.Field.Label) => {
+		const Label = (data?: Field.Label) => {
 			const { value, children, ...rest } = data ?? {};
-			const oid = value == null ? id : `${id}-${value}`;
+
 			return jsx("label", {
 				...rest,
-				for: rest.for ?? oid,
+				for: rest.for ?? (value == null ? id : `${id}-${value}`),
 				children: children ?? value ?? base.label,
 			});
 		};
 
-		const Error = (data?: Schema.Field.Error) => jsx("div", data ?? {});
+		// TODO - figure out how to render the errors for routes automatically
+		// probably if there's an error, then redirect back to the page with the
+		// message in the search params
+		const Error = (data?: Field.Error) => jsx("div", data ?? {});
 
 		if (this.values) {
 			if (this.tag === "select") {
-				const Control = (data?: Schema.Field.Control<"select">) =>
-					jsx(this.tag, { ...base, ...data, name });
-
 				return {
 					Root,
 					Label,
-					Control,
 					Error,
-					Option: (data: Schema.Field.OptSelect<Schema.Field.Values>) =>
+					Control: (data?: Field.Control<"select">) =>
+						jsx(this.tag, { ...base, ...data, name }),
+					Option: (data: Field.Option<Field.Values>) =>
 						jsx("option", { ...data, children: data.children ?? data.value }),
-					values: this.values,
+					...this,
 				};
 			}
 
-			if (this.tag === "input") {
-				const Control = (data?: Schema.Field.Control<"input">) => {
-					const ctrl = { ...base, ...data, name };
-					const value = data?.value;
-					if (value != null) {
-						ctrl.id = data?.id ?? `${id}-${value}`;
-					} else {
-						ctrl.id ??= id;
-					}
-					return jsx(this.tag, ctrl);
-				};
+			// radio/checkboxes
+			const Control = (data?: Field.Control<"input">) => {
+				const ctrl = { ...base, ...data, name };
 
-				return {
-					Root,
-					Label,
-					Control,
-					Error,
-					Legend: (data?: Schema.Field.Legend) =>
-						jsx("legend", { ...data, children: data?.children ?? base.label }),
-					Option: (data: Schema.Field.Opt<Schema.Field.Values>) => {
-						const { value, control, children, ...rest } = data;
-						return [
-							Label({ ...rest, value, children }),
-							Control({ ...control, value }),
-						];
-					},
-					values: this.values,
-				};
-			}
+				if (data?.value) {
+					ctrl.id = data?.id ?? `${id}-${data.value}`;
+				} else {
+					ctrl.id ??= id;
+				}
+
+				return jsx(this.tag, ctrl);
+			};
+
+			return {
+				Root,
+				Label,
+				Control,
+				Error,
+				Option: (data: Field.InputOption<Field.Values>) => {
+					const { value, ...rest } = data;
+
+					return jsx("div", {
+						children: [Control({ value }), Label({ value })],
+						...rest,
+					});
+				},
+				Legend: (data?: Field.Legend) =>
+					jsx("legend", { ...data, children: data?.children ?? base.label }),
+				...this,
+			};
 		}
 
-		const Control = (data?: Schema.Field.Control<Tag>) =>
-			jsx(this.tag, { ...base, ...data, name });
-
-		return { Root, Label, Control, Error };
+		return {
+			Root,
+			Label,
+			Error,
+			Control: (data?: Field.Control<Tag>) =>
+				jsx(this.tag, { ...base, ...data, name }),
+			...this,
+		};
 	}
 
-	#renderGroup<S extends Record<string, Schema.Field.Any>>(
-		this: Field<Output, "input", "radio" | "checkbox", Schema.Field.Values>,
-		data: Schema.Field.Props<S>,
+	// TODO - clean up all these rendering fns, I think they can be smaller, and #props
+	#renderGroup<S extends Record<string, Field.Any>>(
+		this: Field<Output, "input", "radio" | "checkbox", Field.Values>,
+		data: Field.Props<S>,
 	) {
 		const base = this.#props(data.name, data);
-		const field = this.bind(base.name, data);
+		const field = this.component(base.name, data);
 
 		return field.Root({
 			children: [
 				jsx("legend", { children: base.label }),
+
 				this.values.map((value: string) => {
 					return jsx("div", {
 						children: [field.Control({ value }), field.Label({ value })],
@@ -1286,28 +1344,24 @@ class Field<
 		});
 	}
 
-	#renderSelect<S extends Record<string, Schema.Field.Any>>(
-		this: Field<Output, "select", Type, Schema.Field.Values>,
-		data: Schema.Field.Props<S>,
+	#renderSelect<S extends Record<string, Field.Any>>(
+		this: Field<Output, "select", Type, Field.Values>,
+		data: Field.Props<S>,
 	) {
-		const field = this.bind(data.name, data);
+		const field = this.component(data.name, data);
 
 		return field.Root({
 			children: [
 				field.Label(),
 				field.Control({
-					children: this.values.map((value: string) =>
-						jsx("option", { value, children: value }),
-					),
+					children: this.values.map((value: string) => field.Option({ value })),
 				}),
 			],
 		});
 	}
 
-	#renderDefault<S extends Record<string, Schema.Field.Any>>(
-		data: Schema.Field.Props<S>,
-	) {
-		const field = this.bind(data.name, data);
+	#renderDefault<S extends Record<string, Field.Any>>(data: Field.Props<S>) {
+		const field = this.component(data.name, data);
 
 		return field.Root({ children: [field.Label(), field.Control()] });
 	}
@@ -1317,19 +1371,14 @@ class Field<
 	 * @param fieldProps Field props including `name`
 	 * @returns JSX Component that renders the HTML field
 	 */
-	render<S extends Record<string, Schema.Field.Any>>(
-		data: Schema.Field.Props<S>,
-	) {
-		if (
-			this.values &&
-			this.tag === "input" &&
-			(this.type === "radio" || this.type === "checkbox")
-		) {
-			return this.#renderGroup(data);
-		}
+	render<S extends Record<string, Field.Any>>(data: Field.Props<S>) {
+		if (this.values) {
+			if (this.tag === "select") {
+				return this.#renderSelect(data);
+			}
 
-		if (this.values && this.tag === "select") {
-			return this.#renderSelect(data);
+			// radio/checkboxes
+			return this.#renderGroup(data);
 		}
 
 		return this.#renderDefault(data);

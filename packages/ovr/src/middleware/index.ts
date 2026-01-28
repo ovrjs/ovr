@@ -1,5 +1,5 @@
 import type { Auth as AuthType } from "../auth/index.js";
-import type { Context } from "../context/index.js";
+import type { Context as ContextType } from "../context/index.js";
 import type { Cookie as CookieType } from "../cookie/index.js";
 import type { Trie } from "../trie/index.js";
 
@@ -18,10 +18,12 @@ export namespace Middleware {
 	 * Middleware context.
 	 *
 	 * @template Params Parameters created from a route match
+	 * @template Data Parsed form data
 	 */
-	export type Context<Params extends Trie.Params = Trie.Params> = InstanceType<
-		typeof Context<Params>
-	>;
+	export type Context<
+		Params extends Trie.Params = Trie.Params,
+		Data = unknown,
+	> = ContextType<Params, Data>;
 
 	/** Dispatches the next middleware in the stack */
 	export type Next = () => Promise<void>;
@@ -35,7 +37,7 @@ export namespace Middleware {
  * @param next Dispatches the next middleware in the stack
  * @returns `Response` or element(s) to stream as HTML
  */
-export type Middleware<Params extends Trie.Params = Trie.Params> = (
-	context: Middleware.Context<Params>,
-	next: Middleware.Next,
-) => any;
+export type Middleware<
+	Params extends Trie.Params = Trie.Params,
+	Data = unknown,
+> = (context: Middleware.Context<Params, Data>, next: Middleware.Next) => any;

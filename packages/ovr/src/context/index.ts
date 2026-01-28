@@ -6,7 +6,7 @@ import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { type Trie } from "../trie/index.js";
-import { Checksum, Header, Method, Mime } from "../util/index.js";
+import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
 /** Properties to build the final `Response` with once middleware has run. */
 class PreparedResponse {
@@ -36,8 +36,9 @@ class PreparedResponse {
  * Request context.
  *
  * @template Params Parameters created from a route match
+ * @template Data Parsed form data
  */
-export class Context<Params extends Trie.Params = Trie.Params> {
+export class Context<Params extends Trie.Params = Trie.Params, Data = unknown> {
 	/**
 	 * Incoming `Request` to the server.
 	 *
@@ -72,6 +73,11 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 
 	/** Cached multipart instance */
 	#multipart?: Multipart;
+
+	/** Data parser set by schema routes. */
+	data: () => Promise<Util.Prettify<Data>> = async () => {
+		throw new Error("No schema attached to this route.");
+	};
 
 	/**
 	 * Creates a new `Context` with the current `Request`.
