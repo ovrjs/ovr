@@ -1,2 +1,2 @@
-export const bytes = 31615;
-export const kb = 31.62;
+export const bytes = 31074;
+export const kb = 31.07;
