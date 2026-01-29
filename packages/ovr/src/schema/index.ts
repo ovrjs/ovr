@@ -513,7 +513,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	static form<S extends Schema.Form.Shape>(
+	static form<const S extends Schema.Form.Shape>(
 		fields: S | Schema.Form<S>,
 	): Schema.Form<S> {
 		return fields instanceof Schema.Form ? fields : new Schema.Form(fields);
@@ -882,7 +882,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 *
 	 * @template Shape Form field shape type
 	 */
-	static Form = class Form<Shape extends Schema.Form.Shape> {
+	static Form = class Form<const Shape extends Schema.Form.Shape> {
 		/** Field definitions. */
 		readonly #fields: Shape;
 

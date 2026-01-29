@@ -23,7 +23,7 @@ export const create = Route.post(
 	async (c) => {
 		const data = await c.data();
 
-		return c.redirect(page);
+		return c.redirect(page, 303);
 	},
 );
 

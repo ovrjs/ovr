@@ -20,7 +20,7 @@ export const create = Route.post(
 		const data = await c.data();
 		console.log(data);
 
-		return c.redirect(schema);
+		return c.redirect(schema, 303);
 	},
 );
 
