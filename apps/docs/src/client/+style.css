@@ -191,8 +191,9 @@
 		@apply font-semibold;
 	}
 
-	label {
-		@apply font-headings mb-2 text-base;
+	label,
+	legend {
+		@apply font-headings text-base;
 	}
 
 	button,

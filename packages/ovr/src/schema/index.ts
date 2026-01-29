@@ -929,7 +929,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * ```
 		 */
 		Field = (props: Field.Props<Shape>) =>
-			this.#fields[props.name]!.render(props);
+			this.#fields[props.name]!.Field(props);
 
 		/**
 		 * Access bound sub-components for a field.
@@ -944,7 +944,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		field = <K extends Extract<keyof Shape, string>>(
 			name: K,
 		): Field.Component<Shape[K]> =>
-			this.#fields[name]!.component(name) as Field.Component<Shape[K]>;
+			this.#fields[name]!.Base(name) as Field.Component<Shape[K]>;
 
 		/**
 		 * Render all form fields.
@@ -957,7 +957,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * ```
 		 */
 		Fields = () =>
-			this.names.map((name) => this.#fields[name]!.render({ name }));
+			this.names.map((name) => this.#fields[name]!.Field({ name }));
 	};
 }
 
@@ -1241,8 +1241,8 @@ export class Field<
 	 * @param name Field name
 	 * @returns Field component with sub-components
 	 */
-	component(name: string, props?: Field.Props.Any): Field.Component<this>;
-	component(name: string, props?: Field.Props.Any): unknown {
+	Base(name: string, props?: Field.Props.Any): Field.Component<this>;
+	Base(name: string, props?: Field.Props.Any): unknown {
 		const base = this.#props(name, props);
 		const id = base.id ?? name;
 
@@ -1329,7 +1329,7 @@ export class Field<
 		data: Field.Props<S>,
 	) {
 		const base = this.#props(data.name, data);
-		const field = this.component(base.name, data);
+		const field = this.Base(base.name, data);
 
 		return field.Root({
 			children: [
@@ -1348,7 +1348,7 @@ export class Field<
 		this: Field<Output, "select", Type, Field.Values>,
 		data: Field.Props<S>,
 	) {
-		const field = this.component(data.name, data);
+		const field = this.Base(data.name, data);
 
 		return field.Root({
 			children: [
@@ -1361,26 +1361,27 @@ export class Field<
 	}
 
 	#renderDefault<S extends Record<string, Field.Any>>(data: Field.Props<S>) {
-		const field = this.component(data.name, data);
+		const field = this.Base(data.name, data);
 
 		return field.Root({ children: [field.Label(), field.Control()] });
 	}
 
 	/**
 	 * @template S Shape type
-	 * @param fieldProps Field props including `name`
-	 * @returns JSX Component that renders the HTML field
+	 * @param props Field props including `name` of the field to render
+	 * @returns JSX Component that renders the HTML field with out of
+	 * the box structure
 	 */
-	render<S extends Record<string, Field.Any>>(data: Field.Props<S>) {
+	Field<S extends Record<string, Field.Any>>(props: Field.Props<S>) {
 		if (this.values) {
 			if (this.tag === "select") {
-				return this.#renderSelect(data);
+				return this.#renderSelect(props);
 			}
 
 			// radio/checkboxes
-			return this.#renderGroup(data);
+			return this.#renderGroup(props);
 		}
 
-		return this.#renderDefault(data);
+		return this.#renderDefault(props);
 	}
 }
