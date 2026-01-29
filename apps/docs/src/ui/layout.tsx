@@ -8,19 +8,13 @@ import { FontPreload } from "@/ui/font-preload";
 import { GitHub } from "@/ui/github";
 import { Popover } from "@/ui/popover";
 import { SkipLink } from "@/ui/skip-link";
-import { tags } from "client:script";
+import * as script from "client:script";
+import * as style from "client:style";
 import { clsx } from "clsx";
 import * as o from "ovr";
 
 const Assets = () => {
-	return (
-		<>
-			{import.meta.env.DEV && (
-				<link rel="stylesheet" href="/client/tailwind.css" />
-			)}
-			{o.Render.html(tags)}
-		</>
-	);
+	return o.Render.html(script.tags + style.tags);
 };
 
 export const createLayout =
