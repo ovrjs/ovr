@@ -50,7 +50,7 @@ export namespace Schema {
 
 	export namespace Form {
 		/** Form field shape. */
-		export type Shape = Record<string, Field.Any>;
+		export type Shape = Field.Shape;
 
 		/**
 		 * Infer Output type of a form shape.
@@ -944,7 +944,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		field = <K extends Extract<keyof Shape, string>>(
 			name: K,
 		): Field.Component<Shape[K]> =>
-			this.#fields[name]!.Base(name) as Field.Component<Shape[K]>;
+			this.#fields[name]!.Component({ name }) as Field.Component<Shape[K]>;
 
 		/**
 		 * Render all form fields.
@@ -962,6 +962,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 }
 
 export namespace Field {
+	/** Field schema shape. */
+	export type Shape = Record<string, Field<unknown>>;
+
 	/**
 	 * @param data Form data
 	 * @param name HTML name attribute
@@ -1008,7 +1011,9 @@ export namespace Field {
 		| JSX.IntrinsicElements["fieldset"];
 
 	/** `<Field.Label />` component props */
-	export type Label = JSX.IntrinsicElements["label"] & { value?: string };
+	export type Label = JSX.IntrinsicElements["label"];
+
+	export type GroupLabel = Label & { value: string };
 
 	/** `<Field.Legend />` component props */
 	export type Legend = JSX.IntrinsicElements["legend"];
@@ -1103,6 +1108,12 @@ export namespace Field {
 						Legend: (props?: Legend) => JSX.Element;
 
 						/**
+						 * @param props Label props
+						 * @returns Label element
+						 */
+						Label: (props: GroupLabel) => JSX.Element;
+
+						/**
 						 * @param props Option props
 						 * @returns Label and input elements
 						 */
@@ -1144,7 +1155,7 @@ export namespace Field {
 	export type Props<S> = {
 		/** Field name attribute */
 		name: Extract<keyof S, string>;
-	} & Props.Any;
+	} & (Props.Input | Props.Select | Props.Textarea);
 
 	export namespace Props {
 		/** Extra props in addition to HTML attributes */
@@ -1161,9 +1172,6 @@ export namespace Field {
 
 		/** Props for `<textarea>` factory */
 		export type Textarea = Meta & JSX.IntrinsicElements["textarea"];
-
-		/** Props for any of the field factories */
-		export type Any = Props.Input | Props.Select | Props.Textarea;
 	}
 }
 
@@ -1233,155 +1241,135 @@ export class Field<
 		return new Field<O, Tag, Type, Values>(this.#options, parse, this.read);
 	}
 
-	#props(name: string, props?: Field.Props.Any) {
-		return { id: name, label: name, name, ...this.#options.props, ...props };
-	}
-
 	/**
-	 * @param name Field name
+	 * @param props Field control props
 	 * @returns Field component with sub-components
 	 */
-	Base(name: string, props?: Field.Props.Any): Field.Component<this>;
-	Base(name: string, props?: Field.Props.Any): unknown {
-		const base = this.#props(name, props);
-		const id = base.id ?? name;
-
-		const Root = (data?: Field.Root) =>
-			jsx(
-				this.type === "radio" || this.type === "checkbox" ? "fieldset" : "div",
-				data ?? {},
-			);
-
-		const Label = (data?: Field.Label) => {
-			const { value, children, ...rest } = data ?? {};
-
-			return jsx("label", {
-				...rest,
-				for: rest.for ?? (value == null ? id : `${id}-${value}`),
-				children: children ?? value ?? base.label,
-			});
-		};
+	Component<const S extends Field.Shape>(
+		props: Field.Props<S>,
+	): Field.Component<this>;
+	Component<const S extends Field.Shape>(props: Field.Props<S>): unknown {
+		const control = { id: props.name, ...this.#options.props, ...props };
 
 		// TODO - figure out how to render the errors for routes automatically
 		// probably if there's an error, then redirect back to the page with the
 		// message in the search params
-		const Error = (data?: Field.Error) => jsx("div", data ?? {});
+		const Error = (data: Field.Error = {}) => jsx("div", data);
 
-		if (this.values) {
-			if (this.tag === "select") {
-				return {
-					Root,
-					Label,
-					Error,
-					Control: (data?: Field.Control<"select">) =>
-						jsx(this.tag, { ...base, ...data, name }),
-					Option: (data: Field.Option<Field.Values>) =>
-						jsx("option", { ...data, children: data.children ?? data.value }),
-					...this,
-				};
-			}
-
+		if (this.values && this.tag !== "select") {
 			// radio/checkboxes
-			const Control = (data?: Field.Control<"input">) => {
-				const ctrl = { ...base, ...data, name };
+			const valueId = (value: string) =>
+				`${control.name}-${value}`.toLowerCase();
 
-				if (data?.value) {
-					ctrl.id = data?.id ?? `${id}-${data.value}`;
-				} else {
-					ctrl.id ??= id;
-				}
+			const Control = (data: Field.Control<"input"> & { value: string }) =>
+				jsx(this.tag, { ...control, id: valueId(data.value), ...data });
 
-				return jsx(this.tag, ctrl);
-			};
+			const Label = ({ value, ...rest }: Field.GroupLabel) =>
+				jsx("label", { for: valueId(value), children: value, ...rest });
 
 			return {
-				Root,
+				Error,
 				Label,
 				Control,
-				Error,
-				Option: (data: Field.InputOption<Field.Values>) => {
-					const { value, ...rest } = data;
-
-					return jsx("div", {
-						children: [Control({ value }), Label({ value })],
-						...rest,
-					});
-				},
-				Legend: (data?: Field.Legend) =>
-					jsx("legend", { ...data, children: data?.children ?? base.label }),
+				Root: (data: Field.Root = {}) => jsx("fieldset", data),
+				Option: (data: Field.InputOption<Field.Values>) =>
+					jsx("div", {
+						children: [
+							Control({ value: data.value }),
+							Label({ value: data.value }),
+						],
+						...data,
+					}),
+				Legend: (data: Field.Legend = {}) =>
+					jsx("legend", { children: control.name, ...data }),
 				...this,
 			};
 		}
 
 		return {
-			Root,
-			Label,
 			Error,
+			Root: (data: Field.Root = {}) => jsx("div", data),
+			Label: (data: Field.Label = {}) =>
+				jsx("label", { for: control.id, children: control.name, ...data }),
 			Control: (data?: Field.Control<Tag>) =>
-				jsx(this.tag, { ...base, ...data, name }),
+				jsx(this.tag, { ...control, ...data }),
+			Option:
+				// select
+				this.values &&
+				((data: Field.Option<Field.Values>) =>
+					jsx("option", { children: data.value, ...data })),
 			...this,
 		};
 	}
 
-	// TODO - clean up all these rendering fns, I think they can be smaller, and #props
-	#renderGroup<S extends Record<string, Field.Any>>(
+	/**
+	 * @template S Shape type
+	 * @param props Field control props
+	 * @returns Input group component
+	 */
+	#Group<const S extends Field.Shape>(
 		this: Field<Output, "input", "radio" | "checkbox", Field.Values>,
-		data: Field.Props<S>,
+		props: Field.Props<S>,
 	) {
-		const base = this.#props(data.name, data);
-		const field = this.Base(base.name, data);
+		const Base = this.Component(props);
 
-		return field.Root({
+		return Base.Root({
 			children: [
-				jsx("legend", { children: base.label }),
-
+				jsx("legend", { children: props.name }),
 				this.values.map((value: string) => {
 					return jsx("div", {
-						children: [field.Control({ value }), field.Label({ value })],
+						children: [Base.Control({ value }), Base.Label({ value })],
 					});
 				}),
 			],
 		});
 	}
 
-	#renderSelect<S extends Record<string, Field.Any>>(
+	/**
+	 * @template S Shape type
+	 * @param props Field control props
+	 * @returns Select component
+	 */
+	#Select<const S extends Field.Shape>(
 		this: Field<Output, "select", Type, Field.Values>,
-		data: Field.Props<S>,
+		props: Field.Props<S>,
 	) {
-		const field = this.Base(data.name, data);
+		const Base = this.Component(props);
 
-		return field.Root({
+		return Base.Root({
 			children: [
-				field.Label(),
-				field.Control({
-					children: this.values.map((value: string) => field.Option({ value })),
+				Base.Label(),
+				Base.Control({
+					children: this.values.map((value: string) => Base.Option({ value })),
 				}),
 			],
 		});
 	}
 
-	#renderDefault<S extends Record<string, Field.Any>>(data: Field.Props<S>) {
-		const field = this.Base(data.name, data);
+	/**
+	 * @template S Shape type
+	 * @param props Field control props
+	 * @returns Default input component
+	 */
+	#Input<const S extends Field.Shape>(props: Field.Props<S>) {
+		const Base = this.Component(props);
 
-		return field.Root({ children: [field.Label(), field.Control()] });
+		return Base.Root({ children: [Base.Label(), Base.Control()] });
 	}
 
 	/**
 	 * @template S Shape type
-	 * @param props Field props including `name` of the field to render
+	 * @param props Field control props including `name` of the field to render
 	 * @returns JSX Component that renders the HTML field with out of
 	 * the box structure
 	 */
-	Field<S extends Record<string, Field.Any>>(props: Field.Props<S>) {
+	Field<const S extends Field.Shape>(props: Field.Props<S>) {
 		if (this.values) {
-			if (this.tag === "select") {
-				return this.#renderSelect(props);
-			}
+			if (this.tag === "select") return this.#Select(props);
 
-			// radio/checkboxes
-			return this.#renderGroup(props);
+			return this.#Group(props);
 		}
 
-		return this.#renderDefault(props);
+		return this.#Input(props);
 	}
 }

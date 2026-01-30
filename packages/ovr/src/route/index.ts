@@ -318,7 +318,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<const S extends Record<string, Field.Any>>(
+	static post<const S extends Field.Shape>(
 		fields: S,
 		...middleware: Middleware<{}, Schema.Form.Infer<S>>[]
 	): Route & WithButton & WithForm & Schema.Form<S>;
@@ -328,7 +328,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<S extends Schema.Form.Shape>(
+	static post<const S extends Schema.Form.Shape>(
 		form: Schema.Form<S>,
 		...middleware: Middleware<{}, Schema.Form.Infer<S>>[]
 	): Route & WithButton & WithForm & Schema.Form<S>;
@@ -350,10 +350,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<
-		Pattern extends string,
-		const S extends Record<string, Field.Any>,
-	>(
+	static post<Pattern extends string, const S extends Field.Shape>(
 		pattern: Pattern,
 		fields: S,
 		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
@@ -366,7 +363,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string, S extends Schema.Form.Shape>(
+	static post<Pattern extends string, const S extends Schema.Form.Shape>(
 		pattern: Pattern,
 		form: Schema.Form<S>,
 		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
