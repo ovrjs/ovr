@@ -1,6 +1,6 @@
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { type Field, Schema } from "../schema/index.js";
+import { Schema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Method, Mime } from "../util/index.js";
 
@@ -318,7 +318,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<const S extends Field.Shape>(
+	static post<const S extends Schema.Form.Shape>(
 		fields: S,
 		...middleware: Middleware<{}, Schema.Form.Infer<S>>[]
 	): Route & WithButton & WithForm & Schema.Form<S>;
@@ -350,7 +350,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string, const S extends Field.Shape>(
+	static post<Pattern extends string, const S extends Schema.Form.Shape>(
 		pattern: Pattern,
 		fields: S,
 		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
@@ -363,7 +363,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string, const S extends Schema.Form.Shape>(
+	static post<Pattern extends string, S extends Schema.Form.Shape>(
 		pattern: Pattern,
 		form: Schema.Form<S>,
 		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
@@ -371,16 +371,16 @@ export class Route<Pattern extends string = string> {
 	static post<Pattern extends string>(
 		patternOrSchemaOrMiddleware:
 			| Pattern
+			| Schema.Form
 			| Schema.Form.Shape
-			| Schema.Form<Schema.Form.Shape>
 			| Middleware<ExtractParams<Pattern>>
 			| Middleware<
 					ExtractParams<Pattern>,
 					Schema.Form.Infer<Schema.Form.Shape>
 			  >,
 		schemaOrMiddleware?:
+			| Schema.Form
 			| Schema.Form.Shape
-			| Schema.Form<Schema.Form.Shape>
 			| Middleware<ExtractParams<Pattern>>
 			| Middleware<
 					ExtractParams<Pattern>,
@@ -392,13 +392,13 @@ export class Route<Pattern extends string = string> {
 		)[]
 	) {
 		let pattern: Pattern | undefined;
-		let schema: Schema.Form<Schema.Form.Shape> | undefined;
+		let schema: Schema.Form | undefined;
 
 		const resolve = (
 			psm?:
 				| Pattern
+				| Schema.Form
 				| Schema.Form.Shape
-				| Schema.Form<Schema.Form.Shape>
 				| Middleware<ExtractParams<Pattern>>
 				| Middleware<
 						ExtractParams<Pattern>,
