@@ -58,7 +58,9 @@ export namespace Schema {
 	 *
 	 * @template S Form shape type
 	 */
-	export type Form<S extends Form.Shape = Form.Shape> = InstanceType<typeof Schema.Form<S>>;
+	export type Form<S extends Form.Shape = Form.Shape> = InstanceType<
+		typeof Schema.Form<S>
+	>;
 
 	export namespace Form {
 		/** Form field shape. */
