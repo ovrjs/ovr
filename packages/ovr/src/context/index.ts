@@ -5,6 +5,7 @@ import { type Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
+import type { Schema } from "../schema/index.js";
 import { type Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
@@ -32,13 +33,30 @@ class PreparedResponse {
 	headers = new Headers();
 }
 
+export namespace Context {
+	/**
+	 * Context.data result
+	 *
+	 * @template S Form shape
+	 */
+	export type Data<S extends Schema.Form.Shape> =
+		| (Schema.Form.Parse.Valid<Schema.Infer<S>> & { readonly state?: never })
+		| (Schema.Form.Parse.Invalid<Schema.Form.Value.Map<S>> & {
+				/** URL with `_form` search param state. */
+				readonly state: URL;
+		  });
+}
+
 /**
  * Request context.
  *
  * @template Params Parameters created from a route match
- * @template Data Parsed form data
+ * @template Shape Parsed form data shape
  */
-export class Context<Params extends Trie.Params = Trie.Params, Data = unknown> {
+export class Context<
+	Params extends Trie.Params = Trie.Params,
+	Shape extends Schema.Form.Shape = Schema.Form.Shape,
+> {
 	/**
 	 * Incoming `Request` to the server.
 	 *
@@ -75,7 +93,7 @@ export class Context<Params extends Trie.Params = Trie.Params, Data = unknown> {
 	#multipart?: Multipart;
 
 	/** Data parser set by schema routes. */
-	data: () => Promise<Util.Prettify<Data>> = async () => {
+	data: () => Promise<Util.Prettify<Context.Data<Shape>>> = async () => {
 		throw new Error("No schema attached to this route.");
 	};
 

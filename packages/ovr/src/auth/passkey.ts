@@ -242,7 +242,7 @@ export class Passkey {
 	 * @returns Base64url encoded challenge
 	 */
 	static #newChallenge() {
-		return Codec.base64url.encode(crypto.getRandomValues(new Uint8Array(32)));
+		return Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
 	}
 
 	static #NoScript() {
@@ -291,7 +291,7 @@ export class Passkey {
 										challenge,
 										rp: { id: this.#rpId, name: this.#rpId },
 										user: {
-											id: Codec.base64url.encode(Codec.encode(user)),
+											id: Codec.Base64Url.encode(Codec.encode(user)),
 											name: user,
 											displayName: user,
 										},
@@ -420,11 +420,20 @@ export class Passkey {
 	 */
 	async #parseForm() {
 		const data = await this.#c.form().data();
+		const credential = Schema.string().parse(data.get("credential"));
 
-		return Passkey.#FormData.parse({
-			credential: JSON.parse(Schema.string().parse(data.get("credential"))),
-			signed: data.get("signed"),
-		});
+		if (credential.data) {
+			try {
+				const result = Passkey.#FormData.parse({
+					credential: JSON.parse(credential.data),
+					signed: data.get("signed"),
+				});
+
+				if (result.data) return result.data;
+			} catch {}
+		}
+
+		throw new TypeError("Invalid form data");
 	}
 
 	/**
@@ -447,15 +456,17 @@ export class Passkey {
 			| Schema.Infer<typeof Passkey.AuthenticationCredential>,
 		signed: string,
 	) {
-		const clientData = Passkey.#ClientData.parse(
+		const client = Passkey.#ClientData.parse(
 			JSON.parse(
 				Codec.decode(
-					Codec.base64url.decode(credential.response.clientDataJSON),
+					Codec.Base64Url.decode(credential.response.clientDataJSON),
 				),
 			),
 		);
 
-		if (clientData.type !== `webauthn.${ceremony}`) {
+		if (client.issues) throw client.issues[0];
+
+		if (client.data.type !== `webauthn.${ceremony}`) {
 			throw new TypeError("Invalid ceremony type");
 		}
 
@@ -464,8 +475,8 @@ export class Passkey {
 
 		if (
 			!Passkey.#safeEqual(
-				Codec.base64url.decode(clientData.challenge),
-				Codec.base64url.decode(options.challenge),
+				Codec.Base64Url.decode(client.data.challenge),
+				Codec.Base64Url.decode(options.challenge),
 			)
 		) {
 			throw new Error("Challenge mismatch");
@@ -505,13 +516,16 @@ export class Passkey {
 	async verify(): Promise<Auth.Credential> {
 		const { credential, signed } = await this.#parseForm();
 
-		const parsed = Passkey.RegistrationCredential.parse(credential);
+		const { data: parsed, issues } =
+			Passkey.RegistrationCredential.parse(credential);
+
+		if (issues) throw issues[0];
 
 		const options = await this.#verifyCredentialBase("create", parsed, signed);
 
 		const authData = AuthData.parse(
 			new CBOR(
-				Codec.base64url.decode(parsed.response.attestationObject),
+				Codec.Base64Url.decode(parsed.response.attestationObject),
 			).decodeAttestation(),
 		);
 
@@ -522,8 +536,8 @@ export class Passkey {
 		}
 
 		return {
-			id: Codec.base64url.encode(authData.attestedCredentialData.credentialId),
-			publicKey: Codec.base64url.encode(
+			id: Codec.Base64Url.encode(authData.attestedCredentialData.credentialId),
+			publicKey: Codec.Base64Url.encode(
 				COSE.toSPKI(authData.attestedCredentialData.publicKey),
 			),
 			user: options.user,
@@ -552,7 +566,10 @@ export class Passkey {
 	) {
 		const { credential, signed } = await this.#parseForm();
 
-		const parsed = Passkey.AuthenticationCredential.parse(credential);
+		const { data: parsed, issues } =
+			Passkey.AuthenticationCredential.parse(credential);
+
+		if (issues) throw issues[0];
 
 		const stored = await find(parsed.id);
 
@@ -564,21 +581,21 @@ export class Passkey {
 
 		if (
 			!Passkey.#safeEqual(
-				Codec.base64url.decode(parsed.id),
-				Codec.base64url.decode(stored.id),
+				Codec.Base64Url.decode(parsed.id),
+				Codec.Base64Url.decode(stored.id),
 			)
 		) {
 			throw new Error("Credential ID mismatch");
 		}
 
-		const authDataBytes = Codec.base64url.decode(
+		const authDataBytes = Codec.Base64Url.decode(
 			parsed.response.authenticatorData,
 		);
 
 		await this.#verifyAuthData(AuthData.parse(authDataBytes));
 
 		const clientDataHash = await Passkey.#sha256(
-			Codec.base64url.decode(parsed.response.clientDataJSON),
+			Codec.Base64Url.decode(parsed.response.clientDataJSON),
 		);
 
 		const signedData = new Uint8Array(
@@ -589,7 +606,7 @@ export class Passkey {
 
 		const key = await crypto.subtle.importKey(
 			"spki",
-			Codec.base64url.decode(stored.publicKey),
+			Codec.Base64Url.decode(stored.publicKey),
 			{ name: "ECDSA", namedCurve: "P-256" },
 			false,
 			["verify"],
@@ -603,7 +620,7 @@ export class Passkey {
 				signedData,
 			);
 
-		const sig = Codec.base64url.decode(parsed.response.signature);
+		const sig = Codec.Base64Url.decode(parsed.response.signature);
 
 		let ok = await verify(sig);
 		if (!ok) ok = await verify(DER.unwrap(sig));

@@ -60,6 +60,7 @@ export class Header {
 	static readonly ifNoneMatch = "if-none-match";
 	static readonly cookie = "cookie";
 	static readonly setCookie = "set-cookie";
+	static readonly referer = "referer";
 
 	/**
 	 * @param mime
@@ -186,9 +187,9 @@ export class Codec {
 		return Codec.#decoder.decode(bytes);
 	}
 
-	static base64 = class {
+	static readonly Base64 = class Base64 {
 		/**
-		 * Encodes bytes into a base64 string.
+		 * Encodes bytes into a Base64 string.
 		 *
 		 * @param bytes Bytes to encode
 		 * @returns Base64 string
@@ -198,7 +199,7 @@ export class Codec {
 		}
 
 		/**
-		 * Decodes a base64 string into bytes.
+		 * Decodes a Base64 string into bytes.
 		 *
 		 * @param s Base64 string
 		 * @returns Decoded bytes
@@ -208,17 +209,29 @@ export class Codec {
 		}
 	};
 
-	static base64url = class {
+	static readonly Base64Url = class Base64Url {
+		/**
+		 * Encodes bytes into a Base64Url string.
+		 *
+		 * @param bytes Bytes to encode
+		 * @returns Base64Url string
+		 */
 		static encode(bytes: Uint8Array) {
 			return btoa(String.fromCharCode(...bytes))
 				.replace(/[+/]/g, (c) => (c === "+" ? "-" : "_"))
 				.replace(/=+$/, "");
 		}
 
+		/**
+		 * Decodes a Base64Url string into bytes.
+		 *
+		 * @param s Base64Url string
+		 * @returns Decoded bytes
+		 */
 		static decode(s: string) {
 			const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
 			const pad = b64.length % 4;
-			return Codec.base64.decode(pad ? b64 + "=".repeat(4 - pad) : b64);
+			return Codec.Base64.decode(pad ? b64 + "=".repeat(4 - pad) : b64);
 		}
 	};
 }

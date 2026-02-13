@@ -494,15 +494,17 @@ export class Multipart extends Request {
 	 * @param form Form schema
 	 * @returns Parsed form data
 	 */
-	async parse<F extends Schema.Form>(form: F): Promise<ReturnType<F["parse"]>>;
+	async parse<S extends Schema.Form.Shape>(
+		form: Schema.Form<S>,
+	): Promise<Schema.Form.Parse.Result<S>>;
 	/**
 	 * @param fields Form data fields to parse
 	 * @returns Parsed form data
 	 */
 	async parse<S extends Schema.Form.Shape>(
 		fields: S,
-	): Promise<Schema.Form.Infer<S>>;
-	async parse<S extends Schema.Form.Shape>(formOrFields: Schema.Form<S> | S) {
-		return Schema.form(formOrFields).parse(await this.data());
+	): Promise<Schema.Form.Parse.Result<S>>;
+	async parse<S extends Schema.Form.Shape>(form: Schema.Form<S> | S) {
+		return Schema.form(form).parse(await this.data());
 	}
 }

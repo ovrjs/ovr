@@ -1,6 +1,7 @@
 import type { Auth as AuthType } from "../auth/index.js";
 import type { Context as ContextType } from "../context/index.js";
 import type { Cookie as CookieType } from "../cookie/index.js";
+import type { Schema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 
 export namespace Middleware {
@@ -18,12 +19,12 @@ export namespace Middleware {
 	 * Middleware context.
 	 *
 	 * @template Params Parameters created from a route match
-	 * @template Data Parsed form data
+	 * @template Shape Parsed form data shape
 	 */
 	export type Context<
 		Params extends Trie.Params = Trie.Params,
-		Data = unknown,
-	> = ContextType<Params, Data>;
+		Shape extends Schema.Form.Shape = Schema.Form.Shape,
+	> = ContextType<Params, Shape>;
 
 	/** Dispatches the next middleware in the stack */
 	export type Next = () => Promise<void>;
@@ -33,11 +34,12 @@ export namespace Middleware {
  * App middleware.
  *
  * @template Params Parameters created from a route match
+ * @template Shape Parsed form data shape
  * @param context Request context
  * @param next Dispatches the next middleware in the stack
  * @returns `Response` or element(s) to stream as HTML
  */
 export type Middleware<
 	Params extends Trie.Params = Trie.Params,
-	Data = unknown,
-> = (context: Middleware.Context<Params, Data>, next: Middleware.Next) => any;
+	Shape extends Schema.Form.Shape = Schema.Form.Shape,
+> = (context: ContextType<Params, Shape>, next: Middleware.Next) => any;

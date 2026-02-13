@@ -9,7 +9,9 @@ describe("Form file fields", () => {
 
 		formData.append("upload", file);
 
-		const data = schema.parse(formData);
+		const result = schema.parse(formData);
+		if (result.issues) throw new Error("Expected no issues");
+		const data = result.data;
 
 		expect(data.upload).toBeInstanceOf(File);
 		expect(data.upload.name).toBe("hello.txt");
@@ -24,7 +26,9 @@ describe("Form file fields", () => {
 		formData.append("uploads", first);
 		formData.append("uploads", second);
 
-		const data = schema.parse(formData);
+		const result = schema.parse(formData);
+		if (result.issues) throw new Error("Expected no issues");
+		const data = result.data;
 
 		expect(data.uploads).toHaveLength(2);
 		expect(data.uploads[0]!.name).toBe("one.txt");

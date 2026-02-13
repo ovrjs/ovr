@@ -212,6 +212,7 @@ export class Render {
 	 * ### WARNING
 	 *
 	 * This negates streaming benefits and buffers the result into a string.
+	 *
 	 * @param element Element to render
 	 * @param options Render options
 	 * @returns Concatenated HTML

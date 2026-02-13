@@ -106,7 +106,7 @@ export class Auth {
 	 * @returns HMAC signed `payload.signature` with auth secret
 	 */
 	async sign(payload: string) {
-		return `${payload}.${Codec.base64url.encode(
+		return `${payload}.${Codec.Base64Url.encode(
 			new Uint8Array(
 				await crypto.subtle.sign(
 					Auth.#hmac,
@@ -130,7 +130,7 @@ export class Auth {
 				await crypto.subtle.verify(
 					Auth.#hmac,
 					await this.#key,
-					Codec.base64url.decode(token.slice(dot + 1)), // signature
+					Codec.Base64Url.decode(token.slice(dot + 1)), // signature
 					Codec.encode(payload),
 				)
 			) {
@@ -151,7 +151,7 @@ export class Auth {
 			Auth.#cookieName,
 			session
 				? await this.sign(
-						Codec.base64url.encode(Codec.encode(JSON.stringify(session))),
+						Codec.Base64Url.encode(Codec.encode(JSON.stringify(session))),
 					)
 				: "",
 			{
@@ -179,7 +179,7 @@ export class Auth {
 		if (payload) {
 			const now = Date.now();
 			const session = JSON.parse(
-				Codec.decode(Codec.base64url.decode(payload)),
+				Codec.decode(Codec.Base64Url.decode(payload)),
 			) as Auth.Session;
 
 			if (now < session.expiration) {

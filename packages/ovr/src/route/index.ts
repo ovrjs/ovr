@@ -2,7 +2,7 @@ import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
-import { Checksum, Method, Mime } from "../util/index.js";
+import { Checksum, Header, Method, Mime } from "../util/index.js";
 
 /** Helper type to extract the route params (`:slug`) into a record */
 export type ExtractParams<Pattern extends string = string> =
@@ -106,7 +106,8 @@ export namespace Route {
 	 * @template Pattern Route pattern
 	 */
 	export type Form<Pattern extends string> = (
-		props: JSX.IntrinsicElements["form"] & URLOptions<ExtractParams<Pattern>>,
+		props: JSX.IntrinsicElements["form"] &
+			URLOptions<ExtractParams<Pattern>> & { state?: Schema.Form.State.Input },
 	) => JSX.Element;
 
 	/**
@@ -267,7 +268,7 @@ export class Route<Pattern extends string = string> {
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: (({ params, search, hash, ...rest }) =>
+			Form: (({ params, search, hash, state: _state, ...rest }) =>
 				jsx("form", {
 					action: route.url({ params, search, hash } as Route.URLOptions<
 						ExtractParams<Pattern>
@@ -320,7 +321,7 @@ export class Route<Pattern extends string = string> {
 	 */
 	static post<const S extends Schema.Form.Shape>(
 		fields: S,
-		...middleware: Middleware<{}, Schema.Form.Infer<S>>[]
+		...middleware: Middleware<{}, S>[]
 	): Route & WithButton & WithForm & Schema.Form<S>;
 	/**
 	 * @template S Form field shape
@@ -330,7 +331,7 @@ export class Route<Pattern extends string = string> {
 	 */
 	static post<const S extends Schema.Form.Shape>(
 		form: Schema.Form<S>,
-		...middleware: Middleware<{}, Schema.Form.Infer<S>>[]
+		...middleware: Middleware<{}, S>[]
 	): Route & WithButton & WithForm & Schema.Form<S>;
 	/**
 	 * @template Pattern Route pattern
@@ -353,7 +354,7 @@ export class Route<Pattern extends string = string> {
 	static post<Pattern extends string, const S extends Schema.Form.Shape>(
 		pattern: Pattern,
 		fields: S,
-		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
+		...middleware: Middleware<ExtractParams<Pattern>, S>[]
 	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern> & Schema.Form<S>;
 	/**
 	 * @template Pattern Route pattern
@@ -366,7 +367,7 @@ export class Route<Pattern extends string = string> {
 	static post<Pattern extends string, S extends Schema.Form.Shape>(
 		pattern: Pattern,
 		form: Schema.Form<S>,
-		...middleware: Middleware<ExtractParams<Pattern>, Schema.Form.Infer<S>>[]
+		...middleware: Middleware<ExtractParams<Pattern>, S>[]
 	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern> & Schema.Form<S>;
 	static post<Pattern extends string>(
 		patternOrSchemaOrMiddleware:
@@ -374,21 +375,15 @@ export class Route<Pattern extends string = string> {
 			| Schema.Form
 			| Schema.Form.Shape
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<
-					ExtractParams<Pattern>,
-					Schema.Form.Infer<Schema.Form.Shape>
-			  >,
+			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
 		schemaOrMiddleware?:
 			| Schema.Form
 			| Schema.Form.Shape
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<
-					ExtractParams<Pattern>,
-					Schema.Form.Infer<Schema.Form.Shape>
-			  >,
+			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
 		...middleware: (
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, Schema.Form.Infer<Schema.Form.Shape>>
+			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>
 		)[]
 	) {
 		let pattern: Pattern | undefined;
@@ -400,10 +395,7 @@ export class Route<Pattern extends string = string> {
 				| Schema.Form
 				| Schema.Form.Shape
 				| Middleware<ExtractParams<Pattern>>
-				| Middleware<
-						ExtractParams<Pattern>,
-						Schema.Form.Infer<Schema.Form.Shape>
-				  >,
+				| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
 		) => {
 			if (psm) {
 				if (typeof psm === "string") {
@@ -420,6 +412,7 @@ export class Route<Pattern extends string = string> {
 		resolve(schemaOrMiddleware);
 
 		if (!pattern) {
+			// create pattern with checksum of all mw stringified
 			pattern = `/_p/${Checksum.djb2(middleware.join())}` as Pattern;
 		}
 
@@ -429,24 +422,54 @@ export class Route<Pattern extends string = string> {
 
 		if (!schema) return route;
 
+		// needed because used inside the mw and schema could technically be reassigned
+		const form = schema;
+
 		route.middleware.unshift((c, next) => {
-			c.data = () => c.form().parse(schema!);
+			// assign data function within mw
+			c.data = async () => {
+				// parse any form data with provided schema
+				const result = form.parse(await c.form().data());
+
+				if (result.issues) {
+					// create encoded URL state with invalid fields
+					let state: URL;
+
+					try {
+						state = new URL(c.req.headers.get(Header.referer)!, c.url);
+					} catch {
+						// invalid or missing referer
+						state = c.url;
+					}
+
+					if (state.origin === c.url.origin) {
+						const encoded = form.encode(result);
+
+						if (encoded) state.searchParams.set("_form", encoded);
+					}
+
+					return { ...result, state };
+				}
+
+				return result;
+			};
+
 			return next();
 		});
 
+		// original form shell from normal post route
 		const { Form } = route;
 
 		return Object.assign(route, schema, {
-			Form: ((props) => {
-				const p = { ...props };
-
-				p.children ??= [
-					schema!.Fields(),
-					jsx("button", { children: "Submit" }),
-				];
-
-				return Form(p);
-			}) as Route.Form<Pattern>,
+			Form: (({ state, ...rest }) =>
+				Form({
+					// add in the default children (Fields) with state and submit button
+					children: [
+						form.Fields({ state }),
+						jsx("button", { children: "Submit" }),
+					],
+					...rest,
+				} as Parameters<typeof Form>[0])) as Route.Form<Pattern>,
 		});
 	}
 }

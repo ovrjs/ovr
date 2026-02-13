@@ -11,7 +11,7 @@ import { imagetools } from "vite-imagetools";
 export default defineConfig({
 	build: { minify: true },
 	plugins: [
-		ssl(),
+		ssl(), // required for WebAuthn
 		tailwindcss(),
 		domco({ adapter: adapter() }),
 		md({ ...options, FrontmatterSchema }),
