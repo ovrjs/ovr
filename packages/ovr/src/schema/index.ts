@@ -27,10 +27,9 @@ export namespace Schema {
 		}
 
 		/** Invalid result type */
-		export interface Invalid {
-			/** Non-empty list of validation issues */
-			issues: Issue.List;
-
+		export interface AggregateIssue extends InstanceType<
+			typeof Schema.AggregateIssue
+		> {
 			data?: never;
 		}
 
@@ -39,7 +38,7 @@ export namespace Schema {
 		 *
 		 * @template O Parse output
 		 */
-		export type Result<O> = Valid<O> | Invalid;
+		export type Result<O> = Valid<O> | AggregateIssue;
 
 		/**
 		 * Type of constructor input (path is required).
@@ -69,12 +68,12 @@ export namespace Schema {
 					{ [K in keyof S]: Infer<S[K]> }
 				: never;
 
-	/** Schema issue */
+	/** Schema.Issue type */
 	export type Issue = InstanceType<typeof Schema.Issue>;
 
 	export namespace Issue {
 		/** Issue path representation. */
-		export type Path = PropertyKey[];
+		export type Path = (string | number)[];
 
 		/** Non-empty list of issues */
 		export type List = readonly [Issue, ...Issue[]];
@@ -174,21 +173,12 @@ export namespace Schema {
 
 		export namespace Parse {
 			/**
-			 * Valid result type.
-			 *
-			 * @template O Parse output
-			 */
-			export interface Valid<O> extends Schema.Parse.Valid<O> {
-				readonly values?: never;
-			}
-
-			/**
 			 * Invalid result type
 			 *
 			 * @template V Values
 			 */
 			export interface Invalid<V extends Value.Map>
-				extends Schema.Parse.Invalid {
+				extends Schema.Parse.AggregateIssue {
 				/** Values to persist in state */
 				readonly values?: V;
 			}
@@ -199,7 +189,7 @@ export namespace Schema {
 			 * @template S Form shape
 			 */
 			export type Result<S extends Shape> =
-				| Valid<Schema.Infer<S>>
+				| Schema.Parse.Valid<Schema.Infer<S>>
 				| Invalid<Value.Map<S>>;
 		}
 	}
@@ -235,13 +225,69 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param message Issue message
 		 */
 		constructor(expected: unknown, path: Schema.Issue.Path, message?: string) {
-			const exp = JSON.stringify(expected);
+			const exp = String(expected);
 
-			super(message ?? `Expected \`${exp}\``);
+			super(message ?? `Expected ${exp}`);
 
 			this.name = "Schema.Issue";
 			this.expected = exp;
 			this.path = path;
+		}
+
+		/**
+		 * @returns `Schema.Issue(path): message`
+		 */
+		override toString() {
+			let path = "";
+
+			for (const segment of this.path) {
+				path +=
+					typeof segment === "number"
+						? `[${segment}]`
+						: `${path ? "." : path}${segment}`;
+			}
+
+			return `${this.name}${path ? `(${path})` : ""}: ${this.message}`;
+		}
+
+		toJSON() {
+			return { ...this, message: this.message };
+		}
+	};
+
+	/** AggregateIssue containing at least one Schema.Issue */
+	static readonly AggregateIssue = class AggregateIssue extends AggregateError {
+		/** Non-empty tuple of issues */
+		readonly issues: Schema.Issue.List;
+
+		/**
+		 * Create a new AggregateIssue.
+		 *
+		 * Coerces issues into a non-empty tuple.
+		 *
+		 * @param issues Issues
+		 */
+		constructor([first, ...rest]: Schema.Issue[]) {
+			if (!first) throw new TypeError("AggregateIssue must have an issue.");
+
+			const issues: Schema.Issue.List = [first, ...rest];
+			const name = "Schema.AggregateIssue";
+			const count = issues.length;
+
+			super(issues, `${name}(${count})\n${issues.join("\n")}`);
+
+			this.name = name;
+			this.issues = issues;
+		}
+
+		override toString() {
+			// prevents name being in the default twice since it's
+			// already in the message
+			return this.message;
+		}
+
+		toJSON() {
+			return { ...this, message: this.message };
 		}
 	};
 
@@ -273,20 +319,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 */
 	constructor(parse: Schema.Parse.Constructor<Output>) {
 		this.parse = (value, path = []) => parse(value, path);
-	}
-
-	/**
-	 * Coerce issues into a non-empty tuple.
-	 *
-	 * @param issues Issues
-	 * @returns Non-empty tuple
-	 */
-	static #list(...[issue, ...rest]: Schema.Issue[]): {
-		readonly issues: Schema.Issue.List;
-	} {
-		if (!issue) throw new TypeError("Issue list must have one issue");
-
-		return { issues: [issue, ...rest] };
 	}
 
 	/**
@@ -495,7 +527,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 			return out.issues || check(out.data)
 				? out
-				: Schema.#list(new Schema.Issue("refine", path, message));
+				: new Schema.AggregateIssue([
+						new Schema.Issue("refine", path, message),
+					]);
 		});
 	}
 
@@ -518,7 +552,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		return new Schema((v, path) => {
 			return typeof v === "string"
 				? { data: v }
-				: Schema.#list(new Schema.Issue("string", path, message));
+				: new Schema.AggregateIssue([
+						new Schema.Issue("string", path, message),
+					]);
 		});
 	}
 
@@ -559,7 +595,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		return new Schema((v, path) => {
 			return typeof v === "boolean"
 				? { data: v }
-				: Schema.#list(new Schema.Issue("boolean", path, message));
+				: new Schema.AggregateIssue([
+						new Schema.Issue("boolean", path, message),
+					]);
 		});
 	}
 
@@ -575,7 +613,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		return new Schema((v, path) => {
 			return typeof v === "number" && !Number.isNaN(v)
 				? { data: v }
-				: Schema.#list(new Schema.Issue("number", path, message));
+				: new Schema.AggregateIssue([
+						new Schema.Issue("number", path, message),
+					]);
 		});
 	}
 
@@ -599,7 +639,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		return new Schema((v, path) => {
 			return typeof v === "bigint"
 				? { data: v }
-				: Schema.#list(new Schema.Issue("bigint", path, message));
+				: new Schema.AggregateIssue([
+						new Schema.Issue("bigint", path, message),
+					]);
 		});
 	}
 
@@ -628,7 +670,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		return new Schema((v, path) => {
 			return v === literal
 				? { data: literal }
-				: Schema.#list(new Schema.Issue(literal, path, message));
+				: new Schema.AggregateIssue([new Schema.Issue(literal, path, message)]);
 		});
 	}
 
@@ -650,13 +692,13 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 				if (v === a) return { data: a };
 			}
 
-			return Schema.#list(
+			return new Schema.AggregateIssue([
 				new Schema.Issue(
 					allowed.map((v) => JSON.stringify(v)).join(" | "),
 					path,
 					message,
 				),
-			);
+			]);
 		});
 	}
 
@@ -687,7 +729,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 				issues.push(...result.issues);
 			}
 
-			return Schema.#list(...issues);
+			return new Schema.AggregateIssue(issues);
 		});
 	}
 
@@ -703,7 +745,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		return new Schema((v, path) =>
 			v instanceof constructor
 				? { data: v }
-				: Schema.#list(new Schema.Issue(constructor.name, path, message)),
+				: new Schema.AggregateIssue([
+						new Schema.Issue(constructor.name, path, message),
+					]),
 		);
 	}
 
@@ -728,7 +772,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	static array<O>(schema: Schema<O, unknown>, message?: string) {
 		return new Schema((v, path) => {
 			if (!Array.isArray(v)) {
-				return Schema.#list(new Schema.Issue("Array", path, message));
+				return new Schema.AggregateIssue([
+					new Schema.Issue("Array", path, message),
+				]);
 			}
 
 			const data: O[] = [];
@@ -744,7 +790,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 				}
 			}
 
-			if (issues.length) return Schema.#list(...issues);
+			if (issues.length) return new Schema.AggregateIssue(issues);
 
 			return { data };
 		});
@@ -799,7 +845,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		constructor(shape: Shape) {
 			super((v, path) => {
 				if (typeof v !== "object" || v === null || Array.isArray(v)) {
-					return Schema.#list(new Schema.Issue("object", path));
+					return new Schema.AggregateIssue([new Schema.Issue("object", path)]);
 				}
 
 				const data: Record<string, unknown> = {};
@@ -819,7 +865,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 					}
 				}
 
-				if (issues.length) return Schema.#list(...issues);
+				if (issues.length) return new Schema.AggregateIssue(issues);
 
 				return { data } as { data: Schema.Infer<Shape> };
 			});
@@ -877,13 +923,13 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 						data: BigInt(v as any), // catch input error
 					};
 				} catch {
-					return Schema.#list(
+					return new Schema.AggregateIssue([
 						new Schema.Issue(
 							"string | number | bigint | boolean",
 							path,
 							message,
 						),
-					);
+					]);
 				}
 			});
 		}
@@ -1268,11 +1314,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @returns Encoded state or undefined if too large
 		 */
 		encode(state: Omit<Schema.Form.State<Shape>, "id">) {
-			const sanitized: Schema.Form.State<Shape> = {
-				...state,
+			const sanitized: Schema.Form.State<Shape> = Object.assign(state, {
 				id: this.#id,
 				values: this.#sanitize(state.values),
-			};
+			});
 
 			if (sanitized.values) {
 				const len = this.#names.length;
@@ -1353,7 +1398,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 			}
 
 			if (issues.length) {
-				return { ...Schema.#list(...issues), values: this.#sanitize(values) };
+				return Object.assign(new Schema.AggregateIssue(issues), {
+					values: this.#sanitize(values),
+				});
 			}
 
 			return { data } as { data: Schema.Infer<Shape> };
@@ -1804,7 +1851,7 @@ export class Field<
 			issue && // render nothing if no issue
 			jsx("p", {
 				id: issueId,
-				children: issue.expected,
+				children: issue.message,
 				"data-issue": issue && state!.issues!.indexOf(issue), // issue index starting from 0
 				...data,
 			});

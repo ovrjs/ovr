@@ -40,7 +40,7 @@ export namespace Context {
 	 * @template S Form shape
 	 */
 	export type Data<S extends Schema.Form.Shape> =
-		| (Schema.Form.Parse.Valid<Schema.Infer<S>> & { readonly state?: never })
+		| (Schema.Parse.Valid<Schema.Infer<S>> & { readonly state?: never })
 		| (Schema.Form.Parse.Invalid<Schema.Form.Value.Map<S>> & {
 				/** URL with `_form` search param state. */
 				readonly state: URL;

@@ -448,7 +448,7 @@ export class Route<Pattern extends string = string> {
 						if (encoded) state.searchParams.set("_form", encoded);
 					}
 
-					return { ...result, state };
+					return Object.assign(result, { state });
 				}
 
 				return result;
