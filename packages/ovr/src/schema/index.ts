@@ -226,7 +226,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		/** Expected type/value. */
 		readonly expected: string;
 
-		/** Optional path to the invalid value. */
+		/** Path to the invalid value. */
 		readonly path: Schema.Issue.Path;
 
 		/**
@@ -235,11 +235,13 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @param message Issue message
 		 */
 		constructor(expected: unknown, path: Schema.Issue.Path, message?: string) {
-			super(message);
+			const exp = JSON.stringify(expected);
 
-			this.expected = JSON.stringify(expected);
+			super(message ?? `Expected \`${exp}\``);
+
+			this.name = "Schema.Issue";
+			this.expected = exp;
 			this.path = path;
-			this.message = message ?? `Expected ${this.expected}`;
 		}
 	};
 
@@ -316,6 +318,54 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	optional(this: Schema<Output, Input>) {
 		return this.derive((v, path) => {
 			if (v === undefined) return { data: v as Output | undefined };
+
+			return this.parse(v, path);
+		});
+	}
+
+	/**
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @returns Nullable field
+	 */
+	nullable<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(this: Field<Output, T, U, V>): Field<Output | null, T, U, V>;
+	/**
+	 * @returns Nullable schema
+	 */
+	nullable(this: Schema<Output, Input>): Schema<Output | null, Input>;
+	nullable(this: Schema<Output, Input>) {
+		return this.derive((v, path) => {
+			if (v === null) return { data: v as Output | null };
+
+			return this.parse(v, path);
+		});
+	}
+
+	/**
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @returns Nullish field
+	 */
+	nullish<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(this: Field<Output, T, U, V>): Field<Output | null | undefined, T, U, V>;
+	/**
+	 * @returns Nullish schema
+	 */
+	nullish(
+		this: Schema<Output, Input>,
+	): Schema<Output | null | undefined, Input>;
+	nullish(this: Schema<Output, Input>) {
+		return this.derive((v, path) => {
+			if (v == null) return { data: v as Output | null | undefined };
 
 			return this.parse(v, path);
 		});
@@ -415,11 +465,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param check Validation function that returns `false` to fail
 	 * @param message Issue message when invalid
 	 * @returns Refined field
-	 * @example
-	 *
-	 * ```ts
-	 * Schema.number().refine(Number.isInteger, "Expected integer")
-	 * ```
 	 */
 	refine<
 		T extends Field.Tag,
@@ -452,6 +497,15 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 				? out
 				: Schema.#list(new Schema.Issue("refine", path, message));
 		});
+	}
+
+	/**
+	 * Accepts any value and presents the data as `unknown`.
+	 *
+	 * @returns Unknown schema
+	 */
+	static unknown() {
+		return new Schema((v) => ({ data: v }));
 	}
 
 	/**
@@ -522,6 +576,30 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 			return typeof v === "number" && !Number.isNaN(v)
 				? { data: v }
 				: Schema.#list(new Schema.Issue("number", path, message));
+		});
+	}
+
+	/**
+	 * Validate an input is a safe integer.
+	 *
+	 * @param message Issue message when invalid
+	 * @returns Integer schema
+	 */
+	static int(message = "Expected integer") {
+		return Schema.number().refine(Number.isSafeInteger, message);
+	}
+
+	/**
+	 * Validate an input is a big integer.
+	 *
+	 * @param message Issue message when invalid
+	 * @returns Big integer schema
+	 */
+	static bigint(message?: string) {
+		return new Schema((v, path) => {
+			return typeof v === "bigint"
+				? { data: v }
+				: Schema.#list(new Schema.Issue("bigint", path, message));
 		});
 	}
 
@@ -762,6 +840,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		): Schema.Object<Schema.Object.Extend<Shape, E>> {
 			return Schema.object({ ...this.#shape, ...extra });
 		}
+
+		// TODO pick and omit
 	};
 
 	/** Coercion schemas that apply JavaScript type coercion before validation. */
@@ -782,6 +862,30 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 */
 		static number() {
 			return new Schema((v) => ({ data: Number(v) }));
+		}
+
+		/**
+		 * Coerce to bigint using `BigInt(value)`.
+		 *
+		 * @param message Issue message when invalid
+		 * @returns Coerced big integer schema
+		 */
+		static bigint(message?: string) {
+			return new Schema((v, path) => {
+				try {
+					return {
+						data: BigInt(v as any), // catch input error
+					};
+				} catch {
+					return Schema.#list(
+						new Schema.Issue(
+							"string | number | bigint | boolean",
+							path,
+							message,
+						),
+					);
+				}
+			});
 		}
 
 		/**
