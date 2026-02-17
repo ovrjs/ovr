@@ -13,6 +13,7 @@ export namespace Passkey {
 	export interface GetChallenge {
 		challenge: string;
 	}
+
 	export interface CreateChallenge extends GetChallenge {
 		user: string;
 	}
@@ -422,14 +423,14 @@ export class Passkey {
 		const data = await this.#c.form().data();
 		const credential = Schema.string().parse(data.get("credential"));
 
-		if (credential.data) {
+		if (!credential.issues) {
 			try {
 				const result = Passkey.#FormData.parse({
 					credential: JSON.parse(credential.data),
 					signed: data.get("signed"),
 				});
 
-				if (result.data) return result.data;
+				if (!result.issues) return result.data;
 			} catch {}
 		}
 
