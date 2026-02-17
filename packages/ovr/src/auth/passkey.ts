@@ -232,9 +232,11 @@ export class Passkey {
 		action: string,
 		method: "create" | "get",
 	) {
-		return `(${Passkey.#addEventListeners})('${signed}',${JSON.stringify(
-			options,
-		)},"${action}","${method}")`;
+		return `(${Passkey.#addEventListeners})(${JSON.stringify(
+			signed,
+		)},${JSON.stringify(options)},${JSON.stringify(action)},${JSON.stringify(
+			method,
+		)})`;
 	}
 
 	/**
@@ -266,7 +268,7 @@ export class Passkey {
 	create(
 		route: Route.Post,
 		exclude?: string[],
-		user = crypto.randomUUID(),
+		user: string = crypto.randomUUID(),
 	): Passkey.Form {
 		return (props) => {
 			return route.Form({
@@ -378,16 +380,16 @@ export class Passkey {
 		challenge: Schema.string(),
 		origin: Schema.string(),
 	});
-	static Credential = Schema.object({
+	static #Credential = Schema.object({
 		type: Schema.literal("public-key"),
 		id: Schema.string(),
 		rawId: Schema.string(),
 	});
 	static #Response = Schema.object({ clientDataJSON: Schema.string() });
-	static RegistrationCredential = Passkey.Credential.extend({
+	static RegistrationCredential = Passkey.#Credential.extend({
 		response: Passkey.#Response.extend({ attestationObject: Schema.string() }),
 	});
-	static AuthenticationCredential = Passkey.Credential.extend({
+	static AuthenticationCredential = Passkey.#Credential.extend({
 		response: Passkey.#Response.extend({
 			authenticatorData: Schema.string(),
 			signature: Schema.string(),
@@ -411,7 +413,7 @@ export class Passkey {
 	}
 
 	static #FormData = Schema.object({
-		credential: Passkey.Credential,
+		credential: Schema.unknown(),
 		signed: Schema.string(),
 	});
 
@@ -517,16 +519,19 @@ export class Passkey {
 	async verify(): Promise<Auth.Credential> {
 		const { credential, signed } = await this.#parseForm();
 
-		const { data: parsed, issues } =
-			Passkey.RegistrationCredential.parse(credential);
+		const result = Passkey.RegistrationCredential.parse(credential);
 
-		if (issues) throw issues[0];
+		if (result.issues) throw result;
 
-		const options = await this.#verifyCredentialBase("create", parsed, signed);
+		const options = await this.#verifyCredentialBase(
+			"create",
+			result.data,
+			signed,
+		);
 
 		const authData = AuthData.parse(
 			new CBOR(
-				Codec.Base64Url.decode(parsed.response.attestationObject),
+				Codec.Base64Url.decode(result.data.response.attestationObject),
 			).decodeAttestation(),
 		);
 
@@ -567,22 +572,19 @@ export class Passkey {
 	) {
 		const { credential, signed } = await this.#parseForm();
 
-		const { data: parsed, issues } =
-			Passkey.AuthenticationCredential.parse(credential);
+		const result = Passkey.AuthenticationCredential.parse(credential);
 
-		if (issues) throw issues[0];
+		if (result.issues) throw result;
 
-		const stored = await find(parsed.id);
+		const stored = await find(result.data.id);
 
-		if (!stored) {
-			throw new Error("Credential not found");
-		}
+		if (!stored) throw new Error("Credential not found");
 
-		await this.#verifyCredentialBase("get", parsed, signed);
+		await this.#verifyCredentialBase("get", result.data, signed);
 
 		if (
 			!Passkey.#safeEqual(
-				Codec.Base64Url.decode(parsed.id),
+				Codec.Base64Url.decode(result.data.id),
 				Codec.Base64Url.decode(stored.id),
 			)
 		) {
@@ -590,13 +592,13 @@ export class Passkey {
 		}
 
 		const authDataBytes = Codec.Base64Url.decode(
-			parsed.response.authenticatorData,
+			result.data.response.authenticatorData,
 		);
 
 		await this.#verifyAuthData(AuthData.parse(authDataBytes));
 
 		const clientDataHash = await Passkey.#sha256(
-			Codec.Base64Url.decode(parsed.response.clientDataJSON),
+			Codec.Base64Url.decode(result.data.response.clientDataJSON),
 		);
 
 		const signedData = new Uint8Array(
@@ -621,7 +623,7 @@ export class Passkey {
 				signedData,
 			);
 
-		const sig = Codec.Base64Url.decode(parsed.response.signature);
+		const sig = Codec.Base64Url.decode(result.data.response.signature);
 
 		let ok = await verify(sig);
 		if (!ok) ok = await verify(DER.unwrap(sig));

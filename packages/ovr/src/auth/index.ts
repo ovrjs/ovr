@@ -119,10 +119,11 @@ export class Auth {
 
 	/**
 	 * @param token signed token
-	 * @returns payload if valid, otherwise null
+	 * @returns valid payload
 	 */
 	async verify(token: string) {
 		const dot = token.lastIndexOf(".");
+
 		if (dot !== -1) {
 			const payload = token.slice(0, dot);
 
@@ -174,9 +175,8 @@ export class Auth {
 		const token = this.#c.cookie.get(Auth.#cookieName);
 		if (!token) return null;
 
-		const payload = await this.verify(token);
-
-		if (payload) {
+		try {
+			const payload = await this.verify(token);
 			const now = Date.now();
 			const session = JSON.parse(
 				Codec.decode(Codec.Base64Url.decode(payload)),
@@ -193,6 +193,8 @@ export class Auth {
 					: // return as is
 						session;
 			}
+		} catch {
+			// invalid payload
 		}
 
 		return this.logout();
