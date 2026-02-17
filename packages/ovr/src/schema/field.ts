@@ -421,13 +421,10 @@ export class Field<
 				Label,
 				Control,
 				Root: (data: Field.Component.Root = {}) => jsx("fieldset", data),
-				Option: (data: Field.Component.Option.Input<Field.Values>) =>
+				Option: ({ value, ...rest }: Field.Component.Option.Input<Field.Values>) =>
 					jsx("div", {
-						children: [
-							Control({ value: data.value }),
-							Label({ value: data.value }),
-						],
-						...data,
+						children: [Control({ value }), Label({ value })],
+						...rest,
 					}),
 				Legend: (data: Field.Component.Legend = {}) =>
 					jsx("legend", { children: control.name, ...data }),

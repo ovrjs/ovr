@@ -1295,10 +1295,13 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 					const field = this.#fields[name];
 
 					if (field && Form.#persist(field) && value != null) {
-						const { data } = Form.#valueSchema.parse(value);
+						const result = Form.#valueSchema.parse(value);
 
-						if (data && JSON.stringify(data).length <= Form.#maxValueChars) {
-							sanitized[name as Schema.Form.Name<Shape>] = data;
+						if (
+							!result.issues &&
+							JSON.stringify(result.data).length <= Form.#maxValueChars
+						) {
+							sanitized[name as Schema.Form.Name<Shape>] = result.data;
 						}
 					}
 				}
