@@ -1511,7 +1511,7 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 			const result = new Schema.AggregateIssue(issues);
 			const sanitized = this.#sanitize(values);
 			let search: Schema.Form.Parse.Result.Search;
-			
+
 			if (sanitized) {
 				// encode into search
 				const len = this.#names.length;
@@ -1530,6 +1530,7 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 
 					if (state.byteLength <= FormSchema.#maxStateBytes) {
 						search = [FormSchema.#param, Codec.Base64Url.encode(state)];
+						break;
 					}
 				}
 			}

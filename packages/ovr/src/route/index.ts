@@ -280,6 +280,10 @@ export class Route<Pattern extends string = string> {
 		});
 	}
 
+	/**
+	 * @param form Form schema
+	 * @returns Middleware that attaches the c.data method
+	 */
 	static #data =
 		(form: Schema.Form): Middleware =>
 		(c, next) => {
@@ -291,12 +295,15 @@ export class Route<Pattern extends string = string> {
 					// create encoded URL state with invalid fields
 					let url = new URL(c.url);
 
-					try {
-						const referer = new URL(c.req.headers.get(Header.referer)!, url);
+					const referer = c.req.headers.get(Header.referer);
 
-						if (referer.origin === c.url.origin) url = referer;
-					} catch {
-						// invalid or missing referer
+					if (referer) {
+						try {
+							const refererUrl = new URL(referer, url);
+							if (refererUrl.origin === c.url.origin) url = refererUrl;
+						} catch {
+							// invalid referer
+						}
 					}
 
 					if (result.search) url.searchParams.set(...result.search);
