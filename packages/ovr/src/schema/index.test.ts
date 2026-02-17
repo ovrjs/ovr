@@ -1,6 +1,102 @@
 import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
+describe("Object shape methods", () => {
+	test("pick keeps only selected keys", () => {
+		const schema = Schema.object({
+			a: Schema.string(),
+			b: Schema.number(),
+			c: Schema.boolean(),
+		}).pick(["a", "c"]);
+
+		const result = schema.parse({ a: "x", b: 1, c: true });
+
+		if (result.issues) throw new Error("Expected no issues");
+
+		expect(result.data).toEqual({ a: "x", c: true });
+	});
+
+	test("omit removes selected keys", () => {
+		const schema = Schema.object({
+			a: Schema.string(),
+			b: Schema.number(),
+			c: Schema.boolean(),
+		}).omit(["b"]);
+
+		const result = schema.parse({ a: "x", b: 1, c: true });
+
+		if (result.issues) throw new Error("Expected no issues");
+
+		expect(result.data).toEqual({ a: "x", c: true });
+	});
+});
+
+describe("Form shape methods", () => {
+	test("extend adds new fields", () => {
+		const form = Schema.form({ a: Schema.Field.text() }).extend({
+			b: Schema.Field.checkbox(),
+		});
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "on");
+
+		const result = form.parse(data);
+
+		if (result.issues) throw new Error("Expected no issues");
+
+		expect(result.data).toEqual({ a: "x", b: true });
+	});
+
+	test("pick keeps only selected fields", () => {
+		const form = Schema.form({
+			a: Schema.Field.text(),
+			b: Schema.Field.number(),
+			c: Schema.Field.checkbox(),
+		}).pick(["a", "c"]);
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "1");
+		data.set("c", "on");
+
+		const result = form.parse(data);
+
+		if (result.issues) throw new Error("Expected no issues");
+
+		expect(result.data).toEqual({ a: "x", c: true });
+	});
+
+	test("pick keeps form field rendering helpers", () => {
+		const form = Schema.form({
+			a: Schema.Field.text(),
+			b: Schema.Field.number(),
+		}).pick(["a"]);
+
+		expect(typeof form.Field).toBe("function");
+		expect(typeof form.field({ name: "a" }).Control).toBe("function");
+	});
+
+	test("omit removes selected fields", () => {
+		const form = Schema.form({
+			a: Schema.Field.text(),
+			b: Schema.Field.number(),
+			c: Schema.Field.checkbox(),
+		}).omit(["b"]);
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "1");
+		data.set("c", "on");
+
+		const result = form.parse(data);
+
+		if (result.issues) throw new Error("Expected no issues");
+
+		expect(result.data).toEqual({ a: "x", c: true });
+	});
+});
+
 describe("Form file fields", () => {
 	test("Schema.Field.file parses a single File", () => {
 		const schema = Schema.form({ upload: Schema.Field.file() });

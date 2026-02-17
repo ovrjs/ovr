@@ -3,6 +3,13 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Render, Route, Schema } from "ovr";
 
+// const User = Schema.form({
+// 	id: Schema.Field.text(),
+// 	name: Schema.Field.text(),
+// }).extend({ hello: Schema.Field.text() });
+
+// const result = User.parse(new FormData());
+
 export const create = Route.post(
 	{
 		name: Schema.Field.text({ placeholder: "Harry Potter" })

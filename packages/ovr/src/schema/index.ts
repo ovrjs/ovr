@@ -85,25 +85,11 @@ export namespace Schema {
 	 *
 	 * @template S Object shape type
 	 */
-	export type Object<S extends Object.Shape> = Schema<Infer<S>> & {
-		extend<E extends Object.Shape>(extra: E): Object<Object.Extend<S, E>>;
-	};
+	export type Object<S extends Object.Shape> = ObjectSchema<S>;
 
 	export namespace Object {
 		/** Object schema shape. */
 		export type Shape = Record<string, Schema<unknown>>;
-
-		/**
-		 * Merge two object shapes (B overrides A on key collisions).
-		 *
-		 * @template A First shape type
-		 * @template B Second shape type
-		 */
-		export type Extend<A extends Object.Shape, B extends Object.Shape> = Omit<
-			A,
-			keyof B
-		> &
-			B;
 	}
 
 	/**
@@ -111,20 +97,11 @@ export namespace Schema {
 	 *
 	 * @template S Form shape type
 	 */
-	export type Form<S extends Form.Shape = Form.Shape> = InstanceType<
-		typeof Schema.Form<S>
-	>;
+	export type Form<S extends Form.Shape = Form.Shape> = FormSchema<S>;
 
 	export namespace Form {
 		/** Form field shape. */
 		export type Shape = Record<string, Field.Any>;
-
-		/**
-		 * Type of a field name string.
-		 *
-		 * @template S Shape type - keys are possible names
-		 */
-		export type Name<S extends Shape> = Extract<keyof S, string>;
 
 		/** Persisted form value */
 		export type Value = string | number | boolean | string[];
@@ -136,7 +113,7 @@ export namespace Schema {
 			 * @template S Shape type
 			 */
 			export type Map<S extends Shape = Shape> = Partial<
-				Record<Name<S>, Value>
+				Record<Shape.Name<S>, Value>
 			>;
 		}
 
@@ -192,6 +169,94 @@ export namespace Schema {
 				| Schema.Parse.Valid<Schema.Infer<S>>
 				| Invalid<Value.Map<S>>;
 		}
+	}
+}
+
+/** @internal Shared shape types for `Shape` related runtime methods. */
+namespace Shape {
+	/**
+	 * Shape key name string.
+	 *
+	 * @template S Record-like shape
+	 */
+	export type Name<S extends Record<string, unknown>> = Extract<
+		keyof S,
+		string
+	>;
+
+	/**
+	 * Merge two shapes where `B` overrides `A`.
+	 *
+	 * @template A Base shape
+	 * @template B Extra shape
+	 */
+	export type Extend<
+		A extends Record<string, unknown>,
+		B extends Record<string, unknown>,
+	> = globalThis.Omit<A, keyof B> & B;
+}
+
+/** @internal Shared runtime shape operations used by object and form schema methods. */
+class Shape {
+	/**
+	 * Merge two record-like shapes where `extra` keys override `shape`.
+	 *
+	 * @template S Base shape
+	 * @template E Extra shape
+	 * @param shape Base shape
+	 * @param extra Extra values to merge
+	 * @returns Merged shape
+	 */
+	static extend<
+		S extends Record<string, unknown>,
+		E extends Record<string, unknown>,
+	>(shape: S, extra: E): Shape.Extend<S, E> {
+		return { ...shape, ...extra } as Shape.Extend<S, E>;
+	}
+
+	/**
+	 * Pick keys from a record-like shape.
+	 *
+	 * @template S Shape
+	 * @template N Selected key names
+	 * @param shape Source shape
+	 * @param names Non-empty list of keys to include
+	 * @returns Picked shape
+	 */
+	static pick<S extends Record<string, unknown>, N extends Shape.Name<S>>(
+		shape: S,
+		names: readonly [N, ...N[]],
+	): Pick<S, N> {
+		const out: Record<string, unknown> = {};
+
+		for (const name of names) {
+			if (name in shape) out[name] = shape[name];
+		}
+
+		return out as Pick<S, N>;
+	}
+
+	/**
+	 * Omit keys from a record-like shape.
+	 *
+	 * @template S Shape
+	 * @template N Removed key names
+	 * @param shape Source shape
+	 * @param names Non-empty list of keys to remove
+	 * @returns Omitted shape
+	 */
+	static omit<S extends Record<string, unknown>, N extends Shape.Name<S>>(
+		shape: S,
+		names: readonly [N, ...N[]],
+	): Omit<S, N> {
+		const remove = new Set<string>(names);
+		const out: Record<string, unknown> = {};
+
+		for (const [name, value] of Object.entries(shape)) {
+			if (!remove.has(name)) out[name] = value;
+		}
+
+		return out as Omit<S, N>;
 	}
 }
 
@@ -821,74 +886,15 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	static form<const S extends Schema.Form.Shape>(
 		fields: S | Schema.Form<S>,
 	): Schema.Form<S> {
-		return (
-			fields instanceof Schema.Form ? fields : new Schema.Form(fields as S)
-		) as Schema.Form<S>;
+		return fields instanceof Schema.Form ? fields : new Schema.Form(fields);
 	}
 
 	/**
-	 * Object schema with extend capability.
-	 *
-	 * @template Shape Shape type
+	 * Runtime constructor for object schemas.
 	 */
-	static readonly Object = class ObjectSchema<
-		const Shape extends Schema.Object.Shape,
-	> extends Schema<Schema.Infer<Shape>, unknown> {
-		/** Object schema's shape (user input object) */
-		readonly #shape: Shape;
-
-		/**
-		 * Create a new object schema.
-		 *
-		 * @param shape Schema shape
-		 */
-		constructor(shape: Shape) {
-			super((v, path) => {
-				if (typeof v !== "object" || v === null || Array.isArray(v)) {
-					return new Schema.AggregateIssue([new Schema.Issue("object", path)]);
-				}
-
-				const data: Record<string, unknown> = {};
-				const issues: Schema.Issue[] = [];
-
-				for (const [key, schema] of Object.entries(shape)) {
-					// parse each entry in the shape
-					const result = schema.parse(
-						(v as Record<PropertyKey, unknown>)[key],
-						[...path, key],
-					);
-
-					if (result.issues) {
-						issues.push(...result.issues);
-					} else {
-						data[key] = result.data;
-					}
-				}
-
-				if (issues.length) return new Schema.AggregateIssue(issues);
-
-				return { data } as { data: Schema.Infer<Shape> };
-			});
-
-			this.#shape = shape;
-		}
-
-		/**
-		 * Returns a new object schema with `extra` merged into the current shape.
-		 *
-		 * @template E Extra shape type
-		 * @param extra Extra shape to merge
-		 * @returns Extended object schema
-		 */
-		// return type required for ts performance
-		extend<const E extends Schema.Object.Shape>(
-			extra: E,
-		): Schema.Object<Schema.Object.Extend<Shape, E>> {
-			return Schema.object({ ...this.#shape, ...extra });
-		}
-
-		// TODO pick and omit
-	};
+	static get Object(): typeof ObjectSchema {
+		return ObjectSchema;
+	}
 
 	/** Coercion schemas that apply JavaScript type coercion before validation. */
 	static readonly Coerce = class Coerce {
@@ -1237,238 +1243,362 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		}
 	};
 
+	/** Runtime constructor for form schemas. */
+	static get Form(): typeof FormSchema {
+		return FormSchema;
+	}
+}
+
+/**
+ * Runtime object schema that validates plain objects and supports shape helpers.
+ *
+ * @template Shape Object shape type
+ */
+export class ObjectSchema<
+	const Shape extends Schema.Object.Shape,
+> extends Schema<Schema.Infer<Shape>> {
+	/** Object shape definitions. */
+	readonly #shape: Shape;
+
 	/**
-	 * Form schema
+	 * Create a new object schema validator.
 	 *
-	 * @template Shape Form field shape type
+	 * @param shape Object shape
 	 */
-	static readonly Form = class Form<const Shape extends Schema.Form.Shape> {
-		/** Form state param key */
-		static readonly #param = "_form";
-
-		static readonly #maxStateBytes = 4096;
-
-		static readonly #maxValueChars = 512;
-
-		static readonly #valueSchema = Schema.union([
-			Schema.string(),
-			Schema.number(),
-			Schema.boolean(),
-			Schema.array(Schema.string()),
-		]);
-
-		/** Field definitions. */
-		readonly #fields: Shape;
-
-		/** Field names in definition order */
-		readonly #names: Schema.Form.Name<Shape>[];
-
-		/** Form id */
-		readonly #id: string;
-
-		/**
-		 * Create a new form schema validator.
-		 *
-		 * @param fields Form fields
-		 */
-		constructor(fields: Shape) {
-			this.#fields = fields;
-			this.#names = Object.keys(this.#fields) as Schema.Form.Name<Shape>[];
-			this.#id = Checksum.djb2(this.#names.join());
-		}
-
-		static #persist(field: Field.Any) {
-			return field.type !== "password" && field.type !== "file";
-		}
-
-		/**
-		 * - Removes any file or password values
-		 * - Drop values if too large for URLSearchParams
-		 *
-		 * @param values
-		 * @returns Sanitized values
-		 */
-		#sanitize(values?: Record<string, unknown>) {
-			const sanitized: Schema.Form.Value.Map<Shape> = {};
-
-			if (values) {
-				for (const [name, value] of Object.entries(values)) {
-					const field = this.#fields[name];
-
-					if (field && Form.#persist(field) && value != null) {
-						const result = Form.#valueSchema.parse(value);
-
-						if (
-							!result.issues &&
-							JSON.stringify(result.data).length <= Form.#maxValueChars
-						) {
-							sanitized[name as Schema.Form.Name<Shape>] = result.data;
-						}
-					}
-				}
-
-				if (Object.keys(sanitized).length) return sanitized;
+	constructor(shape: Shape) {
+		super((value, path) => {
+			if (value == null || typeof value !== "object" || Array.isArray(value)) {
+				return new Schema.AggregateIssue([new Schema.Issue("Object", path)]);
 			}
-		}
 
-		/**
-		 * Encode form state for a redirect.
-		 *
-		 * @param state Form state
-		 * @returns Encoded state or undefined if too large
-		 */
-		encode(state: Omit<Schema.Form.State<Shape>, "id">) {
-			const sanitized: Schema.Form.State<Shape> = Object.assign(state, {
-				id: this.#id,
-				values: this.#sanitize(state.values),
-			});
-
-			if (sanitized.values) {
-				const len = this.#names.length;
-
-				for (let i = len; i >= 0; i--) {
-					// skip on the first time - try to encode everything first
-					if (i !== len) delete sanitized.values[this.#names[i]!];
-
-					const bytes = Codec.encode(JSON.stringify(sanitized));
-
-					if (bytes.byteLength <= Form.#maxStateBytes) {
-						return Codec.Base64Url.encode(bytes);
-					}
-				}
-			}
-		}
-
-		/**
-		 * Decode form state from input.
-		 *
-		 * @param stateInput URL, URLSearchParams, encoded string, or state
-		 */
-		#decode(
-			stateInput?: Schema.Form.State.Input<Shape>,
-		): Schema.Form.State<Shape> | undefined {
-			if (stateInput) {
-				let state: Schema.Form.State<Shape> | undefined;
-
-				if (typeof stateInput === "object" && "id" in stateInput) {
-					state = stateInput;
-				} else {
-					const encoded =
-						typeof stateInput === "string"
-							? stateInput
-							: stateInput instanceof URL
-								? stateInput.searchParams.get(Form.#param)
-								: stateInput.get(Form.#param);
-
-					if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
-						try {
-							state = JSON.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
-						} catch {}
-					}
-				}
-
-				if (state?.id === this.#id) {
-					return { ...state, values: this.#sanitize(state.values) };
-				}
-			}
-		}
-
-		/**
-		 * Parse and validate FormData.
-		 *
-		 * @param formData FormData to parse
-		 * @param path Internal path reference
-		 * @returns Parsed result
-		 */
-		parse = (
-			formData: FormData,
-			path: Schema.Issue.Path = [],
-		): Schema.Form.Parse.Result<Shape> => {
+			const input = value as Record<string, unknown>;
 			const data: Record<string, unknown> = {};
 			const issues: Schema.Issue[] = [];
-			const values: Record<string, unknown> = {};
 
-			for (const [name, field] of Object.entries(this.#fields)) {
-				const value = field.read(formData, name);
-				const result = field.parse(value, [...path, name]);
+			for (const [name, schema] of Object.entries(shape)) {
+				const result = schema.parse(input[name], [...path, name]);
 
 				if (result.issues) {
 					issues.push(...result.issues);
 				} else {
 					data[name] = result.data;
 				}
-
-				if (Form.#persist(field) && value != null) values[name] = value;
 			}
 
-			if (issues.length) {
-				return Object.assign(new Schema.AggregateIssue(issues), {
-					values: this.#sanitize(values),
-				});
+			return issues.length
+				? new Schema.AggregateIssue(issues)
+				: { data: data as Schema.Infer<Shape> };
+		});
+
+		this.#shape = shape;
+	}
+
+	/**
+	 * Returns a new object schema with `extra` merged into the current shape.
+	 *
+	 * @template E Extra shape type
+	 * @param extra Extra shape to merge
+	 */
+	extend<const E extends Schema.Object.Shape>(
+		extra: E,
+	): Schema.Object<Shape.Extend<Shape, E>> {
+		return Schema.object(Shape.extend(this.#shape, extra));
+	}
+
+	/**
+	 * Returns a new object schema with only the selected field names.
+	 *
+	 * @template N Selected key names
+	 * @param names Non-empty list of key names to keep
+	 */
+	pick<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+		return Schema.object(Shape.pick(this.#shape, names));
+	}
+
+	/**
+	 * Returns a new object schema without the selected field names.
+	 *
+	 * @template N Removed key names
+	 * @param names Non-empty list of key names to remove
+	 */
+	omit<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+		return Schema.object(Shape.omit(this.#shape, names));
+	}
+}
+
+/**
+ * Runtime form schema with parsing, encoded state handling, and field rendering.
+ *
+ * @template Shape Form field shape type
+ */
+export class FormSchema<const Shape extends Schema.Form.Shape> {
+	/** Form state param key. */
+	static readonly #param = "_form";
+
+	/** Maximum encoded state size in bytes. */
+	static readonly #maxStateBytes = 4096;
+
+	/** Maximum serialized size for a single persisted value. */
+	static readonly #maxValueChars = 512;
+
+	/** Schema used to validate persisted form values. */
+	static readonly #valueSchema = Schema.union([
+		Schema.string(),
+		Schema.number(),
+		Schema.boolean(),
+		Schema.array(Schema.string()),
+	]);
+
+	/** Field definitions. */
+	readonly #fields: Shape;
+
+	/** Field names in definition order. */
+	readonly #names: Shape.Name<Shape>[];
+
+	/** Form id. */
+	readonly #id: string;
+
+	/**
+	 * Create a new form schema validator.
+	 *
+	 * @param fields Form fields
+	 */
+	constructor(fields: Shape) {
+		this.#fields = fields;
+		this.#names = Object.keys(this.#fields) as Shape.Name<Shape>[];
+		this.#id = Checksum.djb2(this.#names.join());
+	}
+
+	/**
+	 * Returns a new form schema with `extra` merged into the current fields.
+	 *
+	 * @template E Extra field shape type
+	 * @param extra Extra fields to merge
+	 */
+	extend<const E extends Schema.Form.Shape>(
+		extra: E,
+	): Schema.Form<Shape.Extend<Shape, E>> {
+		return Schema.form(Shape.extend(this.#fields, extra));
+	}
+
+	/**
+	 * Returns a new form schema with only the selected field names.
+	 *
+	 * @template N Selected field names
+	 * @param names Non-empty list of field names to keep
+	 */
+	pick<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+		return Schema.form(Shape.pick(this.#fields, names));
+	}
+
+	/**
+	 * Returns a new form schema without the selected field names.
+	 *
+	 * @template N Field names to remove
+	 * @param names Non-empty list of field names to remove
+	 */
+	omit<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+		return Schema.form(Shape.omit(this.#fields, names));
+	}
+
+	/**
+	 * Determines whether a field value may be persisted in encoded form state.
+	 *
+	 * Password and file inputs are intentionally excluded.
+	 *
+	 * @param field Field definition
+	 * @returns `true` when the field value can be persisted
+	 */
+	static #persist(field: Field.Any) {
+		return field.type !== "password" && field.type !== "file";
+	}
+
+	/**
+	 * Sanitizes persisted values by removing unsupported or oversized entries.
+	 *
+	 * @param values Candidate values to persist
+	 * @returns Sanitized values
+	 */
+	#sanitize(values?: Record<string, unknown>) {
+		const sanitized: Schema.Form.Value.Map<Shape> = {};
+
+		if (values) {
+			for (const [name, value] of Object.entries(values)) {
+				const field = this.#fields[name];
+
+				if (field && FormSchema.#persist(field) && value != null) {
+					const result = FormSchema.#valueSchema.parse(value);
+
+					if (
+						!result.issues &&
+						JSON.stringify(result.data).length <= FormSchema.#maxValueChars
+					) {
+						sanitized[name as Shape.Name<Shape>] = result.data;
+					}
+				}
 			}
 
-			return { data } as { data: Schema.Infer<Shape> };
-		};
+			if (Object.keys(sanitized).length) return sanitized;
+		}
+	}
 
-		/**
-		 * Render a single form field.
-		 *
-		 * @param props Component props
-		 * @example
-		 *
-		 * ```tsx
-		 * <User.Field name="username" />
-		 * ```
-		 */
-		Field = (props: Field.Component.Props<Shape>) =>
-			this.#fields[props.name]!.Field({
-				...props,
-				state: this.#decode(props.state),
+	/**
+	 * Encode form state for a redirect.
+	 *
+	 * @param state Form state
+	 * @returns Encoded state or undefined if too large
+	 */
+	encode(state: Omit<Schema.Form.State<Shape>, "id">) {
+		const sanitized: Schema.Form.State<Shape> = Object.assign(state, {
+			id: this.#id,
+			values: this.#sanitize(state.values),
+		});
+
+		if (sanitized.values) {
+			const len = this.#names.length;
+
+			for (let i = len; i >= 0; i--) {
+				// skip on the first time - try to encode everything first
+				if (i !== len) delete sanitized.values[this.#names[i]!];
+
+				const bytes = Codec.encode(JSON.stringify(sanitized));
+
+				if (bytes.byteLength <= FormSchema.#maxStateBytes) {
+					return Codec.Base64Url.encode(bytes);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Decode form state from input.
+	 *
+	 * @param stateInput URL, URLSearchParams, encoded string, or state
+	 */
+	#decode(
+		stateInput?: Schema.Form.State.Input<Shape>,
+	): Schema.Form.State<Shape> | undefined {
+		if (stateInput) {
+			let state: Schema.Form.State<Shape> | undefined;
+
+			if (typeof stateInput === "object" && "id" in stateInput) {
+				state = stateInput;
+			} else {
+				const encoded =
+					typeof stateInput === "string"
+						? stateInput
+						: stateInput instanceof URL
+							? stateInput.searchParams.get(FormSchema.#param)
+							: stateInput.get(FormSchema.#param);
+
+				if (encoded && encoded.length <= FormSchema.#maxStateBytes * 2) {
+					try {
+						state = JSON.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
+					} catch {}
+				}
+			}
+
+			if (state?.id === this.#id) {
+				return { ...state, values: this.#sanitize(state.values) };
+			}
+		}
+	}
+
+	/**
+	 * Parse and validate FormData.
+	 *
+	 * @param formData FormData to parse
+	 * @param path Internal path reference
+	 * @returns Parsed result
+	 */
+	parse = (
+		formData: FormData,
+		path: Schema.Issue.Path = [],
+	): Schema.Form.Parse.Result<Shape> => {
+		const data: Record<string, unknown> = {};
+		const issues: Schema.Issue[] = [];
+		const values: Record<string, unknown> = {};
+
+		for (const [name, field] of Object.entries(this.#fields)) {
+			const value = field.read(formData, name);
+			const result = field.parse(value, [...path, name]);
+
+			if (result.issues) {
+				issues.push(...result.issues);
+			} else {
+				data[name] = result.data;
+			}
+
+			if (FormSchema.#persist(field) && value != null) values[name] = value;
+		}
+
+		if (issues.length) {
+			return Object.assign(new Schema.AggregateIssue(issues), {
+				values: this.#sanitize(values),
 			});
+		}
 
-		/**
-		 * Render all form fields.
-		 *
-		 * @param props Component props
-		 * @example
-		 *
-		 * ```tsx
-		 * <User.Fields />
-		 * ```
-		 */
-		Fields = (
-			props: // partial because name is not required
-			Partial<Field.Component.Props<Shape>> = {},
-		) => {
-			const state = this.#decode(props.state); // pulled out to not call each map iteration
-
-			return this.#names.map((name) =>
-				this.#fields[name]!.Field({ ...props, name, state }),
-			);
-		};
-
-		/**
-		 * Access bound sub-components for a field.
-		 *
-		 * @template N Type of the form field name
-		 * @param name Field name
-		 * @example
-		 *
-		 * ```tsx
-		 * const Radio = User.field("radio");
-		 *
-		 * <Radio.Label />
-		 * <Radio.Control />
-		 * ```
-		 */
-		field = <N extends Schema.Form.Name<Shape>>(
-			props: { name: N } & Field.Component.Props<Shape>,
-		): Field.Component<Shape[N]> =>
-			this.#fields[props.name]!.Component({
-				...props,
-				state: this.#decode(props.state),
-			});
+		return { data } as { data: Schema.Infer<Shape> };
 	};
+
+	/**
+	 * Render a single form field.
+	 *
+	 * @param props Component props
+	 * @example
+	 *
+	 * ```tsx
+	 * <User.Field name="username" />
+	 * ```
+	 */
+	Field = (props: Field.Component.Props<Shape>) =>
+		this.#fields[props.name]!.Field({
+			...props,
+			state: this.#decode(props.state),
+		});
+
+	/**
+	 * Render all form fields.
+	 *
+	 * @param props Component props
+	 * @example
+	 *
+	 * ```tsx
+	 * <User.Fields />
+	 * ```
+	 */
+	Fields = (
+		props: // partial because name is not required
+		Partial<Field.Component.Props<Shape>> = {},
+	) => {
+		const state = this.#decode(props.state); // pulled out to not call each map iteration
+
+		return this.#names.map((name) =>
+			this.#fields[name]!.Field({ ...props, name, state }),
+		);
+	};
+
+	/**
+	 * Access bound sub-components for a field.
+	 *
+	 * @template N Type of the form field name
+	 * @param name Field name
+	 * @example
+	 *
+	 * ```tsx
+	 * const Radio = User.field("radio");
+	 *
+	 * <Radio.Label />
+	 * <Radio.Control />
+	 * ```
+	 */
+	field = <N extends Shape.Name<Shape>>(
+		props: { name: N } & Field.Component.Props<Shape>,
+	): Field.Component<Shape[N]> =>
+		this.#fields[props.name]!.Component({
+			...props,
+			state: this.#decode(props.state),
+		});
 }
 
 export namespace Field {
@@ -1535,7 +1665,7 @@ export namespace Field {
 		 */
 		export type Props<S extends Schema.Form.Shape, I extends boolean = true> = {
 			/** Field name attribute */
-			readonly name: Schema.Form.Name<S>;
+			readonly name: Shape.Name<S>;
 
 			/** Form state */
 			readonly state?: I extends true
