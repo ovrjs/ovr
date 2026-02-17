@@ -1569,6 +1569,12 @@ export namespace Field {
 				: JSX.IntrinsicElements["input"];
 
 		export namespace Control {
+			/**
+			 * `<Field.Control />` component props for group input element.
+			 *
+			 * @template T Tag name
+			 * @template V Option values
+			 */
 			export type Group<T extends Tag, V extends Values> = Control<T> & {
 				readonly value: V[number];
 			};
@@ -1578,7 +1584,11 @@ export namespace Field {
 		export type Label = JSX.IntrinsicElements["label"];
 
 		export namespace Label {
-			/** `<Field.Label />` component props for group input element */
+			/**
+			 * `<Field.Label />` component props for group input element.
+			 *
+			 * @template V Option values
+			 */
 			export type Group<V extends Values> = Label & {
 				readonly value: V[number];
 			};
