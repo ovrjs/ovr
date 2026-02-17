@@ -459,7 +459,7 @@ export class Passkey {
 			| Schema.Infer<typeof Passkey.AuthenticationCredential>,
 		signed: string,
 	) {
-		const client = Passkey.#ClientData.parse(
+		const result = Passkey.#ClientData.parse(
 			JSON.parse(
 				Codec.decode(
 					Codec.Base64Url.decode(credential.response.clientDataJSON),
@@ -467,9 +467,9 @@ export class Passkey {
 			),
 		);
 
-		if (client.issues) throw client.issues[0];
+		if (result.issues) throw result;
 
-		if (client.data.type !== `webauthn.${ceremony}`) {
+		if (result.data.type !== `webauthn.${ceremony}`) {
 			throw new TypeError("Invalid ceremony type");
 		}
 
@@ -478,7 +478,7 @@ export class Passkey {
 
 		if (
 			!Passkey.#safeEqual(
-				Codec.Base64Url.decode(client.data.challenge),
+				Codec.Base64Url.decode(result.data.challenge),
 				Codec.Base64Url.decode(options.challenge),
 			)
 		) {
