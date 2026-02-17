@@ -5,4 +5,5 @@ export type { Middleware } from "./middleware/index.js";
 export { Multipart } from "./multipart/index.js";
 export { Render } from "./render/index.js";
 export { Route } from "./route/index.js";
-export { Schema, Field } from "./schema/index.js";
+export { Schema } from "./schema/index.js";
+export { Field } from "./schema/field.js";
