@@ -53,8 +53,8 @@ export const auth = Route.get("/demo/auth", (c) => {
 			{Render.html(content.html)}
 
 			<div class="mt-24 flex justify-center">
-				<div class="border-secondary bg-muted grid max-w-3xs rounded-md border p-4">
-					<Register class="grid gap-4">
+				<div>
+					<Register>
 						<User.Fields />
 						<button class="secondary">Register</button>
 					</Register>
@@ -118,7 +118,7 @@ export const admin = Route.get(
 export const register = Route.post(User, async (c) => {
 	const result = await c.data();
 
-	if (result.issues) return c.redirect(result.state, 303);
+	if (result.issues) return c.redirect(result.url, 303);
 
 	const { email } = result.data;
 

@@ -201,6 +201,10 @@
 		@apply font-headings font-medium transition-colors ease-out active:scale-99;
 	}
 
+	form {
+		@apply bg-muted border-secondary grid gap-4 rounded-md border p-4 **:data-issue:mt-1 **:data-issue:text-sm **:data-issue:italic sm:max-w-sm [&_label,&_legend]:capitalize;
+	}
+
 	doc-search {
 		button {
 			@apply bg-background text-foreground border-secondary w-full border;

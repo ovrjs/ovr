@@ -16,7 +16,7 @@ export const form = ovr.Route.get("/demo/form", (c) => {
 
 			<hr />
 
-			<post.Form class="bg-muted border-secondary grid max-w-sm gap-4 rounded-md border p-4">
+			<post.Form>
 				<div>
 					<label for="name">Name</label>
 					<input type="text" name="name" id="name" />

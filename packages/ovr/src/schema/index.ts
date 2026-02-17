@@ -26,19 +26,20 @@ export namespace Schema {
 			issues?: never;
 		}
 
-		/** Invalid result type */
-		export interface AggregateIssue extends InstanceType<
+		/** Invalid result type. */
+		export interface Invalid extends InstanceType<
 			typeof Schema.AggregateIssue
 		> {
 			data?: never;
 		}
 
 		/**
-		 * `Schema.parse` result containing `data` or `issues`.
+		 * `Schema.parse` result containing `data` or invalid metadata.
 		 *
 		 * @template O Parse output
+		 * @template M Extra invalid result metadata
 		 */
-		export type Result<O> = Valid<O> | AggregateIssue;
+		export type Result<O, M extends object = {}> = Valid<O> | (Invalid & M);
 
 		/**
 		 * Type of constructor input (path is required).
@@ -150,24 +151,18 @@ export namespace Schema {
 
 		export namespace Parse {
 			/**
-			 * Invalid result type
-			 *
-			 * @template V Values
-			 */
-			export interface Invalid<V extends Value.Map>
-				extends Schema.Parse.AggregateIssue {
-				/** Values to persist in state */
-				readonly values?: V;
-			}
-
-			/**
 			 * Form parse result.
 			 *
 			 * @template S Form shape
+			 * @template M Extra invalid result metadata
 			 */
-			export type Result<S extends Shape> =
-				| Schema.Parse.Valid<Schema.Infer<S>>
-				| Invalid<Value.Map<S>>;
+			export type Result<
+				S extends Shape,
+				M extends object = {},
+			> = Schema.Parse.Result<
+				Schema.Infer<S>,
+				{ readonly values?: Value.Map<S> } & M
+			>;
 		}
 	}
 }

@@ -45,7 +45,7 @@ export const create = Route.post(
 		const result = await c.data();
 
 		if (result.issues) {
-			return c.redirect(result.state, 303);
+			return c.redirect(result.url, 303);
 		}
 
 		console.log(result.data);
@@ -63,10 +63,7 @@ export const schema = Route.get("/demo/schema", (c) => {
 
 			{Render.html(schemaContent.html)}
 
-			<create.Form
-				state={c.url}
-				class="bg-muted border-secondary grid gap-4 rounded-md border p-4 **:data-issue:mt-1 **:data-issue:text-sm **:data-issue:italic sm:max-w-sm [&_label,&_legend]:capitalize"
-			/>
+			<create.Form state={c.url} />
 		</Layout>
 	);
 });

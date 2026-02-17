@@ -35,7 +35,7 @@ export const todo = Route.get("/demo/todo", (c) => {
 		<Layout head={<Meta {...todoContent.frontmatter} />}>
 			<h1>Todo</h1>
 
-			<div class="border-muted mb-12 grid max-w-md gap-4 rounded-md border p-4">
+			<div class="border-muted mb-12 grid gap-4 rounded-md border p-4 sm:max-w-sm">
 				<add.Form search={c.url.search} class="flex gap-4">
 					<input name="text" placeholder="Add todo" />
 					<button>Add</button>
@@ -43,7 +43,7 @@ export const todo = Route.get("/demo/todo", (c) => {
 
 				<ul class="m-0 grid list-none gap-4 p-0">
 					{getTodos(c).map((t) => (
-						<li class="m-0">
+						<li class="m-0 p-0">
 							<form class="flex justify-between">
 								<input type="hidden" name="id" value={t.id} />
 

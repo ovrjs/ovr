@@ -433,22 +433,22 @@ export class Route<Pattern extends string = string> {
 
 				if (result.issues) {
 					// create encoded URL state with invalid fields
-					let state: URL;
+					let url: URL;
 
 					try {
-						state = new URL(c.req.headers.get(Header.referer)!, c.url);
+						url = new URL(c.req.headers.get(Header.referer)!, c.url);
 					} catch {
 						// invalid or missing referer
-						state = c.url;
+						url = c.url;
 					}
 
-					if (state.origin === c.url.origin) {
+					if (url.origin === c.url.origin) {
 						const encoded = form.encode(result);
 
-						if (encoded) state.searchParams.set("_form", encoded);
+						if (encoded) url.searchParams.set("_form", encoded);
 					}
 
-					return Object.assign(result, { state });
+					return Object.assign(result, { url });
 				}
 
 				return result;

@@ -32,7 +32,7 @@ export const chat = ovr.Route.get("/demo/chat", (c) => {
 
 			<hr />
 
-			<stream.Form class="bg-muted border-secondary grid max-w-sm gap-4 rounded-md border p-4">
+			<stream.Form>
 				<div>
 					<label for="message">Message</label>
 					<textarea

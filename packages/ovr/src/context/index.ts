@@ -39,12 +39,13 @@ export namespace Context {
 	 *
 	 * @template S Form shape
 	 */
-	export type Data<S extends Schema.Form.Shape> =
-		| (Schema.Parse.Valid<Schema.Infer<S>> & { readonly state?: never })
-		| (Schema.Form.Parse.Invalid<Schema.Form.Value.Map<S>> & {
-				/** URL with `_form` search param state. */
-				readonly state: URL;
-		  });
+	export type Data<S extends Schema.Form.Shape> = Schema.Form.Parse.Result<
+		S,
+		{
+			/** URL with invalid field values encoded into a search parameter. */
+			readonly url: URL;
+		}
+	>;
 }
 
 /**
