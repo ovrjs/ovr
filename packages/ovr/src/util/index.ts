@@ -61,6 +61,9 @@ export class Header {
 	static readonly cookie = "cookie";
 	static readonly setCookie = "set-cookie";
 	static readonly referer = "referer";
+	static readonly location = "location";
+	static readonly origin = "origin";
+	static readonly secFetchSite = "sec-fetch-site";
 
 	/**
 	 * @param mime

@@ -161,8 +161,16 @@ export namespace Schema {
 				M extends object = {},
 			> = Schema.Parse.Result<
 				Schema.Infer<S>,
-				{ readonly values?: Value.Map<S> } & M
+				{
+					/** Encoded URL search param field state */
+					readonly search: Result.Search;
+				} & M
 			>;
+
+			export namespace Result {
+				/** Form search param key/value */
+				export type Search = ["_form", string] | undefined;
+			}
 		}
 	}
 }
@@ -1438,34 +1446,6 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 	}
 
 	/**
-	 * Encode form state for a redirect.
-	 *
-	 * @param state Form state
-	 * @returns Encoded state or undefined if too large
-	 */
-	encode(state: Omit<Schema.Form.State<Shape>, "id">) {
-		const sanitized: Schema.Form.State<Shape> = Object.assign(state, {
-			id: this.#id,
-			values: this.#sanitize(state.values),
-		});
-
-		if (sanitized.values) {
-			const len = this.#names.length;
-
-			for (let i = len; i >= 0; i--) {
-				// skip on the first time - try to encode everything first
-				if (i !== len) delete sanitized.values[this.#names[i]!];
-
-				const bytes = Codec.encode(JSON.stringify(sanitized));
-
-				if (bytes.byteLength <= FormSchema.#maxStateBytes) {
-					return Codec.Base64Url.encode(bytes);
-				}
-			}
-		}
-	}
-
-	/**
 	 * Decode form state from input.
 	 *
 	 * @param stateInput URL, URLSearchParams, encoded string, or state
@@ -1528,9 +1508,33 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 		}
 
 		if (issues.length) {
-			return Object.assign(new Schema.AggregateIssue(issues), {
-				values: this.#sanitize(values),
-			});
+			const result = new Schema.AggregateIssue(issues);
+			const sanitized = this.#sanitize(values);
+			let search: Schema.Form.Parse.Result.Search;
+			
+			if (sanitized) {
+				// encode into search
+				const len = this.#names.length;
+
+				for (let i = len; i >= 0; i--) {
+					// skip on the first time - try to encode everything first
+					if (i !== len) delete sanitized[this.#names[i]!];
+
+					const state = Codec.encode(
+						JSON.stringify({
+							issues: result.issues,
+							id: this.#id,
+							values: sanitized,
+						} satisfies Schema.Form.State),
+					);
+
+					if (state.byteLength <= FormSchema.#maxStateBytes) {
+						search = [FormSchema.#param, Codec.Base64Url.encode(state)];
+					}
+				}
+			}
+
+			return Object.assign(result, { search });
 		}
 
 		return { data } as { data: Schema.Infer<Shape> };

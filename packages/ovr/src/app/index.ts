@@ -4,7 +4,7 @@ import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
-import { Method, type Util } from "../util/index.js";
+import { Header, Method, type Util } from "../util/index.js";
 
 export namespace App {
 	export namespace Options {
@@ -138,8 +138,8 @@ export class App {
 		if (
 			c.req.method === Method.get ||
 			c.req.method === Method.head ||
-			c.req.headers.get("sec-fetch-site") === "same-origin" ||
-			c.req.headers.get("origin") === c.url.origin
+			c.req.headers.get(Header.secFetchSite) === "same-origin" ||
+			c.req.headers.get(Header.origin) === c.url.origin
 		) {
 			return next();
 		}

@@ -164,7 +164,7 @@ export class Context<
 		this.res.body = null;
 		this.res.status = status;
 		this.res.headers.set(
-			"location",
+			Header.location,
 			location instanceof Route ? location.pathname() : String(location),
 		);
 	}

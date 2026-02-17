@@ -280,6 +280,36 @@ export class Route<Pattern extends string = string> {
 		});
 	}
 
+	static #data =
+		(form: Schema.Form): Middleware =>
+		(c, next) => {
+			c.data = async () => {
+				// parse any form data with provided schema
+				const result = form.parse(await c.form().data());
+
+				if (result.issues) {
+					// create encoded URL state with invalid fields
+					let url = new URL(c.url);
+
+					try {
+						const referer = new URL(c.req.headers.get(Header.referer)!, url);
+
+						if (referer.origin === c.url.origin) url = referer;
+					} catch {
+						// invalid or missing referer
+					}
+
+					if (result.search) url.searchParams.set(...result.search);
+
+					return Object.assign(result, { url });
+				}
+
+				return result;
+			};
+
+			return next();
+		};
+
 	/**
 	 * @template Pattern Route pattern
 	 * @param pattern Route pattern
@@ -422,40 +452,7 @@ export class Route<Pattern extends string = string> {
 
 		if (!schema) return route;
 
-		// needed because used inside the mw and schema could technically be reassigned
-		const form = schema;
-
-		route.middleware.unshift((c, next) => {
-			// assign data function within mw
-			c.data = async () => {
-				// parse any form data with provided schema
-				const result = form.parse(await c.form().data());
-
-				if (result.issues) {
-					// create encoded URL state with invalid fields
-					let url: URL;
-
-					try {
-						url = new URL(c.req.headers.get(Header.referer)!, c.url);
-					} catch {
-						// invalid or missing referer
-						url = c.url;
-					}
-
-					if (url.origin === c.url.origin) {
-						const encoded = form.encode(result);
-
-						if (encoded) url.searchParams.set("_form", encoded);
-					}
-
-					return Object.assign(result, { url });
-				}
-
-				return result;
-			};
-
-			return next();
-		});
+		route.middleware.unshift(Route.#data(schema));
 
 		// original form shell from normal post route
 		const { Form } = route;
@@ -465,7 +462,7 @@ export class Route<Pattern extends string = string> {
 				Form({
 					// add in the default children (Fields) with state and submit button
 					children: [
-						form.Fields({ state }),
+						schema!.Fields({ state }),
 						jsx("button", { children: "Submit" }),
 					],
 					...rest,
