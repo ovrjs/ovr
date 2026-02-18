@@ -1,4 +1,5 @@
 import type { Context } from "../context/index.js";
+import { Schema } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
 import { Passkey } from "./passkey.js";
 
@@ -51,6 +52,10 @@ export class Auth {
 	static readonly #keys = new Map<string, Promise<CryptoKey>>();
 	static readonly #cookieName = "__Host-auth-session";
 	static readonly #hmac = "HMAC";
+	static readonly #session = Schema.object({
+		id: Schema.string(),
+		expiration: Schema.number(),
+	});
 
 	/** Request context */
 	readonly #c: Context;
@@ -178,20 +183,23 @@ export class Auth {
 		try {
 			const payload = await this.verify(token);
 			const now = Date.now();
-			const session = JSON.parse(
-				Codec.decode(Codec.Base64Url.decode(payload)),
-			) as Auth.Session;
 
-			if (now < session.expiration) {
+			const session = Schema.json(Auth.#session).parse(
+				Codec.decode(Codec.Base64Url.decode(payload)),
+			);
+
+			if (session.issues) throw session;
+
+			if (now < session.data.expiration) {
 				// has not expired
-				return session.expiration - now < this.options.refresh
+				return session.data.expiration - now < this.options.refresh
 					? // refresh
 						this.#setCookie({
-							...session,
+							...session.data,
 							expiration: now + this.options.duration,
 						})
 					: // return as is
-						session;
+						session.data;
 			}
 		} catch {
 			// invalid payload

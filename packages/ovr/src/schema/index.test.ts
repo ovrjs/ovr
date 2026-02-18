@@ -31,6 +31,41 @@ describe("Object shape methods", () => {
 	});
 });
 
+describe("JSON schema", () => {
+	test("parses valid JSON and validates inner schema", () => {
+		const schema = Schema.json(
+			Schema.object({
+				id: Schema.string(),
+				expiration: Schema.number(),
+			}),
+		);
+
+		const result = schema.parse('{"id":"123","expiration":1}');
+
+		if (result.issues) throw new Error("Expected no issues");
+
+		expect(result.data).toEqual({ id: "123", expiration: 1 });
+	});
+
+	test("fails on invalid JSON strings", () => {
+		const result = Schema.json(Schema.unknown()).parse("{");
+		expect(result.issues).toBeDefined();
+	});
+
+	test("fails on non-string input", () => {
+		const result = Schema.json(Schema.unknown()).parse(1);
+		expect(result.issues).toBeDefined();
+	});
+
+	test("supports untyped parsing with Schema.unknown()", () => {
+		const result = Schema.json(Schema.unknown()).parse('{"hello":"world"}');
+
+		if (result.issues) throw new Error("Expected no issues");
+
+		expect(result.data).toEqual({ hello: "world" });
+	});
+});
+
 describe("Form shape methods", () => {
 	test("extend adds new fields", () => {
 		const form = Schema.form({ a: Schema.Field.text() }).extend({

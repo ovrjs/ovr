@@ -627,6 +627,31 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	}
 
 	/**
+	 * Parse a JSON string and validate the parsed value with the provided schema.
+	 *
+	 * @template S Schema type
+	 * @param schema Schema to validate the parsed JSON value with
+	 * @param message Issue message when invalid
+	 * @returns Parsed JSON schema
+	 */
+	static json<const S extends Schema<Schema.Infer<S>>>(
+		schema: S,
+		message?: string,
+	) {
+		return Schema.string(message).pipe(
+			new Schema((v, path) => {
+				try {
+					return schema.parse(JSON.parse(v as string), path);
+				} catch {
+					return new Schema.AggregateIssue([
+						new Schema.Issue("JSON", path, message),
+					]);
+				}
+			}),
+		);
+	}
+
+	/**
 	 * Validate an input is a valid email string using
 	 * [Reasonable Email Regex by Colin McDonnell](https://colinhacks.com/essays/reasonable-email-regex).
 	 *
@@ -1455,6 +1480,14 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 	): Schema.Form.State<Shape> | undefined {
 		if (stateInput) {
 			let state: Schema.Form.State<Shape> | undefined;
+
+			// const stateSchema = Schema.json(
+			// 	Schema.object({
+			// 		id: Schema.literal(this.#id),
+			// 		issues: Schema.array(Schema.object()),
+			// 		values: Schema.object({})
+			// 	}),
+			// );
 
 			if (typeof stateInput === "object" && "id" in stateInput) {
 				state = stateInput;

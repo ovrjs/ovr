@@ -375,11 +375,20 @@ export class Passkey {
 		return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
 	}
 
-	static #ClientData = Schema.object({
-		type: Schema.string(),
-		challenge: Schema.string(),
-		origin: Schema.string(),
-	});
+	static #ClientData = (ceremony: "create" | "get") =>
+		Schema.json(
+			Schema.object({
+				type: Schema.literal(`webauthn.${ceremony}`),
+				challenge: Schema.string(),
+				origin: Schema.string(),
+			}),
+		);
+	static #Challenge = (ceremony: "create" | "get") =>
+		Schema.json(
+			ceremony === "create"
+				? Schema.object({ challenge: Schema.string(), user: Schema.string() })
+				: Schema.object({ challenge: Schema.string() }),
+		);
 	static #Credential = Schema.object({
 		type: Schema.literal("public-key"),
 		id: Schema.string(),
@@ -394,6 +403,10 @@ export class Passkey {
 			authenticatorData: Schema.string(),
 			signature: Schema.string(),
 		}),
+	});
+	static #FormData = Schema.object({
+		credential: Schema.json(Schema.unknown()),
+		signed: Schema.string(),
 	});
 
 	/**
@@ -412,31 +425,20 @@ export class Passkey {
 		return result === 0;
 	}
 
-	static #FormData = Schema.object({
-		credential: Schema.unknown(),
-		signed: Schema.string(),
-	});
-
 	/**
 	 * @param c - Request context
 	 * @returns Object with credential and options, or null if invalid
 	 */
 	async #parseForm() {
 		const data = await this.#c.form().data();
-		const credential = Schema.string().parse(data.get("credential"));
+		const result = Passkey.#FormData.parse({
+			credential: data.get("credential"),
+			signed: data.get("signed"),
+		});
 
-		if (!credential.issues) {
-			try {
-				const result = Passkey.#FormData.parse({
-					credential: JSON.parse(credential.data),
-					signed: data.get("signed"),
-				});
+		if (result.issues) throw result;
 
-				if (!result.issues) return result.data;
-			} catch {}
-		}
-
-		throw new TypeError("Invalid form data");
+		return result.data;
 	}
 
 	/**
@@ -445,7 +447,6 @@ export class Passkey {
 	 * @param ceremony - Expected WebAuthn ceremony type
 	 * @param credential - Validated credential data from authenticator - untrusted
 	 * @param signed - Signed options string from form
-	 * @returns verified and parsed options
 	 */
 	async #verifyCredentialBase<
 		C extends "create" | "get",
@@ -459,33 +460,28 @@ export class Passkey {
 			| Schema.Infer<typeof Passkey.AuthenticationCredential>,
 		signed: string,
 	) {
-		const result = Passkey.#ClientData.parse(
-			JSON.parse(
-				Codec.decode(
-					Codec.Base64Url.decode(credential.response.clientDataJSON),
-				),
-			),
+		const client = Passkey.#ClientData(ceremony).parse(
+			Codec.decode(Codec.Base64Url.decode(credential.response.clientDataJSON)),
 		);
 
-		if (result.issues) throw result;
+		if (client.issues) throw client;
 
-		if (result.data.type !== `webauthn.${ceremony}`) {
-			throw new TypeError("Invalid ceremony type");
-		}
+		const options = Passkey.#Challenge(ceremony).parse(
+			await this.#auth.verify(signed),
+		);
 
-		// no need to parse since its signed
-		const options: O = JSON.parse(await this.#auth.verify(signed));
+		if (options.issues) throw options;
 
 		if (
 			!Passkey.#safeEqual(
-				Codec.Base64Url.decode(result.data.challenge),
-				Codec.Base64Url.decode(options.challenge),
+				Codec.Base64Url.decode(client.data.challenge),
+				Codec.Base64Url.decode(options.data.challenge),
 			)
 		) {
 			throw new Error("Challenge mismatch");
 		}
 
-		return options;
+		return options.data as O;
 	}
 
 	/**

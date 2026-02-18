@@ -1,5 +1,6 @@
 import { App } from "../app/index.js";
 import { Route } from "../route/index.js";
+import { Codec } from "../util/index.js";
 import { describe, expect, test } from "vitest";
 
 describe("auth sessions", () => {
@@ -21,6 +22,33 @@ describe("auth sessions", () => {
 		expect(res.status).toBe(200);
 		expect(await res.json()).toBeNull();
 		expect(res.headers.get("set-cookie")).toContain("__Host-auth-session=");
+		expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
+	});
+
+	test("invalid session JSON logs out instead of throwing", async () => {
+		const app = new App({ auth: { secret: "secret" }, trailingSlash: "ignore" });
+
+		app.use(
+			Route.get("/token", async (c) => {
+				const payload = Codec.Base64Url.encode(
+					Codec.encode(JSON.stringify({ id: "123" })),
+				);
+				c.text(await c.auth.sign(payload));
+			}),
+			Route.get("/", async (c) => {
+				c.json(await c.auth.session());
+			}),
+		);
+
+		const token = await (await app.fetch("https://example.com/token")).text();
+		const res = await app.fetch(
+			new Request("https://example.com/", {
+				headers: { cookie: `__Host-auth-session=${token}` },
+			}),
+		);
+
+		expect(res.status).toBe(200);
+		expect(await res.json()).toBeNull();
 		expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
 	});
 });
@@ -45,5 +73,76 @@ describe("passkey script", () => {
 
 		expect(script).toBeDefined();
 		expect(() => new Function(script!)).not.toThrow();
+	});
+});
+
+describe("passkey parsing", () => {
+	test("invalid credential JSON is rejected", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+
+		app.use(
+			Route.post("/verify", async (c) => {
+				await c.auth.passkey.verify();
+				c.text("ok");
+			}),
+		);
+
+		const body = new FormData();
+		body.set("credential", "{");
+		body.set("signed", "bad");
+
+		await expect(
+			app.fetch(
+				new Request("https://example.com/verify", {
+					method: "POST",
+					body,
+					headers: { origin: "https://example.com" },
+				}),
+			),
+		).rejects.toThrow("Expected JSON");
+	});
+
+	test("invalid signed JSON/token is rejected", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+
+		app.use(
+			Route.post("/verify", async (c) => {
+				await c.auth.passkey.verify();
+				c.text("ok");
+			}),
+		);
+
+		const body = new FormData();
+		body.set(
+			"credential",
+			JSON.stringify({
+				type: "public-key",
+				id: "a",
+				rawId: "a",
+				response: {
+					clientDataJSON: Codec.Base64Url.encode(
+						Codec.encode(
+							JSON.stringify({
+								type: "webauthn.create",
+								challenge: Codec.Base64Url.encode(Codec.encode("x")),
+								origin: "https://example.com",
+							}),
+						),
+					),
+					attestationObject: "a",
+				},
+			}),
+		);
+		body.set("signed", "bad");
+
+		await expect(
+			app.fetch(
+				new Request("https://example.com/verify", {
+					method: "POST",
+					body,
+					headers: { origin: "https://example.com" },
+				}),
+			),
+		).rejects.toThrow("Invalid token");
 	});
 });
