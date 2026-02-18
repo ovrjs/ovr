@@ -634,13 +634,17 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	static json<const O>(schema: Schema<O>, message?: string) {
 		return Schema.string(message).pipe(
 			new Schema((v, path) => {
+				let data: unknown;
+
 				try {
-					return schema.parse(JSON.parse(v as string), path);
+					data = JSON.parse(v as string);
 				} catch {
 					return new Schema.AggregateIssue([
 						new Schema.Issue("JSON", path, message),
 					]);
 				}
+
+				return schema.parse(data, path);
 			}),
 		);
 	}
@@ -885,7 +889,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 	/**
 	 * Validates each key in the shape and returns a new object of parsed outputs.
-	 * Missing keys are passed as `undefined` so `.optional()` / `.default()` work.
 	 *
 	 * @template S Object shape type
 	 * @param shape Object shape with schemas for each key
@@ -893,7 +896,24 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 */
 	static object<const S extends Schema.Object.Shape>(
 		shape: S,
-	): Schema.Object<S> {
+	): Schema.Object<S>;
+	/**
+	 * Validate an input is a non-null object.
+	 *
+	 * @returns Object schema
+	 */
+	static object(): Schema<Record<string, unknown>>;
+	static object<const S extends Schema.Object.Shape>(
+		shape?: S,
+	): Schema.Object<S> | Schema<Record<string, unknown>> {
+		if (!shape) {
+			return new Schema((v, path) =>
+				v != null && typeof v === "object" && !Array.isArray(v)
+					? { data: v as Record<string, unknown> }
+					: new Schema.AggregateIssue([new Schema.Issue("Object", path)]),
+			);
+		}
+
 		return new Schema.Object(shape);
 	}
 
@@ -1289,16 +1309,15 @@ export class ObjectSchema<
 	 */
 	constructor(shape: Shape) {
 		super((value, path) => {
-			if (value == null || typeof value !== "object" || Array.isArray(value)) {
-				return new Schema.AggregateIssue([new Schema.Issue("Object", path)]);
-			}
+			const input = Schema.object().parse(value);
 
-			const input = value as Record<string, unknown>;
+			if (input.issues) return input;
+
 			const data: Record<string, unknown> = {};
 			const issues: Schema.Issue[] = [];
 
 			for (const [name, schema] of Object.entries(shape)) {
-				const result = schema.parse(input[name], [...path, name]);
+				const result = schema.parse(input.data[name], [...path, name]);
 
 				if (result.issues) {
 					issues.push(...result.issues);

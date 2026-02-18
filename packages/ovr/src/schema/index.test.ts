@@ -2,6 +2,17 @@ import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 describe("Object shape methods", () => {
+	test("object without shape validates plain objects", () => {
+		const schema = Schema.object();
+		const pass = schema.parse({ a: 1 });
+		const fail = schema.parse([1]);
+
+		if (pass.issues) throw new Error("Expected no issues");
+
+		expect(pass.data).toEqual({ a: 1 });
+		expect(fail.issues).toBeDefined();
+	});
+
 	test("pick keeps only selected keys", () => {
 		const schema = Schema.object({
 			a: Schema.string(),
@@ -34,10 +45,7 @@ describe("Object shape methods", () => {
 describe("JSON schema", () => {
 	test("parses valid JSON and validates inner schema", () => {
 		const schema = Schema.json(
-			Schema.object({
-				id: Schema.string(),
-				expiration: Schema.number(),
-			}),
+			Schema.object({ id: Schema.string(), expiration: Schema.number() }),
 		);
 
 		const result = schema.parse('{"id":"123","expiration":1}');
@@ -63,6 +71,16 @@ describe("JSON schema", () => {
 		if (result.issues) throw new Error("Expected no issues");
 
 		expect(result.data).toEqual({ hello: "world" });
+	});
+
+	test("does not swallow inner schema exceptions as JSON issues", () => {
+		const schema = Schema.json(
+			Schema.number().transform(() => {
+				throw new Error("boom");
+			}),
+		);
+
+		expect(() => schema.parse("1")).toThrowError("boom");
 	});
 });
 
