@@ -540,17 +540,14 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Values | undefined,
-	>(this: Field<Output, T, U, V>, next: Schema<O, unknown>): Field<O, T, U, V>;
+	>(this: Field<Output, T, U, V>, next: Schema<O>): Field<O, T, U, V>;
 	/**
 	 * @template O Output type after pipe
 	 * @param next Schema to validate the result with
 	 * @returns Piped schema
 	 */
-	pipe<O>(
-		this: Schema<Output, Input>,
-		next: Schema<O, unknown>,
-	): Schema<O, Input>;
-	pipe<O>(this: Schema<Output, Input>, next: Schema<O, unknown>) {
+	pipe<O>(this: Schema<Output, Input>, next: Schema<O>): Schema<O, Input>;
+	pipe<O>(this: Schema<Output, Input>, next: Schema<O>) {
 		return this.derive((v, path) => {
 			const result = this.parse(v, path);
 
@@ -629,15 +626,12 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	/**
 	 * Parse a JSON string and validate the parsed value with the provided schema.
 	 *
-	 * @template S Schema type
+	 * @template O Output type
 	 * @param schema Schema to validate the parsed JSON value with
 	 * @param message Issue message when invalid
 	 * @returns Parsed JSON schema
 	 */
-	static json<const S extends Schema<Schema.Infer<S>>>(
-		schema: S,
-		message?: string,
-	) {
+	static json<const O>(schema: Schema<O>, message?: string) {
 		return Schema.string(message).pipe(
 			new Schema((v, path) => {
 				try {
@@ -803,10 +797,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Union schema
 	 */
 	static union<
-		const S extends readonly [
-			Schema<unknown, unknown>,
-			...Schema<unknown, unknown>[],
-		],
+		const S extends readonly [Schema<unknown>, ...Schema<unknown>[]],
 	>(schemas: S) {
 		return new Schema((v, path) => {
 			const issues: Schema.Issue[] = [];
@@ -834,7 +825,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Validated instance
 	 */
-	static instance<O>(constructor: new (...args: any[]) => O, message?: string) {
+	static instance<const O>(
+		constructor: new (...args: any[]) => O,
+		message?: string,
+	) {
 		return new Schema((v, path) =>
 			v instanceof constructor
 				? { data: v }
@@ -862,7 +856,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Array schema
 	 */
-	static array<O>(schema: Schema<O, unknown>, message?: string) {
+	static array<const O>(schema: Schema<O>, message?: string) {
 		return new Schema((v, path) => {
 			if (!Array.isArray(v)) {
 				return new Schema.AggregateIssue([
@@ -1315,7 +1309,7 @@ export class ObjectSchema<
 
 			return issues.length
 				? new Schema.AggregateIssue(issues)
-				: { data: data as Schema.Infer<Shape> };
+				: ({ data } as { data: Schema.Infer<Shape> });
 		});
 
 		this.#shape = shape;

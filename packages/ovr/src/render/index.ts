@@ -83,9 +83,11 @@ export class Render {
 		if (element instanceof Promise) element = await element;
 
 		// resolve based on type
-		// should not render
-		if (element == null || typeof element === "boolean" || element === "")
+
+		if (element == null || typeof element === "boolean" || element === "") {
+			// should not render
 			return;
+		}
 
 		if (element instanceof Chunk) {
 			// already escaped or safe
