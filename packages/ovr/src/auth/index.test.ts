@@ -5,7 +5,10 @@ import { describe, expect, test } from "vitest";
 
 describe("auth sessions", () => {
 	test("invalid session cookie logs out instead of throwing", async () => {
-		const app = new App({ auth: { secret: "secret" }, trailingSlash: "ignore" });
+		const app = new App({
+			auth: { secret: "secret" },
+			trailingSlash: "ignore",
+		});
 
 		app.use(
 			Route.get("/", async (c) => {
@@ -26,7 +29,10 @@ describe("auth sessions", () => {
 	});
 
 	test("invalid session JSON logs out instead of throwing", async () => {
-		const app = new App({ auth: { secret: "secret" }, trailingSlash: "ignore" });
+		const app = new App({
+			auth: { secret: "secret" },
+			trailingSlash: "ignore",
+		});
 
 		app.use(
 			Route.get("/token", async (c) => {
@@ -69,7 +75,9 @@ describe("passkey script", () => {
 
 		const res = await app.fetch("https://example.com/");
 		const html = await res.text();
-		const script = html.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
+		const script = html.match(
+			/<script type="module">([\s\S]*?)<\/script>/,
+		)?.[1];
 
 		expect(script).toBeDefined();
 		expect(() => new Function(script!)).not.toThrow();

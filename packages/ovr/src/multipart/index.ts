@@ -93,10 +93,10 @@ class Part extends Request {
 			duplex: "half",
 		});
 
-		[this.type] = Header.shift(this.headers.get(Header.type));
+		[this.type] = Header.shift(this.headers.get(Header.name.type));
 
 		({ name: this.name = null, filename: this.filename = null } = Header.params(
-			this.headers.get(Header.disposition),
+			this.headers.get(Header.name.disp),
 		));
 	}
 }
@@ -219,7 +219,7 @@ export class Multipart extends Request {
 	constructor(req: Request, options?: Multipart.Options) {
 		super(req);
 
-		const [mime, params] = Header.shift(this.headers.get(Header.type));
+		const [mime, params] = Header.shift(this.headers.get(Header.name.type));
 
 		if (!Mime.multipart(mime)) throw new TypeError("Unsupported Media Type");
 
@@ -471,7 +471,7 @@ export class Multipart extends Request {
 				if (part.name) {
 					let value: string | File;
 
-					if (part.filename || part.type === Mime.stream) {
+					if (part.filename || part.type === Mime.type.stream) {
 						const blob = await part.blob();
 						value = new File([blob], part.filename ?? "blob", {
 							type: blob.type,

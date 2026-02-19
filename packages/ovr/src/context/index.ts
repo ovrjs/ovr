@@ -118,7 +118,7 @@ export class Context<
 	html(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.type, Header.utf8(Mime.html));
+		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.html));
 	}
 
 	/**
@@ -130,7 +130,7 @@ export class Context<
 	json<D>(data: D extends bigint ? never : D, status?: number) {
 		this.res.body = JSON.stringify(data);
 		this.res.status = status;
-		this.res.headers.set(Header.type, Mime.json);
+		this.res.headers.set(Header.name.type, Mime.type.json);
 	}
 
 	/**
@@ -142,7 +142,7 @@ export class Context<
 	text(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.type, Header.utf8(Mime.text));
+		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.text));
 	}
 
 	/**
@@ -164,7 +164,7 @@ export class Context<
 		this.res.body = null;
 		this.res.status = status;
 		this.res.headers.set(
-			Header.location,
+			Header.name.loc,
 			location instanceof Route ? location.pathname() : String(location),
 		);
 	}
@@ -181,9 +181,9 @@ export class Context<
 	etag(string: string) {
 		const etag = `"${Checksum.djb2(string)}"`;
 
-		this.res.headers.set(Header.etag, etag);
+		this.res.headers.set(Header.name.etag, etag);
 
-		if (this.req.headers.get(Header.ifNoneMatch) === etag) {
+		if (this.req.headers.get(Header.name.none) === etag) {
 			this.res.body = null;
 			this.res.status = 304;
 
@@ -257,7 +257,7 @@ export class Context<
 			}
 		} else if (r !== undefined) {
 			// something to stream
-			const [mime] = Header.shift(this.res.headers.get(Header.type));
+			const [mime] = Header.shift(this.res.headers.get(Header.name.type));
 
 			this.res.body = Render.stream(r, {
 				// other defined types are safe
@@ -266,7 +266,7 @@ export class Context<
 
 			if (!mime) {
 				// default to HTML
-				this.res.headers.set(Header.type, Header.utf8(Mime.html));
+				this.res.headers.set(Header.name.type, Header.utf8(Mime.type.html));
 			}
 
 			// do not overwrite/remove status - that way user can set it before returning

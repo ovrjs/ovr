@@ -147,7 +147,7 @@ export class Cookie {
 	 */
 	get(name: string) {
 		return (this.#parsed ??= Header.params(
-			this.#c.req.headers.get(Header.cookie),
+			this.#c.req.headers.get(Header.name.cookie),
 		))[name];
 	}
 
@@ -184,6 +184,6 @@ export class Cookie {
 		if (options.expires)
 			cookie.push(`Expires=${options.expires.toUTCString()}`);
 
-		this.#c.res.headers.append(Header.setCookie, cookie.join("; "));
+		this.#c.res.headers.append(Header.name.set, cookie.join("; "));
 	}
 }

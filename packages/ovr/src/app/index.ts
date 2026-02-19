@@ -138,8 +138,8 @@ export class App {
 		if (
 			c.req.method === Method.get ||
 			c.req.method === Method.head ||
-			c.req.headers.get(Header.secFetchSite) === "same-origin" ||
-			c.req.headers.get(Header.origin) === c.url.origin
+			c.req.headers.get(Header.name.fetch) === "same-origin" ||
+			c.req.headers.get(Header.name.origin) === c.url.origin
 		) {
 			return next();
 		}

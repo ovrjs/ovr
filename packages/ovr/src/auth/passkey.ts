@@ -1,5 +1,5 @@
 import type { Context } from "../context/index.js";
-import { type JSX, jsx } from "../jsx/index.js";
+import { jsx } from "../jsx/index.js";
 import { Render } from "../render/index.js";
 import type { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
@@ -17,9 +17,6 @@ export namespace Passkey {
 	export interface CreateChallenge extends GetChallenge {
 		user: string;
 	}
-
-	/** Form component returned by `create()` or `get()` */
-	export type Form = (props: JSX.IntrinsicElements["form"]) => JSX.Element;
 }
 
 /**
@@ -159,56 +156,62 @@ export class Passkey {
 				};
 			}
 
-			#form = document.querySelector(
+			/** All forms with the route's action */
+			#forms = document.querySelectorAll(
 				'form[action="' + action + '"]',
-			) as HTMLFormElement;
+			) as NodeListOf<HTMLFormElement>;
 
+			/** Single loading state for all auth forms */
 			static #loading = false;
 
 			addEventListeners() {
-				if (!this.#form.hasAttribute("data-auth")) {
-					this.#form.dataset.auth = "";
+				for (const form of this.#forms) {
+					if (!form.hasAttribute("data-auth")) {
+						form.dataset.auth = "";
 
-					this.#form.addEventListener("formdata", (e: FormDataEvent) =>
-						e.formData.append("signed", signed),
-					);
+						form.addEventListener("formdata", (e: FormDataEvent) =>
+							e.formData.append("signed", signed),
+						);
 
-					this.#form.addEventListener("submit", async (e) => {
-						e.preventDefault();
+						form.addEventListener("submit", async (e) => {
+							e.preventDefault();
 
-						if (Client.#loading) return;
+							if (Client.#loading) return; // prevents double submissions
 
-						Client.#loading = true;
+							Client.#loading = true;
 
-						try {
-							const input = document.createElement("input");
-							input.type = "hidden";
-							input.name = "credential";
-							input.value = JSON.stringify(
-								await navigator.credentials[method]({
-									publicKey: (method === "create"
-										? Client.#decodeCreationOptions(options)
-										: Client.#decodeRequestOptions(
-												options,
-											)) as PublicKeyCredentialCreationOptions &
-										PublicKeyCredentialRequestOptions,
-								}),
-							);
-							this.#form.append(input);
+							try {
+								const input = document.createElement("input");
+								input.type = "hidden";
+								input.name = "credential";
+								input.value = JSON.stringify(
+									await navigator.credentials[method]({
+										publicKey: (method === "create"
+											? Client.#decodeCreationOptions(options)
+											: Client.#decodeRequestOptions(
+													options,
+												)) as PublicKeyCredentialCreationOptions &
+											PublicKeyCredentialRequestOptions,
+									}),
+								);
 
-							this.#form.submit();
-							return;
-						} catch (e) {
-							if (
-								!(e instanceof DOMException) ||
-								e.name !== "NotAllowedError"
-							) {
-								throw e;
+								form.append(input);
+								form.submit();
+
+								return;
+							} catch (e) {
+								if (
+									// cleans up logs - if the user cancels it throws NotAllowedError
+									!(e instanceof DOMException) ||
+									e.name !== "NotAllowedError"
+								) {
+									throw e;
+								}
 							}
-						}
 
-						Client.#loading = false;
-					});
+							Client.#loading = false;
+						});
+					}
 				}
 			}
 		}
@@ -269,12 +272,15 @@ export class Passkey {
 		route: Route.Post,
 		exclude?: string[],
 		user: string = crypto.randomUUID(),
-	): Passkey.Form {
+	): Route.Form<string> {
 		return (props) => {
 			return route.Form({
 				...props,
 				children: [
-					props.children ?? jsx("button", { children: "Register" }),
+					props.children ?? [
+						route.Fields?.(),
+						jsx("button", { children: "Register" }),
+					],
 					jsx("script", {
 						type: "module",
 						children: async () => {
@@ -333,7 +339,7 @@ export class Passkey {
 	 * @param route Route to handle the login
 	 * @returns `<Login />` component for passkey login
 	 */
-	get(route: Route.Post): Passkey.Form {
+	get(route: Route.Post): Route.Form<string> {
 		return (props) => {
 			return route.Form({
 				...props,

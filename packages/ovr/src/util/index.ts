@@ -1,17 +1,42 @@
 /** General utility types */
 export namespace Util {
+	/**
+	 * Function type wrapper that opts into bivariant parameter checking.
+	 *
+	 * Useful for public structural types that need to accept handlers from
+	 * compatible but differently-parameterized generic instances.
+	 *
+	 * @template Fn Function type
+	 */
+	export type Bivariant<Fn extends (...args: any[]) => any> = {
+		bivariant(...args: Parameters<Fn>): ReturnType<Fn>;
+	}["bivariant"];
+
+	/**
+	 * Recursive array type that allows a value or nested arrays of that value.
+	 *
+	 * @template T Item type
+	 */
 	export type DeepArray<T> = T | DeepArray<T>[];
+
+	/**
+	 * Flattens an inferred object type for improved readability in tooling.
+	 *
+	 * @template T Object type to normalize
+	 */
 	export type Prettify<T> = { [K in keyof T]: T[K] } & {};
 }
 
 /** Media type utils */
 export class Mime {
-	static readonly html = Mime.#text("html");
-	static readonly text = Mime.#text("plain");
-	static readonly json = Mime.#application("json");
-	static readonly stream = Mime.#application("octet-stream");
-	static readonly #multipartBase = "multipart/";
-	static readonly multipartFormData = Mime.#multipart("form-data");
+	/** Mime type constants */
+	static type = {
+		html: Mime.#text("html"),
+		text: Mime.#text("plain"),
+		json: Mime.#application("json"),
+		stream: Mime.#application("octet-stream"),
+		mp: Mime.#multipart("form-data"),
+	} as const;
 
 	static #text<T extends string>(type: T) {
 		return `text/${type}` as const;
@@ -21,12 +46,12 @@ export class Mime {
 		return `application/${type}` as const;
 	}
 
-	static #multipart<T extends string>(type: T) {
-		return `${Mime.#multipartBase}${type}` as const;
+	static #multipart<T extends string>(type: T = "" as T) {
+		return `multipart/${type}` as const;
 	}
 
 	static readonly #markup = new Set<string>([
-		Mime.html,
+		Mime.type.html,
 		Mime.#text("xml"),
 		Mime.#application("xml"),
 	]);
@@ -48,22 +73,25 @@ export class Mime {
 	 * @returns `true` if the mime is multipart
 	 */
 	static multipart(mime: string | null) {
-		return mime?.startsWith(Mime.#multipartBase);
+		return mime?.startsWith(Mime.#multipart());
 	}
 }
 
 /** Header parsing utils */
 export class Header {
-	static readonly type = "content-type";
-	static readonly disposition = "content-disposition";
-	static readonly etag = "etag";
-	static readonly ifNoneMatch = "if-none-match";
-	static readonly cookie = "cookie";
-	static readonly setCookie = "set-cookie";
-	static readonly referer = "referer";
-	static readonly location = "location";
-	static readonly origin = "origin";
-	static readonly secFetchSite = "sec-fetch-site";
+	/** Header name constants */
+	static readonly name = {
+		type: "content-type",
+		disp: "content-disposition",
+		etag: "etag",
+		none: "if-none-match",
+		cookie: "cookie",
+		set: "set-cookie",
+		ref: "referer",
+		loc: "location",
+		origin: "origin",
+		fetch: "sec-fetch-site",
+	} as const;
 
 	/**
 	 * @param mime

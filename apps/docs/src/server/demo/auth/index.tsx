@@ -54,14 +54,11 @@ export const auth = Route.get("/demo/auth", (c) => {
 
 			<div class="mt-24 flex justify-center">
 				<div>
-					<Register>
-						<User.Fields />
-						<button class="secondary">Register</button>
-					</Register>
+					<Register />
 
-					<hr class="my-4" />
+					<hr />
 
-					<Login class="grid" />
+					<Login />
 				</div>
 			</div>
 		</Layout>

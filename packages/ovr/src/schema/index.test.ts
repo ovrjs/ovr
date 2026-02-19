@@ -1,5 +1,5 @@
-import { Schema } from "./index.js";
 import { Codec } from "../util/index.js";
+import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 const valid = <T>(result: Schema.Parse.Result<T>) => {
@@ -23,9 +23,7 @@ describe("Schema core", () => {
 	test("issue toString includes nested path", () => {
 		const issue = new Schema.Issue("number", ["user", "age", 0]);
 
-		expect(issue.toString()).toBe(
-			"Schema.Issue(user.age[0]): Expected number",
-		);
+		expect(issue.toString()).toBe("Schema.Issue(user.age[0]): Expected number");
 	});
 
 	test("~standard validate returns value on success", () => {
@@ -49,7 +47,9 @@ describe("Primitive schemas", () => {
 
 	test("boolean validates type", () => {
 		expect(valid(Schema.boolean().parse(true))).toBe(true);
-		expect(invalid(Schema.boolean().parse("true"))[0]?.expected).toBe("boolean");
+		expect(invalid(Schema.boolean().parse("true"))[0]?.expected).toBe(
+			"boolean",
+		);
 	});
 
 	test("number validates finite number and rejects NaN", () => {
@@ -70,9 +70,9 @@ describe("Primitive schemas", () => {
 	test("date validates valid Date instances", () => {
 		const date = new Date("2024-01-01T00:00:00.000Z");
 		expect(valid(Schema.date().parse(date))).toBe(date);
-		expect(invalid(Schema.date().parse(new Date("not-a-date")))[0]?.expected).toBe(
-			"refine",
-		);
+		expect(
+			invalid(Schema.date().parse(new Date("not-a-date")))[0]?.expected,
+		).toBe("refine");
 	});
 
 	test("email validates format", () => {
@@ -86,7 +86,9 @@ describe("Primitive schemas", () => {
 		expect(valid(Schema.url().parse("https://example.com"))).toBe(
 			"https://example.com",
 		);
-		expect(invalid(Schema.url().parse("not a url"))[0]?.expected).toBe("refine");
+		expect(invalid(Schema.url().parse("not a url"))[0]?.expected).toBe(
+			"refine",
+		);
 	});
 
 	test("literal enforces exact value", () => {
@@ -157,7 +159,10 @@ describe("Schema combinators", () => {
 	});
 
 	test("refine adds custom validation", () => {
-		const schema = Schema.string().refine((value) => value.length > 2, "too short");
+		const schema = Schema.string().refine(
+			(value) => value.length > 2,
+			"too short",
+		);
 		const issues = invalid(schema.parse("no"));
 
 		expect(issues[0]?.expected).toBe("refine");
@@ -198,9 +203,9 @@ describe("JSON schema", () => {
 	});
 
 	test("supports untyped parsing with Schema.unknown", () => {
-		expect(valid(Schema.json(Schema.unknown()).parse('{"hello":"world"}'))).toEqual(
-			{ hello: "world" },
-		);
+		expect(
+			valid(Schema.json(Schema.unknown()).parse('{"hello":"world"}')),
+		).toEqual({ hello: "world" });
 	});
 
 	test("does not swallow inner schema exceptions as JSON issues", () => {
@@ -436,9 +441,8 @@ describe("Form schema", () => {
 		manyData.append("uploads", two);
 
 		expect(valid(single.parse(oneData)).upload.name).toBe("one.txt");
-		expect(valid(many.parse(manyData)).uploads.map((file) => file.name)).toEqual([
-			"one.txt",
-			"two.txt",
-		]);
+		expect(
+			valid(many.parse(manyData)).uploads.map((file) => file.name),
+		).toEqual(["one.txt", "two.txt"]);
 	});
 });

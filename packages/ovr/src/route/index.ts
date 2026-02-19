@@ -3,6 +3,7 @@ import type { Middleware } from "../middleware/index.js";
 import { Schema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime } from "../util/index.js";
+import type { Util } from "../util/index.js";
 
 /** Helper type to extract the route params (`:slug`) into a record */
 export type ExtractParams<Pattern extends string = string> =
@@ -46,7 +47,16 @@ export namespace Route {
 		| "PATCH"
 		| (string & {});
 
-	export type Post = Route & WithButton & WithForm;
+	export type Post<Pattern extends string = string> = Route<Pattern> &
+		WithButton<Pattern> &
+		WithForm<Pattern> & {
+			// maybe schema assigned - makes route.Fields?.() possible
+			[K in keyof Schema.Form<any>]?: Schema.Form<any>[K] extends (
+				...args: any[]
+			) => any
+				? Util.Bivariant<Schema.Form<any>[K]>
+				: Schema.Form<any>[K];
+		};
 
 	/**
 	 * Options to construct a relative URL from the route.
@@ -255,8 +265,7 @@ export class Route<Pattern extends string = string> {
 	 * @returns Route with added components
 	 */
 	static #withComponents<Pattern extends string>(route: Route<Pattern>) {
-		const enctype =
-			route.method === Method.post ? Mime.multipartFormData : undefined;
+		const enctype = route.method === Method.post ? Mime.type.mp : undefined;
 
 		return Object.assign(route, {
 			Button: (({ params, search, hash, ...rest }) =>
@@ -295,7 +304,7 @@ export class Route<Pattern extends string = string> {
 					// create encoded URL state with invalid fields
 					let url = new URL(c.url);
 
-					const referer = c.req.headers.get(Header.referer);
+					const referer = c.req.headers.get(Header.name.ref);
 
 					if (referer) {
 						try {
