@@ -10,12 +10,32 @@ import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 
 export namespace Passkey {
+	/** Signed challenge payload for authentication ceremonies. */
 	export interface GetChallenge {
+		/** Base64url challenge value. */
 		challenge: string;
 	}
 
+	/** Signed challenge payload for registration ceremonies. */
 	export interface CreateChallenge extends GetChallenge {
+		/** User ID associated with the registration challenge. */
 		user: string;
+	}
+
+	/**
+	 * Route type used by passkey form helpers.
+	 *
+	 * This separate from `Route.Post` because `url` has strict tuple
+	 * args that don't compose in generic type checks. This shape keeps
+	 * param inference working while still using `route.url()`.
+	 */
+	export interface Post<Pattern extends string> extends Omit<
+		Route.Post,
+		"url"
+	> {
+		pattern: Pattern;
+		Form: Route.Form<Pattern>;
+		url: Route<Pattern>["url"];
 	}
 }
 
@@ -65,6 +85,7 @@ export class Passkey {
 		method: "create" | "get",
 	) => {
 		class Client {
+			/** Supported authenticator transport values. */
 			static #transports = new Set([
 				"ble",
 				"hybrid",
@@ -74,6 +95,7 @@ export class Passkey {
 				"smart-card",
 			]);
 
+			/** Supported attestation conveyance values. */
 			static #attestations = new Set([
 				"none",
 				"indirect",
@@ -81,20 +103,37 @@ export class Passkey {
 				"enterprise",
 			]);
 
+			/** Supported user verification requirement values. */
 			static #verifications = new Set(["required", "preferred", "discouraged"]);
 
+			/**
+			 * @param v Transport values from credential options
+			 * @returns `true` when all values are valid authenticator transports
+			 */
 			static #isTransports(v?: string[]): v is AuthenticatorTransport[] {
 				return Boolean(v && v.every((t) => Client.#transports.has(t)));
 			}
 
+			/**
+			 * @param v Attestation preference value
+			 * @returns `true` when value is a valid attestation preference
+			 */
 			static #isAttestation(v?: string): v is AttestationConveyancePreference {
 				return Boolean(v && Client.#attestations.has(v));
 			}
 
+			/**
+			 * @param v User verification value
+			 * @returns `true` when value is a valid verification requirement
+			 */
 			static #isVerification(v?: string): v is UserVerificationRequirement {
 				return Boolean(v && Client.#verifications.has(v));
 			}
 
+			/**
+			 * @param s Base64url string
+			 * @returns Decoded bytes as `ArrayBuffer`
+			 */
 			static #decodeBase64Url(s: string) {
 				const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
 				const pad = b64.length % 4;
@@ -104,6 +143,10 @@ export class Passkey {
 				).buffer;
 			}
 
+			/**
+			 * @param json Credential descriptor JSON
+			 * @returns Browser credential descriptor with decoded ID
+			 */
 			static #decodeCredential(
 				json: PublicKeyCredentialDescriptorJSON,
 			): PublicKeyCredentialDescriptor {
@@ -116,6 +159,10 @@ export class Passkey {
 				};
 			}
 
+			/**
+			 * @param options Credential creation options JSON
+			 * @returns Browser creation options with decoded binary fields
+			 */
 			static #decodeCreationOptions({
 				challenge,
 				user,
@@ -139,6 +186,10 @@ export class Passkey {
 				};
 			}
 
+			/**
+			 * @param options Credential request options JSON
+			 * @returns Browser request options with decoded binary fields
+			 */
 			static #decodeRequestOptions({
 				challenge,
 				allowCredentials,
@@ -164,6 +215,7 @@ export class Passkey {
 			/** Single loading state for all auth forms */
 			static #loading = false;
 
+			/** Attach submit handlers to matching forms once per form. */
 			addEventListeners() {
 				for (const form of this.#forms) {
 					if (!form.hasAttribute("data-auth")) {
@@ -226,6 +278,8 @@ export class Passkey {
 	 * @param signed - Signed options string
 	 * @param options - WebAuthn options to embed
 	 * @param action - The form action path
+	 * @param method - WebAuthn method ("create" or "get")
+	 * @returns Serialized client script source
 	 */
 	static #script(
 		signed: string,
@@ -251,6 +305,7 @@ export class Passkey {
 		return Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
 	}
 
+	/** @returns `<noscript>` fallback content for passkey forms. */
 	static #NoScript() {
 		return jsx("noscript", {
 			children: "JavaScript is required for authentication.",
@@ -268,11 +323,11 @@ export class Passkey {
 	 * @param user User ID for registration, defaults to `crypto.randomUUID()`
 	 * @returns `<Register />` component for passkey registration containing the client script with embedded and signed options.
 	 */
-	create(
-		route: Route.Post,
+	create<const Pattern extends string>(
+		route: Passkey.Post<Pattern>,
 		exclude?: string[],
 		user: string = crypto.randomUUID(),
-	): Route.Form<string> {
+	): Route.Form<Pattern> {
 		return (props) => {
 			return route.Form({
 				...props,
@@ -317,7 +372,7 @@ export class Passkey {
 										attestation: "none",
 									} satisfies PublicKeyCredentialCreationOptionsJSON,
 									// action
-									route.pathname(),
+									route.url(props),
 									"create",
 								),
 							);
@@ -339,7 +394,9 @@ export class Passkey {
 	 * @param route Route to handle the login
 	 * @returns `<Login />` component for passkey login
 	 */
-	get(route: Route.Post): Route.Form<string> {
+	get<const Pattern extends string>(
+		route: Passkey.Post<Pattern>,
+	): Route.Form<Pattern> {
 		return (props) => {
 			return route.Form({
 				...props,
@@ -365,7 +422,7 @@ export class Passkey {
 										timeout: 300000,
 										userVerification: "required",
 									} satisfies PublicKeyCredentialRequestOptionsJSON,
-									route.pathname(),
+									route.url(props),
 									"get",
 								),
 							);
@@ -377,11 +434,19 @@ export class Passkey {
 		};
 	}
 
+	/**
+	 * @param data Input bytes
+	 * @returns SHA-256 digest bytes
+	 */
 	static async #sha256(data: Uint8Array<ArrayBuffer>) {
 		return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
 	}
 
-	static #ClientData = (ceremony: "create" | "get") =>
+	/**
+	 * @param ceremony Expected ceremony type
+	 * @returns JSON schema for parsed WebAuthn client data
+	 */
+	static #clientData = (ceremony: "create" | "get") =>
 		Schema.json(
 			Schema.object({
 				type: Schema.literal(`webauthn.${ceremony}`),
@@ -389,28 +454,49 @@ export class Passkey {
 				origin: Schema.string(),
 			}),
 		);
-	static #Challenge = (ceremony: "create" | "get") =>
+
+	/**
+	 * @param ceremony Expected ceremony type
+	 * @returns JSON schema for signed challenge payload
+	 */
+	static #challenge = (ceremony: "create" | "get") =>
 		Schema.json(
 			ceremony === "create"
 				? Schema.object({ challenge: Schema.string(), user: Schema.string() })
 				: Schema.object({ challenge: Schema.string() }),
 		);
-	static #Credential = Schema.object({
+
+	/** Common credential payload schema shared by registration and assertion. */
+	static #credential = Schema.object({
 		type: Schema.literal("public-key"),
 		id: Schema.string(),
 		rawId: Schema.string(),
 	});
-	static #Response = Schema.object({ clientDataJSON: Schema.string() });
-	static RegistrationCredential = Passkey.#Credential.extend({
-		response: Passkey.#Response.extend({ attestationObject: Schema.string() }),
+
+	/** Common response payload schema with base client data. */
+	static #response = Schema.object({ clientDataJSON: Schema.string() });
+
+	/**
+	 * Registration credential schema.
+	 * Kept public so callers can infer credential types.
+	 */
+	static reg = Passkey.#credential.extend({
+		response: Passkey.#response.extend({ attestationObject: Schema.string() }),
 	});
-	static AuthenticationCredential = Passkey.#Credential.extend({
-		response: Passkey.#Response.extend({
+
+	/**
+	 * Authentication credential schema.
+	 * Kept public so callers can infer credential types.
+	 */
+	static auth = Passkey.#credential.extend({
+		response: Passkey.#response.extend({
 			authenticatorData: Schema.string(),
 			signature: Schema.string(),
 		}),
 	});
-	static #FormData = Schema.object({
+
+	/** Parsed passkey form payload schema. */
+	static #formData = Schema.object({
 		credential: Schema.json(Schema.unknown()),
 		signed: Schema.string(),
 	});
@@ -432,12 +518,13 @@ export class Passkey {
 	}
 
 	/**
-	 * @param c - Request context
-	 * @returns Object with credential and options, or null if invalid
+	 * Parse and validate passkey form fields from the current request.
+	 *
+	 * @returns Parsed `credential` and `signed` payloads
 	 */
 	async #parseForm() {
 		const data = await this.#c.form().data();
-		const result = Passkey.#FormData.parse({
+		const result = Passkey.#formData.parse({
 			credential: data.get("credential"),
 			signed: data.get("signed"),
 		});
@@ -453,6 +540,7 @@ export class Passkey {
 	 * @param ceremony - Expected WebAuthn ceremony type
 	 * @param credential - Validated credential data from authenticator - untrusted
 	 * @param signed - Signed options string from form
+	 * @returns Verified signed challenge payload for the ceremony
 	 */
 	async #verifyCredentialBase<
 		C extends "create" | "get",
@@ -462,17 +550,17 @@ export class Passkey {
 	>(
 		ceremony: C,
 		credential:
-			| Schema.Infer<typeof Passkey.RegistrationCredential>
-			| Schema.Infer<typeof Passkey.AuthenticationCredential>,
+			| Schema.Infer<typeof Passkey.reg>
+			| Schema.Infer<typeof Passkey.auth>,
 		signed: string,
 	) {
-		const client = Passkey.#ClientData(ceremony).parse(
+		const client = Passkey.#clientData(ceremony).parse(
 			Codec.decode(Codec.Base64Url.decode(credential.response.clientDataJSON)),
 		);
 
 		if (client.issues) throw client;
 
-		const options = Passkey.#Challenge(ceremony).parse(
+		const options = Passkey.#challenge(ceremony).parse(
 			await this.#auth.verify(signed),
 		);
 
@@ -521,7 +609,7 @@ export class Passkey {
 	async verify(): Promise<Auth.Credential> {
 		const { credential, signed } = await this.#parseForm();
 
-		const result = Passkey.RegistrationCredential.parse(credential);
+		const result = Passkey.reg.parse(credential);
 
 		if (result.issues) throw result;
 
@@ -574,7 +662,7 @@ export class Passkey {
 	) {
 		const { credential, signed } = await this.#parseForm();
 
-		const result = Passkey.AuthenticationCredential.parse(credential);
+		const result = Passkey.auth.parse(credential);
 
 		if (result.issues) throw result;
 

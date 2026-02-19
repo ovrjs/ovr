@@ -358,7 +358,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post(...middleware: Middleware<{}>[]): Route & WithButton & WithForm;
+	static post(...middleware: Middleware<{}>[]): Route.Post;
 	/**
 	 * @template S Form field shape
 	 * @param fields Form field shape
@@ -368,7 +368,7 @@ export class Route<Pattern extends string = string> {
 	static post<const S extends Schema.Form.Shape>(
 		fields: S,
 		...middleware: Middleware<{}, S>[]
-	): Route & WithButton & WithForm & Schema.Form<S>;
+	): Route.Post & Schema.Form<S>;
 	/**
 	 * @template S Form field shape
 	 * @param form Form schema
@@ -378,7 +378,7 @@ export class Route<Pattern extends string = string> {
 	static post<const S extends Schema.Form.Shape>(
 		form: Schema.Form<S>,
 		...middleware: Middleware<{}, S>[]
-	): Route & WithButton & WithForm & Schema.Form<S>;
+	): Route.Post & Schema.Form<S>;
 	/**
 	 * @template Pattern Route pattern
 	 * @param pattern Route pattern
@@ -388,7 +388,7 @@ export class Route<Pattern extends string = string> {
 	static post<Pattern extends string>(
 		pattern: Pattern,
 		...middleware: Middleware<ExtractParams<Pattern>>[]
-	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern>;
+	): Route.Post<Pattern>;
 	/**
 	 * @template Pattern Route pattern
 	 * @template S Form field shape
@@ -401,7 +401,7 @@ export class Route<Pattern extends string = string> {
 		pattern: Pattern,
 		fields: S,
 		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern> & Schema.Form<S>;
+	): Route.Post<Pattern> & Schema.Form<S>;
 	/**
 	 * @template Pattern Route pattern
 	 * @template S Form field shape
@@ -414,7 +414,7 @@ export class Route<Pattern extends string = string> {
 		pattern: Pattern,
 		form: Schema.Form<S>,
 		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route<Pattern> & WithButton<Pattern> & WithForm<Pattern> & Schema.Form<S>;
+	): Route.Post<Pattern> & Schema.Form<S>;
 	static post<Pattern extends string>(
 		patternOrSchemaOrMiddleware:
 			| Pattern
