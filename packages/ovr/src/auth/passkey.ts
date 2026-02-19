@@ -575,6 +575,10 @@ export class Passkey {
 			throw new Error("Challenge mismatch");
 		}
 
+		if (new URL(client.data.origin).origin !== this.#c.url.origin) {
+			throw new Error("Origin mismatch");
+		}
+
 		return options.data as O;
 	}
 

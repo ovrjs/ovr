@@ -153,4 +153,61 @@ describe("passkey parsing", () => {
 			),
 		).rejects.toThrow("Invalid token");
 	});
+
+	test("origin mismatch is rejected", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+		const challenge = Codec.Base64Url.encode(Codec.encode("x"));
+
+		app.use(
+			Route.get("/token", async (c) => {
+				c.text(
+					await c.auth.sign(
+						JSON.stringify({ challenge, user: "user" } satisfies {
+							challenge: string;
+							user: string;
+						}),
+					),
+				);
+			}),
+			Route.post("/verify", async (c) => {
+				await c.auth.passkey.verify();
+				c.text("ok");
+			}),
+		);
+
+		const signed = await (await app.fetch("https://example.com/token")).text();
+
+		const body = new FormData();
+		body.set(
+			"credential",
+			JSON.stringify({
+				type: "public-key",
+				id: "a",
+				rawId: "a",
+				response: {
+					clientDataJSON: Codec.Base64Url.encode(
+						Codec.encode(
+							JSON.stringify({
+								type: "webauthn.create",
+								challenge,
+								origin: "https://evil.example",
+							}),
+						),
+					),
+					attestationObject: "a",
+				},
+			}),
+		);
+		body.set("signed", signed);
+
+		await expect(
+			app.fetch(
+				new Request("https://example.com/verify", {
+					method: "POST",
+					body,
+					headers: { origin: "https://example.com" },
+				}),
+			),
+		).rejects.toThrow("Origin mismatch");
+	});
 });
