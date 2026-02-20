@@ -95,7 +95,7 @@ export class Context<
 
 	/** Data parser set by schema routes. */
 	data: () => Promise<Util.Prettify<Context.Data<Shape>>> = async () => {
-		throw new Error("No schema attached to this route.");
+		throw new Error("No route schema");
 	};
 
 	/**
