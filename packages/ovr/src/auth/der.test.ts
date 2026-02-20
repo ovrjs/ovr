@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { DER } from "./der.js";
+import { describe, expect, test } from "vitest";
 
 /**
  * Concatenate byte arrays.

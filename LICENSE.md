@@ -24,3 +24,5 @@ Portions of this software have been adapted from the following projects, which a
 - Cookie handling - https://github.com/jshttp/cookie
   Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com>
   Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com>
+- Schema API - https://github.com/colinhacks/zod
+  Copyright (c) 2025 Colin McDonnell

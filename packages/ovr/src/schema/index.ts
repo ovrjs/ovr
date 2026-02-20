@@ -67,7 +67,10 @@ export namespace Schema {
 			: S extends Object.Shape
 				? // infer value of each schema (value) in the shape
 					{ [K in keyof S]: Infer<S[K]> }
-				: never;
+				: S extends any[]
+					? // array - better zod compat
+						Infer<S[number]>[]
+					: never;
 
 	/** Schema.Issue type */
 	export type Issue = InstanceType<typeof Schema.Issue>;
@@ -359,15 +362,15 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		}
 	};
 
-	readonly "~standard" = {
+	readonly "~standard": StandardSchemaV1.Props<Input, Output> = {
 		version: 1,
 		vendor: "ovr",
-		validate: (value: unknown) => {
+		validate: (value) => {
 			const result = this.parse(value);
 
 			return result.issues ? result : { value: result.data };
 		},
-	} as const;
+	};
 
 	/**
 	 * Parse and validate an unknown value.
@@ -415,7 +418,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Optional schema
 	 */
 	optional(this: Schema<Output, Input>): Schema<Output | undefined, Input>;
-	optional(this: Schema<Output, Input>) {
+	optional<I>(this: Schema<Output, I>) {
 		return this.derive((v, path) => {
 			if (v === undefined) return { data: v as Output | undefined };
 
@@ -438,7 +441,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Nullable schema
 	 */
 	nullable(this: Schema<Output, Input>): Schema<Output | null, Input>;
-	nullable(this: Schema<Output, Input>) {
+	nullable<I>(this: Schema<Output, I>) {
 		return this.derive((v, path) => {
 			if (v === null) return { data: v as Output | null };
 
@@ -463,7 +466,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	nullish(
 		this: Schema<Output, Input>,
 	): Schema<Output | null | undefined, Input>;
-	nullish(this: Schema<Output, Input>) {
+	nullish<I>(this: Schema<Output, I>) {
 		return this.derive((v, path) => {
 			if (v == null) return { data: v as Output | null | undefined };
 
@@ -488,7 +491,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Schema with default
 	 */
 	default(this: Schema<Output, Input>, value: Output): Schema<Output, Input>;
-	default(this: Schema<Output, Input>, value: Output) {
+	default<I>(this: Schema<Output, I>, value: Output) {
 		return this.derive((v, path) => {
 			if (v === undefined) return { data: value };
 
@@ -519,7 +522,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		this: Schema<Output, Input>,
 		fn: (value: Output) => O,
 	): Schema<O, Input>;
-	transform<O>(this: Schema<Output, Input>, fn: (value: Output) => O) {
+	transform<O, I>(this: Schema<Output, I>, fn: (value: Output) => O) {
 		return this.derive((v, path) => {
 			const out = this.parse(v, path);
 
@@ -547,7 +550,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Piped schema
 	 */
 	pipe<O>(this: Schema<Output, Input>, next: Schema<O>): Schema<O, Input>;
-	pipe<O>(this: Schema<Output, Input>, next: Schema<O>) {
+	pipe<O, I>(this: Schema<Output, I>, next: Schema<O>) {
 		return this.derive((v, path) => {
 			const result = this.parse(v, path);
 
@@ -582,8 +585,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		check: (value: Output) => boolean,
 		message: string,
 	): Schema<Output, Input>;
-	refine(
-		this: Schema<Output, Input>,
+	refine<I>(
+		this: Schema<Output, I>,
 		check: (value: Output) => boolean,
 		message: string,
 	) {
@@ -631,7 +634,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Parsed JSON schema
 	 */
-	static json<const O>(schema: Schema<O>, message?: string) {
+	static json<O>(schema: Schema<O>, message?: string) {
 		return Schema.string(message).pipe(
 			new Schema((v, path) => {
 				let data: unknown;
@@ -829,10 +832,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Validated instance
 	 */
-	static instance<const O>(
-		constructor: new (...args: any[]) => O,
-		message?: string,
-	) {
+	static instance<O>(constructor: new (...args: any[]) => O, message?: string) {
 		return new Schema((v, path) =>
 			v instanceof constructor
 				? { data: v }
@@ -860,7 +860,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Array schema
 	 */
-	static array<const O>(schema: Schema<O>, message?: string) {
+	static array<O>(schema: Schema<O>, message?: string) {
 		return new Schema((v, path) => {
 			if (!Array.isArray(v)) {
 				return new Schema.AggregateIssue([
@@ -894,16 +894,14 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param shape Object shape with schemas for each key
 	 * @returns Object schema
 	 */
-	static object<const S extends Schema.Object.Shape>(
-		shape: S,
-	): Schema.Object<S>;
+	static object<S extends Schema.Object.Shape>(shape: S): Schema.Object<S>;
 	/**
 	 * Validate an input is a non-null object.
 	 *
 	 * @returns Object schema
 	 */
 	static object(): Schema<Record<string, unknown>>;
-	static object<const S extends Schema.Object.Shape>(
+	static object<S extends Schema.Object.Shape>(
 		shape?: S,
 	): Schema.Object<S> | Schema<Record<string, unknown>> {
 		if (!shape) {
@@ -925,7 +923,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @template S Form field shape type
 	 * @param fields Form fields
 	 */
-	static form<const S extends Schema.Form.Shape>(
+	static form<S extends Schema.Form.Shape>(
 		fields: S | Schema.Form<S>,
 	): Schema.Form<S> {
 		return fields instanceof Schema.Form ? fields : new Schema.Form(fields);
@@ -1292,9 +1290,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
  *
  * @template Shape Object shape type
  */
-export class ObjectSchema<
-	const Shape extends Schema.Object.Shape,
-> extends Schema<Schema.Infer<Shape>> {
+export class ObjectSchema<Shape extends Schema.Object.Shape> extends Schema<
+	Schema.Infer<Shape>
+> {
 	/** Object shape definitions. */
 	readonly #shape: Shape;
 
@@ -1336,7 +1334,7 @@ export class ObjectSchema<
 	 * @template E Extra shape type
 	 * @param extra Extra shape to merge
 	 */
-	extend<const E extends Schema.Object.Shape>(
+	extend<E extends Schema.Object.Shape>(
 		extra: E,
 	): Schema.Object<Shape.Extend<Shape, E>> {
 		return Schema.object(Shape.extend(this.#shape, extra));
@@ -1348,7 +1346,7 @@ export class ObjectSchema<
 	 * @template N Selected key names
 	 * @param names Non-empty list of key names to keep
 	 */
-	pick<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return Schema.object(Shape.pick(this.#shape, names));
 	}
 
@@ -1358,7 +1356,7 @@ export class ObjectSchema<
 	 * @template N Removed key names
 	 * @param names Non-empty list of key names to remove
 	 */
-	omit<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return Schema.object(Shape.omit(this.#shape, names));
 	}
 }
@@ -1368,7 +1366,7 @@ export class ObjectSchema<
  *
  * @template Shape Form field shape type
  */
-export class FormSchema<const Shape extends Schema.Form.Shape> {
+export class FormSchema<Shape extends Schema.Form.Shape> {
 	/** Form state param key. */
 	static readonly #param = "_form";
 
@@ -1412,7 +1410,7 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 	 * @template E Extra field shape type
 	 * @param extra Extra fields to merge
 	 */
-	extend<const E extends Schema.Form.Shape>(
+	extend<E extends Schema.Form.Shape>(
 		extra: E,
 	): Schema.Form<Shape.Extend<Shape, E>> {
 		return Schema.form(Shape.extend(this.#fields, extra));
@@ -1424,7 +1422,7 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 	 * @template N Selected field names
 	 * @param names Non-empty list of field names to keep
 	 */
-	pick<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return Schema.form(Shape.pick(this.#fields, names));
 	}
 
@@ -1434,7 +1432,7 @@ export class FormSchema<const Shape extends Schema.Form.Shape> {
 	 * @template N Field names to remove
 	 * @param names Non-empty list of field names to remove
 	 */
-	omit<const N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
+	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return Schema.form(Shape.omit(this.#fields, names));
 	}
 
@@ -2012,10 +2010,10 @@ export class Field<
 	 * @param props Field control props
 	 * @returns Field component with sub-components
 	 */
-	Component<const S extends Schema.Form.Shape>(
+	Component<S extends Schema.Form.Shape>(
 		props: Field.Component.Props<S, false>,
 	): Field.Component<this>;
-	Component<const S extends Schema.Form.Shape>({
+	Component<S extends Schema.Form.Shape>({
 		state,
 		...props
 	}: Field.Component.Props<S, false>): unknown {
@@ -2129,7 +2127,7 @@ export class Field<
 	 * @param props Field control props
 	 * @returns Input group component
 	 */
-	#Group<const S extends Schema.Form.Shape>(
+	#Group<S extends Schema.Form.Shape>(
 		this: Field<Output, "input", "radio" | "checkbox", Field.Values>,
 		props: Field.Component.Props<S, false>,
 	) {
@@ -2153,7 +2151,7 @@ export class Field<
 	 * @param props Field control props
 	 * @returns Select component
 	 */
-	#Select<const S extends Schema.Form.Shape>(
+	#Select<S extends Schema.Form.Shape>(
 		this: Field<Output, "select", Type, Field.Values>,
 		props: Field.Component.Props<S, false>,
 	) {
@@ -2175,9 +2173,7 @@ export class Field<
 	 * @param props Field control props
 	 * @returns Default input component
 	 */
-	#Input<const S extends Schema.Form.Shape>(
-		props: Field.Component.Props<S, false>,
-	) {
+	#Input<S extends Schema.Form.Shape>(props: Field.Component.Props<S, false>) {
 		const Base = this.Component(props);
 
 		return Base.Root({
@@ -2190,9 +2186,7 @@ export class Field<
 	 * @param props Field control props including `name` of the field to render
 	 * @returns Component that renders the HTML field with default structure
 	 */
-	Field<const S extends Schema.Form.Shape>(
-		props: Field.Component.Props<S, false>,
-	) {
+	Field<S extends Schema.Form.Shape>(props: Field.Component.Props<S, false>) {
 		if (this.#values) {
 			if (this.#tag === "select") return this.#Select(props);
 

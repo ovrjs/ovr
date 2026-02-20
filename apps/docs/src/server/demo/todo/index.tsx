@@ -1,8 +1,7 @@
 import * as todoContent from "@/server/demo/todo/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { type Middleware, Render, Route } from "ovr";
-import * as z from "zod";
+import { type Middleware, Render, Route, Schema } from "ovr";
 
 export const add = Route.post(async (c) => {
 	const todos = getTodos(c);
@@ -89,15 +88,15 @@ export const todo = Route.get("/demo/todo", (c) => {
 	);
 });
 
-const TodoSchema = z.object({
-	done: z.boolean().optional(),
-	id: z.coerce.number(),
-	text: z.coerce.string(),
+const TodoSchema = Schema.object({
+	done: Schema.boolean().optional(),
+	id: Schema.Coerce.number(),
+	text: Schema.Coerce.string(),
 });
 
 const redirect = (
 	c: Middleware.Context,
-	todos: z.infer<(typeof TodoSchema)[]>,
+	todos: Schema.Infer<typeof TodoSchema>[],
 ) => {
 	const location = new URL(todo.pathname(), c.url);
 	location.searchParams.set("todos", JSON.stringify(todos));
@@ -107,10 +106,22 @@ const redirect = (
 const getTodos = (c: Middleware.Context) => {
 	const todos = c.url.searchParams.get("todos");
 	if (!todos) return [{ done: false, id: 0, text: "Build a todo app" }];
-	return z.array(TodoSchema).parse(JSON.parse(todos));
+
+	const result = Schema.array(TodoSchema).parse(JSON.parse(todos));
+
+	if (result.issues) throw result;
+
+	return result.data;
 };
 
 const data = async (c: Middleware.Context) => {
 	const data = await c.form().data();
-	return TodoSchema.parse({ id: data.get("id"), text: data.get("text") });
+	const result = TodoSchema.parse({
+		id: data.get("id"),
+		text: data.get("text"),
+	});
+
+	if (result.issues) throw result;
+
+	return result.data;
 };

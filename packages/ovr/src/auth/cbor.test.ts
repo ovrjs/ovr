@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { CBOR, COSE } from "./cbor.js";
+import { describe, expect, test } from "vitest";
 
 /**
  * Concatenate byte arrays.

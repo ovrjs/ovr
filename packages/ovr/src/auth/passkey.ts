@@ -392,7 +392,7 @@ export class Passkey {
 	 * @param user User ID for registration, defaults to `crypto.randomUUID()`
 	 * @returns Form component for passkey registration
 	 */
-	create<const Pattern extends string>(
+	create<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
 		exclude?: string[],
 		user: string = crypto.randomUUID(),
@@ -443,7 +443,7 @@ export class Passkey {
 	 * @param route Route to handle the login
 	 * @returns Form component for passkey login
 	 */
-	get<const Pattern extends string>(
+	get<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
 	): Route.Form<Pattern> {
 		return (props) => {

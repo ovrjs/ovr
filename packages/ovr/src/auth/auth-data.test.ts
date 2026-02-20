@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { AuthData } from "./auth-data.js";
+import { describe, expect, test } from "vitest";
 
 /**
  * Concatenate byte arrays.
@@ -37,7 +37,11 @@ const cose = (x: Uint8Array, y: Uint8Array) =>
 describe("AuthData", () => {
 	test("parses authenticator data without attested credential data", () => {
 		const rpIdHash = Uint8Array.from({ length: 32 }, (_v, i) => i);
-		const data = bytes(rpIdHash, Uint8Array.of(0x05), Uint8Array.of(0, 0, 0, 1));
+		const data = bytes(
+			rpIdHash,
+			Uint8Array.of(0x05),
+			Uint8Array.of(0, 0, 0, 1),
+		);
 
 		const parsed = AuthData.parse(data);
 
@@ -74,7 +78,9 @@ describe("AuthData", () => {
 	});
 
 	test("throws for too-short authenticator data", () => {
-		expect(() => AuthData.parse(new Uint8Array(36))).toThrow("Invalid credential");
+		expect(() => AuthData.parse(new Uint8Array(36))).toThrow(
+			"Invalid credential",
+		);
 	});
 
 	test("throws when attested credential id length is zero", () => {

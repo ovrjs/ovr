@@ -169,12 +169,7 @@ describe("auth cookies", () => {
 				c.text(
 					await c.auth.sign(
 						Codec.Base64Url.encode(
-							Codec.encode(
-								JSON.stringify({
-									id: "user-1",
-									expiration,
-								}),
-							),
+							Codec.encode(JSON.stringify({ id: "user-1", expiration })),
 						),
 					),
 				);
@@ -208,12 +203,7 @@ describe("auth cookies", () => {
 				c.text(
 					await c.auth.sign(
 						Codec.Base64Url.encode(
-							Codec.encode(
-								JSON.stringify({
-									id: "user-1",
-									expiration,
-								}),
-							),
+							Codec.encode(JSON.stringify({ id: "user-1", expiration })),
 						),
 					),
 				);
@@ -353,10 +343,7 @@ describe("passkey script", () => {
 			register,
 			Route.get("/", (c) => {
 				const Register = c.auth.passkey.create(register);
-				return Register({
-					search: { next: "1" },
-					hash: "a",
-				});
+				return Register({ search: { next: "1" }, hash: "a" });
 			}),
 		);
 
@@ -990,14 +977,13 @@ describe("passkey parsing", () => {
 	test("assert returns stored credential for valid signed assertion", async () => {
 		const app = new App({ auth: { secret: "secret" }, csrf: false });
 		const keys = (await crypto.subtle.generateKey(
-			{
-				name: "ECDSA",
-				namedCurve: "P-256",
-			},
+			{ name: "ECDSA", namedCurve: "P-256" },
 			true,
 			["sign", "verify"],
 		)) as CryptoKeyPair;
-		const id = Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(16)));
+		const id = Codec.Base64Url.encode(
+			crypto.getRandomValues(new Uint8Array(16)),
+		);
 		const stored = {
 			id,
 			user: "user-1",
@@ -1016,17 +1002,18 @@ describe("passkey parsing", () => {
 		const rpIdHash = new Uint8Array(
 			await crypto.subtle.digest("SHA-256", Codec.encode("example.com")),
 		);
-		const authData = bytes(rpIdHash, Uint8Array.of(0x05), Uint8Array.of(0, 0, 0, 1));
+		const authData = bytes(
+			rpIdHash,
+			Uint8Array.of(0x05),
+			Uint8Array.of(0, 0, 0, 1),
+		);
 		const clientHash = new Uint8Array(
 			await crypto.subtle.digest("SHA-256", clientData),
 		);
 		const signature = Codec.Base64Url.encode(
 			new Uint8Array(
 				await crypto.subtle.sign(
-					{
-						name: "ECDSA",
-						hash: "SHA-256",
-					},
+					{ name: "ECDSA", hash: "SHA-256" },
 					keys.privateKey,
 					bytes(authData, clientHash),
 				),
@@ -1087,14 +1074,13 @@ describe("passkey parsing", () => {
 	test("assert rejects malformed DER signature with auth issue", async () => {
 		const app = new App({ auth: { secret: "secret" }, csrf: false });
 		const keys = (await crypto.subtle.generateKey(
-			{
-				name: "ECDSA",
-				namedCurve: "P-256",
-			},
+			{ name: "ECDSA", namedCurve: "P-256" },
 			true,
 			["sign", "verify"],
 		)) as CryptoKeyPair;
-		const id = Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(16)));
+		const id = Codec.Base64Url.encode(
+			crypto.getRandomValues(new Uint8Array(16)),
+		);
 		const stored = {
 			id,
 			user: "user-1",
@@ -1113,7 +1099,11 @@ describe("passkey parsing", () => {
 		const rpIdHash = new Uint8Array(
 			await crypto.subtle.digest("SHA-256", Codec.encode("example.com")),
 		);
-		const authData = bytes(rpIdHash, Uint8Array.of(0x05), Uint8Array.of(0, 0, 0, 1));
+		const authData = bytes(
+			rpIdHash,
+			Uint8Array.of(0x05),
+			Uint8Array.of(0, 0, 0, 1),
+		);
 
 		app.use(
 			Route.get("/token", async (c) => {

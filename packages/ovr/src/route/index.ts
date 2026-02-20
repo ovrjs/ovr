@@ -365,7 +365,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<const S extends Schema.Form.Shape>(
+	static post<S extends Schema.Form.Shape>(
 		fields: S,
 		...middleware: Middleware<{}, S>[]
 	): Route.Post & Schema.Form<S>;
@@ -375,7 +375,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<const S extends Schema.Form.Shape>(
+	static post<S extends Schema.Form.Shape>(
 		form: Schema.Form<S>,
 		...middleware: Middleware<{}, S>[]
 	): Route.Post & Schema.Form<S>;

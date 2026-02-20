@@ -2,7 +2,6 @@ import * as chatContent from "@/server/demo/chat/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
-import * as z from "zod";
 
 async function* Poet(props: { message: string }) {
 	const { OpenAI } = await import("openai");
@@ -47,23 +46,25 @@ export const chat = ovr.Route.get("/demo/chat", (c) => {
 	);
 });
 
-export const stream = ovr.Route.post(async (c) => {
-	const Layout = createLayout(c);
+export const stream = ovr.Route.post(
+	{ message: ovr.Schema.Field.text() },
+	async (c) => {
+		const Layout = createLayout(c);
 
-	const data = await c.req.formData();
-	const message = z.string().parse(data.get("message"));
+		const { data } = await c.data();
 
-	return (
-		<Layout head={<Meta title="Message" description="Generated message." />}>
-			<h1>Poem</h1>
+		return (
+			<Layout head={<Meta title="Message" description="Generated message." />}>
+				<h1>Poem</h1>
 
-			<div class="flex flex-col-reverse">
-				<chat.Anchor>Back to chat</chat.Anchor>
+				<div class="flex flex-col-reverse">
+					<chat.Anchor>Back to chat</chat.Anchor>
 
-				<blockquote class="bg-muted rounded-md p-6 shadow-md">
-					<Poet message={message} />
-				</blockquote>
-			</div>
-		</Layout>
-	);
-});
+					<blockquote class="bg-muted rounded-md p-6 shadow-md">
+						<Poet message={data?.message ?? "hello"} />
+					</blockquote>
+				</div>
+			</Layout>
+		);
+	},
+);

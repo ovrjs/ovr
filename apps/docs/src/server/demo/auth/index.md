@@ -13,17 +13,15 @@ Use `Context.auth.passkey` to build a complete passkey flow with typed routes an
 
 ```ts
 // auth.ts
+import * as route from "./index";
 import type { Auth, JSX, Middleware } from "ovr";
 import { Route, Schema } from "ovr";
-import * as route from "./index";
 
 export type User = { id: string; email: string };
 export const users = new Map<string, User>();
 export const credentials = new Map<string, Auth.Credential>();
 
-const UserForm = Schema.form({
-	email: Schema.Field.email({ label: "Email" }),
-});
+const UserForm = Schema.form({ email: Schema.Field.email({ label: "Email" }) });
 
 export const guard = (
 	handler: (
@@ -94,7 +92,9 @@ export const page = Route.get("/demo/auth", (c) => {
 	);
 });
 
-export const admin = Route.get("/demo/auth/admin", auth.guard((_c, state) => {
+export const admin = Route.get(
+	"/demo/auth/admin",
+	auth.guard((_c, state) => {
 		return (
 			<>
 				<p>Signed in as {state.user.email}</p>

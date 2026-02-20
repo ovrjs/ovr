@@ -1,11 +1,11 @@
 import { codeControls } from "./code-controls";
 import { externalLink } from "./external-link";
 import { type Options, Processor } from "@robino/md";
+import { Schema } from "ovr";
 import langBash from "shiki/langs/bash.mjs";
 import langHtml from "shiki/langs/html.mjs";
 import langJson from "shiki/langs/json.mjs";
 import langTsx from "shiki/langs/tsx.mjs";
-import * as z from "zod";
 
 export const options: Options = {
 	highlighter: {
@@ -17,7 +17,7 @@ export const options: Options = {
 
 export const processor = new Processor(options);
 
-export const FrontmatterSchema = z.object({
-	title: z.string(),
-	description: z.string(),
+export const FrontmatterSchema = Schema.object({
+	title: Schema.string(),
+	description: Schema.string(),
 });
