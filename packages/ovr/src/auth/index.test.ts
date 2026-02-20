@@ -155,6 +155,61 @@ describe("passkey parsing", () => {
 		).rejects.toThrow("Invalid token");
 	});
 
+	test("assert rejects invalid signed token before lookup", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+		let calls = 0;
+
+		app.use(
+			Route.post("/assert", async (c) => {
+				await c.auth.passkey.assert(() => {
+					calls++;
+
+					return {
+						id: "a",
+						user: "user",
+						publicKey: "a",
+					};
+				});
+				c.text("ok");
+			}),
+		);
+
+		const body = new FormData();
+		body.set(
+			"credential",
+			JSON.stringify({
+				type: "public-key",
+				id: "a",
+				rawId: "a",
+				response: {
+					clientDataJSON: Codec.Base64Url.encode(
+						Codec.encode(
+							JSON.stringify({
+								type: "webauthn.get",
+								challenge: Codec.Base64Url.encode(Codec.encode("x")),
+								origin: "https://example.com",
+							}),
+						),
+					),
+					authenticatorData: "a",
+					signature: "a",
+				},
+			}),
+		);
+		body.set("signed", "bad");
+
+		await expect(
+			app.fetch(
+				new Request("https://example.com/assert", {
+					method: "POST",
+					body,
+					headers: { origin: "https://example.com" },
+				}),
+			),
+		).rejects.toThrow("Invalid token");
+		expect(calls).toBe(0);
+	});
+
 	test("origin mismatch is rejected", async () => {
 		const app = new App({ auth: { secret: "secret" }, csrf: false });
 		const challenge = Codec.Base64Url.encode(Codec.encode("x"));

@@ -822,11 +822,11 @@ export class Passkey {
 
 		if (result.issues) throw result;
 
+		await this.#verifyCredentialBase("get", result.data, signed);
+
 		const stored = await find(result.data.id);
 
 		if (!stored) throw new Error("Credential not found");
-
-		await this.#verifyCredentialBase("get", result.data, signed);
 
 		if (
 			!Passkey.#safeEqual(
