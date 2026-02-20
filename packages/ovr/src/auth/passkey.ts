@@ -418,7 +418,7 @@ export class Passkey {
 											action,
 											user,
 											exclude,
-										} satisfies Schema.Infer<typeof Passkey.bootstrapCreate>),
+										} satisfies Schema.Infer<typeof Passkey.bCreate>),
 									),
 									Passkey.options.url(),
 									action,
@@ -462,7 +462,7 @@ export class Passkey {
 										JSON.stringify({
 											method: "get",
 											action,
-										} satisfies Schema.Infer<typeof Passkey.bootstrapGet>),
+										} satisfies Schema.Infer<typeof Passkey.bGet>),
 									),
 									Passkey.options.url(),
 									action,
@@ -502,7 +502,7 @@ export class Passkey {
 			Schema.object({
 				type: Schema.literal(`webauthn.${ceremony}`),
 				challenge: Schema.string(),
-				origin: Schema.literal(origin, AuthIssue.message("origin")),
+				origin: Schema.literal(origin, AuthIssue.m("origin")),
 			}),
 		);
 
@@ -511,7 +511,7 @@ export class Passkey {
 	 *
 	 * Supports app-side type inference for signed challenge payloads.
 	 */
-	static getChallenge = Schema.object({
+	static get = Schema.object({
 		challenge: Schema.string(),
 		iat: Schema.int(),
 		exp: Schema.int(),
@@ -523,9 +523,7 @@ export class Passkey {
 	 *
 	 * Supports app-side type inference for signed challenge payloads.
 	 */
-	static createChallenge = Passkey.getChallenge.extend({
-		user: Schema.string(),
-	});
+	static create = Passkey.get.extend({ user: Schema.string() });
 
 	/**
 	 * Build parser for signed challenge payloads bound to a route path.
@@ -536,18 +534,14 @@ export class Passkey {
 	 */
 	static #challenge = (ceremony: "create" | "get", action: string) => {
 		return Schema.json(
-			(ceremony === "create"
-				? Passkey.createChallenge
-				: Passkey.getChallenge
-			).extend({ action: Schema.literal(action, AuthIssue.message("action")) }),
-		).refine(
-			(c) => Date.now() <= c.exp,
-			AuthIssue.message("challenge (expired)"),
-		);
+			(ceremony === "create" ? Passkey.create : Passkey.get).extend({
+				action: Schema.literal(action, AuthIssue.m("action")),
+			}),
+		).refine((c) => Date.now() <= c.exp, AuthIssue.m("challenge (expired)"));
 	};
 
 	/** Schema for signed registration bootstrap payloads. */
-	static bootstrapCreate = Schema.object({
+	static bCreate = Schema.object({
 		method: Schema.literal("create"),
 		action: Schema.string(),
 		user: Schema.string(),
@@ -555,14 +549,14 @@ export class Passkey {
 	});
 
 	/** Schema for signed login bootstrap payloads. */
-	static bootstrapGet = Schema.object({
+	static bGet = Schema.object({
 		method: Schema.literal("get"),
 		action: Schema.string(),
 	});
 
 	/** Parser for signed bootstrap payloads submitted to `Passkey.options`. */
 	static #bootstrap = Schema.json(
-		Schema.union([Passkey.bootstrapCreate, Passkey.bootstrapGet]),
+		Schema.union([Passkey.bCreate, Passkey.bGet]),
 	);
 
 	/** Shared credential envelope for parsed registration/login form data. */
@@ -630,7 +624,7 @@ export class Passkey {
 							iat,
 							exp,
 							action: bootstrap.data.action,
-						} satisfies Schema.Infer<typeof Passkey.createChallenge>),
+						} satisfies Schema.Infer<typeof Passkey.create>),
 					),
 					options: {
 						challenge,
@@ -662,7 +656,7 @@ export class Passkey {
 						iat,
 						exp,
 						action: bootstrap.data.action,
-					} satisfies Schema.Infer<typeof Passkey.getChallenge>),
+					} satisfies Schema.Infer<typeof Passkey.get>),
 				),
 				options: {
 					challenge,
@@ -727,8 +721,8 @@ export class Passkey {
 	async #verifyCredentialBase<
 		C extends "create" | "get",
 		O extends C extends "create"
-			? Schema.Infer<typeof Passkey.createChallenge>
-			: Schema.Infer<typeof Passkey.getChallenge>,
+			? Schema.Infer<typeof Passkey.create>
+			: Schema.Infer<typeof Passkey.get>,
 	>(
 		ceremony: C,
 		credential:
