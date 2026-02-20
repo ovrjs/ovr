@@ -312,6 +312,28 @@ export class Passkey {
 		new Client().addEventListeners();
 	};
 
+	/** Regex to find characters that can break inline script parsing. */
+	static readonly #escapeJsPattern = /[<>&\u2028\u2029]/g;
+
+	/** Character map to produce JS-safe unicode escapes. */
+	static readonly #escapeJsMap: Record<string, string> = {
+		"<": "\\u003c",
+		">": "\\u003e",
+		"&": "\\u0026",
+		"\u2028": "\\u2028",
+		"\u2029": "\\u2029",
+	};
+
+	/**
+	 * Escape unsafe characters for inline JavaScript source.
+	 *
+	 * @param s JavaScript source fragment
+	 * @returns Source with characters escaped as unicode sequences
+	 */
+	static #escapeJs(s: string) {
+		return s.replace(Passkey.#escapeJsPattern, (c) => Passkey.#escapeJsMap[c]!);
+	}
+
 	/**
 	 * Serialize the browser runtime with safely escaped arguments.
 	 *
@@ -326,7 +348,7 @@ export class Passkey {
 			method: "create" | "get",
 		]
 	) {
-		return `(${Passkey.#addEventListeners})(${args.map((arg) => JSON.stringify(arg)).join()})`;
+		return `(${Passkey.#addEventListeners})(${args.map((arg) => Passkey.#escapeJs(JSON.stringify(arg))).join()})`;
 	}
 
 	/**

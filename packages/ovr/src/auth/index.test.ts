@@ -83,6 +83,32 @@ describe("passkey script", () => {
 		expect(script).toBeDefined();
 		expect(() => new Function(script!)).not.toThrow();
 	});
+
+	test("escape script terminators in serialized args", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+		const register = Route.post("/register", (c) => c.text("ok"));
+		const user = "</script><script>window.__pwned=1</script>";
+
+		app.use(
+			register,
+			Route.get("/", (c) => {
+				const Register = c.auth.passkey.create(register, undefined, user);
+				return Register({});
+			}),
+		);
+
+		const res = await app.fetch("https://example.com/");
+		const html = await res.text();
+		const script = html.match(
+			/<script type="module">([\s\S]*?)<\/script>/,
+		)?.[1];
+
+		expect(html).not.toContain(user);
+		expect(script).toContain(
+			"\\u003c/script\\u003e\\u003cscript\\u003ewindow.__pwned=1\\u003c/script\\u003e",
+		);
+		expect(() => new Function(script!)).not.toThrow();
+	});
 });
 
 describe("passkey parsing", () => {
@@ -164,11 +190,7 @@ describe("passkey parsing", () => {
 				await c.auth.passkey.assert(() => {
 					calls++;
 
-					return {
-						id: "a",
-						user: "user",
-						publicKey: "a",
-					};
+					return { id: "a", user: "user", publicKey: "a" };
 				});
 				c.text("ok");
 			}),
