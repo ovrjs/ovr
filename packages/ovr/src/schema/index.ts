@@ -1064,14 +1064,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 		/**
 		 * @param props Input props
-		 * @param message Issue message when invalid
 		 * @returns Date input field
 		 */
-		static date(props?: Field.Props.Input, message = "Expected valid date") {
-			return FieldFactory.#input({ ...props, type: "date" }).refine(
-				(v) => Boolean(Schema.Coerce.date().parse(v).data), // checks if string is valid
-				message,
-			);
+		static date(props?: Field.Props.Input) {
+			return FieldFactory.#input({ ...props, type: "date" });
 		}
 
 		/**

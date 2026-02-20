@@ -313,11 +313,12 @@ describe("Coercion schemas", () => {
 });
 
 describe("Form schema", () => {
-	test("parses mixed field types", () => {
+	test("parses mixed field types and leaves date strings unvalidated", () => {
 		const form = Schema.form({
 			name: Schema.Field.text(),
 			age: Schema.Field.number(),
 			active: Schema.Field.checkbox(),
+			date: Schema.Field.date(),
 			roles: Schema.Field.checkboxes(["reader", "admin"]),
 			level: Schema.Field.radio(["junior", "senior"]),
 			tags: Schema.Field.multiselect(["a", "b", "c"]),
@@ -328,6 +329,7 @@ describe("Form schema", () => {
 		data.set("name", "ross");
 		data.set("age", "31");
 		data.set("active", "on");
+		data.set("date", "not-a-date");
 		data.append("roles", "reader");
 		data.append("roles", "admin");
 		data.set("level", "senior");
@@ -339,6 +341,7 @@ describe("Form schema", () => {
 			name: "ross",
 			age: 31,
 			active: true,
+			date: "not-a-date",
 			roles: ["reader", "admin"],
 			level: "senior",
 			tags: ["a", "c"],
@@ -349,15 +352,6 @@ describe("Form schema", () => {
 	test("checkbox is false when omitted", () => {
 		const form = Schema.form({ active: Schema.Field.checkbox() });
 		expect(valid(form.parse(new FormData()))).toEqual({ active: false });
-	});
-
-	test("field date validates user input", () => {
-		const form = Schema.form({ date: Schema.Field.date() });
-		const data = new FormData();
-
-		data.set("date", "not-a-date");
-
-		expect(invalid(form.parse(data))[0]?.expected).toBe("refine");
 	});
 
 	test("invalid parse includes encoded _form state without password/file values", () => {
