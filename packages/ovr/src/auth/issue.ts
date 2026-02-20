@@ -18,7 +18,6 @@ export class AuthIssue extends Error {
 	 * Create a new auth issue.
 	 *
 	 * @param expected Expected auth value/state
-	 * @param message Issue message
 	 */
 	constructor(expected: string) {
 		super(AuthIssue.m(expected));
