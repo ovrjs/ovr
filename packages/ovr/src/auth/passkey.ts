@@ -554,11 +554,6 @@ export class Passkey {
 		action: Schema.string(),
 	});
 
-	/** Parser for signed bootstrap payloads submitted to `Passkey.options`. */
-	static #bootstrap = Schema.json(
-		Schema.union([Passkey.bCreate, Passkey.bGet]),
-	);
-
 	/** Shared credential envelope for parsed registration/login form data. */
 	static #credential = Schema.object({
 		type: Schema.literal("public-key"),
@@ -586,12 +581,6 @@ export class Passkey {
 		}),
 	});
 
-	/** Parsed request payload shape for passkey verification handlers. */
-	static #formData = Schema.object({
-		credential: Schema.json(Schema.unknown()),
-		signed: Schema.string(),
-	});
-
 	/**
 	 * Route that returns fresh signed passkey options.
 	 *
@@ -604,9 +593,9 @@ export class Passkey {
 
 			if (input.issues) throw input;
 
-			const bootstrap = Passkey.#bootstrap.parse(
-				await c.auth.verify(input.data.bootstrap),
-			);
+			const bootstrap = Schema.json(
+				Schema.union([Passkey.bCreate, Passkey.bGet]),
+			).parse(await c.auth.verify(input.data.bootstrap));
 
 			if (bootstrap.issues) throw bootstrap;
 
@@ -694,7 +683,10 @@ export class Passkey {
 	 */
 	async #parseForm() {
 		const data = await this.#c.form().data();
-		const result = Passkey.#formData.parse({
+		const result = Schema.object({
+			credential: Schema.json(Schema.unknown()),
+			signed: Schema.string(),
+		}).parse({
 			credential: data.get("credential"),
 			signed: data.get("signed"),
 		});
