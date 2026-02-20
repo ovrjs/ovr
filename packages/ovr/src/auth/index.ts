@@ -46,6 +46,10 @@ export namespace Auth {
 
 /**
  * Stateless authentication helper with passkey support.
+ *
+ * Token semantics:
+ * - `sign()`/`verify()` provide integrity only (tamper detection)
+ * - Freshness/replay controls must be encoded in payload and/or enforced externally
  */
 export class Auth {
 	/** Cached auth keys in case of multiple App instances */
@@ -109,6 +113,8 @@ export class Auth {
 	/**
 	 * @param payload
 	 * @returns HMAC signed `payload.signature` with auth secret
+	 *
+	 * Signing is integrity-only and does not add encryption, expiry, or one-time semantics.
 	 */
 	async sign(payload: string) {
 		return `${payload}.${Codec.Base64Url.encode(
@@ -125,6 +131,8 @@ export class Auth {
 	/**
 	 * @param token signed token
 	 * @returns valid payload
+	 *
+	 * Verification checks integrity only. Replay/freshness constraints are caller-defined.
 	 */
 	async verify(token: string) {
 		const dot = token.lastIndexOf(".");

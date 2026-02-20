@@ -84,6 +84,7 @@ export class Header {
 		type: "content-type",
 		disp: "content-disposition",
 		etag: "etag",
+		cache: "cache-control",
 		none: "if-none-match",
 		cookie: "cookie",
 		set: "set-cookie",

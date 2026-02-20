@@ -1,64 +1,63 @@
 import type { Context } from "../context/index.js";
 import { jsx } from "../jsx/index.js";
 import { Render } from "../render/index.js";
-import type { Route } from "../route/index.js";
+import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec } from "../util/index.js";
+import { Codec, Header, Time } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
 import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 
 export namespace Passkey {
-	/** Signed challenge payload for authentication ceremonies. */
-	export interface GetChallenge {
-		/** Base64url challenge value. */
-		challenge: string;
-	}
-
-	/** Signed challenge payload for registration ceremonies. */
-	export interface CreateChallenge extends GetChallenge {
-		/** User ID associated with the registration challenge. */
-		user: string;
-	}
-
 	/**
-	 * Route type used by passkey form helpers.
+	 * Route contract accepted by `create()` and `get()`.
 	 *
-	 * This separate from `Route.Post` because `url` has strict tuple
-	 * args that don't compose in generic type checks. This shape keeps
-	 * param inference working while still using `route.url()`.
+	 * Pass any `Route.post(...)` route and this keeps route params typed
+	 * for both the rendered form action and challenge binding.
 	 */
 	export interface Post<Pattern extends string> extends Omit<
 		Route.Post,
-		"url"
+		"url" | "pathname"
 	> {
 		pattern: Pattern;
 		Form: Route.Form<Pattern>;
 		url: Route<Pattern>["url"];
+		pathname: (params?: Record<string, string>) => string;
 	}
 }
 
 /**
- * WebAuthn passkey authentication.
+ * Minimal stateless passkey authentication.
  *
- * Implementation constraints:
- * - Only ES256 (alg -7, P-256 ECDSA) algorithm supported (https://www.rfc-editor.org/rfc/rfc8152#section-8.1)
- * - Signature counter not validated (assumes platform-bound credentials, no cloning)
- * - Discoverable/resident credentials not required (counter validation unsafe without support)
+ * Features:
+ *
+ * - Register and login form helpers for WebAuthn.
+ * - Signed challenges bound to route path and origin.
+ * - Fresh options generated at submit time.
+ * - Built-in challenge expiry (1 minute).
+ *
+ * Security model:
+ *
+ * - Challenges are stateless and not one-time consumed.
+ * - Replay is time-bounded by challenge expiry.
+ * - Signature counters are not validated.
  */
 export class Passkey {
-	/** Auth instance for managing sessions */
+	/** Challenge validity window in milliseconds. */
+	static #challengeTtl = Time.minute;
+
+	/** Request-scoped auth helper for challenge signing and verification. */
 	readonly #auth: Auth;
 
-	/** Request context */
+	/** Current request context used for origin/rp checks and form parsing. */
 	readonly #c: Context;
 
-	/** The relying party ID from the request hostname */
+	/** Relying party identifier derived from the request hostname. */
 	readonly #rpId: string;
 
 	/**
-	 * Create a new Passkey instance
+	 * Create a passkey helper for the current request.
 	 *
 	 * @param c Request context
 	 * @param auth Auth instance
@@ -70,22 +69,25 @@ export class Passkey {
 	}
 
 	/**
-	 * Client-side passkey handler function, serialized at runtime
+	 * Client runtime injected into passkey forms.
 	 *
-	 * @param signed - Signed options string to send back to server
-	 * @param options - WebAuthn options JSON
-	 * @param action - Form action
-	 * @param method - WebAuthn method ("create" or "get")
+	 * - This function is serialized and executed in the browser.
+	 * - Keep dependencies self-contained and browser-native.
+	 * - Do not reference server-only helpers (for example `Schema`).
+	 *
+	 * @param bootstrap Signed bootstrap payload used to fetch fresh options
+	 * @param optionsAction Internal options route pathname
+	 * @param action Target form action pathname
+	 * @param method WebAuthn ceremony invoked by the browser
 	 */
 	static #addEventListeners = (
-		signed: string,
-		options: PublicKeyCredentialCreationOptionsJSON &
-			PublicKeyCredentialRequestOptionsJSON,
+		bootstrap: string,
+		optionsAction: string,
 		action: string,
 		method: "create" | "get",
 	) => {
 		class Client {
-			/** Supported authenticator transport values. */
+			/** Allowed transport values accepted from JSON options. */
 			static #transports = new Set([
 				"ble",
 				"hybrid",
@@ -95,7 +97,7 @@ export class Passkey {
 				"smart-card",
 			]);
 
-			/** Supported attestation conveyance values. */
+			/** Allowed attestation values accepted from JSON options. */
 			static #attestations = new Set([
 				"none",
 				"indirect",
@@ -103,11 +105,13 @@ export class Passkey {
 				"enterprise",
 			]);
 
-			/** Supported user verification requirement values. */
+			/** Allowed verification values accepted from JSON options. */
 			static #verifications = new Set(["required", "preferred", "discouraged"]);
 
 			/**
-			 * @param v Transport values from credential options
+			 * Narrow transport values from untyped JSON.
+			 *
+			 * @param v Candidate transport list from options JSON
 			 * @returns `true` when all values are valid authenticator transports
 			 */
 			static #isTransports(v?: string[]): v is AuthenticatorTransport[] {
@@ -115,7 +119,9 @@ export class Passkey {
 			}
 
 			/**
-			 * @param v Attestation preference value
+			 * Narrow attestation value from untyped JSON.
+			 *
+			 * @param v Candidate attestation value from options JSON
 			 * @returns `true` when value is a valid attestation preference
 			 */
 			static #isAttestation(v?: string): v is AttestationConveyancePreference {
@@ -123,7 +129,9 @@ export class Passkey {
 			}
 
 			/**
-			 * @param v User verification value
+			 * Narrow user verification value from untyped JSON.
+			 *
+			 * @param v Candidate verification value from options JSON
 			 * @returns `true` when value is a valid verification requirement
 			 */
 			static #isVerification(v?: string): v is UserVerificationRequirement {
@@ -131,12 +139,15 @@ export class Passkey {
 			}
 
 			/**
-			 * @param s Base64url string
-			 * @returns Decoded bytes as `ArrayBuffer`
+			 * Decode base64url strings from JSON options into binary buffers.
+			 *
+			 * @param s Base64url-encoded input
+			 * @returns Decoded bytes as an `ArrayBuffer`
 			 */
 			static #decodeBase64Url(s: string) {
 				const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
 				const pad = b64.length % 4;
+
 				return Uint8Array.from(
 					atob(pad ? b64 + "=".repeat(4 - pad) : b64),
 					(c) => c.charCodeAt(0),
@@ -144,8 +155,10 @@ export class Passkey {
 			}
 
 			/**
-			 * @param json Credential descriptor JSON
-			 * @returns Browser credential descriptor with decoded ID
+			 * Decode a credential descriptor payload for WebAuthn browser APIs.
+			 *
+			 * @param json Credential descriptor from JSON options
+			 * @returns Descriptor with decoded binary ID
 			 */
 			static #decodeCredential(
 				json: PublicKeyCredentialDescriptorJSON,
@@ -160,15 +173,17 @@ export class Passkey {
 			}
 
 			/**
-			 * @param options Credential creation options JSON
-			 * @returns Browser creation options with decoded binary fields
+			 * Decode registration options into browser-native WebAuthn options.
+			 *
+			 * @param options Registration options JSON payload
+			 * @returns Browser-ready registration options
 			 */
 			static #decodeCreationOptions({
 				challenge,
 				user,
 				excludeCredentials,
 				attestation,
-				extensions, // unused
+				extensions: _extensions,
 				...rest
 			}: PublicKeyCredentialCreationOptionsJSON): PublicKeyCredentialCreationOptions {
 				return {
@@ -187,14 +202,16 @@ export class Passkey {
 			}
 
 			/**
-			 * @param options Credential request options JSON
-			 * @returns Browser request options with decoded binary fields
+			 * Decode login options into browser-native WebAuthn options.
+			 *
+			 * @param options Authentication options JSON payload
+			 * @returns Browser-ready authentication options
 			 */
 			static #decodeRequestOptions({
 				challenge,
 				allowCredentials,
 				userVerification,
-				extensions, // unused
+				extensions: _extensions,
 				...rest
 			}: PublicKeyCredentialRequestOptionsJSON): PublicKeyCredentialRequestOptions {
 				return {
@@ -207,63 +224,87 @@ export class Passkey {
 				};
 			}
 
-			/** All forms with the route's action */
+			/** Forms whose `action` matches the bound route pathname. */
 			#forms = document.querySelectorAll(
 				'form[action="' + action + '"]',
 			) as NodeListOf<HTMLFormElement>;
 
-			/** Single loading state for all auth forms */
+			/** Shared submit lock to prevent duplicate requests across matching forms. */
 			static #loading = false;
 
-			/** Attach submit handlers to matching forms once per form. */
+			/**
+			 * Attach one submit handler per matching form.
+			 *
+			 * The handler fetches fresh options, runs the WebAuthn API, writes hidden
+			 * fields, then triggers native form submission.
+			 */
 			addEventListeners() {
 				for (const form of this.#forms) {
-					if (!form.hasAttribute("data-auth")) {
-						form.dataset.auth = "";
+					if (form.hasAttribute("data-auth")) continue;
 
-						form.addEventListener("formdata", (e: FormDataEvent) =>
-							e.formData.append("signed", signed),
-						);
+					form.dataset.auth = "";
 
-						form.addEventListener("submit", async (e) => {
-							e.preventDefault();
+					const credential = document.createElement("input");
+					credential.type = "hidden";
+					credential.name = "credential";
 
-							if (Client.#loading) return; // prevents double submissions
+					const signed = document.createElement("input");
+					signed.type = "hidden";
+					signed.name = "signed";
 
-							Client.#loading = true;
+					form.addEventListener("submit", async (e) => {
+						e.preventDefault();
 
-							try {
-								const input = document.createElement("input");
-								input.type = "hidden";
-								input.name = "credential";
-								input.value = JSON.stringify(
-									await navigator.credentials[method]({
-										publicKey: (method === "create"
-											? Client.#decodeCreationOptions(options)
-											: Client.#decodeRequestOptions(
-													options,
-												)) as PublicKeyCredentialCreationOptions &
-											PublicKeyCredentialRequestOptions,
-									}),
+						if (Client.#loading) return;
+						Client.#loading = true;
+
+						try {
+							const data = new FormData();
+							data.append("bootstrap", bootstrap);
+
+							const res = await fetch(optionsAction, {
+								method: "POST",
+								body: data,
+							});
+
+							if (!res.ok) {
+								throw new Error(
+									`Passkey options request failed (${res.status})`,
 								);
-
-								form.append(input);
-								form.submit();
-
-								return;
-							} catch (e) {
-								if (
-									// cleans up logs - if the user cancels it throws NotAllowedError
-									!(e instanceof DOMException) ||
-									e.name !== "NotAllowedError"
-								) {
-									throw e;
-								}
 							}
 
-							Client.#loading = false;
-						});
-					}
+							const options = (await res.json()) as {
+								signed: string;
+								options: PublicKeyCredentialCreationOptionsJSON &
+									PublicKeyCredentialRequestOptionsJSON;
+							};
+
+							signed.value = options.signed;
+							credential.value = JSON.stringify(
+								await navigator.credentials[method]({
+									publicKey: (method === "create"
+										? Client.#decodeCreationOptions(options.options)
+										: Client.#decodeRequestOptions(
+												options.options,
+											)) as PublicKeyCredentialCreationOptions &
+										PublicKeyCredentialRequestOptions,
+								}),
+							);
+
+							form.append(credential, signed);
+							form.submit();
+							return;
+						} catch (e) {
+							if (
+								!(e instanceof DOMException) ||
+								e.name !== "NotAllowedError"
+							) {
+								throw e;
+							}
+						}
+
+						Client.#loading = false;
+					});
 				}
 			}
 		}
@@ -272,40 +313,44 @@ export class Passkey {
 	};
 
 	/**
-	 * Generate client-side script for passkey form handling.
-	 * Embeds the signed options directly in the script.
+	 * Serialize the browser runtime with safely escaped arguments.
 	 *
-	 * @param signed - Signed options string
-	 * @param options - WebAuthn options to embed
-	 * @param action - The form action path
-	 * @param method - WebAuthn method ("create" or "get")
-	 * @returns Serialized client script source
+	 * @param args Runtime args injected into the client initializer
+	 * @returns Inline script source
 	 */
 	static #script(
-		signed: string,
-		options:
-			| PublicKeyCredentialCreationOptionsJSON
-			| PublicKeyCredentialRequestOptionsJSON,
-		action: string,
-		method: "create" | "get",
+		...args: [
+			bootstrap: string,
+			optionsAction: string,
+			action: string,
+			method: "create" | "get",
+		]
 	) {
-		return `(${Passkey.#addEventListeners})(${JSON.stringify(
-			signed,
-		)},${JSON.stringify(options)},${JSON.stringify(action)},${JSON.stringify(
-			method,
-		)})`;
+		return `(${Passkey.#addEventListeners})(${args.map((arg) => JSON.stringify(arg)).join()})`;
 	}
 
 	/**
-	 * Generate a new random challenge
+	 * Create a random challenge payload with freshness bounds.
 	 *
-	 * @returns Base64url encoded challenge
+	 * @returns Challenge payload used by signed option responses
 	 */
 	static #newChallenge() {
-		return Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
+		const iat = Date.now();
+
+		return {
+			challenge: Codec.Base64Url.encode(
+				crypto.getRandomValues(new Uint8Array(32)),
+			),
+			iat,
+			exp: iat + Passkey.#challengeTtl,
+		};
 	}
 
-	/** @returns `<noscript>` fallback content for passkey forms. */
+	/**
+	 * Render fallback markup for users with JavaScript disabled.
+	 *
+	 * @returns `<noscript>` fallback element
+	 */
 	static #NoScript() {
 		return jsx("noscript", {
 			children: "JavaScript is required for authentication.",
@@ -313,15 +358,16 @@ export class Passkey {
 	}
 
 	/**
-	 * Generate options for `navigator.credentials.create()`.
+	 * Build a registration form component for a route.
 	 *
-	 * Only ES256 (alg -7) is supported. Platform authenticators typically support this modern algorithm.
-	 * Resident key is a hint only; counter validation is not performed due to stateless design.
+	 * - Fetches fresh WebAuthn options when the form is submitted.
+	 * - Requires JavaScript on the page.
+	 * - Uses signed challenges that expire after 1 minute.
 	 *
 	 * @param route Route to handle/verify the registration
-	 * @param exclude Optional list of credential IDs to exclude from registration. Prevents duplicate registration of the same authenticator.
+	 * @param exclude Existing credential IDs to exclude from registration
 	 * @param user User ID for registration, defaults to `crypto.randomUUID()`
-	 * @returns `<Register />` component for passkey registration containing the client script with embedded and signed options.
+	 * @returns Form component for passkey registration
 	 */
 	create<const Pattern extends string>(
 		route: Passkey.Post<Pattern>,
@@ -339,40 +385,20 @@ export class Passkey {
 					jsx("script", {
 						type: "module",
 						children: async () => {
-							const challenge = Passkey.#newChallenge();
+							const action = route.pathname(props.params);
 
 							return Render.html(
 								Passkey.#script(
-									// signed
 									await this.#auth.sign(
 										JSON.stringify({
-											challenge,
+											method: "create",
+											action,
 											user,
-										} satisfies Passkey.CreateChallenge),
+											exclude,
+										} satisfies Schema.Infer<typeof Passkey.bootstrapCreate>),
 									),
-									// passkey
-									{
-										challenge,
-										rp: { id: this.#rpId, name: this.#rpId },
-										user: {
-											id: Codec.Base64Url.encode(Codec.encode(user)),
-											name: user,
-											displayName: user,
-										},
-										pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-										excludeCredentials: exclude?.map((id) => ({
-											type: "public-key",
-											id,
-										})),
-										authenticatorSelection: {
-											residentKey: "preferred",
-											userVerification: "required",
-										},
-										timeout: 300000,
-										attestation: "none",
-									} satisfies PublicKeyCredentialCreationOptionsJSON,
-									// action
-									route.url(props),
+									Passkey.options.url(),
+									action,
 									"create",
 								),
 							);
@@ -385,14 +411,14 @@ export class Passkey {
 	}
 
 	/**
-	 * Generate options for `navigator.credentials.get()`.
-	 * Returns a form component that handles the WebAuthn authentication flow.
+	 * Build a login form component for a route.
 	 *
-	 * The options are signed and embedded directly in the client script.
-	 * The signature is verified during credential assertion to prevent tampering.
+	 * - Fetches fresh WebAuthn options when the form is submitted.
+	 * - Requires JavaScript on the page.
+	 * - Uses signed challenges that expire after 1 minute.
 	 *
 	 * @param route Route to handle the login
-	 * @returns `<Login />` component for passkey login
+	 * @returns Form component for passkey login
 	 */
 	get<const Pattern extends string>(
 		route: Passkey.Post<Pattern>,
@@ -405,24 +431,18 @@ export class Passkey {
 					jsx("script", {
 						type: "module",
 						children: async () => {
-							const challenge = Passkey.#newChallenge();
+							const action = route.pathname(props.params);
 
 							return Render.html(
 								Passkey.#script(
-									// signed
 									await this.#auth.sign(
 										JSON.stringify({
-											challenge,
-										} satisfies Passkey.GetChallenge),
+											method: "get",
+											action,
+										} satisfies Schema.Infer<typeof Passkey.bootstrapGet>),
 									),
-									// passkey
-									{
-										challenge,
-										rpId: this.#rpId,
-										timeout: 300000,
-										userVerification: "required",
-									} satisfies PublicKeyCredentialRequestOptionsJSON,
-									route.url(props),
+									Passkey.options.url(),
+									action,
 									"get",
 								),
 							);
@@ -435,58 +455,109 @@ export class Passkey {
 	}
 
 	/**
+	 * Create a SHA-256 digest from binary input.
+	 *
 	 * @param data Input bytes
-	 * @returns SHA-256 digest bytes
+	 * @returns Digest bytes
 	 */
 	static async #sha256(data: Uint8Array<ArrayBuffer>) {
 		return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
 	}
 
 	/**
-	 * @param ceremony Expected ceremony type
-	 * @returns JSON schema for parsed WebAuthn client data
+	 * Build parser for decoded `clientDataJSON`.
+	 *
+	 * - Enforces ceremony type via literal match.
+	 * - Enforces expected origin via literal match.
+	 *
+	 * @param ceremony Expected WebAuthn ceremony
+	 * @param origin Expected request origin
+	 * @returns Schema parser for decoded client data
 	 */
-	static #clientData = (ceremony: "create" | "get") =>
+	static #clientData = (ceremony: "create" | "get", origin: string) =>
 		Schema.json(
 			Schema.object({
 				type: Schema.literal(`webauthn.${ceremony}`),
 				challenge: Schema.string(),
-				origin: Schema.string(),
+				origin: Schema.literal(origin, "Origin mismatch"),
 			}),
 		);
 
 	/**
-	 * @param ceremony Expected ceremony type
-	 * @returns JSON schema for signed challenge payload
+	 * Schema for signed login challenge payloads.
+	 *
+	 * Supports app-side type inference for signed challenge payloads.
 	 */
-	static #challenge = (ceremony: "create" | "get") =>
-		Schema.json(
-			ceremony === "create"
-				? Schema.object({ challenge: Schema.string(), user: Schema.string() })
-				: Schema.object({ challenge: Schema.string() }),
-		);
+	static getChallenge = Schema.object({
+		challenge: Schema.string(),
+		iat: Schema.int(),
+		exp: Schema.int(),
+		action: Schema.string(),
+	});
 
-	/** Common credential payload schema shared by registration and assertion. */
+	/**
+	 * Schema for signed registration challenge payloads.
+	 *
+	 * Supports app-side type inference for signed challenge payloads.
+	 */
+	static createChallenge = Passkey.getChallenge.extend({
+		user: Schema.string(),
+	});
+
+	/**
+	 * Build parser for signed challenge payloads bound to a route path.
+	 *
+	 * @param ceremony Expected WebAuthn ceremony
+	 * @param action Expected route pathname
+	 * @returns Schema parser for signed challenge payloads
+	 */
+	static #challenge = (ceremony: "create" | "get", action: string) => {
+		return Schema.json(
+			(ceremony === "create"
+				? Passkey.createChallenge
+				: Passkey.getChallenge
+			).extend({ action: Schema.literal(action, "Action mismatch") }),
+		).refine((c) => Date.now() <= c.exp, "Challenge expired");
+	};
+
+	/** Schema for signed registration bootstrap payloads. */
+	static bootstrapCreate = Schema.object({
+		method: Schema.literal("create"),
+		action: Schema.string(),
+		user: Schema.string(),
+		exclude: Schema.array(Schema.string()).optional(),
+	});
+
+	/** Schema for signed login bootstrap payloads. */
+	static bootstrapGet = Schema.object({
+		method: Schema.literal("get"),
+		action: Schema.string(),
+	});
+
+	/** Parser for signed bootstrap payloads submitted to `Passkey.options`. */
+	static #bootstrap = Schema.json(
+		Schema.union([Passkey.bootstrapCreate, Passkey.bootstrapGet]),
+	);
+
+	/** Shared credential envelope for parsed registration/login form data. */
 	static #credential = Schema.object({
 		type: Schema.literal("public-key"),
 		id: Schema.string(),
 		rawId: Schema.string(),
 	});
 
-	/** Common response payload schema with base client data. */
+	/** Shared response field shape required by both credential payload types. */
 	static #response = Schema.object({ clientDataJSON: Schema.string() });
 
 	/**
-	 * Registration credential schema.
-	 * Kept public so callers can infer credential types.
+	 * Schema for parsed registration credentials from form submissions.
 	 */
 	static reg = Passkey.#credential.extend({
 		response: Passkey.#response.extend({ attestationObject: Schema.string() }),
 	});
 
 	/**
-	 * Authentication credential schema.
-	 * Kept public so callers can infer credential types.
+	 * Schema for parsed authentication credentials from form submissions.
 	 */
 	static auth = Passkey.#credential.extend({
 		response: Passkey.#response.extend({
@@ -495,18 +566,96 @@ export class Passkey {
 		}),
 	});
 
-	/** Parsed passkey form payload schema. */
+	/** Parsed request payload shape for passkey verification handlers. */
 	static #formData = Schema.object({
 		credential: Schema.json(Schema.unknown()),
 		signed: Schema.string(),
 	});
 
 	/**
-	 * Constant-time comparison of two byte arrays.
+	 * Route that returns fresh signed passkey options.
 	 *
-	 * @param a - First byte array
-	 * @param b - Second byte array
-	 * @returns true if arrays are equal, false otherwise
+	 * Required route for `create()` and `get()` form helpers.
+	 */
+	static readonly options = Route.post(
+		{ bootstrap: Schema.Field.text() },
+		async (c) => {
+			const input = await c.data();
+
+			if (input.issues) throw input;
+
+			const bootstrap = Passkey.#bootstrap.parse(
+				await c.auth.verify(input.data.bootstrap),
+			);
+
+			if (bootstrap.issues) throw bootstrap;
+
+			c.res.headers.set(Header.name.cache, "no-store");
+
+			const { challenge, iat, exp } = Passkey.#newChallenge();
+			const rpId = c.url.hostname;
+
+			if (bootstrap.data.method === "create") {
+				return c.json({
+					signed: await c.auth.sign(
+						JSON.stringify({
+							challenge,
+							user: bootstrap.data.user,
+							iat,
+							exp,
+							action: bootstrap.data.action,
+						} satisfies Schema.Infer<typeof Passkey.createChallenge>),
+					),
+					options: {
+						challenge,
+						rp: { id: rpId, name: rpId },
+						user: {
+							id: Codec.Base64Url.encode(Codec.encode(bootstrap.data.user)),
+							name: bootstrap.data.user,
+							displayName: bootstrap.data.user,
+						},
+						pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+						excludeCredentials: bootstrap.data.exclude?.map((id) => ({
+							type: "public-key",
+							id,
+						})),
+						authenticatorSelection: {
+							residentKey: "preferred",
+							userVerification: "required",
+						},
+						timeout: Passkey.#challengeTtl,
+						attestation: "none",
+					} satisfies PublicKeyCredentialCreationOptionsJSON,
+				});
+			}
+
+			return c.json({
+				signed: await c.auth.sign(
+					JSON.stringify({
+						challenge,
+						iat,
+						exp,
+						action: bootstrap.data.action,
+					} satisfies Schema.Infer<typeof Passkey.getChallenge>),
+				),
+				options: {
+					challenge,
+					rpId,
+					timeout: Passkey.#challengeTtl,
+					userVerification: "required",
+				} satisfies PublicKeyCredentialRequestOptionsJSON,
+			});
+		},
+	);
+
+	/**
+	 * Compare byte arrays without early return.
+	 *
+	 * Maintainer note: use for security-sensitive comparisons.
+	 *
+	 * @param a First byte array
+	 * @param b Second byte array
+	 * @returns `true` when both arrays are equal
 	 */
 	static #safeEqual(a: Uint8Array, b: Uint8Array) {
 		if (a.length !== b.length) return false;
@@ -518,9 +667,10 @@ export class Passkey {
 	}
 
 	/**
-	 * Parse and validate passkey form fields from the current request.
+	 * Parse and validate passkey fields from the current form request.
 	 *
-	 * @returns Parsed `credential` and `signed` payloads
+	 * @returns Parsed form payload
+	 * @throws TypeError when required fields are missing or invalid
 	 */
 	async #parseForm() {
 		const data = await this.#c.form().data();
@@ -535,18 +685,22 @@ export class Passkey {
 	}
 
 	/**
-	 * Common credential verification logic shared by verify() and assert().
+	 * Shared challenge + client-data verification for both ceremonies.
 	 *
-	 * @param ceremony - Expected WebAuthn ceremony type
-	 * @param credential - Validated credential data from authenticator - untrusted
-	 * @param signed - Signed options string from form
-	 * @returns Verified signed challenge payload for the ceremony
+	 * - Verifies signed payload integrity via `auth.verify`.
+	 * - Validates origin, ceremony type, action binding, and expiry.
+	 * - Compares challenge bytes from client and signed payload.
+	 *
+	 * @param ceremony Ceremony to verify (`create` or `get`)
+	 * @param credential Parsed credential payload
+	 * @param signed Signed challenge payload string
+	 * @returns Parsed signed challenge payload for the ceremony
 	 */
 	async #verifyCredentialBase<
 		C extends "create" | "get",
 		O extends C extends "create"
-			? Passkey.CreateChallenge
-			: Passkey.GetChallenge,
+			? Schema.Infer<typeof Passkey.createChallenge>
+			: Schema.Infer<typeof Passkey.getChallenge>,
 	>(
 		ceremony: C,
 		credential:
@@ -554,13 +708,13 @@ export class Passkey {
 			| Schema.Infer<typeof Passkey.auth>,
 		signed: string,
 	) {
-		const client = Passkey.#clientData(ceremony).parse(
+		const client = Passkey.#clientData(ceremony, this.#c.url.origin).parse(
 			Codec.decode(Codec.Base64Url.decode(credential.response.clientDataJSON)),
 		);
 
 		if (client.issues) throw client;
 
-		const options = Passkey.#challenge(ceremony).parse(
+		const options = Passkey.#challenge(ceremony, this.#c.url.pathname).parse(
 			await this.#auth.verify(signed),
 		);
 
@@ -575,18 +729,14 @@ export class Passkey {
 			throw new Error("Challenge mismatch");
 		}
 
-		if (new URL(client.data.origin).origin !== this.#c.url.origin) {
-			throw new Error("Origin mismatch");
-		}
-
 		return options.data as O;
 	}
 
 	/**
-	 * Verify authenticator data flags and RP ID hash.
+	 * Verify RP binding and required user flags in authenticator data.
 	 *
-	 * @param authData - Parsed authenticator data
-	 * @throws Error if RP ID mismatch, user not present, or user not verified
+	 * @param authData Parsed authenticator data structure
+	 * @throws Error when RP ID hash mismatches or required flags are absent
 	 */
 	async #verifyAuthData(authData: AuthData.Data) {
 		if (
@@ -604,11 +754,13 @@ export class Passkey {
 	}
 
 	/**
-	 * Verify a registration response and return credential data to store.
+	 * Verify a registration response and return the credential to persist.
+	 *
+	 * Persist the returned credential and associate it with the user account.
 	 *
 	 * @returns Verified credential
 	 * @throws TypeError if credential is not a valid credential
-	 * @throws Error if challenge expired, RP ID mismatch, user not present, or credential data missing
+	 * @throws Error if challenge expired, challenge/origin mismatch, RP ID mismatch, user not present, or credential data missing
 	 */
 	async verify(): Promise<Auth.Credential> {
 		const { credential, signed } = await this.#parseForm();
@@ -645,15 +797,15 @@ export class Passkey {
 	}
 
 	/**
-	 * Verify an authentication response and return the authenticated user ID.
+	 * Verify a login assertion and return the matched stored credential.
 	 *
-	 * Signature counter is not validated. This is safe because the implementation assume
-	 * platform-bound credentials and does not support discoverable/resident keys.
+	 * - Signature counters are not validated.
+	 * - Challenge usage is stateless and replay-protected only by challenge expiry.
 	 *
-	 * @param find - Stored credential data from database
-	 * @returns Authentication assertion result containing credential ID and user ID
+	 * @param find Lookup function that returns the stored credential by credential ID
+	 * @returns Stored credential when assertion verification succeeds
 	 * @throws TypeError if credential is not a valid credential
-	 * @throws Error if challenge expired, RP ID mismatch, user not present, or signature invalid
+	 * @throws Error if challenge expired, challenge/origin mismatch, RP ID mismatch, user not present, or signature invalid
 	 */
 	async assert(
 		find: (

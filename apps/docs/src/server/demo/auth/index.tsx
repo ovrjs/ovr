@@ -10,38 +10,46 @@ import {
 	Schema,
 } from "ovr";
 
-const users: { id: string; email: string }[] = [];
-const credentials: Auth.Credential[] = [];
+const users = new Map<string, { id: string; email: string }>();
+const credentials = new Map<string, Auth.Credential>();
 
-/** Middleware to protect routes - require authentication */
-const withAuth = (
+/** Auth utility that loads both session and user for protected routes. */
+const guard = (
 	handler: (
 		c: Middleware.Context,
-		session: Middleware.Context.Auth.Session,
+		auth: {
+			session: Middleware.Context.Auth.Session;
+			user: { id: string; email: string };
+		},
 	) => JSX.Element,
 ): Middleware => {
 	return async (c) => {
 		const session = await c.auth.session();
 
-		if (session) return handler(c, session);
+		if (!session) {
+			c.redirect(auth, 303);
+			return;
+		}
 
-		c.res.status = 401;
-		const Layout = createLayout(c);
+		const user = users.get(session.id);
 
-		return (
-			<Layout head={<Meta {...content.frontmatter} />}>
-				<h1>Unauthorized</h1>
-				<auth.Anchor>Login</auth.Anchor>
-			</Layout>
-		);
+		if (!user) {
+			c.auth.logout();
+			c.redirect(auth, 303);
+			return;
+		}
+
+		return handler(c, { session, user });
 	};
 };
 
 const User = Schema.form({ email: Schema.Field.email({ label: "Email" }) });
 
-/** Landing page - registration + sign in options */
-export const auth = Route.get("/demo/auth", (c) => {
+/** Landing page for register/login passkey flows. */
+export const auth = Route.get("/demo/auth", async (c) => {
 	const Layout = createLayout(c);
+	const session = await c.auth.session();
+	const user = session ? users.get(session.id) : null;
 
 	const Register = c.auth.passkey.create(register);
 	const Login = c.auth.passkey.get(login);
@@ -59,54 +67,58 @@ export const auth = Route.get("/demo/auth", (c) => {
 					<hr />
 
 					<Login />
+
+					{user && (
+						<>
+							<p>Signed in as {user.email}</p>
+							<p>
+								<admin.Anchor>Go to dashboard</admin.Anchor>
+							</p>
+						</>
+					)}
 				</div>
 			</div>
 		</Layout>
 	);
 });
 
-/** Logout - clear session */
+/** Logout handler clears the auth session cookie. */
 export const logout = Route.post((c) => {
 	c.auth.logout();
 	c.redirect(auth, 303);
 });
 
-/** Admin page - show user ID and credentials */
+/** Protected dashboard route for demo session/credential output. */
 export const admin = Route.get(
-	"/admin",
-	withAuth((c, session) => {
-		const user = users.find((u) => u.id === session.id)!;
-		const userCredentials = credentials.filter((c) => c.user === user.id);
+	"/demo/auth/admin",
+	guard((c, auth) => {
+		const userCredentials = Array.from(credentials.values()).filter(
+			(v) => v.user === auth.user.id,
+		);
 
 		const Layout = createLayout(c);
 
 		return (
 			<Layout head={<Meta {...content.frontmatter} />}>
-				{() => {
-					return (
-						<>
-							<h1>Admin</h1>
+				<h1>Admin</h1>
 
-							<p>Hello, {user.email}</p>
+				<p>Hello, {auth.user.email}</p>
 
-							<h2>Session</h2>
-							<pre>
-								<code>{JSON.stringify(session, null, 4)}</code>
-							</pre>
+				<h2>Session</h2>
+				<pre>
+					<code>{JSON.stringify(auth.session, null, 4)}</code>
+				</pre>
 
-							<h2>Registered credentials</h2>
-							<ul>
-								{userCredentials.map((c) => (
-									<li key={c.id}>{c.id}</li>
-								))}
-							</ul>
+				<h2>Registered credentials</h2>
+				<ul>
+					{userCredentials.map((v) => (
+						<li key={v.id}>{v.id}</li>
+					))}
+				</ul>
 
-							<logout.Form>
-								<button>Logout</button>
-							</logout.Form>
-						</>
-					);
-				}}
+				<logout.Form>
+					<button>Logout</button>
+				</logout.Form>
 			</Layout>
 		);
 	}),
@@ -117,17 +129,15 @@ export const register = Route.post(User, async (c) => {
 
 	if (result.issues) return c.redirect(result.url, 303);
 
-	const { email } = result.data;
-
 	const credential = await c.auth.passkey.verify();
-	credentials.push(credential);
 
-	let user = users.find((u) => u.id === credential.user);
+	const user = users.get(credential.user) ?? {
+		email: result.data.email,
+		id: credential.user,
+	};
 
-	if (!user) {
-		user = { email, id: credential.user };
-		users.push(user);
-	}
+	users.set(user.id, user);
+	credentials.set(credential.id, credential);
 
 	await c.auth.login(user.id);
 
@@ -135,11 +145,16 @@ export const register = Route.post(User, async (c) => {
 });
 
 export const login = Route.post(async (c) => {
-	const credential = await c.auth.passkey.assert((id) =>
-		credentials.find((c) => id === c.id),
-	);
+	const credential = await c.auth.passkey.assert((id) => credentials.get(id));
+	const user = users.get(credential.user);
 
-	await c.auth.login(credential.user);
+	if (!user) {
+		c.auth.logout();
+		c.redirect(auth, 303);
+		return;
+	}
+
+	await c.auth.login(user.id);
 
 	c.redirect(admin, 303);
 });
