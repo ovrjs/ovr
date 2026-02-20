@@ -345,6 +345,31 @@ describe("passkey script", () => {
 		expect(() => new Function(script!)).not.toThrow();
 	});
 
+	test("match forms by action prefix when action includes search and hash", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+		const register = Route.post("/register", (c) => c.text("ok"));
+
+		app.use(
+			register,
+			Route.get("/", (c) => {
+				const Register = c.auth.passkey.create(register);
+				return Register({
+					search: { next: "1" },
+					hash: "a",
+				});
+			}),
+		);
+
+		const html = await (await app.fetch("https://example.com/")).text();
+		const script = html.match(
+			/<script type="module">([\s\S]*?)<\/script>/,
+		)?.[1];
+		const action = html.match(/<form[^>]*action="([^"]+)"/)?.[1];
+
+		expect(action).toBe("/register?next=1#a");
+		expect(script).toContain('","/register","create")');
+	});
+
 	test("escape script terminators in serialized args", async () => {
 		const app = new App({ auth: { secret: "secret" }, csrf: false });
 		const register = Route.post("/register", (c) => c.text("ok"));
@@ -1057,6 +1082,87 @@ describe("passkey parsing", () => {
 
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual(stored);
+	});
+
+	test("assert rejects malformed DER signature with auth issue", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+		const keys = (await crypto.subtle.generateKey(
+			{
+				name: "ECDSA",
+				namedCurve: "P-256",
+			},
+			true,
+			["sign", "verify"],
+		)) as CryptoKeyPair;
+		const id = Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(16)));
+		const stored = {
+			id,
+			user: "user-1",
+			publicKey: Codec.Base64Url.encode(
+				new Uint8Array(await crypto.subtle.exportKey("spki", keys.publicKey)),
+			),
+		};
+		const challenge = Codec.Base64Url.encode(Codec.encode("challenge-2"));
+		const clientData = Codec.encode(
+			JSON.stringify({
+				type: "webauthn.get",
+				challenge,
+				origin: "https://example.com",
+			}),
+		);
+		const rpIdHash = new Uint8Array(
+			await crypto.subtle.digest("SHA-256", Codec.encode("example.com")),
+		);
+		const authData = bytes(rpIdHash, Uint8Array.of(0x05), Uint8Array.of(0, 0, 0, 1));
+
+		app.use(
+			Route.get("/token", async (c) => {
+				c.text(
+					await c.auth.sign(
+						JSON.stringify({
+							challenge,
+							iat: Date.now(),
+							exp: Date.now() + Time.minute,
+							action: "/assert",
+						} satisfies Schema.Infer<typeof Passkey.get>),
+					),
+				);
+			}),
+			Route.post("/assert", async (c) => {
+				c.json(
+					await c.auth.passkey.assert((input) =>
+						input === stored.id ? stored : null,
+					),
+				);
+			}),
+		);
+
+		const signed = await (await app.fetch("https://example.com/token")).text();
+		const body = new FormData();
+		body.set(
+			"credential",
+			JSON.stringify({
+				type: "public-key",
+				id: stored.id,
+				rawId: stored.id,
+				response: {
+					clientDataJSON: Codec.Base64Url.encode(clientData),
+					authenticatorData: Codec.Base64Url.encode(authData),
+					signature: "MA",
+				},
+			}),
+		);
+		body.set("signed", signed);
+
+		await expect(
+			app.fetch(
+				new Request("https://example.com/assert", {
+					method: "POST",
+					body,
+					headers: { origin: "https://example.com" },
+				}),
+			),
+		).rejects.toThrow("Invalid signature");
 	});
 
 	test("assert rejects when lookup does not return a credential", async () => {

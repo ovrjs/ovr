@@ -225,9 +225,9 @@ export class Passkey {
 				};
 			}
 
-			/** Forms whose `action` matches the bound route pathname. */
+			/** Forms whose `action` starts with the bound route pathname. */
 			#forms = document.querySelectorAll(
-				'form[action="' + action + '"]',
+				'form[action^="' + action + '"]',
 			) as NodeListOf<HTMLFormElement>;
 
 			/** Shared submit lock to prevent duplicate requests across matching forms. */
@@ -239,7 +239,7 @@ export class Passkey {
 			 * The handler fetches fresh options, runs the WebAuthn API, writes hidden
 			 * fields, then triggers native form submission.
 			 */
-			addEventListeners() {
+			init() {
 				for (const form of this.#forms) {
 					if (form.hasAttribute("data-auth")) continue;
 
@@ -302,15 +302,15 @@ export class Passkey {
 							) {
 								throw e;
 							}
+						} finally {
+							Client.#loading = false;
 						}
-
-						Client.#loading = false;
 					});
 				}
 			}
 		}
 
-		new Client().addEventListeners();
+		new Client().init();
 	};
 
 	/** Regex to find characters that can break inline script parsing. */
@@ -875,18 +875,25 @@ export class Passkey {
 			["verify"],
 		);
 
-		const verify = (signature: Uint8Array<ArrayBuffer>) =>
-			crypto.subtle.verify(
-				{ name: "ECDSA", hash: "SHA-256" },
-				key,
-				signature,
-				signedData,
-			);
+		const verify = async (signature: Uint8Array<ArrayBuffer>) => {
+			try {
+				return await crypto.subtle.verify(
+					{ name: "ECDSA", hash: "SHA-256" },
+					key,
+					signature,
+					signedData,
+				);
+			} catch {}
+		};
 
 		const sig = Codec.Base64Url.decode(result.data.response.signature);
 
-		if (!((await verify(sig)) || (await verify(DER.unwrap(sig))))) {
-			throw new AuthIssue("signature");
+		if (!(await verify(sig))) {
+			try {
+				if (!(await verify(DER.unwrap(sig)))) throw new AuthIssue("signature");
+			} catch {
+				throw new AuthIssue("signature");
+			}
 		}
 
 		return stored;
