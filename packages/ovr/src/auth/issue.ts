@@ -5,8 +5,6 @@
  */
 export class AuthIssue extends Error {
 	/**
-	 * Build a normalized auth issue message.
-	 *
 	 * @param expected Expected auth value/state
 	 * @returns Normalized issue message
 	 */
