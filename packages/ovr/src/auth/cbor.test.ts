@@ -90,7 +90,7 @@ describe("CBOR", () => {
 		);
 
 		expect(() => new CBOR(encoded).decodeCOSEKey()).toThrow(
-			"COSE key must have integer labels",
+			"Invalid COSE labels",
 		);
 	});
 
@@ -98,7 +98,7 @@ describe("CBOR", () => {
 		const encoded = Uint8Array.of(0xa1, 0x01, 0xa0);
 
 		expect(() => new CBOR(encoded).decodeCOSEKey()).toThrow(
-			"COSE key value must be number or bytes",
+			"Invalid COSE value",
 		);
 	});
 
@@ -106,7 +106,7 @@ describe("CBOR", () => {
 		const encoded = Uint8Array.of(0xa1, 0x01, 0x58, 0x02, 0x01);
 
 		expect(() => new CBOR(encoded).decodeCOSEKey()).toThrow(
-			"CBOR stream ended unexpectedly",
+			"Invalid CBOR stream",
 		);
 	});
 });
@@ -142,7 +142,7 @@ describe("COSE", () => {
 					[-3, new Uint8Array(32)],
 				]),
 			),
-		).toThrow("Only EC2 keys supported");
+		).toThrow("Invalid COSE type");
 	});
 
 	test("toSPKI rejects unsupported curve", () => {
@@ -155,7 +155,7 @@ describe("COSE", () => {
 					[-3, new Uint8Array(32)],
 				]),
 			),
-		).toThrow("Only P-256 supported");
+		).toThrow("Invalid COSE curve");
 	});
 
 	test("toSPKI rejects missing coordinate bytes", () => {
@@ -168,6 +168,6 @@ describe("COSE", () => {
 					[-3, new Uint8Array(32)],
 				]),
 			),
-		).toThrow("Invalid COSE key coordinates");
+		).toThrow("Invalid COSE coordinates");
 	});
 });

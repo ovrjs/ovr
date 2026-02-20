@@ -1,14 +1,5 @@
 /** DER (Distinguished Encoding Rules) format utilities for signatures */
 export class DER {
-	/** DER SEQUENCE tag */
-	static readonly #sequenceTag = 0x30;
-
-	/** Flag bit indicating long form length encoding */
-	static readonly #longFormLengthFlag = 0x80;
-
-	/** Mask for extracting length bytes count in long form */
-	static readonly #longFormLengthMask = 0x7f;
-
 	/** P-256 coordinate length in bytes */
 	static readonly #coordinateLength = 32;
 
@@ -24,12 +15,13 @@ export class DER {
 	static unwrap(der: Uint8Array<ArrayBuffer>) {
 		const view = new DataView(der.buffer, der.byteOffset, der.byteLength);
 
-		if (view.getUint8(0) !== DER.#sequenceTag) return der;
+		if (view.getUint8(0) !== 0x30) return der; // DER SEQUENCE tag
 
 		let offset = 2;
 
-		if (view.getUint8(1) & DER.#longFormLengthFlag) {
-			offset += view.getUint8(1) & DER.#longFormLengthMask;
+		if (view.getUint8(1) & 0x80) {
+			// long-form length flag
+			offset += view.getUint8(1) & 0x7f; // number of following length bytes
 		}
 
 		const rLen = view.getUint8(offset + 1);

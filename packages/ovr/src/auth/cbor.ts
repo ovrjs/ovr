@@ -1,51 +1,13 @@
 import { Codec } from "../util/index.js";
+import { AuthIssue } from "./issue.js";
 
 /** COSE (CBOR Object Signing and Encryption) key format utilities */
 export class COSE {
-	/** COSE key type label */
-	static readonly #kty = 1;
-
-	/** COSE key curve label */
-	static readonly #crv = -1;
-
-	/** COSE key X coordinate label */
-	static readonly #x = -2;
-
-	/** COSE key Y coordinate label */
-	static readonly #y = -3;
-
-	/** EC2 key type value */
-	static readonly #ktyEc2 = 2;
-
-	/** P-256 curve value */
-	static readonly #crvP256 = 1;
-
 	/** DER SPKI algorithm identifier for P-256 ECDSA */
 	static readonly #algorithmId = new Uint8Array([
 		0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06,
 		0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
 	]);
-
-	/** Uncompressed point prefix byte for elliptic curves */
-	static readonly #uncompressedPointPrefix = 0x04;
-
-	/** Uncompressed point length for P-256 (1 + 32 + 32 bytes) */
-	static readonly #uncompressedPointLength = 65;
-
-	/** Offset of X coordinate in uncompressed point */
-	static readonly #xCoordinateOffset = 1;
-
-	/** Offset of Y coordinate in uncompressed point */
-	static readonly #yCoordinateOffset = 33;
-
-	/** DER BIT STRING tag */
-	static readonly #bitStringTag = 0x03;
-
-	/** DER SEQUENCE tag */
-	static readonly #sequenceTag = 0x30;
-
-	/** BIT STRING padding byte value */
-	static readonly #bitStringPadding = 0x00;
 
 	/**
 	 * Convert COSE public key to SPKI format.
@@ -55,37 +17,37 @@ export class COSE {
 	 *
 	 * @param cose - COSE key map with type, curve, and coordinates
 	 * @returns SPKI encoded public key as bytes
-	 * @throws Error if key type or curve not supported
+	 * @throws Auth.Issue if key type, curve, or coordinates are invalid
 	 */
 	static toSPKI(cose: Map<number, number | Uint8Array>) {
-		const kty = cose.get(COSE.#kty);
-		if (kty !== COSE.#ktyEc2) throw new Error("Only EC2 keys supported");
+		const kty = cose.get(1); // COSE label 1 = kty
+		if (kty !== 2) throw new AuthIssue("COSE type");
 
-		const crv = cose.get(COSE.#crv);
-		if (crv !== COSE.#crvP256) throw new Error("Only P-256 supported");
+		const crv = cose.get(-1); // COSE label -1 = crv
+		if (crv !== 1) throw new AuthIssue("COSE curve");
 
-		const x = cose.get(COSE.#x);
-		const y = cose.get(COSE.#y);
+		const x = cose.get(-2); // COSE label -2 = x coordinate
+		const y = cose.get(-3); // COSE label -3 = y coordinate
 
 		if (!(x instanceof Uint8Array) || !(y instanceof Uint8Array)) {
-			throw new Error("Invalid COSE key coordinates");
+			throw new AuthIssue("COSE coordinates");
 		}
 
-		const uncompressed = new Uint8Array(COSE.#uncompressedPointLength);
-		uncompressed[0] = COSE.#uncompressedPointPrefix;
-		uncompressed.set(x, COSE.#xCoordinateOffset);
-		uncompressed.set(y, COSE.#yCoordinateOffset);
+		const uncompressed = new Uint8Array(65); // 0x04 || X(32) || Y(32)
+		uncompressed[0] = 0x04; // uncompressed EC point prefix
+		uncompressed.set(x, 1); // X coordinate offset
+		uncompressed.set(y, 33); // Y coordinate offset
 
 		const bitString = new Uint8Array(3 + uncompressed.length);
-		bitString[0] = COSE.#bitStringTag;
+		bitString[0] = 0x03; // DER BIT STRING tag
 		bitString[1] = uncompressed.length + 1;
-		bitString[2] = COSE.#bitStringPadding;
+		bitString[2] = 0x00; // BIT STRING unused-bits count
 		bitString.set(uncompressed, 3);
 
 		const spki = new Uint8Array(
 			2 + COSE.#algorithmId.length + bitString.length,
 		);
-		spki[0] = COSE.#sequenceTag;
+		spki[0] = 0x30; // DER SEQUENCE tag
 		spki[1] = COSE.#algorithmId.length + bitString.length;
 		spki.set(COSE.#algorithmId, 2);
 		spki.set(bitString, 2 + COSE.#algorithmId.length);
@@ -123,7 +85,7 @@ export class CBOR {
 	 * Only supports fmt === "none", other formats may throw earlier depending on CBOR contents
 	 *
 	 * @returns Authenticator data bytes
-	 * @throws TypeError if CBOR structure is invalid
+	 * @throws Auth.Issue if CBOR structure is invalid
 	 */
 	decodeAttestation() {
 		const value = this.#parseNext();
@@ -136,31 +98,31 @@ export class CBOR {
 			}
 		}
 
-		throw new TypeError("Invalid credential");
+		throw new AuthIssue("credential");
 	}
 
 	/**
 	 * Decode COSE key from CBOR format.
 	 *
 	 * @returns COSE key map with numeric labels
-	 * @throws TypeError if CBOR structure is invalid
+	 * @throws Auth.Issue if CBOR structure is invalid
 	 */
 	decodeCOSEKey() {
 		const value = this.#parseNext();
 
 		if (!(value instanceof Map)) {
-			throw new TypeError("Expected CBOR map");
+			throw new AuthIssue("CBOR map");
 		}
 
 		const result = new Map<number, number | Uint8Array>();
 
 		for (const [k, v] of value) {
 			if (typeof k !== "number") {
-				throw new TypeError("COSE key must have integer labels");
+				throw new AuthIssue("COSE labels");
 			}
 
 			if (typeof v !== "number" && !(v instanceof Uint8Array)) {
-				throw new TypeError("COSE key value must be number or bytes");
+				throw new AuthIssue("COSE value");
 			}
 
 			result.set(k, v);
@@ -179,7 +141,7 @@ export class CBOR {
 		const end = this.#offset + n;
 
 		if (end > this.#data.length) {
-			throw new Error("CBOR stream ended unexpectedly");
+			throw new AuthIssue("CBOR stream");
 		}
 
 		return this.#data.subarray(this.#offset, (this.#offset = end));
@@ -190,11 +152,11 @@ export class CBOR {
 	 *
 	 * @param bytes - Number of bytes to read (1, 2, or 4)
 	 * @returns Decoded unsigned integer
-	 * @throws Error if stream ended unexpectedly
+	 * @throws Auth.Issue if stream or integer size is invalid
 	 */
 	#readUint(bytes: number) {
 		if (this.#offset + bytes > this.#data.length) {
-			throw new Error("CBOR stream ended unexpectedly");
+			throw new AuthIssue("CBOR stream");
 		}
 
 		const view = new DataView(
@@ -213,7 +175,7 @@ export class CBOR {
 			case 4:
 				return view.getUint32(0, false);
 			default:
-				throw new Error("CBOR: unsupported integer size");
+				throw new AuthIssue("CBOR int");
 		}
 	}
 
@@ -221,11 +183,11 @@ export class CBOR {
 	 * Parse next CBOR value from stream.
 	 *
 	 * @returns Decoded value (primitives, Uint8Array, or Map)
-	 * @throws Error if stream is malformed
+	 * @throws Auth.Issue if stream is malformed
 	 */
 	#parseNext(): CBOR.Value {
 		if (this.#offset >= this.#data.length) {
-			throw new Error("CBOR stream ended unexpectedly");
+			throw new AuthIssue("CBOR stream");
 		}
 
 		const initial = this.#data[this.#offset++]!;
@@ -242,7 +204,7 @@ export class CBOR {
 		} else if (minor === 26) {
 			length = this.#readUint(4);
 		} else {
-			throw new Error("CBOR: unsupported length");
+			throw new AuthIssue("CBOR length");
 		}
 
 		if (major === 0) return length;
@@ -256,7 +218,7 @@ export class CBOR {
 				const k = this.#parseNext();
 
 				if (typeof k !== "number" && typeof k !== "string") {
-					throw new TypeError("CBOR map key must be number or string");
+					throw new AuthIssue("CBOR key");
 				}
 
 				map.set(k, this.#parseNext());
@@ -265,6 +227,6 @@ export class CBOR {
 			return map;
 		}
 
-		throw new TypeError(`CBOR: unsupported major type ${major}`);
+		throw new AuthIssue(`CBOR type ${major}`);
 	}
 }
