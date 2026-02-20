@@ -58,6 +58,34 @@ describe("auth sessions", () => {
 		expect(await res.json()).toBeNull();
 		expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
 	});
+
+	test("session rethrows unexpected runtime errors", async () => {
+		const app = new App({
+			auth: { secret: "secret" },
+			trailingSlash: "ignore",
+		});
+		const error = new Error("Unexpected runtime error");
+
+		app.use(
+			Route.get("/", async (c) => {
+				Object.assign(c.auth, {
+					verify: async (_token: string) => {
+						throw error;
+					},
+				});
+
+				await c.auth.session();
+			}),
+		);
+
+		await expect(
+			app.fetch(
+				new Request("https://example.com/", {
+					headers: { cookie: "__Host-auth-session=bad" },
+				}),
+			),
+		).rejects.toThrow("Unexpected runtime error");
+	});
 });
 
 describe("passkey script", () => {
@@ -297,7 +325,7 @@ describe("passkey parsing", () => {
 					headers: { origin: "https://example.com" },
 				}),
 			),
-		).rejects.toThrow("Origin mismatch");
+		).rejects.toThrow("Invalid origin");
 	});
 
 	test("action mismatch is rejected", async () => {
@@ -359,7 +387,7 @@ describe("passkey parsing", () => {
 					headers: { origin: "https://example.com" },
 				}),
 			),
-		).rejects.toThrow("Action mismatch");
+		).rejects.toThrow("Invalid action");
 	});
 
 	test("expired challenge is rejected for verify", async () => {
@@ -426,7 +454,7 @@ describe("passkey parsing", () => {
 					headers: { origin: "https://example.com" },
 				}),
 			),
-		).rejects.toThrow("Challenge expired");
+		).rejects.toThrow("Invalid challenge (expired)");
 	});
 
 	test("expired challenge is rejected for assert", async () => {
@@ -496,7 +524,7 @@ describe("passkey parsing", () => {
 					headers: { origin: "https://example.com" },
 				}),
 			),
-		).rejects.toThrow("Challenge expired");
+		).rejects.toThrow("Invalid challenge (expired)");
 	});
 
 	test("options route is auto-registered", async () => {

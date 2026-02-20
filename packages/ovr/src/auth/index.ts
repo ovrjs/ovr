@@ -1,6 +1,7 @@
 import type { Context } from "../context/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
+import { AuthIssue } from "./issue.js";
 import { Passkey } from "./passkey.js";
 
 export namespace Auth {
@@ -111,10 +112,12 @@ export class Auth {
 	}
 
 	/**
-	 * @param payload
-	 * @returns HMAC signed `payload.signature` with auth secret
+	 * Sign a payload with the auth secret.
 	 *
 	 * Signing is integrity-only and does not add encryption, expiry, or one-time semantics.
+	 *
+	 * @param payload Unsigned payload
+	 * @returns HMAC signed `payload.signature` token
 	 */
 	async sign(payload: string) {
 		return `${payload}.${Codec.Base64Url.encode(
@@ -129,10 +132,13 @@ export class Auth {
 	}
 
 	/**
-	 * @param token signed token
-	 * @returns valid payload
+	 * Verify a signed token.
 	 *
 	 * Verification checks integrity only. Replay/freshness constraints are caller-defined.
+	 *
+	 * @param token Signed token
+	 * @returns Verified payload
+	 * @throws Auth.Issue if the token is invalid
 	 */
 	async verify(token: string) {
 		const dot = token.lastIndexOf(".");
@@ -140,19 +146,23 @@ export class Auth {
 		if (dot !== -1) {
 			const payload = token.slice(0, dot);
 
-			if (
-				await crypto.subtle.verify(
-					Auth.#hmac,
-					await this.#key,
-					Codec.Base64Url.decode(token.slice(dot + 1)), // signature
-					Codec.encode(payload),
-				)
-			) {
-				return payload;
+			try {
+				if (
+					await crypto.subtle.verify(
+						Auth.#hmac,
+						await this.#key,
+						Codec.Base64Url.decode(token.slice(dot + 1)), // signature
+						Codec.encode(payload),
+					)
+				) {
+					return payload;
+				}
+			} catch {
+				// invalid signature encoding
 			}
 		}
 
-		throw new Error("Invalid token");
+		throw new AuthIssue("token");
 	}
 
 	/**
@@ -182,7 +192,7 @@ export class Auth {
 	/**
 	 * Reads the current auth session from the cookie
 	 *
-	 * @returns current or null
+	 * @returns Current session or `null`, invalid session token/payload clears the cookie and returns `null`
 	 */
 	async session() {
 		const token = this.#c.cookie.get(Auth.#cookieName);
@@ -190,13 +200,19 @@ export class Auth {
 
 		try {
 			const payload = await this.verify(token);
-			const now = Date.now();
+			let decoded: string;
 
-			const session = Schema.json(Auth.#session).parse(
-				Codec.decode(Codec.Base64Url.decode(payload)),
-			);
+			try {
+				decoded = Codec.decode(Codec.Base64Url.decode(payload));
+			} catch {
+				throw new AuthIssue("session payload");
+			}
+
+			const session = Schema.json(Auth.#session).parse(decoded);
 
 			if (session.issues) throw session;
+
+			const now = Date.now();
 
 			if (now < session.data.expiration) {
 				// has not expired
@@ -209,16 +225,20 @@ export class Auth {
 					: // return as is
 						session.data;
 			}
-		} catch {
-			// invalid payload
+		} catch (e) {
+			if (!(e instanceof AuthIssue || e instanceof Schema.AggregateIssue)) {
+				throw e;
+			}
 		}
 
 		return this.logout();
 	}
 
 	/**
-	 * @param id user ID to login
-	 * @returns new session
+	 * Log a user in by issuing a new session cookie.
+	 *
+	 * @param id User ID to login
+	 * @returns New session
 	 */
 	login(id: string) {
 		return this.#setCookie({

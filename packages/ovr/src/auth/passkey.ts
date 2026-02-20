@@ -8,6 +8,7 @@ import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
 import { DER } from "./der.js";
 import type { Auth } from "./index.js";
+import { AuthIssue } from "./issue.js";
 
 export namespace Passkey {
 	/**
@@ -501,7 +502,7 @@ export class Passkey {
 			Schema.object({
 				type: Schema.literal(`webauthn.${ceremony}`),
 				challenge: Schema.string(),
-				origin: Schema.literal(origin, "Origin mismatch"),
+				origin: Schema.literal(origin, AuthIssue.message("origin")),
 			}),
 		);
 
@@ -538,8 +539,11 @@ export class Passkey {
 			(ceremony === "create"
 				? Passkey.createChallenge
 				: Passkey.getChallenge
-			).extend({ action: Schema.literal(action, "Action mismatch") }),
-		).refine((c) => Date.now() <= c.exp, "Challenge expired");
+			).extend({ action: Schema.literal(action, AuthIssue.message("action")) }),
+		).refine(
+			(c) => Date.now() <= c.exp,
+			AuthIssue.message("challenge (expired)"),
+		);
 	};
 
 	/** Schema for signed registration bootstrap payloads. */
@@ -692,7 +696,7 @@ export class Passkey {
 	 * Parse and validate passkey fields from the current form request.
 	 *
 	 * @returns Parsed form payload
-	 * @throws TypeError when required fields are missing or invalid
+	 * @throws Schema.AggregateIssue when required fields are missing or invalid
 	 */
 	async #parseForm() {
 		const data = await this.#c.form().data();
@@ -717,6 +721,8 @@ export class Passkey {
 	 * @param credential Parsed credential payload
 	 * @param signed Signed challenge payload string
 	 * @returns Parsed signed challenge payload for the ceremony
+	 * @throws Schema.AggregateIssue for invalid credential or challenge input shape
+	 * @throws Auth.Issue for invalid auth challenge state
 	 */
 	async #verifyCredentialBase<
 		C extends "create" | "get",
@@ -748,7 +754,7 @@ export class Passkey {
 				Codec.Base64Url.decode(options.data.challenge),
 			)
 		) {
-			throw new Error("Challenge mismatch");
+			throw new AuthIssue("challenge");
 		}
 
 		return options.data as O;
@@ -758,7 +764,7 @@ export class Passkey {
 	 * Verify RP binding and required user flags in authenticator data.
 	 *
 	 * @param authData Parsed authenticator data structure
-	 * @throws Error when RP ID hash mismatches or required flags are absent
+	 * @throws Auth.Issue when RP ID hash mismatches or required flags are absent
 	 */
 	async #verifyAuthData(authData: AuthData.Data) {
 		if (
@@ -767,22 +773,22 @@ export class Passkey {
 				await Passkey.#sha256(Codec.encode(this.#rpId)),
 			)
 		) {
-			throw new Error("RP ID mismatch");
+			throw new AuthIssue("RP ID");
 		}
 
 		if (!(authData.flags & 0x01) || !(authData.flags & 0x04)) {
-			throw new Error("Unknown user");
+			throw new AuthIssue("user");
 		}
 	}
 
 	/**
-	 * Verify a registration response and return the credential to persist.
+	 * Verify a registration response.
 	 *
 	 * Persist the returned credential and associate it with the user account.
 	 *
-	 * @returns Verified credential
-	 * @throws TypeError if credential is not a valid credential
-	 * @throws Error if challenge expired, challenge/origin mismatch, RP ID mismatch, user not present, or credential data missing
+	 * @returns Verified credential to persist
+	 * @throws Schema.AggregateIssue if form fields, credential payload, or signed challenge payload are invalid
+	 * @throws Auth.Issue if challenge, RP/user flags, or attested credential state is invalid
 	 */
 	async verify(): Promise<Auth.Credential> {
 		const { credential, signed } = await this.#parseForm();
@@ -806,7 +812,7 @@ export class Passkey {
 		await this.#verifyAuthData(authData);
 
 		if (!authData.attestedCredentialData) {
-			throw new Error("Missing credential data");
+			throw new AuthIssue("credential data");
 		}
 
 		return {
@@ -819,15 +825,15 @@ export class Passkey {
 	}
 
 	/**
-	 * Verify a login assertion and return the matched stored credential.
+	 * Verify a login assertion.
 	 *
 	 * - Signature counters are not validated.
 	 * - Challenge usage is stateless and replay-protected only by challenge expiry.
 	 *
 	 * @param find Lookup function that returns the stored credential by credential ID
 	 * @returns Stored credential when assertion verification succeeds
-	 * @throws TypeError if credential is not a valid credential
-	 * @throws Error if challenge expired, challenge/origin mismatch, RP ID mismatch, user not present, or signature invalid
+	 * @throws Schema.AggregateIssue if form fields, credential payload, or signed challenge payload are invalid
+	 * @throws Auth.Issue if challenge, credential lookup/state, RP/user flags, or signature state is invalid
 	 */
 	async assert(
 		find: (
@@ -848,7 +854,7 @@ export class Passkey {
 
 		const stored = await find(result.data.id);
 
-		if (!stored) throw new Error("Credential not found");
+		if (!stored) throw new AuthIssue("credential");
 
 		if (
 			!Passkey.#safeEqual(
@@ -856,7 +862,7 @@ export class Passkey {
 				Codec.Base64Url.decode(stored.id),
 			)
 		) {
-			throw new Error("Credential ID mismatch");
+			throw new AuthIssue("credential ID");
 		}
 
 		const authDataBytes = Codec.Base64Url.decode(
@@ -893,9 +899,9 @@ export class Passkey {
 
 		const sig = Codec.Base64Url.decode(result.data.response.signature);
 
-		let ok = await verify(sig);
-		if (!ok) ok = await verify(DER.unwrap(sig));
-		if (!ok) throw new Error("Invalid signature");
+		if (!((await verify(sig)) || (await verify(DER.unwrap(sig))))) {
+			throw new AuthIssue("signature");
+		}
 
 		return stored;
 	}
