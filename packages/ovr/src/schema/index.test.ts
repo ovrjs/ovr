@@ -349,9 +349,44 @@ describe("Form schema", () => {
 		});
 	});
 
+	test("parses mixed field types from URLSearchParams", () => {
+		const form = Schema.form({
+			name: Schema.Field.text(),
+			age: Schema.Field.number(),
+			active: Schema.Field.checkbox(),
+			roles: Schema.Field.checkboxes(["reader", "admin"]),
+			level: Schema.Field.radio(["junior", "senior"]),
+			tags: Schema.Field.multiselect(["a", "b", "c"]),
+		});
+		const params = new URLSearchParams();
+
+		params.set("name", "ross");
+		params.set("age", "31");
+		params.set("active", "on");
+		params.append("roles", "reader");
+		params.append("roles", "admin");
+		params.set("level", "senior");
+		params.append("tags", "a");
+		params.append("tags", "c");
+
+		expect(valid(form.parse(params))).toEqual({
+			name: "ross",
+			age: 31,
+			active: true,
+			roles: ["reader", "admin"],
+			level: "senior",
+			tags: ["a", "c"],
+		});
+	});
+
 	test("checkbox is false when omitted", () => {
 		const form = Schema.form({ active: Schema.Field.checkbox() });
 		expect(valid(form.parse(new FormData()))).toEqual({ active: false });
+	});
+
+	test("checkbox is false when omitted in URLSearchParams", () => {
+		const form = Schema.form({ active: Schema.Field.checkbox() });
+		expect(valid(form.parse(new URLSearchParams()))).toEqual({ active: false });
 	});
 
 	test("invalid parse includes encoded _form state without password/file values", () => {
@@ -383,6 +418,35 @@ describe("Form schema", () => {
 		expect(state.values?.role).toBe("owner");
 		expect(state.values?.password).toBeUndefined();
 		expect(state.values?.avatar).toBeUndefined();
+		expect(state.id).toBeTruthy();
+		expect(state.issues?.length).toBeGreaterThan(0);
+	});
+
+	test("invalid URLSearchParams parse includes encoded _form state", () => {
+		const form = Schema.form({
+			name: Schema.Field.text(),
+			role: Schema.Field.radio(["reader", "admin"]),
+			password: Schema.Field.password(),
+		});
+		const params = new URLSearchParams();
+
+		params.set("name", "ross");
+		params.set("role", "owner");
+		params.set("password", "secret");
+
+		const result = form.parse(params);
+		if (!result.issues) throw new Error("Expected issues");
+		if (!result.search) throw new Error("Expected _form search state");
+
+		expect(result.search[0]).toBe("_form");
+
+		const state = JSON.parse(
+			Codec.decode(Codec.Base64Url.decode(result.search[1])),
+		) as Schema.Form.State;
+
+		expect(state.values?.name).toBe("ross");
+		expect(state.values?.role).toBe("owner");
+		expect(state.values?.password).toBeUndefined();
 		expect(state.id).toBeTruthy();
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});

@@ -309,6 +309,7 @@ export class Route<Pattern extends string = string> {
 					if (referer) {
 						try {
 							const refererUrl = new URL(referer, url);
+
 							if (refererUrl.origin === c.url.origin) url = refererUrl;
 						} catch {
 							// invalid referer

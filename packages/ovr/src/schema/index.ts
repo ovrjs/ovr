@@ -267,7 +267,8 @@ class Shape {
 }
 
 /**
- * Minimal schema validator geared around parsing multipart `FormData`.
+ * Minimal schema validator geared around parsing form data like
+ * multipart `FormData` and `URLSearchParams`.
  *
  * Implements Standard Schema v1 via the `~standard` property (sync validate).
  *
@@ -918,7 +919,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	/**
 	 * Form schema with JSX rendering capabilities.
 	 *
-	 * Parses `FormData` and generates form field components.
+	 * Parses `FormData` or `URLSearchParams` and generates form field
+	 * components.
 	 *
 	 * @template S Form field shape type
 	 * @param fields Form fields
@@ -1520,14 +1522,14 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	}
 
 	/**
-	 * Parse and validate FormData.
+	 * Parse and validate form data.
 	 *
-	 * @param formData FormData to parse
+	 * @param formData FormData or URLSearchParams to parse
 	 * @param path Internal path reference
 	 * @returns Parsed result
 	 */
 	parse = (
-		formData: FormData,
+		formData: FormData | URLSearchParams,
 		path: Schema.Issue.Path = [],
 	): Schema.Form.Parse.Result<Shape> => {
 		const data: Record<string, unknown> = {};
@@ -1667,11 +1669,14 @@ export namespace Field {
 	}
 
 	/**
-	 * @param data Form data
+	 * @param data FormData or URLSearchParams
 	 * @param name HTML name attribute
 	 * @returns Resolved value read from the form data
 	 */
-	export type Read = (data: FormData, name: string) => unknown;
+	export type Read = (
+		data: FormData | URLSearchParams,
+		name: string,
+	) => unknown;
 
 	/** Form field tag name */
 	export type Tag = "input" | "textarea" | "select";
@@ -1968,9 +1973,9 @@ export class Field<
 	/**
 	 * Create a new field.
 	 *
-	 * @param options Field  options
+	 * @param options Field options
 	 * @param parse How to validate the input
-	 * @param read How to read the data from `FormData`
+	 * @param read How to read the form data
 	 */
 	constructor(
 		options: Field.Options<Values, Tag>,
@@ -1985,7 +1990,7 @@ export class Field<
 
 		this.read =
 			read ??
-			// default to FormData.get
+			// default to .get()
 			((data, name) => {
 				const v = data.get(name);
 				return v == null ? undefined : v;
