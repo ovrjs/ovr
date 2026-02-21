@@ -88,15 +88,18 @@ export const todo = Route.get("/demo/todo", (c) => {
 	);
 });
 
-const TodoSchema = Schema.object({
-	done: Schema.boolean().optional(),
-	id: Schema.Coerce.number(),
-	text: Schema.Coerce.string(),
-});
+const todoFields = {
+	done: Schema.Field.checkbox(),
+	id: Schema.Field.number(),
+	text: Schema.Field.text(),
+};
+
+const todoForm = Schema.form(todoFields);
+const todoSchema = Schema.object(todoFields);
 
 const redirect = (
 	c: Middleware.Context,
-	todos: Schema.Infer<typeof TodoSchema>[],
+	todos: Schema.Infer<typeof todoSchema>[],
 ) => {
 	const location = new URL(todo.pathname(), c.url);
 	location.searchParams.set("todos", JSON.stringify(todos));
@@ -107,7 +110,7 @@ const getTodos = (c: Middleware.Context) => {
 	const todos = c.url.searchParams.get("todos");
 	if (!todos) return [{ done: false, id: 0, text: "Build a todo app" }];
 
-	const result = Schema.array(TodoSchema).parse(JSON.parse(todos));
+	const result = Schema.array(todoSchema).parse(JSON.parse(todos));
 
 	if (result.issues) throw result;
 
@@ -115,11 +118,7 @@ const getTodos = (c: Middleware.Context) => {
 };
 
 const data = async (c: Middleware.Context) => {
-	const data = await c.form().data();
-	const result = TodoSchema.parse({
-		id: data.get("id"),
-		text: data.get("text"),
-	});
+	const result = todoForm.parse(await c.form().data());
 
 	if (result.issues) throw result;
 
