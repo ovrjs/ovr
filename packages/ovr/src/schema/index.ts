@@ -332,14 +332,21 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		/** Non-empty tuple of issues */
 		readonly issues: Schema.Issue.List;
 
+		/** User submitted / sanitized values */
+		readonly values?: Schema.Form.Value.Map;
+
 		/**
 		 * Create a new AggregateIssue.
 		 *
 		 * Coerces issues into a non-empty tuple.
 		 *
 		 * @param issues Issues
+		 * @param values Received values
 		 */
-		constructor([first, ...rest]: Schema.Issue[]) {
+		constructor(
+			[first, ...rest]: Schema.Issue[],
+			values?: Schema.Form.Value.Map,
+		) {
 			if (!first) throw new TypeError("AggregateIssue must have an issue.");
 
 			const issues: Schema.Issue.List = [first, ...rest];
@@ -350,6 +357,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 
 			this.name = name;
 			this.issues = issues;
+			this.values = values;
 		}
 
 		override toString() {
@@ -1490,14 +1498,6 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		if (stateInput) {
 			let state: Schema.Form.State<Shape> | undefined;
 
-			// const stateSchema = Schema.json(
-			// 	Schema.object({
-			// 		id: Schema.literal(this.#id),
-			// 		issues: Schema.array(Schema.object()),
-			// 		values: Schema.object({})
-			// 	}),
-			// );
-
 			if (typeof stateInput === "object" && "id" in stateInput) {
 				state = stateInput;
 			} else {
@@ -1509,6 +1509,15 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 							: stateInput.get(FormSchema.#param);
 
 				if (encoded && encoded.length <= FormSchema.#maxStateBytes * 2) {
+					// TODO - record schema
+					// const stateSchema = Schema.json(
+					// 	Schema.object({
+					// 		id: Schema.literal(this.#id),
+					// 		issues: Schema.array(Schema.object()),
+					// 		values: Schema.object(),
+					// 	}),
+					// );
+
 					try {
 						state = JSON.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
 					} catch {}
@@ -1550,23 +1559,22 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		}
 
 		if (issues.length) {
-			const result = new Schema.AggregateIssue(issues);
-			const sanitized = this.#sanitize(values);
+			const result = new Schema.AggregateIssue(issues, this.#sanitize(values));
 			let search: Schema.Form.Parse.Result.Search;
 
-			if (sanitized) {
+			if (result.values) {
 				// encode into search
 				const len = this.#names.length;
 
 				for (let i = len; i >= 0; i--) {
 					// skip on the first time - try to encode everything first
-					if (i !== len) delete sanitized[this.#names[i]!];
+					if (i !== len) delete result.values[this.#names[i]!];
 
 					const state = Codec.encode(
 						JSON.stringify({
 							issues: result.issues,
+							values: result.values,
 							id: this.#id,
-							values: sanitized,
 						} satisfies Schema.Form.State),
 					);
 

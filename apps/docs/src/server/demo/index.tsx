@@ -6,4 +6,4 @@ export * from "@/server/demo/todo";
 export * from "@/server/demo/seo";
 export * from "@/server/demo/sse";
 export * from "@/server/demo/auth";
-export * from "@/server/demo/schema";
+export * as schema from "@/server/demo/schema";

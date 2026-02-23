@@ -3,56 +3,47 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Render, Route, Schema } from "ovr";
 
-// const User = Schema.form({
-// 	id: Schema.Field.text(),
-// 	name: Schema.Field.text(),
-// }).extend({ hello: Schema.Field.text() });
+const student = Schema.form({
+	name: Schema.Field.text({ placeholder: "Harry Potter" }).refine(
+		(v) => v.trim().length >= 2,
+		"Expected at least 2 characters",
+	),
+	email: Schema.Field.email({ placeholder: "name@hogwarts.edu" }).refine(
+		(v) => v.endsWith("@hogwarts.edu"),
+		"Expected a @hogwarts.edu email",
+	),
+	house: Schema.Field.select([
+		"Gryffindor",
+		"Hufflepuff",
+		"Ravenclaw",
+		"Slytherin",
+	]),
+	wand: Schema.Field.radio([
+		"Phoenix feather",
+		"Dragon heartstring",
+		"Unicorn hair",
+	]),
+	year: Schema.Field.number({ min: 1, max: 7 }).refine(
+		(v) => v >= 1 && v <= 7,
+		"Expected a year between 1 and 7",
+	),
+	pet: Schema.Field.checkboxes(["Owl", "Cat", "Toad"]),
+	arrival: Schema.Field.date().transform((d) => d || "2026-09-01"),
+	rules: Schema.Field.checkbox().refine(
+		(v) => v,
+		"You must accept the castle rules",
+	),
+});
 
-// const result = User.parse(new FormData());
+export const register = Route.post(student, async (c) => {
+	const result = await c.data();
 
-export const create = Route.post(
-	{
-		name: Schema.Field.text({ placeholder: "Harry Potter" })
-			.refine((v) => v.trim().length >= 2, "Expected at least 2 characters")
-			.refine((v) => v.trim().length <= 40, "Expected at most 40 characters"),
-		email: Schema.Field.email({ placeholder: "name@hogwarts.edu" }).refine(
-			(v) => v.endsWith("@hogwarts.edu"),
-			"Expected a @hogwarts.edu email",
-		),
-		house: Schema.Field.select([
-			"Gryffindor",
-			"Hufflepuff",
-			"Ravenclaw",
-			"Slytherin",
-		]),
-		wand: Schema.Field.radio([
-			"Phoenix feather",
-			"Dragon heartstring",
-			"Unicorn hair",
-		]),
-		year: Schema.Field.number({ min: 1, max: 7 }).refine(
-			(v) => v >= 1 && v <= 7,
-			"Expected a year between 1 and 7",
-		),
-		pet: Schema.Field.checkboxes(["Owl", "Cat", "Toad"]).optional(),
-		arrival: Schema.Field.date(),
-		terms: Schema.Field.checkbox().refine(
-			(v) => v,
-			"You must accept the castle rules",
-		),
-	},
-	async (c) => {
-		const result = await c.data();
+	if (result.issues) return c.redirect(result.url, 303);
 
-		if (result.issues) {
-			return c.redirect(result.url, 303);
-		}
+	// create new student record...
 
-		console.log(result.data);
-
-		return c.redirect(schema, 303);
-	},
-);
+	c.redirect(schema, 303);
+});
 
 export const schema = Route.get("/demo/schema", (c) => {
 	const Layout = createLayout(c);
@@ -63,7 +54,7 @@ export const schema = Route.get("/demo/schema", (c) => {
 
 			{Render.html(schemaContent.html)}
 
-			<create.Form state={c.url} />
+			<register.Form state={c.url} />
 		</Layout>
 	);
 });
