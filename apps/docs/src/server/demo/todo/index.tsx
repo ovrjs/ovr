@@ -1,77 +1,97 @@
 import * as todoContent from "@/server/demo/todo/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { type Middleware, Render, Route, Schema } from "ovr";
+import { Render, Route, Schema } from "ovr";
 
-export const add = Route.post(async (c) => {
-	const todos = getTodos(c);
-	const { text } = await data(c);
-	todos.push({ id: (todos.at(-1)?.id ?? 0) + 1, text, done: false });
-	redirect(c, todos);
+const id = Schema.Field.hidden().pipe(Schema.Coerce.number());
+const text = Schema.Field.text().refine(
+	(s) => s.trim().length > 0,
+	"Expected at least 1 character",
+);
+const list = Schema.Field.hidden()
+	.pipe(
+		Schema.json(
+			Schema.array(Schema.object({ done: Schema.Field.checkbox(), id, text })),
+		),
+	)
+	.default([{ done: false, id: 0, text: "Build a todo app" }]);
+
+export const add = Route.post({ list, text }, async (c) => {
+	const result = await c.data();
+
+	if (result.issues) return c.redirect(result.url, 303);
+
+	const { list, text } = result.data;
+
+	list.push({ done: false, id: (list.at(-1)?.id ?? 0) + 1, text });
+
+	c.redirect(todo.url({ search: { list: JSON.stringify(list) } }), 303);
 });
 
-export const toggle = Route.post(async (c) => {
-	const todos = getTodos(c);
-	const { id } = await data(c);
-	const current = todos.find((t) => t.id === id);
-	if (current) current.done = !current.done;
-	redirect(c, todos);
-});
+export const toggle = Route.post({ list, id }, async (c) => {
+	const result = await c.data();
 
-export const remove = Route.post(async (c) => {
-	const todos = getTodos(c);
-	const { id } = await data(c);
-	redirect(
-		c,
-		todos.filter((t) => t.id !== id),
+	if (result.issues) return c.redirect(result.url, 303);
+
+	const target = result.data.list.find((todo) => todo.id === result.data.id);
+
+	if (target) target.done = !target.done;
+
+	c.redirect(
+		todo.url({ search: { list: JSON.stringify(result.data.list) } }),
+		303,
 	);
 });
 
-export const todo = Route.get("/demo/todo", (c) => {
+export const todo = Route.get("/demo/todo", { list }, async (c) => {
+	const result = await c.data();
+
+	if (result.issues) return c.redirect(result.url, 303);
+
+	const { list } = result.data;
+	const json = JSON.stringify(list);
 	const Layout = createLayout(c);
+
+	const TextField = add.field({ name: "text", state: c.url });
 
 	return (
 		<Layout head={<Meta {...todoContent.frontmatter} />}>
 			<h1>Todo</h1>
 
 			<div class="border-muted mb-12 grid gap-4 rounded-md border p-4 sm:max-w-sm">
-				<add.Form search={c.url.search} class="flex gap-4">
-					<input name="text" placeholder="Add todo" />
+				<add.Form class="flex gap-4">
+					<add.Field name="list" value={json} />
+					<TextField.Root>
+						<TextField.Label class="sr-only" />
+						<TextField.Control placeholder="Add a todo" />
+						<TextField.Issue />
+					</TextField.Root>
+
 					<button>Add</button>
 				</add.Form>
 
 				<ul class="m-0 grid list-none gap-4 p-0">
-					{getTodos(c).map((t) => (
+					{list.map((todo) => (
 						<li class="m-0 p-0">
-							<form class="flex justify-between">
-								<input type="hidden" name="id" value={t.id} />
+							<toggle.Form class="flex items-center gap-4">
+								<toggle.Field name="list" value={json} />
+								<toggle.Field name="id" value={todo.id} />
 
-								<div class="flex items-center gap-4">
-									<toggle.Button
-										search={c.url.search}
-										class="ghost icon"
-										aria-label="toggle todo"
-									>
-										<span
-											class={
-												t.done
-													? "icon-[lucide--check]"
-													: "icon-[lucide--square-dashed]"
-											}
-										/>
-									</toggle.Button>
-
-									<span>{t.text}</span>
-								</div>
-
-								<remove.Button
-									search={c.url.search}
-									class="icon secondary"
-									aria-label="delete todo"
+								<button
+									class="ghost icon border-secondary hover:border"
+									aria-label="toggle todo"
 								>
-									<span class="icon-[lucide--x]" />
-								</remove.Button>
-							</form>
+									<span
+										class={
+											todo.done
+												? "icon-[lucide--check]"
+												: "icon-[lucide--square-dashed]"
+										}
+									/>
+								</button>
+
+								<span class={todo.done ? "line-through" : ""}>{todo.text}</span>
+							</toggle.Form>
 						</li>
 					))}
 				</ul>
@@ -87,40 +107,3 @@ export const todo = Route.get("/demo/todo", (c) => {
 		</Layout>
 	);
 });
-
-const todoFields = {
-	done: Schema.Field.checkbox(),
-	id: Schema.Field.number(),
-	text: Schema.Field.text(),
-};
-
-const todoForm = Schema.form(todoFields);
-const todoSchema = Schema.object(todoFields);
-
-const redirect = (
-	c: Middleware.Context,
-	todos: Schema.Infer<typeof todoSchema>[],
-) => {
-	const location = new URL(todo.pathname(), c.url);
-	location.searchParams.set("todos", JSON.stringify(todos));
-	c.redirect(location, 303);
-};
-
-const getTodos = (c: Middleware.Context) => {
-	const todos = c.url.searchParams.get("todos");
-	if (!todos) return [{ done: false, id: 0, text: "Build a todo app" }];
-
-	const result = Schema.array(todoSchema).parse(JSON.parse(todos));
-
-	if (result.issues) throw result;
-
-	return result.data;
-};
-
-const data = async (c: Middleware.Context) => {
-	const result = todoForm.parse(await c.form().data());
-
-	if (result.issues) throw result;
-
-	return result.data;
-};

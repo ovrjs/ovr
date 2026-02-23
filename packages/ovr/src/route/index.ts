@@ -5,7 +5,11 @@ import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";
 
-/** Helper type to extract the route params (`:slug`) into a record */
+/**
+ * Helper type to extract the route params (`:slug`) into a record.
+ *
+ * @template Pattern Route pattern to extract params from
+ */
 export type ExtractParams<Pattern extends string = string> =
 	Pattern extends `${infer _Start}:${infer Param}/${infer Rest}`
 		? { [k in Param | keyof ExtractParams<Rest>]: string }
@@ -15,7 +19,12 @@ export type ExtractParams<Pattern extends string = string> =
 				? { "*": string }
 				: {};
 
-/** Helper type to insert a record of params into a resolved string */
+/**
+ * Helper type to insert a record of params into a resolved string.
+ *
+ * @template Pattern Route pattern to resolve
+ * @template Params Params to insert into pattern
+ */
 export type InsertParams<
 	Pattern extends string,
 	Params extends Trie.Params,
@@ -47,16 +56,78 @@ export namespace Route {
 		| "PATCH"
 		| (string & {});
 
+	// these types are needed for proper JSDoc on `get` and `post` return types
+	/**
+	 * Helper type for a route with a `<Button>` component.
+	 *
+	 * @template Pattern Route pattern
+	 */
+	type WithButton<Pattern extends string = string> = {
+		/** `<button>` component with preset `formaction` and `formmethod` attributes */
+		readonly Button: Route.Button<Pattern>;
+	};
+
+	/**
+	 * Helper type for a route with a `<Form>` component.
+	 *
+	 * @template Pattern Route pattern
+	 */
+	type WithForm<Pattern extends string = string> = {
+		/** `<form>` component with preset `method` and `action` attributes */
+		readonly Form: Route.Form<Pattern>;
+	};
+
+	/**
+	 * Helper type for a route with a `<Anchor>` component.
+	 *
+	 * @template Pattern Route pattern
+	 */
+	type WithAnchor<Pattern extends string = string> = {
+		/** `<a>` component with preset `href` attribute */
+		readonly Anchor: Route.Anchor<Pattern>;
+	};
+
+	/**
+	 * Form method subset attached to route helper types.
+	 *
+	 * Omits `field` so schema-specific `field` signatures are not widened when a
+	 * concrete `Schema.Form<S>` is intersected onto the route type.
+	 */
+	type FormMethods = Omit<Schema.Form<any>, "field">;
+
+	/**
+	 * Optional form helper methods available when a route may have a schema.
+	 *
+	 * Function members are wrapped with bivariant parameters so routes can be
+	 * structurally assigned across compatible generic instances.
+	 */
+	type MaybeForm = {
+		// maybe schema assigned - makes route.Fields?.() possible
+		[K in keyof FormMethods]?: FormMethods[K] extends (...args: any[]) => any
+			? Util.Bivariant<FormMethods[K]>
+			: FormMethods[K];
+	};
+
+	/**
+	 * GET route type with route components and optional schema helpers.
+	 *
+	 * @template Pattern Route pattern
+	 */
+	export type Get<Pattern extends string = string> = Route<Pattern> &
+		WithAnchor<Pattern> &
+		WithButton<Pattern> &
+		WithForm<Pattern> &
+		MaybeForm;
+
+	/**
+	 * POST route type with route components and optional schema helpers.
+	 *
+	 * @template Pattern Route pattern
+	 */
 	export type Post<Pattern extends string = string> = Route<Pattern> &
 		WithButton<Pattern> &
-		WithForm<Pattern> & {
-			// maybe schema assigned - makes route.Fields?.() possible
-			[K in keyof Schema.Form<any>]?: Schema.Form<any>[K] extends (
-				...args: any[]
-			) => any
-				? Util.Bivariant<Schema.Form<any>[K]>
-				: Schema.Form<any>[K];
-		};
+		WithForm<Pattern> &
+		MaybeForm;
 
 	/**
 	 * Options to construct a relative URL from the route.
@@ -131,37 +202,6 @@ export namespace Route {
 			: never
 		: never;
 }
-
-// these types are needed for proper JSDoc on `get` and `post` return types
-/**
- * Helper type for a route with a `<Button>` component.
- *
- * @template Pattern Route pattern
- */
-type WithButton<Pattern extends string = string> = {
-	/** `<button>` component with preset `formaction` and `formmethod` attributes */
-	readonly Button: Route.Button<Pattern>;
-};
-
-/**
- * Helper type for a route with a `<Form>` component.
- *
- * @template Pattern Route pattern
- */
-type WithForm<Pattern extends string = string> = {
-	/** `<form>` component with preset `method` and `action` attributes */
-	readonly Form: Route.Form<Pattern>;
-};
-
-/**
- * Helper type for a route with a `<Anchor>` component.
- *
- * @template Pattern Route pattern
- */
-type WithAnchor<Pattern extends string = string> = {
-	/** `<a>` component with preset `href` attribute */
-	readonly Anchor: Route.Anchor<Pattern>;
-};
 
 /**
  * Route to use in the application.
@@ -290,6 +330,37 @@ export class Route<Pattern extends string = string> {
 	}
 
 	/**
+	 * @template Pattern Route pattern
+	 * @template R Route type with Form component
+	 * @param route Route to add schema behavior to
+	 * @param schema Form schema
+	 * @returns Route with schema behavior attached
+	 */
+	static #withSchema<
+		Pattern extends string,
+		R extends { middleware: Middleware<any, any>[]; Form: Route.Form<Pattern> },
+	>(route: R, schema?: Schema.Form): R | (R & Schema.Form) {
+		if (!schema) return route;
+
+		route.middleware.unshift(Route.#data(schema));
+
+		// original form shell from normal route
+		const { Form } = route;
+
+		return Object.assign(route, schema, {
+			Form: (({ state, ...rest }) =>
+				Form({
+					// add in the default children (Fields) with state and submit button
+					children: [
+						schema.Fields({ state }),
+						jsx("button", { children: "Submit" }),
+					],
+					...rest,
+				} as Parameters<typeof Form>[0])) as Route.Form<Pattern>,
+		});
+	}
+
+	/**
 	 * @param form Form schema
 	 * @returns Middleware that attaches the c.data method
 	 */
@@ -297,22 +368,28 @@ export class Route<Pattern extends string = string> {
 		(form: Schema.Form): Middleware =>
 		(c, next) => {
 			c.data = async () => {
+				const isPost = c.req.method === Method.post;
+
 				// parse any form data with provided schema
-				const result = form.parse(await c.form().data());
+				const result = form.parse(
+					isPost ? await c.form().data() : c.url.searchParams,
+				);
 
 				if (result.issues) {
 					// create encoded URL state with invalid fields
 					let url = new URL(c.url);
 
-					const referer = c.req.headers.get(Header.name.ref);
+					if (isPost) {
+						const referer = c.req.headers.get(Header.name.ref);
 
-					if (referer) {
-						try {
-							const refererUrl = new URL(referer, url);
+						if (referer) {
+							try {
+								const refererUrl = new URL(referer, url);
 
-							if (refererUrl.origin === c.url.origin) url = refererUrl;
-						} catch {
-							// invalid referer
+								if (refererUrl.origin === c.url.origin) url = refererUrl;
+							} catch {
+								// invalid referer
+							}
 						}
 					}
 
@@ -336,23 +413,71 @@ export class Route<Pattern extends string = string> {
 	static get<Pattern extends string>(
 		pattern: Pattern,
 		...middleware: Middleware<ExtractParams<Pattern>>[]
-	): Route<Pattern> &
-		WithButton<Pattern> &
-		WithForm<Pattern> &
-		WithAnchor<Pattern> {
+	): Route.Get<Pattern>;
+	/**
+	 * @template Pattern Route pattern
+	 * @template S Form field shape
+	 * @param pattern Route pattern
+	 * @param fields Form field shape
+	 * @param middleware GET middleware
+	 * @returns GET `Route` with added components
+	 */
+	static get<Pattern extends string, S extends Schema.Form.Shape>(
+		pattern: Pattern,
+		fields: S,
+		...middleware: Middleware<ExtractParams<Pattern>, S>[]
+	): Route.Get<Pattern> & Schema.Form<S>;
+	/**
+	 * @template Pattern Route pattern
+	 * @template S Form field shape
+	 * @param pattern Route pattern
+	 * @param form Form schema
+	 * @param middleware GET middleware
+	 * @returns GET `Route` with added components
+	 */
+	static get<Pattern extends string, S extends Schema.Form.Shape>(
+		pattern: Pattern,
+		form: Schema.Form<S>,
+		...middleware: Middleware<ExtractParams<Pattern>, S>[]
+	): Route.Get<Pattern> & Schema.Form<S>;
+	static get<Pattern extends string>(
+		pattern: Pattern,
+		schemaOrMiddleware?:
+			| Schema.Form
+			| Schema.Form.Shape
+			| Middleware<ExtractParams<Pattern>>
+			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
+		...middleware: (
+			| Middleware<ExtractParams<Pattern>>
+			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>
+		)[]
+	) {
+		let schema: Schema.Form | undefined;
+
+		if (schemaOrMiddleware) {
+			if (typeof schemaOrMiddleware === "function") {
+				middleware.unshift(schemaOrMiddleware);
+			} else {
+				schema = Schema.form(schemaOrMiddleware);
+			}
+		}
+
 		const route = Route.#withComponents(
 			new Route(Method.get, pattern, ...middleware),
 		);
 
-		return Object.assign(route, {
-			Anchor: (({ params, search, hash, ...rest }) =>
-				jsx("a", {
-					href: route.url({ params, search, hash } as Route.URLOptions<
-						ExtractParams<Pattern>
-					>),
-					...rest,
-				})) as Route.Anchor<Pattern>,
-		});
+		return Route.#withSchema(
+			Object.assign(route, {
+				Anchor: (({ params, search, hash, ...rest }) =>
+					jsx("a", {
+						href: route.url({ params, search, hash } as Route.URLOptions<
+							ExtractParams<Pattern>
+						>),
+						...rest,
+					})) as Route.Anchor<Pattern>,
+			}),
+			schema,
+		);
 	}
 
 	/**
@@ -398,7 +523,7 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string, const S extends Schema.Form.Shape>(
+	static post<Pattern extends string, S extends Schema.Form.Shape>(
 		pattern: Pattern,
 		fields: S,
 		...middleware: Middleware<ExtractParams<Pattern>, S>[]
@@ -463,27 +588,9 @@ export class Route<Pattern extends string = string> {
 			pattern = `/_p/${Checksum.djb2(middleware.join())}` as Pattern;
 		}
 
-		const route = Route.#withComponents(
-			new Route(Method.post, pattern, ...middleware),
+		return Route.#withSchema(
+			Route.#withComponents(new Route(Method.post, pattern, ...middleware)),
+			schema,
 		);
-
-		if (!schema) return route;
-
-		route.middleware.unshift(Route.#data(schema));
-
-		// original form shell from normal post route
-		const { Form } = route;
-
-		return Object.assign(route, schema, {
-			Form: (({ state, ...rest }) =>
-				Form({
-					// add in the default children (Fields) with state and submit button
-					children: [
-						schema!.Fields({ state }),
-						jsx("button", { children: "Submit" }),
-					],
-					...rest,
-				} as Parameters<typeof Form>[0])) as Route.Form<Pattern>,
-		});
 	}
 }

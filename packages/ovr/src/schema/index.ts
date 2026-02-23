@@ -1,4 +1,4 @@
-import { type JSX, jsx } from "../jsx/index.js";
+import { Fragment, type JSX, jsx } from "../jsx/index.js";
 import { Checksum, Codec } from "../util/index.js";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
@@ -1688,7 +1688,7 @@ export namespace Field {
 	export type Values = readonly [string, ...string[]];
 
 	/** Any field - `<input type=...>` / `<select>` / `<textarea>` */
-	export type Any = Field<unknown, Tag, Type, Values | undefined>;
+	export type Any = Field<any, Tag, Type, Values | undefined>;
 
 	/**
 	 * Obtain the tag name of a field.
@@ -1696,7 +1696,7 @@ export namespace Field {
 	 * @template F Field
 	 */
 	export type TagOf<F extends Any> =
-		F extends Field<unknown, infer T, Field.Type, Field.Values | undefined>
+		F extends Field<any, infer T, Field.Type, Field.Values | undefined>
 			? T
 			: Tag;
 
@@ -1807,7 +1807,7 @@ export namespace Field {
 			 * @returns Issue container paragraph
 			 */
 			Issue: (props?: Component.Issue) => JSX.Element;
-		} & (F extends Field<unknown, "select", Field.Type, infer V>
+		} & (F extends Field<any, "select", Field.Type, infer V>
 			? V extends Values
 				? // select
 					{
@@ -1839,7 +1839,7 @@ export namespace Field {
 						Option: (props: Component.Option<V>) => JSX.Element;
 					}
 				: never
-			: F extends Field<unknown, "input", Field.Type, infer V>
+			: F extends Field<any, "input", Field.Type, infer V>
 				? V extends Values
 					? // radio/checkboxes
 						{
@@ -1961,14 +1961,16 @@ export class Field<
 	/** Field type */
 	readonly type: Type;
 
-	/** Field options */
-	readonly #options: Field.Options<Values, Tag>;
-
+	// tag and values are public so emitted .d.ts preserves
+	// field discriminants for correct types
 	/** Field tag */
-	readonly #tag: Tag;
+	readonly tag: Tag;
 
 	/** Field values */
-	readonly #values: Values;
+	readonly values: Values;
+
+	/** Field options */
+	readonly #options: Field.Options<Values, Tag>;
 
 	/**
 	 * Create a new field.
@@ -1985,8 +1987,8 @@ export class Field<
 		super(parse instanceof Schema ? parse.parse : parse);
 
 		this.#options = options;
-		this.#tag = (options.tag ?? "input") as Tag;
-		this.#values = options.values as Values;
+		this.tag = (options.tag ?? "input") as Tag;
+		this.values = options.values as Values;
 
 		this.read =
 			read ??
@@ -2025,8 +2027,7 @@ export class Field<
 		const value = state?.values?.[props.name];
 		const issue = state?.issues?.find((i) => i.path[0] === props.name);
 		const issueId = issue && `${props.name}-issue`;
-
-		const control = {
+		const control: Field.Props = {
 			id: props.name,
 			autocomplete: "on",
 			autofocus: issue?.path[0] === props.name, // first issue
@@ -2035,9 +2036,11 @@ export class Field<
 			...this.#options.props,
 			...props,
 		};
+		const hidden = control.type === "hidden";
 
 		const Issue = (data: Field.Component.Issue = {}) =>
 			issue && // render nothing if no issue
+			!hidden &&
 			jsx("p", {
 				id: issueId,
 				children: issue.message,
@@ -2045,7 +2048,7 @@ export class Field<
 				...data,
 			});
 
-		if (this.#values && this.#tag !== "select") {
+		if (this.values && this.tag !== "select") {
 			// radio/checkboxes
 			// make multiple ids for the group so all don't have the same id
 			const groupId = (value: string) =>
@@ -2054,11 +2057,11 @@ export class Field<
 			const Control = (
 				data: Field.Component.Control.Group<"input", Field.Values>,
 			) =>
-				jsx(this.#tag, {
+				jsx(this.tag, {
 					...control,
 					id: groupId(data.value),
 					// autofocus only the first input in the group
-					autofocus: control.autofocus && data.value === this.#values?.[0],
+					autofocus: control.autofocus && data.value === this.values?.[0],
 					checked: Array.isArray(value)
 						? value.includes(data.value) // checkboxes
 						: value === data.value, // radio
@@ -2092,16 +2095,18 @@ export class Field<
 
 		return {
 			Issue,
-			Root: (data: Field.Component.Root = {}) => jsx("div", data),
+			Root: (data: Field.Component.Root = {}) =>
+				hidden ? Fragment(data) : jsx("div", data),
 			Label: (data: Field.Component.Label = {}) =>
+				!hidden &&
 				jsx("label", { for: control.id, children: control.name, ...data }),
 			Control: (data?: Field.Component.Control<Tag>) => {
 				const attrs = { ...control, ...data };
 
 				if (value !== undefined) {
-					if (this.#tag === "textarea") {
+					if (this.tag === "textarea") {
 						attrs.children = value;
-					} else if (this.#tag === "input") {
+					} else if (this.tag === "input") {
 						if (this.type === "checkbox") {
 							attrs.checked = value;
 						} else {
@@ -2110,11 +2115,11 @@ export class Field<
 					}
 				}
 
-				return jsx(this.#tag, attrs);
+				return jsx(this.tag, attrs);
 			},
 			Option:
 				// select
-				this.#values &&
+				this.values &&
 				((data: Field.Component.Option<Field.Values>) =>
 					jsx("option", {
 						children: data.value,
@@ -2141,7 +2146,7 @@ export class Field<
 		return Base.Root({
 			children: [
 				jsx("legend", { children: props.name }),
-				this.#values.map((value: string) => {
+				this.values.map((value: string) => {
 					return jsx("div", {
 						children: [Base.Control({ value }), Base.Label({ value })],
 					});
@@ -2166,7 +2171,7 @@ export class Field<
 			children: [
 				Base.Label(),
 				Base.Control({
-					children: this.#values.map((value: string) => Base.Option({ value })),
+					children: this.values.map((value: string) => Base.Option({ value })),
 				}),
 				Base.Issue(),
 			],
@@ -2192,8 +2197,8 @@ export class Field<
 	 * @returns Component that renders the HTML field with default structure
 	 */
 	Field<S extends Schema.Form.Shape>(props: Field.Component.Props<S, false>) {
-		if (this.#values) {
-			if (this.#tag === "select") return this.#Select(props);
+		if (this.values) {
+			if (this.tag === "select") return this.#Select(props);
 
 			return this.#Group(props);
 		}
