@@ -498,7 +498,7 @@ export class Passkey {
 	 * @returns Schema parser for decoded client data
 	 */
 	static #clientData = (ceremony: "create" | "get", origin: string) =>
-		Schema.json(
+		Schema.string().json(
 			Schema.object({
 				type: Schema.literal(`webauthn.${ceremony}`),
 				challenge: Schema.string(),
@@ -513,8 +513,8 @@ export class Passkey {
 	 */
 	static get = Schema.object({
 		challenge: Schema.string(),
-		iat: Schema.int(),
-		exp: Schema.int(),
+		iat: Schema.number().int(),
+		exp: Schema.number().int(),
 		action: Schema.string(),
 	});
 
@@ -533,7 +533,7 @@ export class Passkey {
 	 * @returns Schema parser for signed challenge payloads
 	 */
 	static #challenge = (ceremony: "create" | "get", action: string) => {
-		return Schema.json(
+		return Schema.string().json(
 			(ceremony === "create" ? Passkey.create : Passkey.get).extend({
 				action: Schema.literal(action, AuthIssue.m("action")),
 			}),
@@ -593,7 +593,7 @@ export class Passkey {
 
 			if (input.issues) throw input;
 
-			const bootstrap = Schema.json(
+			const bootstrap = Schema.string().json(
 				Schema.union([Passkey.bCreate, Passkey.bGet]),
 			).parse(await c.auth.verify(input.data.bootstrap));
 
@@ -684,7 +684,7 @@ export class Passkey {
 	async #parseForm() {
 		const data = await this.#c.form().data();
 		const result = Schema.object({
-			credential: Schema.json(Schema.unknown()),
+			credential: Schema.string().json(Schema.unknown()),
 			signed: Schema.string(),
 		}).parse({
 			credential: data.get("credential"),

@@ -9,10 +9,8 @@ const text = Schema.Field.text().refine(
 	"Expected at least 1 character",
 );
 const list = Schema.Field.hidden()
-	.pipe(
-		Schema.json(
-			Schema.array(Schema.object({ done: Schema.Field.checkbox(), id, text })),
-		),
+	.json(
+		Schema.array(Schema.object({ done: Schema.Field.checkbox(), id, text })),
 	)
 	.default([{ done: false, id: 0, text: "Build a todo app" }]);
 

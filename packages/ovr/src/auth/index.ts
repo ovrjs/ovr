@@ -55,8 +55,18 @@ export namespace Auth {
 export class Auth {
 	/** Cached auth keys in case of multiple App instances */
 	static readonly #keys = new Map<string, Promise<CryptoKey>>();
+
+	/**
+	 * The name of the HTTP cookie used to store the authentication session.
+	 * Uses the `__Host-` prefix to ensure the cookie is only sent over HTTPS
+	 * and restrict it to the host origin.
+	 */
 	static readonly #cookieName = "__Host-auth-session";
+
+	/** HMAC algorithm identifier used for cryptographic operations */
 	static readonly #hmac = "HMAC";
+
+	/** Schema definition for a session object */
 	static readonly #session = Schema.object({
 		id: Schema.string(),
 		expiration: Schema.number(),
@@ -208,7 +218,7 @@ export class Auth {
 				throw new AuthIssue("session payload");
 			}
 
-			const session = Schema.json(Auth.#session).parse(decoded);
+			const session = Schema.string().json(Auth.#session).parse(decoded);
 
 			if (session.issues) throw session;
 

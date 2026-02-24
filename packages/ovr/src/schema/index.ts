@@ -587,6 +587,136 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	}
 
 	/**
+	 * Parse a JSON string and validate the parsed value with the provided schema.
+	 *
+	 * @template O Output type
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param schema Schema to validate the parsed JSON value with
+	 * @param message Issue message when invalid
+	 * @returns Parsed JSON field
+	 */
+	json<
+		O,
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<string, T, U, V>,
+		schema: Schema<O>,
+		message?: string,
+	): Field<O, T, U, V>;
+	/**
+	 * Parse a JSON string and validate the parsed value with the provided schema.
+	 *
+	 * @template O Output type
+	 * @param schema Schema to validate the parsed JSON value with
+	 * @param message Issue message when invalid
+	 * @returns Parsed JSON schema
+	 */
+	json<O>(
+		this: Schema<string, Input>,
+		schema: Schema<O>,
+		message?: string,
+	): Schema<O, Input>;
+	json<O, I>(this: Schema<string, I>, schema: Schema<O>, message?: string) {
+		return this.derive((v, path) => {
+			const result = this.parse(v, path);
+			if (result.issues) return result;
+
+			let data: unknown;
+
+			try {
+				data = JSON.parse(result.data);
+			} catch {
+				return new Schema.AggregateIssue([
+					new Schema.Issue("JSON", path, message),
+				]);
+			}
+
+			return schema.parse(data, path);
+		});
+	}
+
+	/**
+	 * Validate an input is a valid email string using
+	 * [Reasonable Email Regex by Colin McDonnell](https://colinhacks.com/essays/reasonable-email-regex).
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param message Issue message when invalid
+	 * @returns Email field
+	 */
+	email<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(this: Field<string, T, U, V>, message?: string): Field<string, T, U, V>;
+	/**
+	 * Validate an input is a valid email string using
+	 * [Reasonable Email Regex by Colin McDonnell](https://colinhacks.com/essays/reasonable-email-regex).
+	 *
+	 * @param message Issue message when invalid
+	 * @returns Email schema
+	 */
+	email(this: Schema<string, Input>, message?: string): Schema<string, Input>;
+	email<I>(this: Schema<string, I>, message = "Expected email") {
+		return this.refine((s) => Schema.#emailRegex.test(s), message);
+	}
+
+	/**
+	 * Validate an input is a valid URL string.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param message Issue message when invalid
+	 * @returns URL field
+	 */
+	url<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(this: Field<string, T, U, V>, message?: string): Field<string, T, U, V>;
+	/**
+	 * Validate an input is a valid URL string.
+	 *
+	 * @param message Issue message when invalid
+	 * @returns URL schema
+	 */
+	url(this: Schema<string, Input>, message?: string): Schema<string, Input>;
+	url<I>(this: Schema<string, I>, message = "Expected URL") {
+		return this.refine(URL.canParse, message);
+	}
+
+	/**
+	 * Validate an input is a safe integer.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param message Issue message when invalid
+	 * @returns Integer field
+	 */
+	int<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(this: Field<number, T, U, V>, message?: string): Field<number, T, U, V>;
+	/**
+	 * Validate an input is a safe integer.
+	 *
+	 * @param message Issue message when invalid
+	 * @returns Integer schema
+	 */
+	int(this: Schema<number, Input>, message?: string): Schema<number, Input>;
+	int<I>(this: Schema<number, I>, message = "Expected integer") {
+		return this.refine(Number.isSafeInteger, message);
+	}
+
+	/**
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
@@ -655,59 +785,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	}
 
 	/**
-	 * Parse a JSON string and validate the parsed value with the provided schema.
-	 *
-	 * @template O Output type
-	 * @param schema Schema to validate the parsed JSON value with
-	 * @param message Issue message when invalid
-	 * @returns Parsed JSON schema
-	 */
-	static json<O>(schema: Schema<O>, message?: string) {
-		return Schema.string(message).pipe(
-			new Schema((v, path) => {
-				let data: unknown;
-
-				try {
-					data = JSON.parse(v as string);
-				} catch {
-					return new Schema.AggregateIssue([
-						new Schema.Issue("JSON", path, message),
-					]);
-				}
-
-				return schema.parse(data, path);
-			}),
-		);
-	}
-
-	/**
-	 * Validate an input is a valid email string using
-	 * [Reasonable Email Regex by Colin McDonnell](https://colinhacks.com/essays/reasonable-email-regex).
-	 *
-	 * @param message Issue message when invalid
-	 * @returns Email schema
-	 */
-	static email(message = "Expected email") {
-		return Schema.string().refine((s) => {
-			try {
-				return Schema.#emailRegex.test(s);
-			} catch {
-				return false;
-			}
-		}, message);
-	}
-
-	/**
-	 * Validate an input is a valid URL string.
-	 *
-	 * @param message Issue message when invalid
-	 * @returns URL schema
-	 */
-	static url(message = "Expected URL") {
-		return Schema.string().refine(URL.canParse, message);
-	}
-
-	/**
 	 * Validate an input is a `true` or `false` boolean.
 	 *
 	 * @param message Issue message when invalid
@@ -739,16 +816,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 						new Schema.Issue("number", path, message),
 					]);
 		});
-	}
-
-	/**
-	 * Validate an input is a safe integer.
-	 *
-	 * @param message Issue message when invalid
-	 * @returns Integer schema
-	 */
-	static int(message = "Expected integer") {
-		return Schema.number().refine(Number.isSafeInteger, message);
 	}
 
 	/**
@@ -1114,7 +1181,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		static email(props?: Field.Props.Input, message?: string) {
 			return new Field(
 				{ props: { ...props, type: "email" } },
-				Schema.email(message),
+				Schema.string().email(message),
 			);
 		}
 
@@ -1128,7 +1195,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		static url(props?: Field.Props.Input, message?: string) {
 			return new Field(
 				{ props: { ...props, type: "url" } },
-				Schema.url(message),
+				Schema.string().url(message),
 			);
 		}
 
@@ -1552,13 +1619,15 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 					}
 
 					try {
-						const result = Schema.json(
-							Schema.object({
-								id: Schema.literal(this.#id),
-								issues: Schema.array(Schema.object().loose()).optional(),
-								values: Schema.object(valuesShape).optional(),
-							}),
-						).parse(Codec.decode(Codec.Base64Url.decode(encoded)));
+						const result = Schema.string()
+							.json(
+								Schema.object({
+									id: Schema.literal(this.#id),
+									issues: Schema.array(Schema.object().loose()).optional(),
+									values: Schema.object(valuesShape).optional(),
+								}),
+							)
+							.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
 
 						if (result.data) state = result.data as Schema.Form.State<Shape>;
 					} catch {}

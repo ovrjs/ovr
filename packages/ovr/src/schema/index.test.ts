@@ -59,8 +59,10 @@ describe("Primitive schemas", () => {
 	});
 
 	test("int validates safe integers", () => {
-		expect(valid(Schema.int().parse(10))).toBe(10);
-		expect(invalid(Schema.int().parse(10.5))[0]?.expected).toBe("refine");
+		expect(valid(Schema.number().int().parse(10))).toBe(10);
+		expect(invalid(Schema.number().int().parse(10.5))[0]?.expected).toBe(
+			"refine",
+		);
 	});
 
 	test("bigint validates type", () => {
@@ -77,17 +79,19 @@ describe("Primitive schemas", () => {
 	});
 
 	test("email validates format", () => {
-		expect(valid(Schema.email().parse("person@example.com"))).toBe(
+		expect(valid(Schema.string().email().parse("person@example.com"))).toBe(
 			"person@example.com",
 		);
-		expect(invalid(Schema.email().parse("bad"))[0]?.expected).toBe("refine");
+		expect(invalid(Schema.string().email().parse("bad"))[0]?.expected).toBe(
+			"refine",
+		);
 	});
 
 	test("url validates parsable URL", () => {
-		expect(valid(Schema.url().parse("https://example.com"))).toBe(
+		expect(valid(Schema.string().url().parse("https://example.com"))).toBe(
 			"https://example.com",
 		);
-		expect(invalid(Schema.url().parse("not a url"))[0]?.expected).toBe(
+		expect(invalid(Schema.string().url().parse("not a url"))[0]?.expected).toBe(
 			"refine",
 		);
 	});
@@ -175,7 +179,7 @@ describe("Schema combinators", () => {
 
 describe("JSON schema", () => {
 	test("parses valid JSON and validates inner schema", () => {
-		const schema = Schema.json(
+		const schema = Schema.string().json(
 			Schema.object({ id: Schema.string(), expiration: Schema.number() }),
 		);
 
@@ -186,25 +190,25 @@ describe("JSON schema", () => {
 	});
 
 	test("fails on invalid JSON strings", () => {
-		expect(invalid(Schema.json(Schema.unknown()).parse("{"))[0]?.expected).toBe(
-			"JSON",
-		);
+		expect(
+			invalid(Schema.string().json(Schema.unknown()).parse("{"))[0]?.expected,
+		).toBe("JSON");
 	});
 
 	test("fails on non-string input", () => {
-		expect(invalid(Schema.json(Schema.unknown()).parse(1))[0]?.expected).toBe(
-			"string",
-		);
+		expect(
+			invalid(Schema.string().json(Schema.unknown()).parse(1))[0]?.expected,
+		).toBe("string");
 	});
 
 	test("supports untyped parsing with Schema.unknown", () => {
 		expect(
-			valid(Schema.json(Schema.unknown()).parse('{"hello":"world"}')),
+			valid(Schema.string().json(Schema.unknown()).parse('{"hello":"world"}')),
 		).toEqual({ hello: "world" });
 	});
 
 	test("does not swallow inner schema exceptions as JSON issues", () => {
-		const schema = Schema.json(
+		const schema = Schema.string().json(
 			Schema.number().transform(() => {
 				throw new Error("boom");
 			}),
@@ -214,7 +218,7 @@ describe("JSON schema", () => {
 	});
 
 	test("uses custom message for JSON parse failures", () => {
-		const schema = Schema.json(Schema.unknown(), "Bad JSON");
+		const schema = Schema.string().json(Schema.unknown(), "Bad JSON");
 		const issues = invalid(schema.parse("{"));
 
 		expect(issues[0]?.message).toBe("Bad JSON");
@@ -317,8 +321,43 @@ describe("Coercion schemas", () => {
 		expect(valid(Schema.Coerce.string().parse(10))).toBe("10");
 	});
 
+	test("coerce.string supports email/url/json chains", () => {
+		expect(valid(Schema.Coerce.string().email().parse("person@example.com"))).toBe(
+			"person@example.com",
+		);
+		expect(invalid(Schema.Coerce.string().email().parse({}))[0]?.expected).toBe(
+			"refine",
+		);
+
+		expect(valid(Schema.Coerce.string().url().parse("https://example.com"))).toBe(
+			"https://example.com",
+		);
+		expect(
+			invalid(Schema.Coerce.string().url().parse("not a url"))[0]?.expected,
+		).toBe("refine");
+
+		expect(
+			valid(
+				Schema.Coerce.string()
+					.json(Schema.unknown())
+					.parse('{"hello":"world"}'),
+			),
+		).toEqual({ hello: "world" });
+		expect(
+			invalid(Schema.Coerce.string().json(Schema.unknown()).parse({}))[0]
+				?.expected,
+		).toBe("JSON");
+	});
+
 	test("coerce.number uses Number", () => {
 		expect(valid(Schema.Coerce.number().parse("10"))).toBe(10);
+	});
+
+	test("coerce.number supports int chain", () => {
+		expect(valid(Schema.Coerce.number().int().parse("10"))).toBe(10);
+		expect(invalid(Schema.Coerce.number().int().parse("10.5"))[0]?.expected).toBe(
+			"refine",
+		);
 	});
 
 	test("coerce.boolean uses Boolean", () => {
@@ -341,6 +380,13 @@ describe("Coercion schemas", () => {
 		expect(invalid(Schema.Coerce.date().parse("not-a-date"))[0]?.expected).toBe(
 			"refine",
 		);
+	});
+
+	test("field string chains preserve Field behavior", () => {
+		const field = Schema.Field.text().email();
+
+		expect(valid(field.parse("person@example.com"))).toBe("person@example.com");
+		expect("Component" in field).toBe(true);
 	});
 });
 
