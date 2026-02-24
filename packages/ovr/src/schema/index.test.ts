@@ -113,12 +113,6 @@ describe("Primitive schemas", () => {
 			"Example",
 		);
 	});
-
-	test("file validates File instances", () => {
-		const file = new File(["hello"], "hello.txt", { type: "text/plain" });
-		expect(valid(Schema.file().parse(file))).toBe(file);
-		expect(invalid(Schema.file().parse("not-file"))[0]?.expected).toBe("File");
-	});
 });
 
 describe("Schema combinators", () => {

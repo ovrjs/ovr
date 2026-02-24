@@ -871,16 +871,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	}
 
 	/**
-	 * Validates that the input is a `File` instance.
-	 *
-	 * @param message Issue message when invalid
-	 * @returns File schema
-	 */
-	static file(message?: string) {
-		return Schema.instance(File, message);
-	}
-
-	/**
 	 * Validates that the input is an array and parses each item.
 	 *
 	 * @template O Output type
@@ -1193,7 +1183,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		static file(props?: Field.Props.Input, message?: string) {
 			return new Field(
 				{ props: { ...props, type: "file" } },
-				Schema.file(message),
+				Schema.instance(File, message),
 			);
 		}
 
@@ -1205,7 +1195,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		static files(props?: Field.Props.Input, message?: string) {
 			return new Field(
 				{ props: { ...props, type: "file", multiple: true } },
-				Schema.array(Schema.file(message)),
+				Schema.array(Schema.instance(File, message)),
 				(formData, name) => formData.getAll(name),
 			);
 		}
