@@ -1,5 +1,5 @@
-import { Codec } from "../util/index.js";
 import { Render } from "../render/index.js";
+import { Codec } from "../util/index.js";
 import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
@@ -235,9 +235,36 @@ describe("Array and object schemas", () => {
 		expect(issues[0]?.expected).toBe("number");
 	});
 
-	test("object without shape validates plain objects", () => {
-		expect(valid(Schema.object().parse({ a: 1 }))).toEqual({ a: 1 });
+	test("object without shape defaults to empty strip object", () => {
+		expect(valid(Schema.object().parse({ a: 1 }))).toEqual({});
 		expect(invalid(Schema.object().parse([1]))[0]?.expected).toBe("Object");
+	});
+
+	test("object strict rejects unknown keys", () => {
+		const schema = Schema.object({ a: Schema.string() }).strict();
+		const issues = invalid(schema.parse({ a: "x", b: 1 }));
+
+		expect(issues[0]?.path).toEqual(["b"]);
+		expect(issues[0]?.expected).toBe("never");
+	});
+
+	test("object loose preserves unknown keys", () => {
+		const schema = Schema.object({ a: Schema.string() }).loose();
+		const data = valid(schema.parse({ a: "x", b: 1 })) satisfies {
+			a: string;
+		} & Record<string, unknown>;
+
+		expect(data).toEqual({ a: "x", b: 1 });
+	});
+
+	test("object without shape supports strict and loose modes", () => {
+		expect(valid(Schema.object().loose().parse({ a: 1 }))).toEqual({ a: 1 });
+
+		const strict = Schema.object().strict();
+		const issues = invalid(strict.parse({ a: 1 }));
+
+		expect(issues[0]?.path).toEqual(["a"]);
+		expect(issues[0]?.expected).toBe("never");
 	});
 
 	test("object shape parses fields and supports defaults", () => {
@@ -278,6 +305,16 @@ describe("Array and object schemas", () => {
 		});
 
 		expect(valid(schema.parse({ a: "x", b: 2 }))).toEqual({ a: "x", b: 2 });
+	});
+
+	test("object mode is preserved through extend", () => {
+		const schema = Schema.object({ a: Schema.string() })
+			.strict()
+			.extend({ b: Schema.number() });
+		const issues = invalid(schema.parse({ a: "x", b: 1, c: true }));
+
+		expect(issues[0]?.path).toEqual(["c"]);
+		expect(issues[0]?.expected).toBe("never");
 	});
 });
 
@@ -482,7 +519,9 @@ describe("Form schema", () => {
 			Codec.Base64Url.encode(Codec.encode(JSON.stringify(tampered))),
 		);
 
-		const html = await new Render(null).string(form.Field({ name: "name", state: url }));
+		const html = await new Render(null).string(
+			form.Field({ name: "name", state: url }),
+		);
 
 		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes('value="{')).toBe(false);

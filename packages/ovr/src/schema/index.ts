@@ -89,11 +89,30 @@ export namespace Schema {
 	 *
 	 * @template S Object shape type
 	 */
-	export type Object<S extends Object.Shape> = ObjectSchema<S>;
+	export type Object<
+		S extends Object.Shape,
+		M extends Object.Mode = "strip",
+	> = ObjectSchema<S, M>;
 
 	export namespace Object {
 		/** Object schema shape. */
 		export type Shape = Record<string, Schema<unknown>>;
+
+		/** Object parsing mode. */
+		export type Mode = "strip" | "strict" | "loose";
+
+		/**
+		 * Object output type by mode.
+		 *
+		 * @template S Object shape
+		 * @template M Object mode
+		 */
+		export type Output<
+			S extends Shape,
+			M extends Mode = "strip",
+		> = M extends "loose"
+			? Schema.Infer<S> & Record<string, unknown>
+			: Schema.Infer<S>;
 	}
 
 	/**
@@ -903,25 +922,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param shape Object shape with schemas for each key
 	 * @returns Object schema
 	 */
-	static object<S extends Schema.Object.Shape>(shape: S): Schema.Object<S>;
-	/**
-	 * Validate an input is a non-null object.
-	 *
-	 * @returns Object schema
-	 */
-	static object(): Schema<Record<string, unknown>>;
-	static object<S extends Schema.Object.Shape>(
-		shape?: S,
-	): Schema.Object<S> | Schema<Record<string, unknown>> {
-		if (!shape) {
-			return new Schema((v, path) =>
-				v != null && typeof v === "object" && !Array.isArray(v)
-					? { data: v as Record<string, unknown> }
-					: new Schema.AggregateIssue([new Schema.Issue("Object", path)]),
-			);
-		}
-
-		return new Schema.Object(shape);
+	static object<S extends Schema.Object.Shape = {}>(
+		shape: S = {} as S,
+	): Schema.Object<S> {
+		return new Schema.Object(shape, "strip");
 	}
 
 	/**
@@ -942,7 +946,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	/**
 	 * Runtime constructor for object schemas.
 	 */
-	static get Object(): typeof ObjectSchema {
+	static get Object() {
 		return ObjectSchema;
 	}
 
@@ -1299,29 +1303,38 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
  * Runtime object schema that validates plain objects and supports shape helpers.
  *
  * @template Shape Object shape type
+ * @template Mode Object parsing mode
  */
-export class ObjectSchema<Shape extends Schema.Object.Shape> extends Schema<
-	Schema.Infer<Shape>
-> {
+export class ObjectSchema<
+	Shape extends Schema.Object.Shape,
+	Mode extends Schema.Object.Mode = "strip",
+> extends Schema<Schema.Object.Output<Shape, Mode>> {
 	/** Object shape definitions. */
 	readonly #shape: Shape;
+
+	/** Object parsing mode. */
+	readonly #mode: Mode;
 
 	/**
 	 * Create a new object schema validator.
 	 *
 	 * @param shape Object shape
+	 * @param mode Object parsing mode
 	 */
-	constructor(shape: Shape) {
+	constructor(shape: Shape, mode: Mode = "strip" as Mode) {
 		super((value, path) => {
-			const input = Schema.object().parse(value);
-
-			if (input.issues) return input;
+			if (value == null || typeof value !== "object" || Array.isArray(value)) {
+				return new Schema.AggregateIssue([new Schema.Issue("Object", path)]);
+			}
 
 			const data: Record<string, unknown> = {};
 			const issues: Schema.Issue[] = [];
 
 			for (const [name, schema] of Object.entries(shape)) {
-				const result = schema.parse(input.data[name], [...path, name]);
+				const result = schema.parse((value as Record<string, unknown>)[name], [
+					...path,
+					name,
+				]);
 
 				if (result.issues) {
 					issues.push(...result.issues);
@@ -1330,12 +1343,31 @@ export class ObjectSchema<Shape extends Schema.Object.Shape> extends Schema<
 				}
 			}
 
+			if (mode !== "strip") {
+				const names = new Set(Object.keys(shape));
+
+				for (const [name, next] of Object.entries(
+					value as Record<string, unknown>,
+				)) {
+					if (!names.has(name)) {
+						if (mode === "strict") {
+							issues.push(
+								new Schema.Issue("never", [...path, name], "Unexpected key"),
+							);
+						} else {
+							data[name] = next;
+						}
+					}
+				}
+			}
+
 			return issues.length
 				? new Schema.AggregateIssue(issues)
-				: ({ data } as { data: Schema.Infer<Shape> });
+				: ({ data } as { data: Schema.Object.Output<Shape, Mode> });
 		});
 
 		this.#shape = shape;
+		this.#mode = mode;
 	}
 
 	/**
@@ -1346,8 +1378,8 @@ export class ObjectSchema<Shape extends Schema.Object.Shape> extends Schema<
 	 */
 	extend<E extends Schema.Object.Shape>(
 		extra: E,
-	): Schema.Object<Shape.Extend<Shape, E>> {
-		return Schema.object(Shape.extend(this.#shape, extra));
+	): Schema.Object<Shape.Extend<Shape, E>, Mode> {
+		return new Schema.Object(Shape.extend(this.#shape, extra), this.#mode);
 	}
 
 	/**
@@ -1357,7 +1389,7 @@ export class ObjectSchema<Shape extends Schema.Object.Shape> extends Schema<
 	 * @param names Non-empty list of key names to keep
 	 */
 	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return Schema.object(Shape.pick(this.#shape, names));
+		return new Schema.Object(Shape.pick(this.#shape, names), this.#mode);
 	}
 
 	/**
@@ -1367,7 +1399,21 @@ export class ObjectSchema<Shape extends Schema.Object.Shape> extends Schema<
 	 * @param names Non-empty list of key names to remove
 	 */
 	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return Schema.object(Shape.omit(this.#shape, names));
+		return new Schema.Object(Shape.omit(this.#shape, names), this.#mode);
+	}
+
+	/**
+	 * Returns a new object schema that rejects unknown keys.
+	 */
+	strict() {
+		return new Schema.Object(this.#shape, "strict");
+	}
+
+	/**
+	 * Returns a new object schema that preserves unknown keys.
+	 */
+	loose() {
+		return new Schema.Object(this.#shape, "loose");
 	}
 }
 
@@ -1519,7 +1565,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 						const result = Schema.json(
 							Schema.object({
 								id: Schema.literal(this.#id),
-								issues: Schema.array(Schema.object()).optional(),
+								issues: Schema.array(Schema.object().loose()).optional(),
 								values: Schema.object(valuesShape).optional(),
 							}),
 						).parse(Codec.decode(Codec.Base64Url.decode(encoded)));
