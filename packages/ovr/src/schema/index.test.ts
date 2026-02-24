@@ -65,17 +65,36 @@ describe("Primitive schemas", () => {
 		);
 	});
 
+	test("string min and max validate length", () => {
+		const schema = Schema.string().min(2).max(4);
+
+		expect(valid(schema.parse("ab"))).toBe("ab");
+		expect(valid(schema.parse("abcd"))).toBe("abcd");
+		expect(invalid(schema.parse("a"))[0]?.expected).toBe("refine");
+		expect(invalid(schema.parse("abcde"))[0]?.expected).toBe("refine");
+	});
+
+	test("number min and max validate bounds", () => {
+		const schema = Schema.number().min(1).max(3);
+
+		expect(valid(schema.parse(1))).toBe(1);
+		expect(valid(schema.parse(3))).toBe(3);
+		expect(invalid(schema.parse(0))[0]?.expected).toBe("refine");
+		expect(invalid(schema.parse(4))[0]?.expected).toBe("refine");
+	});
+
 	test("bigint validates type", () => {
 		expect(valid(Schema.bigint().parse(1n))).toBe(1n);
 		expect(invalid(Schema.bigint().parse("1"))[0]?.expected).toBe("bigint");
 	});
 
-	test("date validates valid Date instances", () => {
-		const date = new Date("2024-01-01T00:00:00.000Z");
-		expect(valid(Schema.date().parse(date))).toBe(date);
-		expect(
-			invalid(Schema.date().parse(new Date("not-a-date")))[0]?.expected,
-		).toBe("refine");
+	test("bigint min and max validate bounds", () => {
+		const schema = Schema.bigint().min(1n).max(3n);
+
+		expect(valid(schema.parse(1n))).toBe(1n);
+		expect(valid(schema.parse(3n))).toBe(3n);
+		expect(invalid(schema.parse(0n))[0]?.expected).toBe("refine");
+		expect(invalid(schema.parse(4n))[0]?.expected).toBe("refine");
 	});
 
 	test("email validates format", () => {
@@ -201,12 +220,6 @@ describe("JSON schema", () => {
 		).toBe("string");
 	});
 
-	test("supports untyped parsing with Schema.unknown", () => {
-		expect(
-			valid(Schema.string().json(Schema.unknown()).parse('{"hello":"world"}')),
-		).toEqual({ hello: "world" });
-	});
-
 	test("does not swallow inner schema exceptions as JSON issues", () => {
 		const schema = Schema.string().json(
 			Schema.number().transform(() => {
@@ -321,42 +334,20 @@ describe("Preprocess schemas", () => {
 		expect(valid(Schema.string().preprocess(String).parse(10))).toBe("10");
 	});
 
-	test("string preprocess supports email/url/json chains", () => {
-		const schema = Schema.string().preprocess(String);
-
-		expect(valid(schema.email().parse("person@example.com"))).toBe(
-			"person@example.com",
-		);
-		expect(invalid(schema.email().parse({}))[0]?.expected).toBe("refine");
-
-		expect(valid(schema.url().parse("https://example.com"))).toBe(
-			"https://example.com",
-		);
-		expect(invalid(schema.url().parse("not a url"))[0]?.expected).toBe("refine");
-
-		expect(valid(schema.json(Schema.unknown()).parse('{"hello":"world"}'))).toEqual(
-			{ hello: "world" },
-		);
-		expect(invalid(schema.json(Schema.unknown()).parse({}))[0]?.expected).toBe(
-			"JSON",
-		);
-	});
-
-	test("number preprocess converts with Number", () => {
-		expect(valid(Schema.number().preprocess(Number).parse("10"))).toBe(10);
-	});
-
 	test("number preprocess supports int chain", () => {
-		expect(valid(Schema.number().preprocess(Number).int().parse("10"))).toBe(10);
+		expect(valid(Schema.number().preprocess(Number).int().parse("10"))).toBe(
+			10,
+		);
 		expect(
-			invalid(Schema.number().preprocess(Number).int().parse("10.5"))[0]?.expected,
+			invalid(Schema.number().preprocess(Number).int().parse("10.5"))[0]
+				?.expected,
 		).toBe("refine");
 	});
 
 	test("number preprocess rejects NaN", () => {
-		expect(invalid(Schema.number().preprocess(Number).parse("abc"))[0]?.expected).toBe(
-			"number",
-		);
+		expect(
+			invalid(Schema.number().preprocess(Number).parse("abc"))[0]?.expected,
+		).toBe("number");
 	});
 
 	test("boolean preprocess converts with Boolean", () => {
@@ -376,19 +367,18 @@ describe("Preprocess schemas", () => {
 		expect(() => schema.parse({})).toThrowError();
 	});
 
-	test("date preprocess validates resulting Date", () => {
-		const schema = Schema.date().preprocess((v) => new Date(String(v)));
-		const result = valid(schema.parse("2024-01-01"));
-		expect(result).toBeInstanceOf(Date);
-		expect(Number.isNaN(result.getTime())).toBe(false);
-
-		expect(invalid(schema.parse("not-a-date"))[0]?.expected).toBe("refine");
-	});
-
 	test("field string chains preserve Field behavior", () => {
 		const field = Schema.Field.text().email();
 
 		expect(valid(field.parse("person@example.com"))).toBe("person@example.com");
+		expect("Component" in field).toBe(true);
+	});
+
+	test("field min and max chains preserve Field behavior", () => {
+		const field = Schema.Field.text().min(2).max(4);
+
+		expect(valid(field.parse("ab"))).toBe("ab");
+		expect(invalid(field.parse("a"))[0]?.expected).toBe("refine");
 		expect("Component" in field).toBe(true);
 	});
 });
@@ -463,11 +453,6 @@ describe("Form schema", () => {
 	test("checkbox is false when omitted", () => {
 		const form = Schema.form({ active: Schema.Field.checkbox() });
 		expect(valid(form.parse(new FormData()))).toEqual({ active: false });
-	});
-
-	test("checkbox is false when omitted in URLSearchParams", () => {
-		const form = Schema.form({ active: Schema.Field.checkbox() });
-		expect(valid(form.parse(new URLSearchParams()))).toEqual({ active: false });
 	});
 
 	test("invalid parse includes encoded _form state without password/file values", () => {

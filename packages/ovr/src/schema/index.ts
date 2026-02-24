@@ -744,6 +744,224 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	}
 
 	/**
+	 * Validate an input is greater than or equal to the minimum.
+	 *
+	 * For strings, this validates minimum length.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param value Minimum value or length
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	min<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<string, T, U, V>,
+		value: number,
+		message?: string,
+	): Field<string, T, U, V>;
+	/**
+	 * Validate an input is greater than or equal to the minimum.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param value Minimum value
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	min<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<number, T, U, V>,
+		value: number,
+		message?: string,
+	): Field<number, T, U, V>;
+	/**
+	 * Validate an input is greater than or equal to the minimum.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param value Minimum value
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	min<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<bigint, T, U, V>,
+		value: bigint,
+		message?: string,
+	): Field<bigint, T, U, V>;
+	/**
+	 * Validate an input is greater than or equal to the minimum.
+	 *
+	 * For strings, this validates minimum length.
+	 *
+	 * @param value Minimum value or length
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	min(
+		this: Schema<string, Input>,
+		value: number,
+		message?: string,
+	): Schema<string, Input>;
+	/**
+	 * Validate an input is greater than or equal to the minimum.
+	 *
+	 * @param value Minimum value
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	min(
+		this: Schema<number, Input>,
+		value: number,
+		message?: string,
+	): Schema<number, Input>;
+	/**
+	 * Validate an input is greater than or equal to the minimum.
+	 *
+	 * @param value Minimum value
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	min(
+		this: Schema<bigint, Input>,
+		value: bigint,
+		message?: string,
+	): Schema<bigint, Input>;
+	min<I>(
+		this: Schema<string | number | bigint, I>,
+		value: number | bigint,
+		message = `Expected minimum ${String(value)}`,
+	) {
+		return this.refine((next) => {
+			return typeof next === "string"
+				? next.length >= (value as number)
+				: next >= (value as number | bigint);
+		}, message);
+	}
+
+	/**
+	 * Validate an input is less than or equal to the maximum.
+	 *
+	 * For strings, this validates maximum length.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param value Maximum value or length
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	max<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<string, T, U, V>,
+		value: number,
+		message?: string,
+	): Field<string, T, U, V>;
+	/**
+	 * Validate an input is less than or equal to the maximum.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param value Maximum value
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	max<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<number, T, U, V>,
+		value: number,
+		message?: string,
+	): Field<number, T, U, V>;
+	/**
+	 * Validate an input is less than or equal to the maximum.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param value Maximum value
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	max<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<bigint, T, U, V>,
+		value: bigint,
+		message?: string,
+	): Field<bigint, T, U, V>;
+	/**
+	 * Validate an input is less than or equal to the maximum.
+	 *
+	 * For strings, this validates maximum length.
+	 *
+	 * @param value Maximum value or length
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	max(
+		this: Schema<string, Input>,
+		value: number,
+		message?: string,
+	): Schema<string, Input>;
+	/**
+	 * Validate an input is less than or equal to the maximum.
+	 *
+	 * @param value Maximum value
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	max(
+		this: Schema<number, Input>,
+		value: number,
+		message?: string,
+	): Schema<number, Input>;
+	/**
+	 * Validate an input is less than or equal to the maximum.
+	 *
+	 * @param value Maximum value
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	max(
+		this: Schema<bigint, Input>,
+		value: bigint,
+		message?: string,
+	): Schema<bigint, Input>;
+	max<I>(
+		this: Schema<string | number | bigint, I>,
+		value: number | bigint,
+		message = `Expected maximum ${String(value)}`,
+	) {
+		return this.refine((next) => {
+			return typeof next === "string"
+				? next.length <= (value as number)
+				: next <= (value as number | bigint);
+		}, message);
+	}
+
+	/**
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
@@ -859,21 +1077,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 						new Schema.Issue("bigint", path, message),
 					]);
 		});
-	}
-
-	/**
-	 * Validate an input is a `Date`.
-	 *
-	 * Rejects invalid dates.
-	 *
-	 * @param message Issue message when invalid
-	 * @returns Date schema
-	 */
-	static date(message = "Expected valid date") {
-		return Schema.instance(Date).refine(
-			(v) => !Number.isNaN(v.getTime()),
-			message,
-		);
 	}
 
 	/**
