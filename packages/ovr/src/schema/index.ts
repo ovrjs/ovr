@@ -1166,6 +1166,13 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	}
 
 	/**
+	 * Runtime constructor for object schemas.
+	 */
+	static get Object() {
+		return ObjectSchema;
+	}
+
+	/**
 	 * Validates each key in the shape and returns a new object of parsed outputs.
 	 *
 	 * @template S Object shape type
@@ -1176,6 +1183,11 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		shape: S = {} as S,
 	): Schema.Object<S> {
 		return new Schema.Object(shape, "strip");
+	}
+
+	/** Runtime constructor for form schemas. */
+	static get Form() {
+		return FormSchema;
 	}
 
 	/**
@@ -1191,13 +1203,6 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		fields: S | Schema.Form<S>,
 	): Schema.Form<S> {
 		return fields instanceof Schema.Form ? fields : new Schema.Form(fields);
-	}
-
-	/**
-	 * Runtime constructor for object schemas.
-	 */
-	static get Object() {
-		return ObjectSchema;
 	}
 
 	/** Field factory functions */
@@ -1479,11 +1484,6 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 			);
 		}
 	};
-
-	/** Runtime constructor for form schemas. */
-	static get Form(): typeof FormSchema {
-		return FormSchema;
-	}
 }
 
 /**
