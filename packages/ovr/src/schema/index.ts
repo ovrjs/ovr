@@ -292,12 +292,8 @@ class Shape {
  * Implements Standard Schema v1 via the `~standard` property (sync validate).
  *
  * @template Output Output type after parsing
- * @template Input Input type expected (defaults to unknown)
  */
-export class Schema<Output, Input = unknown> implements StandardSchemaV1<
-	Input,
-	Output
-> {
+export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	/** Email regular expression */
 	static readonly #emailRegex =
 		/^(?!\.)(?!.*\.\.)([a-z0-9_'+\-\.]*)[a-z0-9_'+\-]@([a-z0-9][a-z0-9\-]*\.)+[a-z]{2,}$/i;
@@ -390,7 +386,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		}
 	};
 
-	readonly "~standard": StandardSchemaV1.Props<Input, Output> = {
+	readonly "~standard": StandardSchemaV1.Props<unknown, Output> = {
 		version: 1,
 		vendor: "ovr",
 		validate: (value) => {
@@ -428,7 +424,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns New schema instance based on the current instance
 	 */
 	derive<O>(parse: Schema.Parse.Constructor<O>) {
-		return new Schema<O, Input>(parse);
+		return new Schema<O>(parse);
 	}
 
 	/**
@@ -445,8 +441,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	/**
 	 * @returns Optional schema
 	 */
-	optional(this: Schema<Output, Input>): Schema<Output | undefined, Input>;
-	optional<I>(this: Schema<Output, I>) {
+	optional(this: Schema<Output>): Schema<Output | undefined>;
+	optional(this: Schema<Output>) {
 		return this.derive((v, path) => {
 			if (v === undefined) return { data: v as Output | undefined };
 
@@ -468,8 +464,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	/**
 	 * @returns Nullable schema
 	 */
-	nullable(this: Schema<Output, Input>): Schema<Output | null, Input>;
-	nullable<I>(this: Schema<Output, I>) {
+	nullable(this: Schema<Output>): Schema<Output | null>;
+	nullable(this: Schema<Output>) {
 		return this.derive((v, path) => {
 			if (v === null) return { data: v as Output | null };
 
@@ -491,10 +487,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	/**
 	 * @returns Nullish schema
 	 */
-	nullish(
-		this: Schema<Output, Input>,
-	): Schema<Output | null | undefined, Input>;
-	nullish<I>(this: Schema<Output, I>) {
+	nullish(this: Schema<Output>): Schema<Output | null | undefined>;
+	nullish(this: Schema<Output>) {
 		return this.derive((v, path) => {
 			if (v == null) return { data: v as Output | null | undefined };
 
@@ -518,8 +512,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param value Default value to use when input is undefined
 	 * @returns Schema with default
 	 */
-	default(this: Schema<Output, Input>, value: Output): Schema<Output, Input>;
-	default<I>(this: Schema<Output, I>, value: Output) {
+	default(this: Schema<Output>, value: Output): Schema<Output>;
+	default(this: Schema<Output>, value: Output) {
 		return this.derive((v, path) => {
 			if (v === undefined) return { data: value };
 
@@ -546,11 +540,11 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param fn Preprocess function to run before parsing
 	 * @returns Schema that preprocesses input before parsing
 	 */
-	preprocess<I>(
-		this: Schema<Output, I>,
+	preprocess(
+		this: Schema<Output>,
 		fn: (value: unknown) => unknown,
-	): Schema<Output, I>;
-	preprocess<I>(this: Schema<Output, I>, fn: (value: unknown) => unknown) {
+	): Schema<Output>;
+	preprocess(this: Schema<Output>, fn: (value: unknown) => unknown) {
 		return this.derive((v, path) => this.parse(fn(v), path));
 	}
 
@@ -573,11 +567,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param fn Transform function to apply to parsed output
 	 * @returns Transformed schema
 	 */
-	transform<O>(
-		this: Schema<Output, Input>,
-		fn: (value: Output) => O,
-	): Schema<O, Input>;
-	transform<O, I>(this: Schema<Output, I>, fn: (value: Output) => O) {
+	transform<O>(this: Schema<Output>, fn: (value: Output) => O): Schema<O>;
+	transform<O>(this: Schema<Output>, fn: (value: Output) => O) {
 		return this.derive((v, path) => {
 			const out = this.parse(v, path);
 
@@ -604,8 +595,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param next Schema to validate the result with
 	 * @returns Piped schema
 	 */
-	pipe<O>(this: Schema<Output, Input>, next: Schema<O>): Schema<O, Input>;
-	pipe<O, I>(this: Schema<Output, I>, next: Schema<O>) {
+	pipe<O>(this: Schema<Output>, next: Schema<O>): Schema<O>;
+	pipe<O>(this: Schema<Output>, next: Schema<O>) {
 		return this.derive((v, path) => {
 			const result = this.parse(v, path);
 
@@ -642,12 +633,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Parsed JSON schema
 	 */
-	json<O>(
-		this: Schema<string, Input>,
-		schema: Schema<O>,
-		message?: string,
-	): Schema<O, Input>;
-	json<O, I>(this: Schema<string, I>, schema: Schema<O>, message?: string) {
+	json<O>(this: Schema<string>, schema: Schema<O>, message?: string): Schema<O>;
+	json<O>(this: Schema<string>, schema: Schema<O>, message?: string) {
 		return this.derive((v, path) => {
 			const result = this.parse(v, path);
 			if (result.issues) return result;
@@ -688,8 +675,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Email schema
 	 */
-	email(this: Schema<string, Input>, message?: string): Schema<string, Input>;
-	email<I>(this: Schema<string, I>, message = "Expected email") {
+	email(this: Schema<string>, message?: string): Schema<string>;
+	email(this: Schema<string>, message = "Expected email") {
 		return this.refine((s) => Schema.#emailRegex.test(s), message);
 	}
 
@@ -713,8 +700,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns URL schema
 	 */
-	url(this: Schema<string, Input>, message?: string): Schema<string, Input>;
-	url<I>(this: Schema<string, I>, message = "Expected URL") {
+	url(this: Schema<string>, message?: string): Schema<string>;
+	url(this: Schema<string>, message = "Expected URL") {
 		return this.refine(URL.canParse, message);
 	}
 
@@ -738,8 +725,8 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Integer schema
 	 */
-	int(this: Schema<number, Input>, message?: string): Schema<number, Input>;
-	int<I>(this: Schema<number, I>, message = "Expected integer") {
+	int(this: Schema<number>, message?: string): Schema<number>;
+	int(this: Schema<number>, message = "Expected integer") {
 		return this.refine(Number.isSafeInteger, message);
 	}
 
@@ -811,11 +798,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Refined schema
 	 */
-	min(
-		this: Schema<string, Input>,
-		value: number,
-		message?: string,
-	): Schema<string, Input>;
+	min(this: Schema<string>, value: number, message?: string): Schema<string>;
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
@@ -823,11 +806,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Refined schema
 	 */
-	min(
-		this: Schema<number, Input>,
-		value: number,
-		message?: string,
-	): Schema<number, Input>;
+	min(this: Schema<number>, value: number, message?: string): Schema<number>;
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
@@ -835,13 +814,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Refined schema
 	 */
+	min(this: Schema<bigint>, value: bigint, message?: string): Schema<bigint>;
 	min(
-		this: Schema<bigint, Input>,
-		value: bigint,
-		message?: string,
-	): Schema<bigint, Input>;
-	min<I>(
-		this: Schema<string | number | bigint, I>,
+		this: Schema<string | number | bigint>,
 		value: number | bigint,
 		message = `Expected minimum ${String(value)}`,
 	) {
@@ -920,11 +895,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Refined schema
 	 */
-	max(
-		this: Schema<string, Input>,
-		value: number,
-		message?: string,
-	): Schema<string, Input>;
+	max(this: Schema<string>, value: number, message?: string): Schema<string>;
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
@@ -932,11 +903,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Refined schema
 	 */
-	max(
-		this: Schema<number, Input>,
-		value: number,
-		message?: string,
-	): Schema<number, Input>;
+	max(this: Schema<number>, value: number, message?: string): Schema<number>;
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
@@ -944,13 +911,9 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @param message Issue message when invalid
 	 * @returns Refined schema
 	 */
+	max(this: Schema<bigint>, value: bigint, message?: string): Schema<bigint>;
 	max(
-		this: Schema<bigint, Input>,
-		value: bigint,
-		message?: string,
-	): Schema<bigint, Input>;
-	max<I>(
-		this: Schema<string | number | bigint, I>,
+		this: Schema<string | number | bigint>,
 		value: number | bigint,
 		message = `Expected maximum ${String(value)}`,
 	) {
@@ -984,12 +947,12 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	 * @returns Refined schema
 	 */
 	refine(
-		this: Schema<Output, Input>,
+		this: Schema<Output>,
 		check: (value: Output) => boolean,
 		message: string,
-	): Schema<Output, Input>;
-	refine<I>(
-		this: Schema<Output, I>,
+	): Schema<Output>;
+	refine(
+		this: Schema<Output>,
 		check: (value: Output) => boolean,
 		message: string,
 	) {
