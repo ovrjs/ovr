@@ -3,7 +3,7 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Render, Route, Schema } from "ovr";
 
-const id = Schema.Field.hidden().pipe(Schema.Coerce.number());
+const id = Schema.Field.hidden().transform(Number).int();
 const text = Schema.Field.text().refine(
 	(s) => s.trim().length > 0,
 	"Expected at least 1 character",

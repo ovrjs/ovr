@@ -8,7 +8,7 @@ A server driven todo app that stores data in the URL.
 ```tsx
 import { Route, Schema } from "ovr";
 
-const id = Schema.Field.hidden().pipe(Schema.Coerce.number());
+const id = Schema.Field.hidden().transform(Number).int();
 const text = Schema.Field.text().refine(
 	(s) => s.trim().length > 0,
 	"Expected at least 1 character",

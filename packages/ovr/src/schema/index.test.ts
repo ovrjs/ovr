@@ -316,70 +316,73 @@ describe("Array and object schemas", () => {
 	});
 });
 
-describe("Coercion schemas", () => {
-	test("coerce.string uses String", () => {
-		expect(valid(Schema.Coerce.string().parse(10))).toBe("10");
+describe("Preprocess schemas", () => {
+	test("string preprocess converts with String", () => {
+		expect(valid(Schema.string().preprocess(String).parse(10))).toBe("10");
 	});
 
-	test("coerce.string supports email/url/json chains", () => {
-		expect(valid(Schema.Coerce.string().email().parse("person@example.com"))).toBe(
+	test("string preprocess supports email/url/json chains", () => {
+		const schema = Schema.string().preprocess(String);
+
+		expect(valid(schema.email().parse("person@example.com"))).toBe(
 			"person@example.com",
 		);
-		expect(invalid(Schema.Coerce.string().email().parse({}))[0]?.expected).toBe(
-			"refine",
-		);
+		expect(invalid(schema.email().parse({}))[0]?.expected).toBe("refine");
 
-		expect(valid(Schema.Coerce.string().url().parse("https://example.com"))).toBe(
+		expect(valid(schema.url().parse("https://example.com"))).toBe(
 			"https://example.com",
 		);
+		expect(invalid(schema.url().parse("not a url"))[0]?.expected).toBe("refine");
+
+		expect(valid(schema.json(Schema.unknown()).parse('{"hello":"world"}'))).toEqual(
+			{ hello: "world" },
+		);
+		expect(invalid(schema.json(Schema.unknown()).parse({}))[0]?.expected).toBe(
+			"JSON",
+		);
+	});
+
+	test("number preprocess converts with Number", () => {
+		expect(valid(Schema.number().preprocess(Number).parse("10"))).toBe(10);
+	});
+
+	test("number preprocess supports int chain", () => {
+		expect(valid(Schema.number().preprocess(Number).int().parse("10"))).toBe(10);
 		expect(
-			invalid(Schema.Coerce.string().url().parse("not a url"))[0]?.expected,
+			invalid(Schema.number().preprocess(Number).int().parse("10.5"))[0]?.expected,
 		).toBe("refine");
-
-		expect(
-			valid(
-				Schema.Coerce.string()
-					.json(Schema.unknown())
-					.parse('{"hello":"world"}'),
-			),
-		).toEqual({ hello: "world" });
-		expect(
-			invalid(Schema.Coerce.string().json(Schema.unknown()).parse({}))[0]
-				?.expected,
-		).toBe("JSON");
 	});
 
-	test("coerce.number uses Number", () => {
-		expect(valid(Schema.Coerce.number().parse("10"))).toBe(10);
-	});
-
-	test("coerce.number supports int chain", () => {
-		expect(valid(Schema.Coerce.number().int().parse("10"))).toBe(10);
-		expect(invalid(Schema.Coerce.number().int().parse("10.5"))[0]?.expected).toBe(
-			"refine",
+	test("number preprocess rejects NaN", () => {
+		expect(invalid(Schema.number().preprocess(Number).parse("abc"))[0]?.expected).toBe(
+			"number",
 		);
 	});
 
-	test("coerce.boolean uses Boolean", () => {
-		expect(valid(Schema.Coerce.boolean().parse(""))).toBe(false);
-		expect(valid(Schema.Coerce.boolean().parse("yes"))).toBe(true);
+	test("boolean preprocess converts with Boolean", () => {
+		expect(valid(Schema.boolean().preprocess(Boolean).parse(""))).toBe(false);
+		expect(valid(Schema.boolean().preprocess(Boolean).parse("yes"))).toBe(true);
 	});
 
-	test("coerce.bigint validates coercible values", () => {
-		expect(valid(Schema.Coerce.bigint().parse("10"))).toBe(10n);
-		expect(invalid(Schema.Coerce.bigint().parse({}))[0]?.expected).toBe(
-			"string | number | bigint | boolean",
-		);
+	test("bigint preprocess parses coercible values", () => {
+		const schema = Schema.bigint().preprocess((v) => BigInt(v as any));
+
+		expect(valid(schema.parse("10"))).toBe(10n);
 	});
 
-	test("coerce.date validates resulting Date", () => {
-		const result = valid(Schema.Coerce.date().parse("2024-01-01"));
+	test("bigint preprocess propagates thrown errors", () => {
+		const schema = Schema.bigint().preprocess((v) => BigInt(v as any));
+
+		expect(() => schema.parse({})).toThrowError();
+	});
+
+	test("date preprocess validates resulting Date", () => {
+		const schema = Schema.date().preprocess((v) => new Date(String(v)));
+		const result = valid(schema.parse("2024-01-01"));
 		expect(result).toBeInstanceOf(Date);
 		expect(Number.isNaN(result.getTime())).toBe(false);
 
-		expect(invalid(Schema.Coerce.date().parse("not-a-date"))[0]?.expected).toBe(
-			"refine",
-		);
+		expect(invalid(schema.parse("not-a-date"))[0]?.expected).toBe("refine");
 	});
 
 	test("field string chains preserve Field behavior", () => {

@@ -528,6 +528,33 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 	}
 
 	/**
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param fn Preprocess function to run before parsing
+	 * @returns Schema that preprocesses input before parsing
+	 */
+	preprocess<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field<Output, T, U, V>,
+		fn: (value: unknown) => unknown,
+	): Field<Output, T, U, V>;
+	/**
+	 * @param fn Preprocess function to run before parsing
+	 * @returns Schema that preprocesses input before parsing
+	 */
+	preprocess<I>(
+		this: Schema<Output, I>,
+		fn: (value: unknown) => unknown,
+	): Schema<Output, I>;
+	preprocess<I>(this: Schema<Output, I>, fn: (value: unknown) => unknown) {
+		return this.derive((v, path) => this.parse(fn(v), path));
+	}
+
+	/**
 	 * @template O Output type after transformation
 	 * @template T Field tag name
 	 * @template U Field input type attribute
@@ -1007,72 +1034,6 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		return ObjectSchema;
 	}
 
-	/** Coercion schemas that apply JavaScript type coercion before validation. */
-	static readonly Coerce = class Coerce {
-		/**
-		 * Coerce to string using `String(value)`.
-		 *
-		 * @returns Coerced string schema
-		 */
-		static string() {
-			return new Schema((v) => ({ data: String(v) }));
-		}
-
-		/**
-		 * Coerce to number using `Number(value)`.
-		 *
-		 * @returns Coerced number schema
-		 */
-		static number() {
-			return new Schema((v) => ({ data: Number(v) }));
-		}
-
-		/**
-		 * Coerce to bigint using `BigInt(value)`.
-		 *
-		 * @param message Issue message when invalid
-		 * @returns Coerced big integer schema
-		 */
-		static bigint(message?: string) {
-			return new Schema((v, path) => {
-				try {
-					return {
-						data: BigInt(v as any), // catch input error
-					};
-				} catch {
-					return new Schema.AggregateIssue([
-						new Schema.Issue(
-							"string | number | bigint | boolean",
-							path,
-							message,
-						),
-					]);
-				}
-			});
-		}
-
-		/**
-		 * Coerce to boolean using `Boolean(value)`.
-		 *
-		 * @returns Coerced boolean schema
-		 */
-		static boolean() {
-			return new Schema((v) => ({ data: Boolean(v) }));
-		}
-
-		/**
-		 * Coerce to Date using `new Date(value)`. Rejects invalid dates.
-		 *
-		 * @param message Issue message when invalid
-		 * @returns Coerced date schema
-		 */
-		static date(message?: string) {
-			return new Schema((v, path) =>
-				Schema.date(message).parse(new Date(String(v)), path),
-			);
-		}
-	};
-
 	/** Field factory functions */
 	static readonly Field = class FieldFactory {
 		/**
@@ -1080,7 +1041,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @returns Generic input field
 		 */
 		static #input(props: Field.Props.Input & { type: Field.Type }) {
-			return new Field({ props }, Schema.Coerce.string());
+			return new Field({ props }, Schema.string().preprocess(String));
 		}
 
 		/**
@@ -1204,7 +1165,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @returns Input field
 		 */
 		static #number(props: Field.Props.Input & { type: "number" | "range" }) {
-			return new Field({ props }, Schema.Coerce.number());
+			return new Field({ props }, Schema.number().preprocess(Number));
 		}
 
 		/**
@@ -1237,7 +1198,7 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		static checkbox(props?: Field.Props.Input) {
 			return new Field(
 				{ props: { ...props, type: "checkbox" } },
-				Schema.Coerce.boolean(),
+				Schema.boolean(),
 				(formData, name) => formData.has(name),
 			);
 		}
@@ -1309,7 +1270,10 @@ export class Schema<Output, Input = unknown> implements StandardSchemaV1<
 		 * @returns Textarea field
 		 */
 		static textarea(props?: Field.Props.Textarea) {
-			return new Field({ tag: "textarea", props }, Schema.Coerce.string());
+			return new Field(
+				{ tag: "textarea", props },
+				Schema.string().preprocess(String),
+			);
 		}
 
 		/**
