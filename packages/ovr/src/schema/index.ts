@@ -1516,7 +1516,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 					}
 
 					try {
-						const parsed = Schema.json(
+						const result = Schema.json(
 							Schema.object({
 								id: Schema.literal(this.#id),
 								issues: Schema.array(Schema.object()).optional(),
@@ -1524,7 +1524,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 							}),
 						).parse(Codec.decode(Codec.Base64Url.decode(encoded)));
 
-						if (parsed.data) state = parsed.data as Schema.Form.State<Shape>;
+						if (result.data) state = result.data as Schema.Form.State<Shape>;
 					} catch {}
 				}
 			}
