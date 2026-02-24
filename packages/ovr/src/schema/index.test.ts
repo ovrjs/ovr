@@ -1,4 +1,5 @@
 import { Codec } from "../util/index.js";
+import { Render } from "../render/index.js";
 import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
@@ -449,6 +450,43 @@ describe("Form schema", () => {
 		expect(state.values?.password).toBeUndefined();
 		expect(state.id).toBeTruthy();
 		expect(state.issues?.length).toBeGreaterThan(0);
+	});
+
+	test("invalid URL _form state is ignored when rendering fields", async () => {
+		const form = Schema.form({
+			name: Schema.Field.text(),
+			role: Schema.Field.radio(["reader", "admin"]),
+		});
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("role", "owner");
+
+		const result = form.parse(data);
+		if (!result.issues) throw new Error("Expected issues");
+		if (!result.search) throw new Error("Expected _form search state");
+
+		const state = JSON.parse(
+			Codec.decode(Codec.Base64Url.decode(result.search[1])),
+		) as Schema.Form.State;
+		const tampered = {
+			...state,
+			issues: undefined,
+			values: { name: { bad: true } },
+		};
+
+		const url = new URL("https://example.com/form");
+
+		url.searchParams.set(
+			"_form",
+			Codec.Base64Url.encode(Codec.encode(JSON.stringify(tampered))),
+		);
+
+		const html = await new Render(null).string(form.Field({ name: "name", state: url }));
+
+		expect(html.includes('name="name"')).toBe(true);
+		expect(html.includes('value="{')).toBe(false);
+		expect(html.includes("aria-invalid")).toBe(false);
 	});
 
 	test("form shape methods extend, pick, and omit preserve parse behavior", () => {

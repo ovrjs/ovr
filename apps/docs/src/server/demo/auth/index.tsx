@@ -90,7 +90,7 @@ export const logout = Route.post((c) => {
 
 /** Protected dashboard route for demo session/credential output. */
 export const admin = Route.get(
-	"/demo/auth/admin",
+	"/auth/admin",
 	guard((c, auth) => {
 		const userCredentials = Array.from(credentials.values()).filter(
 			(v) => v.user === auth.user.id,

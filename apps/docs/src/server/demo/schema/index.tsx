@@ -35,7 +35,7 @@ const student = Schema.form({
 	),
 });
 
-export const register = Route.post(student, async (c) => {
+export const enroll = Route.post(student, async (c) => {
 	const result = await c.data();
 
 	if (result.issues) return c.redirect(result.url, 303);
@@ -54,7 +54,7 @@ export const schema = Route.get("/demo/schema", (c) => {
 
 			{Render.html(schemaContent.html)}
 
-			<register.Form state={c.url} />
+			<enroll.Form state={c.url} />
 		</Layout>
 	);
 });

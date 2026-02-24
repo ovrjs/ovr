@@ -1509,17 +1509,22 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 							: stateInput.get(FormSchema.#param);
 
 				if (encoded && encoded.length <= FormSchema.#maxStateBytes * 2) {
-					// TODO - record schema
-					// const stateSchema = Schema.json(
-					// 	Schema.object({
-					// 		id: Schema.literal(this.#id),
-					// 		issues: Schema.array(Schema.object()),
-					// 		values: Schema.object(),
-					// 	}),
-					// );
+					const valuesShape: Schema.Object.Shape = {};
+
+					for (const name of Object.keys(this.#fields)) {
+						valuesShape[name] = FormSchema.#valueSchema.optional();
+					}
 
 					try {
-						state = JSON.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
+						const parsed = Schema.json(
+							Schema.object({
+								id: Schema.literal(this.#id),
+								issues: Schema.array(Schema.object()).optional(),
+								values: Schema.object(valuesShape).optional(),
+							}),
+						).parse(Codec.decode(Codec.Base64Url.decode(encoded)));
+
+						if (parsed.data) state = parsed.data as Schema.Form.State<Shape>;
 					} catch {}
 				}
 			}
