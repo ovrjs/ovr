@@ -1777,10 +1777,10 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * @param path Internal path reference
 	 * @returns Parsed result
 	 */
-	parse = (
+	parse(
 		formData: FormData | URLSearchParams,
 		path: Schema.Issue.Path = [],
-	): Schema.Form.Parse.Result<Shape> => {
+	): Schema.Form.Parse.Result<Shape> {
 		const data: Record<string, unknown> = {};
 		const issues: Schema.Issue[] = [];
 		const values: Record<string, unknown> = {};
@@ -1829,7 +1829,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		}
 
 		return { data } as { data: Schema.Infer<Shape> };
-	};
+	}
 
 	/**
 	 * Render a single form field.
