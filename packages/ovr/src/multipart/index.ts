@@ -473,6 +473,7 @@ export class Multipart extends Request {
 
 					if (part.filename || part.type === Mime.type.stream) {
 						const blob = await part.blob();
+
 						value = new File([blob], part.filename ?? "blob", {
 							type: blob.type,
 						});
