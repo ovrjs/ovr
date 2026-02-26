@@ -35,17 +35,25 @@ class PreparedResponse {
 
 export namespace Context {
 	/**
-	 * Context.data result
+	 * Context.data return type.
+	 *
+	 * Routes without a schema return `null`.
 	 *
 	 * @template S Form shape
 	 */
-	export type Data<S extends Schema.Form.Shape> = Schema.Form.Parse.Result<
-		S,
-		{
-			/** URL with invalid field values encoded into a search parameter. */
-			readonly url: URL;
-		}
-	>;
+	export type Result<S extends Schema.Form.Shape> = [
+		Schema.Form.Shape,
+	] extends [S]
+		? null
+		: Util.Prettify<
+				Schema.Form.Parse.Result<
+					S,
+					{
+						/** URL with invalid field values encoded into a search parameter. */
+						readonly url: URL;
+					}
+				>
+			>;
 }
 
 /**
@@ -220,13 +228,11 @@ export class Context<
 	 * @param options Multipart options for POST requests
 	 * @returns Parsed form data with possible invalid redirect URL state
 	 */
-	async data(
-		options?: Multipart.Options,
-	): Promise<Util.Prettify<Context.Data<Shape>>> {
+	async data(options?: Multipart.Options): Promise<Context.Result<Shape>> {
 		const post = this.req.method === Method.post;
 		const form = this.route as Route.Post | undefined;
 
-		if (!form?.parse) throw new Error("No route schema");
+		if (!form?.parse) return null as Context.Result<Shape>;
 
 		const result = await form.parse(
 			post
@@ -254,10 +260,10 @@ export class Context<
 
 			if (result.search) url.searchParams.set(...result.search);
 
-			return Object.assign(result, { url });
+			return Object.assign(result, { url }) as Context.Result<Shape>;
 		}
 
-		return result as Util.Prettify<Context.Data<Shape>>;
+		return result as Context.Result<Shape>;
 	}
 
 	get auth() {

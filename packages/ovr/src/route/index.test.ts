@@ -288,16 +288,16 @@ describe("Route schema helpers", () => {
 		expect(await res.text()).toBe("Too Many Parts");
 	});
 
-	test("c.data throws on routes without a schema", async () => {
+	test("c.data returns null on routes without a schema", async () => {
 		const noSchema = Route.get("/no-schema", async (c) => {
-			await c.data();
-			c.text("ok");
+			const result = await c.data();
+			c.text(result === null ? "ok" : "bad");
 		});
 		const app = new App().use(noSchema);
+		const res = await app.fetch("http://localhost:5173/no-schema");
 
-		await expect(app.fetch("http://localhost:5173/no-schema")).rejects.toThrow(
-			"No route schema",
-		);
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe("ok");
 	});
 
 	test("c.data auto-applies schema parts limit", async () => {
