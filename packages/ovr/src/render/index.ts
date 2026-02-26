@@ -1,5 +1,5 @@
 import type { JSX } from "../jsx/index.js";
-import { Codec } from "../util/index.js";
+import { Codec, Size } from "../util/index.js";
 
 type Next = { i: number; result: IteratorResult<Chunk, void> };
 
@@ -203,7 +203,7 @@ export class Render {
 				// https://blog.cloudflare.com/unpacking-cloudflare-workers-cpu-performance-benchmarks/#inefficient-streams-adapters
 				// in Node, the default is 16kb, so this stacks another 2kb in front
 				// https://nodejs.org/api/http.html#outgoingmessagewritablehighwatermark
-				highWaterMark: 2048,
+				highWaterMark: 2 * Size.kb,
 			},
 		);
 	}

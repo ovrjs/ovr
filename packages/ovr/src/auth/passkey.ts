@@ -533,11 +533,13 @@ export class Passkey {
 	 * @returns Schema parser for signed challenge payloads
 	 */
 	static #challenge = (ceremony: "create" | "get", action: string) => {
-		return Schema.string().json(
-			(ceremony === "create" ? Passkey.create : Passkey.get).extend({
-				action: Schema.literal(action, AuthIssue.m("action")),
-			}),
-		).refine((c) => Date.now() <= c.exp, AuthIssue.m("challenge (expired)"));
+		return Schema.string()
+			.json(
+				(ceremony === "create" ? Passkey.create : Passkey.get).extend({
+					action: Schema.literal(action, AuthIssue.m("action")),
+				}),
+			)
+			.refine((c) => Date.now() <= c.exp, AuthIssue.m("challenge (expired)"));
 	};
 
 	/** Schema for signed registration bootstrap payloads. */
@@ -593,9 +595,9 @@ export class Passkey {
 
 			if (input.issues) throw input;
 
-			const bootstrap = Schema.string().json(
-				Schema.union([Passkey.bCreate, Passkey.bGet]),
-			).parse(await c.auth.verify(input.data.bootstrap));
+			const bootstrap = Schema.string()
+				.json(Schema.union([Passkey.bCreate, Passkey.bGet]))
+				.parse(await c.auth.verify(input.data.bootstrap));
 
 			if (bootstrap.issues) throw bootstrap;
 

@@ -1,4 +1,4 @@
-import { Codec, Header, Mime } from "../util/index.js";
+import { Codec, Header, Mime, Size } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
 class Needle extends Uint8Array {
@@ -174,16 +174,13 @@ export namespace Multipart {
 
 /** Multipart request */
 export class Multipart extends Request {
-	static readonly #kb = 1024;
-	static readonly #mb = 1024 ** 2;
-
 	/** New line needle to share across requests and parts */
 	static readonly #newLine = new Needle("\r\n\r\n");
 
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
-		memory: 4 * Multipart.#mb,
-		payload: 16 * Multipart.#mb,
+		memory: 4 * Size.mb,
+		payload: 16 * Size.mb,
 		parts: Infinity,
 	};
 
@@ -247,7 +244,7 @@ export class Multipart extends Request {
 			new ArrayBuffer(
 				// slightly larger than common chunk size/high water mark 64kb for leftover boundary
 				// prevents having to resize memory for most requests
-				65 * Multipart.#kb,
+				65 * Size.kb,
 				// cap max chunk size + leftover
 				{ maxByteLength: this.#options.memory },
 			),

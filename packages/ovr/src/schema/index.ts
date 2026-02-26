@@ -1,6 +1,6 @@
 import { Fragment, type JSX, jsx } from "../jsx/index.js";
 import { Multipart } from "../multipart/index.js";
-import { Checksum, Codec } from "../util/index.js";
+import { Checksum, Codec, Size } from "../util/index.js";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 export namespace Schema {
@@ -1654,7 +1654,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	static readonly #param = "_form";
 
 	/** Maximum encoded state size in bytes. */
-	static readonly #maxStateBytes = 4096;
+	static readonly #maxStateBytes = 4 * Size.kb;
 
 	/** Maximum serialized size for a single persisted value. */
 	static readonly #maxValueChars = 512;

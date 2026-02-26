@@ -275,6 +275,12 @@ export class Method {
 	static readonly head = "HEAD";
 }
 
+/** Byte size constants */
+export class Size {
+	static readonly kb = 1024;
+	static readonly mb = 1024 * Size.kb;
+}
+
 /** Times in milliseconds */
 export class Time {
 	static readonly second = 1000;

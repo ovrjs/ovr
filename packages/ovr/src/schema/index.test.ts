@@ -386,7 +386,7 @@ describe("Preprocess schemas", () => {
 		const field = Schema.Field.text().email();
 
 		expect(valid(field.parse("person@example.com"))).toBe("person@example.com");
-		expect("Component" in field).toBe(true);
+		expect("component" in field).toBe(true);
 	});
 
 	test("field min and max chains preserve Field behavior", () => {
@@ -394,7 +394,7 @@ describe("Preprocess schemas", () => {
 
 		expect(valid(field.parse("ab"))).toBe("ab");
 		expect(invalid(field.parse("a"))[0]?.expected).toBe("refine");
-		expect("Component" in field).toBe(true);
+		expect("component" in field).toBe(true);
 	});
 });
 
