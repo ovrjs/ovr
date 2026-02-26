@@ -133,3 +133,11 @@ test("/*", () => {
 	expect(result?.route.middleware[0](c, Promise.resolve)).toBe("/*");
 	expect(result?.params).toStrictEqual({ "*": "whatever" });
 });
+
+test("conflicting param names at same segment throw", () => {
+	const trie = new Trie().add(Route.get("/:id", () => "/:id"));
+
+	expect(() => trie.add(Route.get("/:name", () => "/:name"))).toThrow(
+		'Conflicting param names "id" and "name"',
+	);
+});

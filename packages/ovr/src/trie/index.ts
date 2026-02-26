@@ -120,7 +120,17 @@ export class Trie {
 	 * @returns the existing child with the same name, or creates a new
 	 */
 	set(name: string) {
-		return (this.param ??= new ParamNode(name));
+		if (this.param) {
+			if (this.param.name !== name) {
+				throw new TypeError(
+					`Conflicting param names "${this.param.name}" and "${name}"`,
+				);
+			}
+
+			return this.param;
+		}
+
+		return (this.param = new ParamNode(name));
 	}
 
 	/**
