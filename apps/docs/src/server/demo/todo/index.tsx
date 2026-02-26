@@ -50,7 +50,7 @@ export const todo = Route.get("/demo/todo", { list }, async (c) => {
 	const json = JSON.stringify(list);
 	const Layout = createLayout(c);
 
-	const TextField = add.field({ name: "text", state: c.url });
+	const TextField = add.component({ name: "text", state: c.url });
 
 	return (
 		<Layout head={<Meta {...todoContent.frontmatter} />}>

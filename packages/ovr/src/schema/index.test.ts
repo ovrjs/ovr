@@ -595,9 +595,15 @@ describe("Form schema", () => {
 		omittedData.set("a", "x");
 		omittedData.set("c", "on");
 
-		expect(valid(await extended.parse(extendedData))).toEqual({ a: "x", b: true });
+		expect(valid(await extended.parse(extendedData))).toEqual({
+			a: "x",
+			b: true,
+		});
 		expect(valid(await picked.parse(pickedData))).toEqual({ a: "x", c: true });
-		expect(valid(await omitted.parse(omittedData))).toEqual({ a: "x", c: true });
+		expect(valid(await omitted.parse(omittedData))).toEqual({
+			a: "x",
+			c: true,
+		});
 	});
 
 	test("form field helper APIs stay available after pick", () => {
@@ -607,7 +613,7 @@ describe("Form schema", () => {
 		}).pick(["a"]);
 
 		expect(typeof form.Field).toBe("function");
-		expect(typeof form.field({ name: "a" }).Control).toBe("function");
+		expect(typeof form.component({ name: "a" }).Control).toBe("function");
 	});
 
 	test("file and files fields parse file values", async () => {
@@ -635,7 +641,7 @@ describe("Form schema", () => {
 	test("field parts metadata reflects field cardinality", () => {
 		expect(Schema.Field.text().parts).toBe(1);
 		expect(Schema.Field.checkbox().parts).toBe(1);
-		expect(Schema.Field.file().part().parts).toBe(1);
+		expect(Schema.Field.file().stream().parts).toBe(1);
 		expect(Schema.Field.checkboxes(["a", "b", "c"]).parts).toBe(3);
 		expect(Schema.Field.multiselect(["a", "b"]).parts).toBe(2);
 		expect(Schema.Field.files().parts).toBe(Infinity);
@@ -647,14 +653,12 @@ describe("Form schema", () => {
 				name: Schema.Field.text(),
 				roles: Schema.Field.checkboxes(["reader", "admin"]),
 				tags: Schema.Field.multiselect(["a", "b", "c"]),
-				license: Schema.Field.file().part(),
+				license: Schema.Field.file().stream(),
 			}).parts,
 		).toBe(7);
 		expect(
-			Schema.form({
-				name: Schema.Field.text(),
-				uploads: Schema.Field.files(),
-			}).parts,
+			Schema.form({ name: Schema.Field.text(), uploads: Schema.Field.files() })
+				.parts,
 		).toBe(Infinity);
 	});
 
@@ -662,7 +666,7 @@ describe("Form schema", () => {
 		const form = Schema.form({
 			name: Schema.Field.text(),
 			rules: Schema.Field.checkbox(),
-			license: Schema.Field.file().part(),
+			license: Schema.Field.file().stream(),
 		});
 		const body = new FormData();
 
@@ -689,7 +693,7 @@ describe("Form schema", () => {
 	test("multipart parse does not expose parts when non-part fields are invalid", async () => {
 		const form = Schema.form({
 			name: Schema.Field.text().min(2),
-			license: Schema.Field.file().part(),
+			license: Schema.Field.file().stream(),
 		});
 		const body = new FormData();
 

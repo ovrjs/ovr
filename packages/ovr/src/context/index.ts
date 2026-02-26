@@ -197,10 +197,12 @@ export class Context<
 	}
 
 	/**
-	 * Parse multipart requests.
+	 * Parse a multipart request.
+	 *
+	 * _Prefer_ `Context.data()` _when possible to parse
+	 * with a type-safe schema._
 	 *
 	 * @yields Multipart request `Part`(s)
-	 *
 	 * @example
 	 *
 	 * ```ts

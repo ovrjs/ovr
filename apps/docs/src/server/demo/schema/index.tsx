@@ -33,7 +33,7 @@ const student = Schema.form({
 		(v) => v,
 		"You must accept the castle rules",
 	),
-	license: Schema.Field.file().part(), // put parts last to be stream after rest
+	license: Schema.Field.file().stream(), // put stream last to parse fields first
 });
 
 export const enroll = Route.post(student, async (c) => {

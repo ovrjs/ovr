@@ -197,7 +197,10 @@ describe("Route schema helpers", () => {
 	test("invalid multipart POST with streamed file field returns redirect", async () => {
 		const submit = Route.post(
 			"/upload",
-			{ name: Schema.Field.text().min(2), license: Schema.Field.file().part() },
+			{
+				name: Schema.Field.text().min(2),
+				license: Schema.Field.file().stream(),
+			},
 			async (c) => {
 				const result = await c.data();
 

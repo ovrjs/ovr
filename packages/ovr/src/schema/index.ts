@@ -177,11 +177,11 @@ export namespace Schema {
 
 		export namespace Parse {
 			/**
-			 * Field names that are not marked as streamed multipart parts.
+			 * Field names that are not marked to stream as multipart parts.
 			 *
 			 * @template S Form shape
 			 */
-			type NonPartNames<S extends Shape> = {
+			type NonStreamNames<S extends Shape> = {
 				[K in keyof S]-?: S[K] extends Field<any, any, any, any, infer P>
 					? P extends true
 						? never
@@ -190,18 +190,18 @@ export namespace Schema {
 			}[keyof S];
 
 			/**
-			 * Parsed data shape with streamed `part()` fields removed.
+			 * Parsed data shape with streamed `stream()` fields removed.
 			 *
 			 * @template S Form shape
 			 */
-			type NonPartShape<S extends Shape> = Pick<S, NonPartNames<S>>;
+			type NonStreamShape<S extends Shape> = Pick<S, NonStreamNames<S>>;
 
 			/**
 			 * Parsed form data output.
 			 *
 			 * @template S Form shape
 			 */
-			export type Data<S extends Shape> = Schema.Infer<NonPartShape<S>>;
+			export type Data<S extends Shape> = Schema.Infer<NonStreamShape<S>>;
 
 			/**
 			 * Form parse result.
@@ -1861,7 +1861,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 
 					if (!field) {
 						issues.push(this.#unexpected(part.name, path));
-					} else if (field.isPart) {
+					} else if (field.streaming) {
 						// expose current and rest of the parts to the user
 						parts = (async function* () {
 							try {
@@ -1897,7 +1897,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		}
 
 		for (const [name, field] of Object.entries(this.#fields)) {
-			if (!field.isPart) {
+			if (!field.streaming) {
 				const value = field.read(form, name);
 				const result = field.parse(value, [...path, name]);
 
@@ -1963,7 +1963,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * ```
 	 */
 	Field = (props: Field.Component.Props<Shape>) =>
-		this.#fields[props.name]!.Field({
+		this.#fields[props.name]!.render({
 			...props,
 			state: this.#decode(props.state),
 		});
@@ -1985,7 +1985,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		const state = this.#decode(props.state); // pulled out to not call each map iteration
 
 		return this.#names.map((name) =>
-			this.#fields[name]!.Field({ ...props, name, state }),
+			this.#fields[name]!.render({ ...props, name, state }),
 		);
 	};
 
@@ -1993,20 +1993,20 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * Access bound sub-components for a field.
 	 *
 	 * @template N Type of the form field name
-	 * @param name Field name
+	 * @param props Field component props
 	 * @example
 	 *
 	 * ```tsx
-	 * const Radio = User.field("radio");
+	 * const Radio = User.component({ name: "radio" });
 	 *
 	 * <Radio.Label />
 	 * <Radio.Control />
 	 * ```
 	 */
-	field = <N extends Shape.Name<Shape>>(
+	component = <N extends Shape.Name<Shape>>(
 		props: { name: N } & Field.Component.Props<Shape>,
 	): Field.Component<Shape[N]> =>
-		this.#fields[props.name]!.Component({
+		this.#fields[props.name]!.component({
 			...props,
 			state: this.#decode(props.state),
 		});
@@ -2323,14 +2323,14 @@ export namespace Field {
  * @template Tag Tag name
  * @template Type Input type
  * @template Values Persisted field value type
- * @template Part If the value should be streamed as a part
+ * @template Stream If the field should be streamed as a part
  */
 export class Field<
 	Output = unknown,
 	Tag extends Field.Tag = "input",
 	Type extends Field.Type = Field.Type,
 	Values extends Field.Values | undefined = undefined,
-	Part extends boolean | undefined = undefined,
+	Stream extends boolean | undefined = undefined,
 > extends Schema<Output> {
 	/** Read the value from form data */
 	readonly read: Field.Read;
@@ -2350,7 +2350,7 @@ export class Field<
 	readonly parts: number;
 
 	/** If the field should be streamed as a part */
-	readonly isPart?: Part;
+	readonly streaming?: Stream;
 
 	/** Field options */
 	readonly #options: Field.Options<Values, Tag>;
@@ -2362,14 +2362,14 @@ export class Field<
 	 * @param parse How to validate the input
 	 * @param read How to read the form data
 	 * @param parts Maximum expected multipart parts for this field
-	 * @param part If this field should be streamed as a multipart part
+	 * @param stream If this field should be streamed as a multipart part
 	 */
 	constructor(
 		options: Field.Options<Values, Tag>,
 		parse: Schema<Output> | Schema.Parse.Constructor<Output>,
 		read?: Field.Read,
 		parts = 1,
-		part?: Part,
+		stream?: Stream,
 	) {
 		super(parse instanceof Schema ? parse.parse : parse);
 
@@ -2387,7 +2387,7 @@ export class Field<
 
 		this.type = options.props?.type as Type;
 		this.parts = parts;
-		this.isPart = part;
+		this.streaming = stream;
 	}
 
 	/**
@@ -2395,7 +2395,7 @@ export class Field<
 	 *
 	 * @returns Part field
 	 */
-	part() {
+	stream() {
 		return new Field<Output, Tag, Type, Values, true>(
 			this.#options,
 			this.parse,
@@ -2413,12 +2413,12 @@ export class Field<
 	 * @returns New `Field` instance
 	 */
 	override derive<O>(parse: Schema.Parse.Constructor<O>) {
-		return new Field<O, Tag, Type, Values, Part>(
+		return new Field<O, Tag, Type, Values, Stream>(
 			this.#options,
 			parse,
 			this.read,
 			this.parts,
-			this.isPart,
+			this.streaming,
 		);
 	}
 
@@ -2427,10 +2427,10 @@ export class Field<
 	 * @param props Field control props
 	 * @returns Field component with sub-components
 	 */
-	Component<S extends Schema.Form.Shape>(
+	component<S extends Schema.Form.Shape>(
 		props: Field.Component.Props<S, false>,
 	): Field.Component<this>;
-	Component<S extends Schema.Form.Shape>({
+	component<S extends Schema.Form.Shape>({
 		state,
 		...props
 	}: Field.Component.Props<S, false>): unknown {
@@ -2551,17 +2551,17 @@ export class Field<
 		this: Field<Output, "input", "radio" | "checkbox", Field.Values>,
 		props: Field.Component.Props<S, false>,
 	) {
-		const Base = this.Component(props);
+		const c = this.component(props);
 
-		return Base.Root({
+		return c.Root({
 			children: [
 				jsx("legend", { children: props.name }),
 				this.values.map((value: string) => {
 					return jsx("div", {
-						children: [Base.Control({ value }), Base.Label({ value })],
+						children: [c.Control({ value }), c.Label({ value })],
 					});
 				}),
-				Base.Issue(),
+				c.Issue(),
 			],
 		});
 	}
@@ -2575,15 +2575,15 @@ export class Field<
 		this: Field<Output, "select", Type, Field.Values>,
 		props: Field.Component.Props<S, false>,
 	) {
-		const Base = this.Component(props);
+		const c = this.component(props);
 
-		return Base.Root({
+		return c.Root({
 			children: [
-				Base.Label(),
-				Base.Control({
-					children: this.values.map((value: string) => Base.Option({ value })),
+				c.Label(),
+				c.Control({
+					children: this.values.map((value: string) => c.Option({ value })),
 				}),
-				Base.Issue(),
+				c.Issue(),
 			],
 		});
 	}
@@ -2594,11 +2594,9 @@ export class Field<
 	 * @returns Default input component
 	 */
 	#Input<S extends Schema.Form.Shape>(props: Field.Component.Props<S, false>) {
-		const Base = this.Component(props);
+		const c = this.component(props);
 
-		return Base.Root({
-			children: [Base.Label(), Base.Control(), Base.Issue()],
-		});
+		return c.Root({ children: [c.Label(), c.Control(), c.Issue()] });
 	}
 
 	/**
@@ -2606,7 +2604,7 @@ export class Field<
 	 * @param props Field control props including `name` of the field to render
 	 * @returns Component that renders the HTML field with default structure
 	 */
-	Field<S extends Schema.Form.Shape>(props: Field.Component.Props<S, false>) {
+	render<S extends Schema.Form.Shape>(props: Field.Component.Props<S, false>) {
 		if (this.values) {
 			if (this.tag === "select") return this.#Select(props);
 

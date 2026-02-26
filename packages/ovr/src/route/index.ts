@@ -90,10 +90,10 @@ export namespace Route {
 	/**
 	 * Form method subset attached to route helper types.
 	 *
-	 * Omits `field` so schema-specific `field` signatures are not widened when a
+	 * Omits `component` so schema-specific `component` signatures are not widened when a
 	 * concrete `Schema.Form<S>` is intersected onto the route type.
 	 */
-	type FormMethods = Omit<Schema.Form<any>, "field">;
+	type FormMethods = Omit<Schema.Form<any>, "component">;
 
 	/**
 	 * Optional form helper methods available when a route may have a schema.
