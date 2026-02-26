@@ -1,4 +1,5 @@
 import { Fragment, type JSX, jsx } from "../jsx/index.js";
+import { Multipart } from "../multipart/index.js";
 import { Checksum, Codec } from "../util/index.js";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
@@ -38,8 +39,11 @@ export namespace Schema {
 		 *
 		 * @template O Parse output
 		 * @template M Extra invalid result metadata
+		 * @template V Extra valid result metadata
 		 */
-		export type Result<O, M extends object = {}> = Valid<O> | (Invalid & M);
+		export type Result<O, M extends object = {}, V extends object = {}> =
+			| (Valid<O> & V)
+			| (Invalid & M);
 
 		/**
 		 * Type of constructor input (path is required).
@@ -173,6 +177,33 @@ export namespace Schema {
 
 		export namespace Parse {
 			/**
+			 * Field names that are not marked as streamed multipart parts.
+			 *
+			 * @template S Form shape
+			 */
+			type NonPartNames<S extends Shape> = {
+				[K in keyof S]-?: S[K] extends Field<any, any, any, any, infer P>
+					? P extends true
+						? never
+						: K
+					: never;
+			}[keyof S];
+
+			/**
+			 * Parsed data shape with streamed `part()` fields removed.
+			 *
+			 * @template S Form shape
+			 */
+			type NonPartShape<S extends Shape> = Pick<S, NonPartNames<S>>;
+
+			/**
+			 * Parsed form data output.
+			 *
+			 * @template S Form shape
+			 */
+			export type Data<S extends Shape> = Schema.Infer<NonPartShape<S>>;
+
+			/**
 			 * Form parse result.
 			 *
 			 * @template S Form shape
@@ -182,11 +213,17 @@ export namespace Schema {
 				S extends Shape,
 				M extends object = {},
 			> = Schema.Parse.Result<
-				Schema.Infer<S>,
+				Data<S>,
 				{
 					/** Encoded URL search param field state */
 					readonly search: Result.Search;
-				} & M
+					/** Invalid parses do not expose remaining multipart parts */
+					readonly parts?: never;
+				} & M,
+				{
+					/** Rest of the multipart parts to stream */
+					readonly parts?: AsyncGenerator<Multipart.Part>;
+				}
 			>;
 
 			export namespace Result {
@@ -1692,6 +1729,19 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	}
 
 	/**
+	 * @param name Unexpected form field name
+	 * @param path Parent path
+	 * @returns Schema issue for unexpected form field names
+	 */
+	#unexpected(name: string, path: Schema.Issue.Path = []) {
+		return new Schema.Issue(
+			"known form data name",
+			[...path, name],
+			"Unexpected form data name",
+		);
+	}
+
+	/**
 	 * Sanitizes persisted values by removing unsupported or oversized entries.
 	 *
 	 * @param values Candidate values to persist
@@ -1773,29 +1823,82 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	/**
 	 * Parse and validate form data.
 	 *
-	 * @param formData FormData or URLSearchParams to parse
+	 * @param source FormData, URLSearchParams, or Multipart to parse
 	 * @param path Internal path reference
 	 * @returns Parsed result
 	 */
-	parse(
-		formData: FormData | URLSearchParams,
+	async parse(
+		source: FormData | URLSearchParams | Multipart,
 		path: Schema.Issue.Path = [],
-	): Schema.Form.Parse.Result<Shape> {
+	): Promise<Schema.Form.Parse.Result<Shape>> {
 		const data: Record<string, unknown> = {};
 		const issues: Schema.Issue[] = [];
 		const values: Record<string, unknown> = {};
+		let form: FormData | URLSearchParams;
+		let parts: AsyncGenerator<Multipart.Part> | undefined;
+
+		if (source instanceof Multipart) {
+			form = new FormData();
+			const iter = source[Symbol.asyncIterator]();
+
+			let current: IteratorResult<Multipart.Part>;
+
+			while ((current = await iter.next()) && !current.done) {
+				const part = current.value;
+
+				if (part.name) {
+					const field = this.#fields[part.name];
+
+					if (!field) {
+						issues.push(this.#unexpected(part.name, path));
+					} else if (field.isPart) {
+						// expose current and rest of the parts to the user
+						parts = (async function* () {
+							try {
+								yield part;
+
+								let next: IteratorResult<Multipart.Part>;
+
+								while ((next = await iter.next()) && !next.done) {
+									yield next.value;
+								}
+							} finally {
+								try {
+									await iter.return?.();
+								} catch {}
+							}
+						})();
+
+						break;
+					} else {
+						form.append(part.name, await part.value());
+					}
+				}
+			}
+		} else if (source instanceof FormData) {
+			form = source;
+
+			for (const name of new Set(source.keys())) {
+				if (!this.#fields[name]) issues.push(this.#unexpected(name, path));
+			}
+		} else {
+			// allow passthrough for URLSearchParams
+			form = source;
+		}
 
 		for (const [name, field] of Object.entries(this.#fields)) {
-			const value = field.read(formData, name);
-			const result = field.parse(value, [...path, name]);
+			if (!field.isPart) {
+				const value = field.read(form, name);
+				const result = field.parse(value, [...path, name]);
 
-			if (result.issues) {
-				issues.push(...result.issues);
-			} else {
-				data[name] = result.data;
+				if (result.issues) {
+					issues.push(...result.issues);
+				} else {
+					data[name] = result.data;
+				}
+
+				if (FormSchema.#persist(field) && value != null) values[name] = value;
 			}
-
-			if (FormSchema.#persist(field) && value != null) values[name] = value;
 		}
 
 		if (issues.length) {
@@ -1825,10 +1928,18 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 				}
 			}
 
+			if (parts) {
+				// invalid result does not expose streamed parts, drain the remainder
+				// so adapters that require body consumption can respond
+				try {
+					for await (const _ of parts);
+				} catch {}
+			}
+
 			return Object.assign(result, { search });
 		}
 
-		return { data } as { data: Schema.Infer<Shape> };
+		return { data: data as Schema.Form.Parse.Data<Shape>, parts };
 	}
 
 	/**
@@ -1936,7 +2047,13 @@ export namespace Field {
 	export type Values = readonly [string, ...string[]];
 
 	/** Any field - `<input type=...>` / `<select>` / `<textarea>` */
-	export type Any = Field<any, Tag, Type, Values | undefined>;
+	export type Any = Field<
+		any,
+		Tag,
+		Type,
+		Values | undefined,
+		boolean | undefined
+	>;
 
 	/**
 	 * Obtain the tag name of a field.
@@ -2202,6 +2319,7 @@ export class Field<
 	Tag extends Field.Tag = "input",
 	Type extends Field.Type = Field.Type,
 	Values extends Field.Values | undefined = undefined,
+	Part extends boolean | undefined = undefined,
 > extends Schema<Output> {
 	/** Read the value from form data */
 	readonly read: Field.Read;
@@ -2217,6 +2335,9 @@ export class Field<
 	/** Field values */
 	readonly values: Values;
 
+	/** If the field should be streamed as a part */
+	readonly isPart?: Part;
+
 	/** Field options */
 	readonly #options: Field.Options<Values, Tag>;
 
@@ -2231,6 +2352,7 @@ export class Field<
 		options: Field.Options<Values, Tag>,
 		parse: Schema<Output> | Schema.Parse.Constructor<Output>,
 		read?: Field.Read,
+		part?: Part,
 	) {
 		super(parse instanceof Schema ? parse.parse : parse);
 
@@ -2247,6 +2369,21 @@ export class Field<
 			});
 
 		this.type = options.props?.type as Type;
+		this.isPart = part;
+	}
+
+	/**
+	 * Stream this field as a multipart request `Part`.
+	 *
+	 * @returns Part field
+	 */
+	part() {
+		return new Field<Output, Tag, Type, Values, true>(
+			this.#options,
+			this.parse,
+			this.read,
+			true,
+		);
 	}
 
 	/**
@@ -2257,7 +2394,12 @@ export class Field<
 	 * @returns New `Field` instance
 	 */
 	override derive<O>(parse: Schema.Parse.Constructor<O>) {
-		return new Field<O, Tag, Type, Values>(this.#options, parse, this.read);
+		return new Field<O, Tag, Type, Values, Part>(
+			this.#options,
+			parse,
+			this.read,
+			this.isPart,
+		);
 	}
 
 	/**

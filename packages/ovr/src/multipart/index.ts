@@ -1,4 +1,3 @@
-import { Schema } from "../schema/index.js";
 import { Codec, Header, Mime } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
@@ -99,6 +98,20 @@ class Part extends Request {
 			this.headers.get(Header.name.disp),
 		));
 	}
+
+	/**
+	 *
+	 * @returns Buffered FormDataEntryValue
+	 */
+	async value(): Promise<FormDataEntryValue> {
+		if (this.filename || this.type === Mime.type.stream) {
+			const blob = await this.blob();
+
+			return new File([blob], this.filename ?? "blob", { type: blob.type });
+		}
+
+		return this.text();
+	}
 }
 
 export namespace Multipart {
@@ -197,9 +210,6 @@ export class Multipart extends Request {
 
 	/** Total bytes read from the stream */
 	#payloadSize = 0;
-
-	/** Cached form data so users can call `data` multiple times */
-	#formData?: FormData;
 
 	/**
 	 * Split a multipart request into parts.
@@ -430,6 +440,7 @@ export class Multipart extends Request {
 				// cannot cancel, chunks would be in the next header
 				if (part.body && !part.bodyUsed) {
 					const partReader = part.body.getReader();
+
 					try {
 						while (!(await partReader.read()).done);
 					} finally {
@@ -464,48 +475,12 @@ export class Multipart extends Request {
 	 * @returns Buffered `FormData`
 	 */
 	async data() {
-		if (!this.#formData) {
-			this.#formData = new FormData();
+		const data = new FormData();
 
-			for await (const part of this) {
-				if (part.name) {
-					let value: string | File;
-
-					if (part.filename || part.type === Mime.type.stream) {
-						const blob = await part.blob();
-
-						value = new File([blob], part.filename ?? "blob", {
-							type: blob.type,
-						});
-					} else {
-						value = await part.text();
-					}
-
-					this.#formData.append(part.name, value);
-				}
-			}
+		for await (const part of this) {
+			if (part.name) data.append(part.name, await part.value());
 		}
 
-		return this.#formData;
-	}
-
-	/**
-	 * Buffer and parse `FormData` according to a specific schema.
-	 *
-	 * @param form Form schema
-	 * @returns Parsed form data
-	 */
-	async parse<S extends Schema.Form.Shape>(
-		form: Schema.Form<S>,
-	): Promise<Schema.Form.Parse.Result<S>>;
-	/**
-	 * @param fields Form data fields to parse
-	 * @returns Parsed form data
-	 */
-	async parse<S extends Schema.Form.Shape>(
-		fields: S,
-	): Promise<Schema.Form.Parse.Result<S>>;
-	async parse<S extends Schema.Form.Shape>(form: Schema.Form<S> | S) {
-		return Schema.form(form).parse(await this.data());
+		return data;
 	}
 }

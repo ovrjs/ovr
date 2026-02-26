@@ -94,7 +94,9 @@ export class Context<
 	#multipart?: Multipart;
 
 	/** Data parser set by schema routes. */
-	data: () => Promise<Util.Prettify<Context.Data<Shape>>> = async () => {
+	data: (
+		options?: Multipart.Options,
+	) => Promise<Util.Prettify<Context.Data<Shape>>> = async () => {
 		throw new Error("No route schema");
 	};
 
@@ -196,9 +198,6 @@ export class Context<
 	/**
 	 * Parse multipart requests.
 	 *
-	 * If called multiple times in the same request context, the
-	 * same cached instance will be used with the original options.
-	 *
 	 * @yields Multipart request `Part`(s)
 	 *
 	 * @example
@@ -235,7 +234,7 @@ export class Context<
 	 * @param i current middleware index (default `0`)
 	 * @returns return value of `middleware[i]`
 	 */
-	async #run(middleware: Middleware<Params>[], i = 0) {
+	async #run(middleware: Middleware<Params, Shape>[], i = 0) {
 		const mw = middleware[i];
 
 		if (!mw) return; // end of stack

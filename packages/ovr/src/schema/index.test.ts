@@ -1,16 +1,31 @@
+import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Codec } from "../util/index.js";
 import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
-const valid = <T>(result: Schema.Parse.Result<T>) => {
-	if (result.issues) throw new Error("Expected no issues");
+const valid = <T>(result: Schema.Parse.Result<T>): T => {
+	if ("issues" in result) throw new Error("Expected no issues");
 	return result.data;
 };
 
 const invalid = <T>(result: Schema.Parse.Result<T>) => {
 	if (!result.issues) throw new Error("Expected issues");
 	return result.issues;
+};
+
+const formValid = <S extends Schema.Form.Shape>(
+	result: Schema.Form.Parse.Result<S>,
+) => {
+	if (result.issues) throw new Error("Expected no issues");
+	return result;
+};
+
+const formInvalid = <S extends Schema.Form.Shape>(
+	result: Schema.Form.Parse.Result<S>,
+) => {
+	if (!result.issues) throw new Error("Expected issues");
+	return result;
 };
 
 describe("Schema core", () => {
@@ -384,7 +399,7 @@ describe("Preprocess schemas", () => {
 });
 
 describe("Form schema", () => {
-	test("parses mixed field types and leaves date strings unvalidated", () => {
+	test("parses mixed field types and leaves date strings unvalidated", async () => {
 		const form = Schema.form({
 			name: Schema.Field.text(),
 			age: Schema.Field.number(),
@@ -408,7 +423,7 @@ describe("Form schema", () => {
 		data.append("tags", "c");
 		data.set("bio", "hello");
 
-		expect(valid(form.parse(data))).toEqual({
+		expect(valid(await form.parse(data))).toEqual({
 			name: "ross",
 			age: 31,
 			active: true,
@@ -420,7 +435,7 @@ describe("Form schema", () => {
 		});
 	});
 
-	test("parses mixed field types from URLSearchParams", () => {
+	test("parses mixed field types from URLSearchParams", async () => {
 		const form = Schema.form({
 			name: Schema.Field.text(),
 			age: Schema.Field.number(),
@@ -440,7 +455,7 @@ describe("Form schema", () => {
 		params.append("tags", "a");
 		params.append("tags", "c");
 
-		expect(valid(form.parse(params))).toEqual({
+		expect(valid(await form.parse(params))).toEqual({
 			name: "ross",
 			age: 31,
 			active: true,
@@ -450,12 +465,12 @@ describe("Form schema", () => {
 		});
 	});
 
-	test("checkbox is false when omitted", () => {
+	test("checkbox is false when omitted", async () => {
 		const form = Schema.form({ active: Schema.Field.checkbox() });
-		expect(valid(form.parse(new FormData()))).toEqual({ active: false });
+		expect(valid(await form.parse(new FormData()))).toEqual({ active: false });
 	});
 
-	test("invalid parse includes encoded _form state without password/file values", () => {
+	test("invalid parse includes encoded _form state without password/file values", async () => {
 		const form = Schema.form({
 			name: Schema.Field.text(),
 			role: Schema.Field.radio(["reader", "admin"]),
@@ -470,8 +485,7 @@ describe("Form schema", () => {
 		data.set("password", "secret");
 		data.append("avatar", file);
 
-		const result = form.parse(data);
-		if (!result.issues) throw new Error("Expected issues");
+		const result = formInvalid(await form.parse(data));
 		if (!result.search) throw new Error("Expected _form search state");
 
 		expect(result.search[0]).toBe("_form");
@@ -488,7 +502,7 @@ describe("Form schema", () => {
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
-	test("invalid URLSearchParams parse includes encoded _form state", () => {
+	test("invalid URLSearchParams parse includes encoded _form state", async () => {
 		const form = Schema.form({
 			name: Schema.Field.text(),
 			role: Schema.Field.radio(["reader", "admin"]),
@@ -500,8 +514,7 @@ describe("Form schema", () => {
 		params.set("role", "owner");
 		params.set("password", "secret");
 
-		const result = form.parse(params);
-		if (!result.issues) throw new Error("Expected issues");
+		const result = formInvalid(await form.parse(params));
 		if (!result.search) throw new Error("Expected _form search state");
 
 		expect(result.search[0]).toBe("_form");
@@ -527,8 +540,7 @@ describe("Form schema", () => {
 		data.set("name", "ross");
 		data.set("role", "owner");
 
-		const result = form.parse(data);
-		if (!result.issues) throw new Error("Expected issues");
+		const result = formInvalid(await form.parse(data));
 		if (!result.search) throw new Error("Expected _form search state");
 
 		const state = JSON.parse(
@@ -556,7 +568,7 @@ describe("Form schema", () => {
 		expect(html.includes("aria-invalid")).toBe(false);
 	});
 
-	test("form shape methods extend, pick, and omit preserve parse behavior", () => {
+	test("form shape methods extend, pick, and omit preserve parse behavior", async () => {
 		const extended = Schema.form({ a: Schema.Field.text() }).extend({
 			b: Schema.Field.checkbox(),
 		});
@@ -571,14 +583,21 @@ describe("Form schema", () => {
 			c: Schema.Field.checkbox(),
 		}).omit(["b"]);
 
-		const data = new FormData();
-		data.set("a", "x");
-		data.set("b", "1");
-		data.set("c", "on");
+		const extendedData = new FormData();
+		extendedData.set("a", "x");
+		extendedData.set("b", "on");
 
-		expect(valid(extended.parse(data))).toEqual({ a: "x", b: true });
-		expect(valid(picked.parse(data))).toEqual({ a: "x", c: true });
-		expect(valid(omitted.parse(data))).toEqual({ a: "x", c: true });
+		const pickedData = new FormData();
+		pickedData.set("a", "x");
+		pickedData.set("c", "on");
+
+		const omittedData = new FormData();
+		omittedData.set("a", "x");
+		omittedData.set("c", "on");
+
+		expect(valid(await extended.parse(extendedData))).toEqual({ a: "x", b: true });
+		expect(valid(await picked.parse(pickedData))).toEqual({ a: "x", c: true });
+		expect(valid(await omitted.parse(omittedData))).toEqual({ a: "x", c: true });
 	});
 
 	test("form field helper APIs stay available after pick", () => {
@@ -591,7 +610,7 @@ describe("Form schema", () => {
 		expect(typeof form.field({ name: "a" }).Control).toBe("function");
 	});
 
-	test("file and files fields parse file values", () => {
+	test("file and files fields parse file values", async () => {
 		const single = Schema.form({ upload: Schema.Field.file() });
 		const many = Schema.form({ uploads: Schema.Field.files() });
 		const one = new File(["one"], "one.txt", { type: "text/plain" });
@@ -603,9 +622,113 @@ describe("Form schema", () => {
 		manyData.append("uploads", one);
 		manyData.append("uploads", two);
 
-		expect(valid(single.parse(oneData)).upload.name).toBe("one.txt");
-		expect(
-			valid(many.parse(manyData)).uploads.map((file) => file.name),
-		).toEqual(["one.txt", "two.txt"]);
+		const singleResult = formValid(await single.parse(oneData));
+		const manyResult = formValid(await many.parse(manyData));
+
+		expect(singleResult.data.upload.name).toBe("one.txt");
+		expect(manyResult.data.uploads.map((file) => file.name)).toEqual([
+			"one.txt",
+			"two.txt",
+		]);
+	});
+
+	test("multipart parse returns validated data and streamed parts together", async () => {
+		const form = Schema.form({
+			name: Schema.Field.text(),
+			rules: Schema.Field.checkbox(),
+			license: Schema.Field.file().part(),
+		});
+		const body = new FormData();
+
+		body.set("name", "ross");
+		body.set("rules", "on");
+		body.set("license", new File(["abc"], "a.txt", { type: "text/plain" }));
+
+		const multipart = new Multipart(
+			new Request("http://localhost/upload", { method: "POST", body }),
+		);
+		const result = formValid(await form.parse(multipart));
+
+		expect(result.data).toEqual({ name: "ross", rules: true });
+		if (!result.parts) throw new Error("Expected streamed parts");
+
+		for await (const part of result.parts) {
+			expect(part.name).toBe("license");
+			expect(part.filename).toBe("a.txt");
+			expect((await part.bytes()).length).toBe(3);
+			break;
+		}
+	});
+
+	test("multipart parse does not expose parts when non-part fields are invalid", async () => {
+		const form = Schema.form({
+			name: Schema.Field.text().min(2),
+			license: Schema.Field.file().part(),
+		});
+		const body = new FormData();
+
+		body.set("name", "x");
+		body.set("license", new File(["abc"], "a.txt", { type: "text/plain" }));
+
+		const multipart = new Multipart(
+			new Request("http://localhost/upload", { method: "POST", body }),
+		);
+		const result = formInvalid(await form.parse(multipart));
+		expect(result.parts).toBeUndefined();
+	});
+
+	test("multipart parse adds issues for unexpected field names", async () => {
+		const form = Schema.form({ name: Schema.Field.text() });
+		const body = new FormData();
+
+		body.set("name", "ross");
+		body.set("extra", "x");
+
+		const multipart = new Multipart(
+			new Request("http://localhost/upload", { method: "POST", body }),
+		);
+		const result = formInvalid(await form.parse(multipart));
+
+		expect(result.issues).toHaveLength(1);
+		expect(result.issues[0]?.path[0]).toBe("extra");
+	});
+
+	test("FormData parse adds issues for unexpected field names", async () => {
+		const form = Schema.form({ name: Schema.Field.text() });
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("extra", "x");
+		const result = formInvalid(await form.parse(data));
+
+		expect(result.issues).toHaveLength(1);
+		expect(result.issues[0]?.path[0]).toBe("extra");
+	});
+
+	test("FormData parse aggregates all unexpected field names", async () => {
+		const form = Schema.form({ name: Schema.Field.text() });
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("extraA", "x");
+		data.set("extraB", "y");
+		const result = formInvalid(await form.parse(data));
+
+		expect(result.issues).toHaveLength(2);
+		expect(result.issues.map((issue) => issue.path[0])).toEqual(
+			expect.arrayContaining(["extraA", "extraB"]),
+		);
+	});
+
+	test("URLSearchParams parse ignores unexpected field names", async () => {
+		const form = Schema.form({ name: Schema.Field.text() });
+		const params = new URLSearchParams();
+
+		params.set("name", "ross");
+		params.set("extra", "x");
+
+		const result = formValid(await form.parse(params));
+
+		expect(result.data).toEqual({ name: "ross" });
 	});
 });

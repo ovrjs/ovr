@@ -367,19 +367,19 @@ export class Route<Pattern extends string = string> {
 	static #data =
 		(form: Schema.Form): Middleware =>
 		(c, next) => {
-			c.data = async () => {
-				const isPost = c.req.method === Method.post;
+			c.data = async (options) => {
+				const post = c.req.method === Method.post;
 
 				// parse any form data with provided schema
-				const result = form.parse(
-					isPost ? await c.form().data() : c.url.searchParams,
+				const result = await form.parse(
+					post ? c.form(options) : c.url.searchParams,
 				);
 
 				if (result.issues) {
 					// create encoded URL state with invalid fields
 					let url = new URL(c.url);
 
-					if (isPost) {
+					if (post) {
 						const referer = c.req.headers.get(Header.name.ref);
 
 						if (referer) {

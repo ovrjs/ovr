@@ -33,12 +33,20 @@ const student = Schema.form({
 		(v) => v,
 		"You must accept the castle rules",
 	),
+	license: Schema.Field.file().part(), // put parts last to be stream after rest
 });
 
 export const enroll = Route.post(student, async (c) => {
 	const result = await c.data();
 
 	if (result.issues) return c.redirect(result.url, 303);
+
+	if (result.parts) {
+		for await (const part of result.parts) {
+			console.log(part);
+			await part.bytes();
+		}
+	}
 
 	// create new student record...
 

@@ -191,4 +191,104 @@ describe("Route schema helpers", () => {
 		expect(url.searchParams.get("from")).toBe("referer");
 		expect(url.searchParams.get("_form")).toBeTruthy();
 	});
+
+	test("invalid multipart POST with streamed file field returns redirect", async () => {
+		const submit = Route.post(
+			"/upload",
+			{
+				name: Schema.Field.text().min(2),
+				license: Schema.Field.file().part(),
+			},
+			async (c) => {
+				const result = await c.data();
+
+				if (result.issues) {
+					c.redirect(result.url, 303);
+					return;
+				}
+
+				if (result.parts) {
+					for await (const part of result.parts) {
+						await part.bytes();
+					}
+				}
+
+				c.text("ok");
+			},
+		);
+		const app = new App({ trailingSlash: "ignore" }).use(submit);
+		const data = new FormData();
+
+		data.set("name", "x");
+		data.set(
+			"license",
+			new File(["abc"], "license.txt", { type: "text/plain" }),
+		);
+
+		const res = (await Promise.race([
+			app.fetch(
+				new Request("http://localhost:5173/upload", {
+					method: "POST",
+					body: data,
+					headers: { origin: "http://localhost:5173" },
+				}),
+			),
+			new Promise<never>((_, reject) => {
+				setTimeout(
+					() => reject(new Error("Timed out waiting for multipart response")),
+					1000,
+				);
+			}),
+		])) as Response;
+
+		expect(res.status).toBe(303);
+
+		const location = res.headers.get("location");
+		if (!location) throw new Error("Expected redirect location");
+
+		const url = new URL(location);
+
+		expect(url.pathname).toBe("/upload");
+		expect(url.searchParams.get("_form")).toBeTruthy();
+	});
+
+	test("c.data passes multipart options to parser", async () => {
+		const submit = Route.post(
+			"/limit",
+			{
+				a: Schema.Field.text(),
+				b: Schema.Field.text(),
+			},
+			async (c) => {
+				try {
+					const result = await c.data({ parts: 1 });
+
+					if (result.issues) {
+						c.text("invalid", 400);
+						return;
+					}
+
+					c.json(result.data);
+				} catch (error) {
+					c.text(error instanceof Error ? error.message : String(error), 413);
+				}
+			},
+		);
+		const app = new App({ trailingSlash: "ignore" }).use(submit);
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "y");
+
+		const res = await app.fetch(
+			new Request("http://localhost:5173/limit", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+
+		expect(res.status).toBe(413);
+		expect(await res.text()).toBe("Too Many Parts");
+	});
 });
