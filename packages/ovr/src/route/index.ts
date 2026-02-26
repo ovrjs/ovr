@@ -2,7 +2,7 @@ import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
-import { Checksum, Header, Method, Mime } from "../util/index.js";
+import { Checksum, Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";
 
 /**
@@ -342,8 +342,6 @@ export class Route<Pattern extends string = string> {
 	>(route: R, schema?: Schema.Form): R | (R & Schema.Form) {
 		if (!schema) return route;
 
-		route.middleware.unshift(Route.#data(schema));
-
 		// original form shell from normal route
 		const { Form } = route;
 
@@ -359,50 +357,6 @@ export class Route<Pattern extends string = string> {
 				} as Parameters<typeof Form>[0])) as Route.Form<Pattern>,
 		});
 	}
-
-	/**
-	 * @param form Form schema
-	 * @returns Middleware that attaches the c.data method
-	 */
-	static #data =
-		(form: Schema.Form): Middleware =>
-		(c, next) => {
-			c.data = async (options) => {
-				const post = c.req.method === Method.post;
-
-				// parse any form data with provided schema
-				const result = await form.parse(
-					post ? c.form(options) : c.url.searchParams,
-				);
-
-				if (result.issues) {
-					// create encoded URL state with invalid fields
-					let url = new URL(c.url);
-
-					if (post) {
-						const referer = c.req.headers.get(Header.name.ref);
-
-						if (referer) {
-							try {
-								const refererUrl = new URL(referer, url);
-
-								if (refererUrl.origin === c.url.origin) url = refererUrl;
-							} catch {
-								// invalid referer
-							}
-						}
-					}
-
-					if (result.search) url.searchParams.set(...result.search);
-
-					return Object.assign(result, { url });
-				}
-
-				return result;
-			};
-
-			return next();
-		};
 
 	/**
 	 * @template Pattern Route pattern

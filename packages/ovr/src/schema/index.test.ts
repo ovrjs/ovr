@@ -632,6 +632,32 @@ describe("Form schema", () => {
 		]);
 	});
 
+	test("field parts metadata reflects field cardinality", () => {
+		expect(Schema.Field.text().parts).toBe(1);
+		expect(Schema.Field.checkbox().parts).toBe(1);
+		expect(Schema.Field.file().part().parts).toBe(1);
+		expect(Schema.Field.checkboxes(["a", "b", "c"]).parts).toBe(3);
+		expect(Schema.Field.multiselect(["a", "b"]).parts).toBe(2);
+		expect(Schema.Field.files().parts).toBe(Infinity);
+	});
+
+	test("form parts sums field cardinality and preserves infinity", () => {
+		expect(
+			Schema.form({
+				name: Schema.Field.text(),
+				roles: Schema.Field.checkboxes(["reader", "admin"]),
+				tags: Schema.Field.multiselect(["a", "b", "c"]),
+				license: Schema.Field.file().part(),
+			}).parts,
+		).toBe(7);
+		expect(
+			Schema.form({
+				name: Schema.Field.text(),
+				uploads: Schema.Field.files(),
+			}).parts,
+		).toBe(Infinity);
+	});
+
 	test("multipart parse returns validated data and streamed parts together", async () => {
 		const form = Schema.form({
 			name: Schema.Field.text(),

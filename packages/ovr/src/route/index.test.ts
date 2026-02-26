@@ -24,7 +24,7 @@ describe("Route schema helpers", () => {
 				c.json(result.data);
 			},
 		);
-		const app = new App({ trailingSlash: "ignore" }).use(search);
+		const app = new App().use(search);
 
 		const res = await app.fetch(
 			"http://localhost:5173/search?query=hello&tags=a&tags=c&active=on",
@@ -53,9 +53,11 @@ describe("Route schema helpers", () => {
 
 			c.json(result.data);
 		});
-		const app = new App({ trailingSlash: "ignore" }).use(user);
+		const app = new App().use(user);
 
-		const res = await app.fetch("http://localhost:5173/user?name=ross&role=admin");
+		const res = await app.fetch(
+			"http://localhost:5173/user?name=ross&role=admin",
+		);
 
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ name: "ross", role: "admin" });
@@ -76,7 +78,7 @@ describe("Route schema helpers", () => {
 				c.text("ok");
 			},
 		);
-		const app = new App({ trailingSlash: "ignore" }).use(search);
+		const app = new App().use(search);
 
 		const res = await app.fetch(
 			new Request("http://localhost:5173/search?role=owner", {
@@ -98,17 +100,21 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled GET handles HEAD requests without form parsing", async () => {
-		const search = Route.get("/search", { query: Schema.Field.text() }, async (c) => {
-			const result = await c.data();
+		const search = Route.get(
+			"/search",
+			{ query: Schema.Field.text() },
+			async (c) => {
+				const result = await c.data();
 
-			if (result.issues) {
-				c.text("Invalid", 400);
-				return;
-			}
+				if (result.issues) {
+					c.text("Invalid", 400);
+					return;
+				}
 
-			c.text(result.data.query);
-		});
-		const app = new App({ trailingSlash: "ignore" }).use(search);
+				c.text(result.data.query);
+			},
+		);
+		const app = new App().use(search);
 
 		const res = await app.fetch(
 			new Request("http://localhost:5173/search?query=hello", {
@@ -121,10 +127,8 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled Route.get exposes route and schema helpers", () => {
-		const form = Route.get(
-			"/profile",
-			{ name: Schema.Field.text() },
-			(c) => c.text("ok"),
+		const form = Route.get("/profile", { name: Schema.Field.text() }, (c) =>
+			c.text("ok"),
 		);
 
 		expect(typeof form.Anchor).toBe("function");
@@ -135,17 +139,15 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled Route.get Form defaults to Fields and submit button", async () => {
-		const profile = Route.get(
-			"/profile",
-			{ name: Schema.Field.text() },
-			(c) => c.text("ok"),
+		const profile = Route.get("/profile", { name: Schema.Field.text() }, (c) =>
+			c.text("ok"),
 		);
 
 		const html = await new Render(null).string(profile.Form({}));
 
-		expect(html.includes("action=\"/profile\"")).toBe(true);
-		expect(html.includes("method=\"GET\"")).toBe(true);
-		expect(html.includes("name=\"name\"")).toBe(true);
+		expect(html.includes('action="/profile"')).toBe(true);
+		expect(html.includes('method="GET"')).toBe(true);
+		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes(">Submit</button>")).toBe(true);
 	});
 
@@ -164,7 +166,7 @@ describe("Route schema helpers", () => {
 				c.text("ok");
 			},
 		);
-		const app = new App({ trailingSlash: "ignore" }).use(submit);
+		const app = new App().use(submit);
 		const data = new FormData();
 
 		data.set("role", "owner");
@@ -195,10 +197,7 @@ describe("Route schema helpers", () => {
 	test("invalid multipart POST with streamed file field returns redirect", async () => {
 		const submit = Route.post(
 			"/upload",
-			{
-				name: Schema.Field.text().min(2),
-				license: Schema.Field.file().part(),
-			},
+			{ name: Schema.Field.text().min(2), license: Schema.Field.file().part() },
 			async (c) => {
 				const result = await c.data();
 
@@ -216,7 +215,7 @@ describe("Route schema helpers", () => {
 				c.text("ok");
 			},
 		);
-		const app = new App({ trailingSlash: "ignore" }).use(submit);
+		const app = new App().use(submit);
 		const data = new FormData();
 
 		data.set("name", "x");
@@ -255,10 +254,7 @@ describe("Route schema helpers", () => {
 	test("c.data passes multipart options to parser", async () => {
 		const submit = Route.post(
 			"/limit",
-			{
-				a: Schema.Field.text(),
-				b: Schema.Field.text(),
-			},
+			{ a: Schema.Field.text(), b: Schema.Field.text() },
 			async (c) => {
 				try {
 					const result = await c.data({ parts: 1 });
@@ -274,7 +270,7 @@ describe("Route schema helpers", () => {
 				}
 			},
 		);
-		const app = new App({ trailingSlash: "ignore" }).use(submit);
+		const app = new App().use(submit);
 		const data = new FormData();
 
 		data.set("a", "x");
@@ -290,5 +286,129 @@ describe("Route schema helpers", () => {
 
 		expect(res.status).toBe(413);
 		expect(await res.text()).toBe("Too Many Parts");
+	});
+
+	test("c.data throws on routes without a schema", async () => {
+		const noSchema = Route.get("/no-schema", async (c) => {
+			await c.data();
+			c.text("ok");
+		});
+		const app = new App().use(noSchema);
+
+		await expect(app.fetch("http://localhost:5173/no-schema")).rejects.toThrow(
+			"No route schema",
+		);
+	});
+
+	test("c.data auto-applies schema parts limit", async () => {
+		const submit = Route.post(
+			"/auto-limit",
+			{ a: Schema.Field.text(), b: Schema.Field.text() },
+			async (c) => {
+				try {
+					const result = await c.data();
+
+					if (result.issues) {
+						c.text("invalid", 400);
+						return;
+					}
+
+					c.text("ok");
+				} catch (error) {
+					c.text(error instanceof Error ? error.message : String(error), 413);
+				}
+			},
+		);
+		const app = new App().use(submit);
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "y");
+		data.set("c", "z");
+
+		const res = await app.fetch(
+			new Request("http://localhost:5173/auto-limit", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+
+		expect(res.status).toBe(413);
+		expect(await res.text()).toBe("Too Many Parts");
+	});
+
+	test("schema auto parts overrides app multipart parts option", async () => {
+		const submit = Route.post(
+			"/app-limit",
+			{ a: Schema.Field.text(), b: Schema.Field.text() },
+			async (c) => {
+				try {
+					const result = await c.data();
+
+					if (result.issues) {
+						c.text("invalid", 400);
+						return;
+					}
+
+					c.text("ok");
+				} catch (error) {
+					c.text(error instanceof Error ? error.message : String(error), 413);
+				}
+			},
+		);
+		const app = new App({ form: { parts: 1 } }).use(submit);
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "y");
+
+		const res = await app.fetch(
+			new Request("http://localhost:5173/app-limit", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe("ok");
+	});
+
+	test("c.data parts option overrides app multipart parts option", async () => {
+		const submit = Route.post(
+			"/call-limit",
+			{ a: Schema.Field.text(), b: Schema.Field.text() },
+			async (c) => {
+				try {
+					const result = await c.data({ parts: 2 });
+
+					if (result.issues) {
+						c.text("invalid", 400);
+						return;
+					}
+
+					c.text("ok");
+				} catch (error) {
+					c.text(error instanceof Error ? error.message : String(error), 413);
+				}
+			},
+		);
+		const app = new App({ form: { parts: 1 } }).use(submit);
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "y");
+
+		const res = await app.fetch(
+			new Request("http://localhost:5173/call-limit", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe("ok");
 	});
 });

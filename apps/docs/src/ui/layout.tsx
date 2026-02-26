@@ -18,7 +18,7 @@ const Assets = () => {
 };
 
 export const createLayout =
-	(c: o.Middleware.Context) =>
+	(c: o.Middleware.Context<any, any>) =>
 	(props: { head: o.JSX.Element; children: o.JSX.Element }) => {
 		return (
 			<html lang="en">

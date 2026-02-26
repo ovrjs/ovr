@@ -93,13 +93,6 @@ export class Context<
 	/** Cached multipart instance */
 	#multipart?: Multipart;
 
-	/** Data parser set by schema routes. */
-	data: (
-		options?: Multipart.Options,
-	) => Promise<Util.Prettify<Context.Data<Shape>>> = async () => {
-		throw new Error("No route schema");
-	};
-
 	/**
 	 * Creates a new `Context` with the current `Request`.
 	 *
@@ -219,6 +212,52 @@ export class Context<
 			this.req,
 			Object.assign({}, this.#options.form, options),
 		));
+	}
+
+	/**
+	 * Parse route form data from search params or multipart requests.
+	 *
+	 * @param options Multipart options for POST requests
+	 * @returns Parsed form data with possible invalid redirect URL state
+	 */
+	async data(
+		options?: Multipart.Options,
+	): Promise<Util.Prettify<Context.Data<Shape>>> {
+		const post = this.req.method === Method.post;
+		const form = this.route as Route.Post | undefined;
+
+		if (!form?.parse) throw new Error("No route schema");
+
+		const result = await form.parse(
+			post
+				? this.form(Object.assign({ parts: form.parts }, options))
+				: this.url.searchParams,
+		);
+
+		if (result.issues) {
+			// create encoded URL state with invalid fields
+			let url = new URL(this.url);
+
+			if (post) {
+				const referer = this.req.headers.get(Header.name.ref);
+
+				if (referer) {
+					try {
+						const refererUrl = new URL(referer, url);
+
+						if (refererUrl.origin === this.url.origin) url = refererUrl;
+					} catch {
+						// invalid referer
+					}
+				}
+			}
+
+			if (result.search) url.searchParams.set(...result.search);
+
+			return Object.assign(result, { url });
+		}
+
+		return result as Util.Prettify<Context.Data<Shape>>;
 	}
 
 	get auth() {

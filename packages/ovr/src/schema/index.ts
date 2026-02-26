@@ -1433,6 +1433,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 				{ props: { ...props, type: "file", multiple: true } },
 				Schema.array(Schema.instance(File, message)),
 				(formData, name) => formData.getAll(name),
+				Infinity,
 			);
 		}
 
@@ -1452,6 +1453,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 				{ values, props: { ...props, type: "checkbox" } },
 				Schema.array(Schema.enum(values, message)),
 				(formData, name) => formData.getAll(name),
+				values.length,
 			);
 		}
 
@@ -1518,6 +1520,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 				{ tag: "select", values, props: { ...props, multiple: true } },
 				Schema.array(Schema.enum(values, message)),
 				(formData, name) => formData.getAll(name),
+				values.length,
 			);
 		}
 	};
@@ -1673,6 +1676,9 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	/** Form id. */
 	readonly #id: string;
 
+	/** Maximum expected multipart parts derived from field cardinality. */
+	readonly parts: number;
+
 	/**
 	 * Create a new form schema validator.
 	 *
@@ -1682,6 +1688,10 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		this.#fields = fields;
 		this.#names = Object.keys(this.#fields) as Shape.Name<Shape>[];
 		this.#id = Checksum.djb2(this.#names.join());
+		this.parts = Object.values(this.#fields).reduce(
+			(sum, field) => sum + field.parts,
+			0,
+		);
 	}
 
 	/**
@@ -1827,10 +1837,10 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * @param path Internal path reference
 	 * @returns Parsed result
 	 */
-	async parse(
+	parse = async (
 		source: FormData | URLSearchParams | Multipart,
 		path: Schema.Issue.Path = [],
-	): Promise<Schema.Form.Parse.Result<Shape>> {
+	): Promise<Schema.Form.Parse.Result<Shape>> => {
 		const data: Record<string, unknown> = {};
 		const issues: Schema.Issue[] = [];
 		const values: Record<string, unknown> = {};
@@ -1940,7 +1950,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		}
 
 		return { data: data as Schema.Form.Parse.Data<Shape>, parts };
-	}
+	};
 
 	/**
 	 * Render a single form field.
@@ -2313,6 +2323,7 @@ export namespace Field {
  * @template Tag Tag name
  * @template Type Input type
  * @template Values Persisted field value type
+ * @template Part If the value should be streamed as a part
  */
 export class Field<
 	Output = unknown,
@@ -2335,6 +2346,9 @@ export class Field<
 	/** Field values */
 	readonly values: Values;
 
+	/** Maximum expected multipart part count for this field name. */
+	readonly parts: number;
+
 	/** If the field should be streamed as a part */
 	readonly isPart?: Part;
 
@@ -2347,11 +2361,14 @@ export class Field<
 	 * @param options Field options
 	 * @param parse How to validate the input
 	 * @param read How to read the form data
+	 * @param parts Maximum expected multipart parts for this field
+	 * @param part If this field should be streamed as a multipart part
 	 */
 	constructor(
 		options: Field.Options<Values, Tag>,
 		parse: Schema<Output> | Schema.Parse.Constructor<Output>,
 		read?: Field.Read,
+		parts = 1,
 		part?: Part,
 	) {
 		super(parse instanceof Schema ? parse.parse : parse);
@@ -2369,6 +2386,7 @@ export class Field<
 			});
 
 		this.type = options.props?.type as Type;
+		this.parts = parts;
 		this.isPart = part;
 	}
 
@@ -2382,6 +2400,7 @@ export class Field<
 			this.#options,
 			this.parse,
 			this.read,
+			this.parts,
 			true,
 		);
 	}
@@ -2398,6 +2417,7 @@ export class Field<
 			this.#options,
 			parse,
 			this.read,
+			this.parts,
 			this.isPart,
 		);
 	}
