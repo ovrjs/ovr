@@ -1598,10 +1598,11 @@ export class ObjectSchema<
 	}
 
 	/**
-	 * Returns a new object schema with `extra` merged into the current shape.
+	 * Merge `extra` into the current shape.
 	 *
 	 * @template E Extra shape type
 	 * @param extra Extra shape to merge
+	 * @returns New object schema with the merged shape
 	 */
 	extend<E extends Schema.Object.Shape>(
 		extra: E,
@@ -1610,34 +1611,40 @@ export class ObjectSchema<
 	}
 
 	/**
-	 * Returns a new object schema with only the selected field names.
+	 * Keep only selected field names.
 	 *
 	 * @template N Selected key names
 	 * @param names Non-empty list of key names to keep
+	 * @returns New object schema with only selected keys
 	 */
 	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return new Schema.Object(Shape.pick(this.#shape, names), this.#mode);
 	}
 
 	/**
-	 * Returns a new object schema without the selected field names.
+	 * Remove selected field names.
 	 *
 	 * @template N Removed key names
 	 * @param names Non-empty list of key names to remove
+	 * @returns New object schema without selected keys
 	 */
 	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return new Schema.Object(Shape.omit(this.#shape, names), this.#mode);
 	}
 
 	/**
-	 * Returns a new object schema that rejects unknown keys.
+	 * Reject unknown keys during parsing.
+	 *
+	 * @returns New object schema in strict mode
 	 */
 	strict() {
 		return new Schema.Object(this.#shape, "strict");
 	}
 
 	/**
-	 * Returns a new object schema that preserves unknown keys.
+	 * Preserve unknown keys during parsing.
+	 *
+	 * @returns New object schema in loose mode
 	 */
 	loose() {
 		return new Schema.Object(this.#shape, "loose");
@@ -1695,10 +1702,11 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	}
 
 	/**
-	 * Returns a new form schema with `extra` merged into the current fields.
+	 * Merge `extra` into the current fields.
 	 *
 	 * @template E Extra field shape type
 	 * @param extra Extra fields to merge
+	 * @returns New form schema with merged fields
 	 */
 	extend<E extends Schema.Form.Shape>(
 		extra: E,
@@ -1707,20 +1715,22 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	}
 
 	/**
-	 * Returns a new form schema with only the selected field names.
+	 * Keep only selected field names.
 	 *
 	 * @template N Selected field names
 	 * @param names Non-empty list of field names to keep
+	 * @returns New form schema with only selected fields
 	 */
 	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return Schema.form(Shape.pick(this.#fields, names));
 	}
 
 	/**
-	 * Returns a new form schema without the selected field names.
+	 * Remove selected field names.
 	 *
 	 * @template N Field names to remove
 	 * @param names Non-empty list of field names to remove
+	 * @returns New form schema without selected fields
 	 */
 	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
 		return Schema.form(Shape.omit(this.#fields, names));
