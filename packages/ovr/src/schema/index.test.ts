@@ -404,6 +404,13 @@ describe("Preprocess schemas", () => {
 		expect(invalid(field.parse("a"))[0]?.expected).toBe("refine");
 		expect("component" in field).toBe(true);
 	});
+
+	test("field number treats blank input as missing", () => {
+		const field = Field.number();
+
+		expect(valid(field.parse("0"))).toBe(0);
+		expect(invalid(field.parse(""))[0]?.expected).toBe("number");
+	});
 });
 
 describe("Form schema", () => {
@@ -476,6 +483,29 @@ describe("Form schema", () => {
 	test("checkbox is false when omitted", async () => {
 		const form = Form.from({ active: Field.checkbox() });
 		expect(valid(await form.parse(new FormData()))).toEqual({ active: false });
+	});
+
+	test("blank number fields are treated as missing during form parsing", async () => {
+		const form = Form.from({
+			age: Field.number().optional(),
+			count: Field.number().default(5),
+		});
+		const data = new FormData();
+
+		data.set("age", "");
+		data.set("count", "");
+
+		expect(valid(await form.parse(data))).toEqual({ age: undefined, count: 5 });
+	});
+
+	test("required text fields are invalid when omitted", async () => {
+		const form = Form.from({
+			name: Field.text(),
+			bio: Field.textarea(),
+		});
+		const result = formInvalid(await form.parse(new FormData()));
+
+		expect(result.issues.map((issue) => issue.path[0])).toEqual(["name", "bio"]);
 	});
 
 	test("invalid parse includes encoded _form state without password/file values", async () => {
@@ -698,9 +728,9 @@ describe("Form schema", () => {
 		const result = formValid(await form.parse(multipart));
 
 		expect(result.data).toEqual({ name: "ross", rules: true });
-		if (!result.parts) throw new Error("Expected streamed parts");
+		if (!result.stream) throw new Error("Expected streamed parts");
 
-		for await (const part of result.parts) {
+		for await (const part of result.stream) {
 			expect(part.name).toBe("license");
 			expect(part.filename).toBe("a.txt");
 			expect((await part.bytes()).length).toBe(3);

@@ -2372,7 +2372,12 @@ export class Field {
 	static #input<T extends Field.Type>(
 		props: Field.Props.Input & { type: T },
 	): Field.Instance<string, "input", T> {
-		return new FieldSchema({ props }, Schema.string().preprocess(String));
+		return new FieldSchema(
+			{ props },
+			Schema.string().preprocess((value) =>
+				value == null ? value : String(value),
+			),
+		);
 	}
 
 	/**
@@ -2526,8 +2531,14 @@ export class Field {
 	static #number<T extends "number" | "range">(
 		props: Field.Props.Input & { type: T },
 	): Field.Instance<number, "input", T> {
-		return new FieldSchema({ props }, Schema.number().preprocess(Number));
-	}
+		return new FieldSchema(
+			{ props },
+				Schema.number().preprocess((value) =>
+					value == null || value === "" ? undefined : Number(value),
+				),
+				(data, name) => data.get(name) || undefined,
+			);
+		}
 
 	/**
 	 * Coerces to number.
@@ -2649,7 +2660,9 @@ export class Field {
 	): Field.Instance<string, "textarea"> {
 		return new FieldSchema(
 			{ tag: "textarea", props },
-			Schema.string().preprocess(String),
+			Schema.string().preprocess((value) =>
+				value == null ? value : String(value),
+			),
 		);
 	}
 
