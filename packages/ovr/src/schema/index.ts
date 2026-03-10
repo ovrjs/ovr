@@ -1517,9 +1517,33 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	#decode(stateInput?: Form.State.Input<Shape>): Form.State<Shape> | undefined {
 		if (stateInput) {
 			let state: Form.State<Shape> | undefined;
+			const shape: Schema.Object.Shape = {};
+
+			for (const name of Object.keys(this.shape)) {
+				shape[name] = Form.#valueSchema.optional();
+			}
+
+			const schema = Schema.object({
+				id: Schema.literal(this.#id),
+				issues: Schema.array(
+					Schema.object({
+						expected: Schema.string(),
+						path: Schema.array(
+							Schema.union([Schema.string(), Schema.number()]),
+						),
+						message: Schema.string(),
+					}).transform(
+						(issue) =>
+							new Schema.Issue(issue.expected, issue.path, issue.message),
+					),
+				).optional(),
+				values: Schema.object(shape).optional(),
+			});
 
 			if (typeof stateInput === "object" && "id" in stateInput) {
-				state = stateInput;
+				const result = schema.parse(stateInput);
+
+				if (result.data) state = result.data as Form.State<Shape>;
 			} else {
 				const encoded =
 					typeof stateInput === "string"
@@ -1529,21 +1553,9 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 							: stateInput.get(Form.#param);
 
 				if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
-					const valuesShape: Schema.Object.Shape = {};
-
-					for (const name of Object.keys(this.shape)) {
-						valuesShape[name] = Form.#valueSchema.optional();
-					}
-
 					try {
 						const result = Schema.string()
-							.json(
-								Schema.object({
-									id: Schema.literal(this.#id),
-									issues: Schema.array(Schema.object().loose()).optional(),
-									values: Schema.object(valuesShape).optional(),
-								}),
-							)
+							.json(schema)
 							.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
 
 						if (result.data) state = result.data as Form.State<Shape>;
@@ -2533,12 +2545,12 @@ export class Field {
 	): Field.Instance<number, "input", T> {
 		return new FieldSchema(
 			{ props },
-				Schema.number().preprocess((value) =>
-					value == null || value === "" ? undefined : Number(value),
-				),
-				(data, name) => data.get(name) || undefined,
-			);
-		}
+			Schema.number().preprocess((value) =>
+				value == null || value === "" ? undefined : Number(value),
+			),
+			(data, name) => data.get(name) || undefined,
+		);
+	}
 
 	/**
 	 * Coerces to number.

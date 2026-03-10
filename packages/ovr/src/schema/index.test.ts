@@ -606,6 +606,39 @@ describe("Form schema", () => {
 		expect(html.includes("aria-invalid")).toBe(false);
 	});
 
+	test("malformed URL _form issues are ignored when rendering fields", async () => {
+		const form = Form.from({
+			name: Field.text(),
+			role: Field.radio(["reader", "admin"]),
+		});
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("role", "owner");
+
+		const result = formInvalid(await form.parse(data));
+		if (!result.search) throw new Error("Expected _form search state");
+
+		const state = JSON.parse(
+			Codec.decode(Codec.Base64Url.decode(result.search[1])),
+		) as Form.State;
+		const url = new URL("https://example.com/form");
+
+		url.searchParams.set(
+			"_form",
+			Codec.Base64Url.encode(
+				Codec.encode(JSON.stringify({ ...state, issues: [{}] })),
+			),
+		);
+
+		const html = await new Render(null).string(
+			form.Field({ name: "name", state: url }),
+		);
+
+		expect(html.includes('name="name"')).toBe(true);
+		expect(html.includes("aria-invalid")).toBe(false);
+	});
+
 	test("form shape methods extend, pick, and omit preserve parse behavior", async () => {
 		const extended = Form.from({ a: Field.text() }).extend({
 			b: Field.checkbox(),
