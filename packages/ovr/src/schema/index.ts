@@ -1351,11 +1351,11 @@ export namespace Form {
 				readonly search: Result.Search;
 
 				/** Invalid parses do not expose remaining multipart parts */
-				readonly parts?: never;
+				readonly stream?: never;
 			} & M,
 			{
 				/** Rest of the multipart parts to stream */
-				readonly parts?: AsyncGenerator<Multipart.Part>;
+				readonly stream?: AsyncGenerator<Multipart.Part>;
 			}
 		>;
 
@@ -1572,7 +1572,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		const issues: Schema.Issue[] = [];
 		const values: Record<string, unknown> = {};
 		let form: FormData | URLSearchParams;
-		let parts: AsyncGenerator<Multipart.Part> | undefined;
+		let stream: AsyncGenerator<Multipart.Part> | undefined;
 
 		if (source instanceof Multipart) {
 			form = new FormData();
@@ -1590,7 +1590,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						issues.push(this.#unexpected(part.name, path));
 					} else if (field.streaming) {
 						// expose current and rest of the parts to the user
-						parts = (async function* () {
+						stream = (async function* () {
 							try {
 								yield part;
 
@@ -1665,18 +1665,18 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				}
 			}
 
-			if (parts) {
+			if (stream) {
 				// invalid result does not expose streamed parts, drain the remainder
 				// so adapters that require body consumption can respond
 				try {
-					for await (const _ of parts);
+					for await (const _ of stream);
 				} catch {}
 			}
 
 			return Object.assign(result, { search });
 		}
 
-		return { data: data as Form.Parse.Data<Shape>, parts };
+		return { data: data as Form.Parse.Data<Shape>, stream };
 	};
 
 	/**

@@ -29,8 +29,8 @@ export const enroll = Route.post(student, async (c) => {
 
 	if (result.issues) return c.redirect(result.url, 303);
 
-	if (result.parts) {
-		for await (const part of result.parts) {
+	if (result.stream) {
+		for await (const part of result.stream) {
 			console.log(part);
 			await part.bytes();
 		}
