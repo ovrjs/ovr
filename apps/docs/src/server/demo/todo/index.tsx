@@ -1,17 +1,15 @@
 import * as todoContent from "@/server/demo/todo/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Render, Route, Schema } from "ovr";
+import { Field, Render, Route, Schema } from "ovr";
 
-const id = Schema.Field.hidden().transform(Number).int();
-const text = Schema.Field.text().refine(
+const id = Field.hidden().transform(Number).int();
+const text = Field.text().refine(
 	(s) => s.trim().length > 0,
 	"Expected at least 1 character",
 );
-const list = Schema.Field.hidden()
-	.json(
-		Schema.array(Schema.object({ done: Schema.Field.checkbox(), id, text })),
-	)
+const list = Field.hidden()
+	.json(Schema.array(Schema.object({ done: Field.checkbox(), id, text })))
 	.default([{ done: false, id: 0, text: "Build a todo app" }]);
 
 export const add = Route.post({ list, text }, async (c) => {

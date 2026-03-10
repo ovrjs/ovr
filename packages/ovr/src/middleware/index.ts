@@ -1,6 +1,6 @@
 import type { Context as ContextType } from "../context/index.js";
 import type { Cookie as CookieType } from "../cookie/index.js";
-import type { Schema } from "../schema/index.js";
+import type { Form } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 
 export namespace Middleware {
@@ -18,7 +18,7 @@ export namespace Middleware {
 	 */
 	export type Context<
 		Params extends Trie.Params = Trie.Params,
-		Shape extends Schema.Form.Shape = Schema.Form.Shape,
+		Shape extends Form.Shape = Form.Shape,
 	> = ContextType<Params, Shape>;
 
 	/** Dispatches the next middleware in the stack */
@@ -36,5 +36,5 @@ export namespace Middleware {
  */
 export type Middleware<
 	Params extends Trie.Params = Trie.Params,
-	Shape extends Schema.Form.Shape = Schema.Form.Shape,
+	Shape extends Form.Shape = Form.Shape,
 > = (context: ContextType<Params, Shape>, next: Middleware.Next) => any;

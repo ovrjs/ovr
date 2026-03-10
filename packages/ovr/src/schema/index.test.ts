@@ -1,7 +1,7 @@
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Codec } from "../util/index.js";
-import { Schema } from "./index.js";
+import { Field, Form, Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 const valid = <T>(result: Schema.Parse.Result<T>): T => {
@@ -14,16 +14,12 @@ const invalid = <T>(result: Schema.Parse.Result<T>) => {
 	return result.issues;
 };
 
-const formValid = <S extends Schema.Form.Shape>(
-	result: Schema.Form.Parse.Result<S>,
-) => {
+const formValid = <S extends Form.Shape>(result: Form.Parse.Result<S>) => {
 	if (result.issues) throw new Error("Expected no issues");
 	return result;
 };
 
-const formInvalid = <S extends Schema.Form.Shape>(
-	result: Schema.Form.Parse.Result<S>,
-) => {
+const formInvalid = <S extends Form.Shape>(result: Form.Parse.Result<S>) => {
 	if (!result.issues) throw new Error("Expected issues");
 	return result;
 };
@@ -395,14 +391,14 @@ describe("Preprocess schemas", () => {
 	});
 
 	test("field string chains preserve Field behavior", () => {
-		const field = Schema.Field.text().email();
+		const field = Field.text().email();
 
 		expect(valid(field.parse("person@example.com"))).toBe("person@example.com");
 		expect("component" in field).toBe(true);
 	});
 
 	test("field min and max chains preserve Field behavior", () => {
-		const field = Schema.Field.text().min(2).max(4);
+		const field = Field.text().min(2).max(4);
 
 		expect(valid(field.parse("ab"))).toBe("ab");
 		expect(invalid(field.parse("a"))[0]?.expected).toBe("refine");
@@ -412,15 +408,15 @@ describe("Preprocess schemas", () => {
 
 describe("Form schema", () => {
 	test("parses mixed field types and leaves date strings unvalidated", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text(),
-			age: Schema.Field.number(),
-			active: Schema.Field.checkbox(),
-			date: Schema.Field.date(),
-			roles: Schema.Field.checkboxes(["reader", "admin"]),
-			level: Schema.Field.radio(["junior", "senior"]),
-			tags: Schema.Field.multiselect(["a", "b", "c"]),
-			bio: Schema.Field.textarea(),
+		const form = Form.from({
+			name: Field.text(),
+			age: Field.number(),
+			active: Field.checkbox(),
+			date: Field.date(),
+			roles: Field.checkboxes(["reader", "admin"]),
+			level: Field.radio(["junior", "senior"]),
+			tags: Field.multiselect(["a", "b", "c"]),
+			bio: Field.textarea(),
 		});
 		const data = new FormData();
 
@@ -448,13 +444,13 @@ describe("Form schema", () => {
 	});
 
 	test("parses mixed field types from URLSearchParams", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text(),
-			age: Schema.Field.number(),
-			active: Schema.Field.checkbox(),
-			roles: Schema.Field.checkboxes(["reader", "admin"]),
-			level: Schema.Field.radio(["junior", "senior"]),
-			tags: Schema.Field.multiselect(["a", "b", "c"]),
+		const form = Form.from({
+			name: Field.text(),
+			age: Field.number(),
+			active: Field.checkbox(),
+			roles: Field.checkboxes(["reader", "admin"]),
+			level: Field.radio(["junior", "senior"]),
+			tags: Field.multiselect(["a", "b", "c"]),
 		});
 		const params = new URLSearchParams();
 
@@ -478,16 +474,16 @@ describe("Form schema", () => {
 	});
 
 	test("checkbox is false when omitted", async () => {
-		const form = Schema.form({ active: Schema.Field.checkbox() });
+		const form = Form.from({ active: Field.checkbox() });
 		expect(valid(await form.parse(new FormData()))).toEqual({ active: false });
 	});
 
 	test("invalid parse includes encoded _form state without password/file values", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text(),
-			role: Schema.Field.radio(["reader", "admin"]),
-			password: Schema.Field.password(),
-			avatar: Schema.Field.file(),
+		const form = Form.from({
+			name: Field.text(),
+			role: Field.radio(["reader", "admin"]),
+			password: Field.password(),
+			avatar: Field.file(),
 		});
 		const data = new FormData();
 		const file = new File(["x"], "a.txt", { type: "text/plain" });
@@ -504,7 +500,7 @@ describe("Form schema", () => {
 
 		const state = JSON.parse(
 			Codec.decode(Codec.Base64Url.decode(result.search[1])),
-		) as Schema.Form.State;
+		) as Form.State;
 
 		expect(state.values?.name).toBe("ross");
 		expect(state.values?.role).toBe("owner");
@@ -515,10 +511,10 @@ describe("Form schema", () => {
 	});
 
 	test("invalid URLSearchParams parse includes encoded _form state", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text(),
-			role: Schema.Field.radio(["reader", "admin"]),
-			password: Schema.Field.password(),
+		const form = Form.from({
+			name: Field.text(),
+			role: Field.radio(["reader", "admin"]),
+			password: Field.password(),
 		});
 		const params = new URLSearchParams();
 
@@ -533,7 +529,7 @@ describe("Form schema", () => {
 
 		const state = JSON.parse(
 			Codec.decode(Codec.Base64Url.decode(result.search[1])),
-		) as Schema.Form.State;
+		) as Form.State;
 
 		expect(state.values?.name).toBe("ross");
 		expect(state.values?.role).toBe("owner");
@@ -543,9 +539,9 @@ describe("Form schema", () => {
 	});
 
 	test("invalid URL _form state is ignored when rendering fields", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text(),
-			role: Schema.Field.radio(["reader", "admin"]),
+		const form = Form.from({
+			name: Field.text(),
+			role: Field.radio(["reader", "admin"]),
 		});
 		const data = new FormData();
 
@@ -557,7 +553,7 @@ describe("Form schema", () => {
 
 		const state = JSON.parse(
 			Codec.decode(Codec.Base64Url.decode(result.search[1])),
-		) as Schema.Form.State;
+		) as Form.State;
 		const tampered = {
 			...state,
 			issues: undefined,
@@ -581,18 +577,18 @@ describe("Form schema", () => {
 	});
 
 	test("form shape methods extend, pick, and omit preserve parse behavior", async () => {
-		const extended = Schema.form({ a: Schema.Field.text() }).extend({
-			b: Schema.Field.checkbox(),
+		const extended = Form.from({ a: Field.text() }).extend({
+			b: Field.checkbox(),
 		});
-		const picked = Schema.form({
-			a: Schema.Field.text(),
-			b: Schema.Field.number(),
-			c: Schema.Field.checkbox(),
+		const picked = Form.from({
+			a: Field.text(),
+			b: Field.number(),
+			c: Field.checkbox(),
 		}).pick(["a", "c"]);
-		const omitted = Schema.form({
-			a: Schema.Field.text(),
-			b: Schema.Field.number(),
-			c: Schema.Field.checkbox(),
+		const omitted = Form.from({
+			a: Field.text(),
+			b: Field.number(),
+			c: Field.checkbox(),
 		}).omit(["b"]);
 
 		const extendedData = new FormData();
@@ -619,8 +615,8 @@ describe("Form schema", () => {
 	});
 
 	test("form extend accepts another form schema", async () => {
-		const base = Schema.form({ a: Schema.Field.text() });
-		const extra = Schema.form({ b: Schema.Field.checkbox() });
+		const base = Form.from({ a: Field.text() });
+		const extra = Form.from({ b: Field.checkbox() });
 		const extended = base.extend(extra);
 		const data = new FormData();
 
@@ -633,18 +629,15 @@ describe("Form schema", () => {
 	});
 
 	test("form field helper APIs stay available after pick", () => {
-		const form = Schema.form({
-			a: Schema.Field.text(),
-			b: Schema.Field.number(),
-		}).pick(["a"]);
+		const form = Form.from({ a: Field.text(), b: Field.number() }).pick(["a"]);
 
 		expect(typeof form.Field).toBe("function");
 		expect(typeof form.component({ name: "a" }).Control).toBe("function");
 	});
 
 	test("file and files fields parse file values", async () => {
-		const single = Schema.form({ upload: Schema.Field.file() });
-		const many = Schema.form({ uploads: Schema.Field.files() });
+		const single = Form.from({ upload: Field.file() });
+		const many = Form.from({ uploads: Field.files() });
 		const one = new File(["one"], "one.txt", { type: "text/plain" });
 		const two = new File(["two"], "two.txt", { type: "text/plain" });
 		const oneData = new FormData();
@@ -665,34 +658,33 @@ describe("Form schema", () => {
 	});
 
 	test("field parts metadata reflects field cardinality", () => {
-		expect(Schema.Field.text().parts).toBe(1);
-		expect(Schema.Field.checkbox().parts).toBe(1);
-		expect(Schema.Field.file().stream().parts).toBe(1);
-		expect(Schema.Field.checkboxes(["a", "b", "c"]).parts).toBe(3);
-		expect(Schema.Field.multiselect(["a", "b"]).parts).toBe(2);
-		expect(Schema.Field.files().parts).toBe(Infinity);
+		expect(Field.text().parts).toBe(1);
+		expect(Field.checkbox().parts).toBe(1);
+		expect(Field.file().stream().parts).toBe(1);
+		expect(Field.checkboxes(["a", "b", "c"]).parts).toBe(3);
+		expect(Field.multiselect(["a", "b"]).parts).toBe(2);
+		expect(Field.files().parts).toBe(Infinity);
 	});
 
 	test("form parts sums field cardinality and preserves infinity", () => {
 		expect(
-			Schema.form({
-				name: Schema.Field.text(),
-				roles: Schema.Field.checkboxes(["reader", "admin"]),
-				tags: Schema.Field.multiselect(["a", "b", "c"]),
-				license: Schema.Field.file().stream(),
+			Form.from({
+				name: Field.text(),
+				roles: Field.checkboxes(["reader", "admin"]),
+				tags: Field.multiselect(["a", "b", "c"]),
+				license: Field.file().stream(),
 			}).parts,
 		).toBe(7);
 		expect(
-			Schema.form({ name: Schema.Field.text(), uploads: Schema.Field.files() })
-				.parts,
+			Form.from({ name: Field.text(), uploads: Field.files() }).parts,
 		).toBe(Infinity);
 	});
 
 	test("multipart parse returns validated data and streamed parts together", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text(),
-			rules: Schema.Field.checkbox(),
-			license: Schema.Field.file().stream(),
+		const form = Form.from({
+			name: Field.text(),
+			rules: Field.checkbox(),
+			license: Field.file().stream(),
 		});
 		const body = new FormData();
 
@@ -717,9 +709,9 @@ describe("Form schema", () => {
 	});
 
 	test("multipart parse does not expose parts when non-part fields are invalid", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text().min(2),
-			license: Schema.Field.file().stream(),
+		const form = Form.from({
+			name: Field.text().min(2),
+			license: Field.file().stream(),
 		});
 		const body = new FormData();
 
@@ -734,7 +726,7 @@ describe("Form schema", () => {
 	});
 
 	test("multipart parse adds issues for unexpected field names", async () => {
-		const form = Schema.form({ name: Schema.Field.text() });
+		const form = Form.from({ name: Field.text() });
 		const body = new FormData();
 
 		body.set("name", "ross");
@@ -750,7 +742,7 @@ describe("Form schema", () => {
 	});
 
 	test("FormData parse adds issues for unexpected field names", async () => {
-		const form = Schema.form({ name: Schema.Field.text() });
+		const form = Form.from({ name: Field.text() });
 		const data = new FormData();
 
 		data.set("name", "ross");
@@ -762,7 +754,7 @@ describe("Form schema", () => {
 	});
 
 	test("FormData parse aggregates all unexpected field names", async () => {
-		const form = Schema.form({ name: Schema.Field.text() });
+		const form = Form.from({ name: Field.text() });
 		const data = new FormData();
 
 		data.set("name", "ross");
@@ -777,7 +769,7 @@ describe("Form schema", () => {
 	});
 
 	test("URLSearchParams parse ignores unexpected field names", async () => {
-		const form = Schema.form({ name: Schema.Field.text() });
+		const form = Form.from({ name: Field.text() });
 		const params = new URLSearchParams();
 
 		params.set("name", "ross");

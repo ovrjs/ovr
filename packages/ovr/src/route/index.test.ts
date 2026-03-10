@@ -1,6 +1,6 @@
 import { App } from "../app/index.js";
 import { Render } from "../render/index.js";
-import { Schema } from "../schema/index.js";
+import { Field, Form } from "../schema/index.js";
 import { Route } from "./index.js";
 import { describe, expect, test } from "vitest";
 
@@ -9,9 +9,9 @@ describe("Route schema helpers", () => {
 		const search = Route.get(
 			"/search",
 			{
-				query: Schema.Field.text(),
-				tags: Schema.Field.multiselect(["a", "b", "c"]),
-				active: Schema.Field.checkbox(),
+				query: Field.text(),
+				tags: Field.multiselect(["a", "b", "c"]),
+				active: Field.checkbox(),
 			},
 			async (c) => {
 				const result = await c.data();
@@ -38,10 +38,10 @@ describe("Route schema helpers", () => {
 		});
 	});
 
-	test("Route.get parses query params with Schema.form instance", async () => {
-		const form = Schema.form({
-			name: Schema.Field.text(),
-			role: Schema.Field.radio(["reader", "admin"]),
+	test("Route.get parses query params with Form.from instance", async () => {
+		const form = Form.from({
+			name: Field.text(),
+			role: Field.radio(["reader", "admin"]),
 		});
 		const user = Route.get("/user", form, async (c) => {
 			const result = await c.data();
@@ -66,7 +66,7 @@ describe("Route schema helpers", () => {
 	test("invalid GET schema parse uses current request URL and encoded _form", async () => {
 		const search = Route.get(
 			"/search",
-			{ role: Schema.Field.radio(["reader", "admin"]) },
+			{ role: Field.radio(["reader", "admin"]) },
 			async (c) => {
 				const result = await c.data();
 
@@ -100,20 +100,16 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled GET handles HEAD requests without form parsing", async () => {
-		const search = Route.get(
-			"/search",
-			{ query: Schema.Field.text() },
-			async (c) => {
-				const result = await c.data();
+		const search = Route.get("/search", { query: Field.text() }, async (c) => {
+			const result = await c.data();
 
-				if (result.issues) {
-					c.text("Invalid", 400);
-					return;
-				}
+			if (result.issues) {
+				c.text("Invalid", 400);
+				return;
+			}
 
-				c.text(result.data.query);
-			},
-		);
+			c.text(result.data.query);
+		});
 		const app = new App().use(search);
 
 		const res = await app.fetch(
@@ -127,7 +123,7 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled Route.get exposes route and schema helpers", () => {
-		const form = Route.get("/profile", { name: Schema.Field.text() }, (c) =>
+		const form = Route.get("/profile", { name: Field.text() }, (c) =>
 			c.text("ok"),
 		);
 
@@ -139,7 +135,7 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled Route.get Form defaults to Fields and submit button", async () => {
-		const profile = Route.get("/profile", { name: Schema.Field.text() }, (c) =>
+		const profile = Route.get("/profile", { name: Field.text() }, (c) =>
 			c.text("ok"),
 		);
 
@@ -154,7 +150,7 @@ describe("Route schema helpers", () => {
 	test("invalid POST schema parse still prefers same-origin referer URL", async () => {
 		const submit = Route.post(
 			"/submit",
-			{ role: Schema.Field.radio(["reader", "admin"]) },
+			{ role: Field.radio(["reader", "admin"]) },
 			async (c) => {
 				const result = await c.data();
 
@@ -197,10 +193,7 @@ describe("Route schema helpers", () => {
 	test("invalid multipart POST with streamed file field returns redirect", async () => {
 		const submit = Route.post(
 			"/upload",
-			{
-				name: Schema.Field.text().min(2),
-				license: Schema.Field.file().stream(),
-			},
+			{ name: Field.text().min(2), license: Field.file().stream() },
 			async (c) => {
 				const result = await c.data();
 
@@ -257,7 +250,7 @@ describe("Route schema helpers", () => {
 	test("c.data passes multipart options to parser", async () => {
 		const submit = Route.post(
 			"/limit",
-			{ a: Schema.Field.text(), b: Schema.Field.text() },
+			{ a: Field.text(), b: Field.text() },
 			async (c) => {
 				try {
 					const result = await c.data({ parts: 1 });
@@ -306,7 +299,7 @@ describe("Route schema helpers", () => {
 	test("c.data auto-applies schema parts limit", async () => {
 		const submit = Route.post(
 			"/auto-limit",
-			{ a: Schema.Field.text(), b: Schema.Field.text() },
+			{ a: Field.text(), b: Field.text() },
 			async (c) => {
 				try {
 					const result = await c.data();
@@ -344,7 +337,7 @@ describe("Route schema helpers", () => {
 	test("schema auto parts overrides app multipart parts option", async () => {
 		const submit = Route.post(
 			"/app-limit",
-			{ a: Schema.Field.text(), b: Schema.Field.text() },
+			{ a: Field.text(), b: Field.text() },
 			async (c) => {
 				try {
 					const result = await c.data();
@@ -381,7 +374,7 @@ describe("Route schema helpers", () => {
 	test("c.data parts option overrides app multipart parts option", async () => {
 		const submit = Route.post(
 			"/call-limit",
-			{ a: Schema.Field.text(), b: Schema.Field.text() },
+			{ a: Field.text(), b: Field.text() },
 			async (c) => {
 				try {
 					const result = await c.data({ parts: 2 });

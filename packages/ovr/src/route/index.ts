@@ -1,6 +1,6 @@
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Schema } from "../schema/index.js";
+import { Form as FormSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";
@@ -91,9 +91,9 @@ export namespace Route {
 	 * Form method subset attached to route helper types.
 	 *
 	 * Omits `component` so schema-specific `component` signatures are not widened when a
-	 * concrete `Schema.Form<S>` is intersected onto the route type.
+	 * concrete `Form<S>` is intersected onto the route type.
 	 */
-	type FormMethods = Omit<Schema.Form<any>, "component">;
+	type FormMethods = Omit<Route.Schema<any>, "component">;
 
 	/**
 	 * Optional form helper methods available when a route may have a schema.
@@ -128,6 +128,14 @@ export namespace Route {
 		WithButton<Pattern> &
 		WithForm<Pattern> &
 		MaybeForm;
+
+	/**
+	 * Schema helper type attached to routes that have a form schema.
+	 *
+	 * @template S Form field shape
+	 */
+	export type Schema<S extends FormSchema.Shape = FormSchema.Shape> =
+		FormSchema<S>;
 
 	/**
 	 * Options to construct a relative URL from the route.
@@ -188,7 +196,7 @@ export namespace Route {
 	 */
 	export type Form<Pattern extends string> = (
 		props: JSX.IntrinsicElements["form"] &
-			URLOptions<ExtractParams<Pattern>> & { state?: Schema.Form.State.Input },
+			URLOptions<ExtractParams<Pattern>> & { state?: FormSchema.State.Input },
 	) => JSX.Element;
 
 	/**
@@ -339,7 +347,7 @@ export class Route<Pattern extends string = string> {
 	static #withSchema<
 		Pattern extends string,
 		R extends { middleware: Middleware<any, any>[]; Form: Route.Form<Pattern> },
-	>(route: R, schema?: Schema.Form): R | (R & Schema.Form) {
+	>(route: R, schema?: Route.Schema): R | (R & Route.Schema) {
 		if (!schema) return route;
 
 		// original form shell from normal route
@@ -376,11 +384,11 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware GET middleware
 	 * @returns GET `Route` with added components
 	 */
-	static get<Pattern extends string, S extends Schema.Form.Shape>(
+	static get<Pattern extends string, S extends FormSchema.Shape>(
 		pattern: Pattern,
 		fields: S,
 		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Get<Pattern> & Schema.Form<S>;
+	): Route.Get<Pattern> & Route.Schema<S>;
 	/**
 	 * @template Pattern Route pattern
 	 * @template S Form field shape
@@ -389,30 +397,30 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware GET middleware
 	 * @returns GET `Route` with added components
 	 */
-	static get<Pattern extends string, S extends Schema.Form.Shape>(
+	static get<Pattern extends string, S extends FormSchema.Shape>(
 		pattern: Pattern,
-		form: Schema.Form<S>,
+		form: Route.Schema<S>,
 		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Get<Pattern> & Schema.Form<S>;
+	): Route.Get<Pattern> & Route.Schema<S>;
 	static get<Pattern extends string>(
 		pattern: Pattern,
 		schemaOrMiddleware?:
-			| Schema.Form
-			| Schema.Form.Shape
+			| Route.Schema
+			| FormSchema.Shape
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
+			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
 		...middleware: (
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>
+			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>
 		)[]
 	) {
-		let schema: Schema.Form | undefined;
+		let schema: Route.Schema | undefined;
 
 		if (schemaOrMiddleware) {
 			if (typeof schemaOrMiddleware === "function") {
 				middleware.unshift(schemaOrMiddleware);
 			} else {
-				schema = Schema.form(schemaOrMiddleware);
+				schema = FormSchema.from(schemaOrMiddleware);
 			}
 		}
 
@@ -445,20 +453,20 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<S extends Schema.Form.Shape>(
+	static post<S extends FormSchema.Shape>(
 		fields: S,
 		...middleware: Middleware<{}, S>[]
-	): Route.Post & Schema.Form<S>;
+	): Route.Post & Route.Schema<S>;
 	/**
 	 * @template S Form field shape
 	 * @param form Form schema
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<S extends Schema.Form.Shape>(
-		form: Schema.Form<S>,
+	static post<S extends FormSchema.Shape>(
+		form: Route.Schema<S>,
 		...middleware: Middleware<{}, S>[]
-	): Route.Post & Schema.Form<S>;
+	): Route.Post & Route.Schema<S>;
 	/**
 	 * @template Pattern Route pattern
 	 * @param pattern Route pattern
@@ -477,11 +485,11 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string, S extends Schema.Form.Shape>(
+	static post<Pattern extends string, S extends FormSchema.Shape>(
 		pattern: Pattern,
 		fields: S,
 		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Post<Pattern> & Schema.Form<S>;
+	): Route.Post<Pattern> & Route.Schema<S>;
 	/**
 	 * @template Pattern Route pattern
 	 * @template S Form field shape
@@ -490,44 +498,44 @@ export class Route<Pattern extends string = string> {
 	 * @param middleware POST middleware
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string, S extends Schema.Form.Shape>(
+	static post<Pattern extends string, S extends FormSchema.Shape>(
 		pattern: Pattern,
-		form: Schema.Form<S>,
+		form: Route.Schema<S>,
 		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Post<Pattern> & Schema.Form<S>;
+	): Route.Post<Pattern> & Route.Schema<S>;
 	static post<Pattern extends string>(
 		patternOrSchemaOrMiddleware:
 			| Pattern
-			| Schema.Form
-			| Schema.Form.Shape
+			| Route.Schema
+			| FormSchema.Shape
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
+			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
 		schemaOrMiddleware?:
-			| Schema.Form
-			| Schema.Form.Shape
+			| Route.Schema
+			| FormSchema.Shape
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
+			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
 		...middleware: (
 			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>
+			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>
 		)[]
 	) {
 		let pattern: Pattern | undefined;
-		let schema: Schema.Form | undefined;
+		let schema: Route.Schema | undefined;
 
 		const resolve = (
 			psm?:
 				| Pattern
-				| Schema.Form
-				| Schema.Form.Shape
+				| Route.Schema
+				| FormSchema.Shape
 				| Middleware<ExtractParams<Pattern>>
-				| Middleware<ExtractParams<Pattern>, Schema.Form.Shape>,
+				| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
 		) => {
 			if (psm) {
 				if (typeof psm === "string") {
 					pattern = psm;
 				} else if (typeof psm !== "function") {
-					schema = Schema.form(psm);
+					schema = FormSchema.from(psm);
 				} else {
 					middleware.unshift(psm);
 				}

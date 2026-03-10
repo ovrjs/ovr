@@ -4,7 +4,7 @@ import { type Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
-import type { Schema } from "../schema/index.js";
+import type { Form } from "../schema/index.js";
 import { type Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
@@ -40,12 +40,10 @@ export namespace Context {
 	 *
 	 * @template S Form shape
 	 */
-	export type Result<S extends Schema.Form.Shape> = [
-		Schema.Form.Shape,
-	] extends [S]
+	export type Result<S extends Form.Shape> = [Form.Shape] extends [S]
 		? null
 		: Util.Prettify<
-				Schema.Form.Parse.Result<
+				Form.Parse.Result<
 					S,
 					{
 						/** URL with invalid field values encoded into a search parameter. */
@@ -63,7 +61,7 @@ export namespace Context {
  */
 export class Context<
 	Params extends Trie.Params = Trie.Params,
-	Shape extends Schema.Form.Shape = Schema.Form.Shape,
+	Shape extends Form.Shape = Form.Shape,
 > {
 	/**
 	 * Incoming `Request` to the server.

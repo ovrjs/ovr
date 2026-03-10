@@ -47,7 +47,7 @@ export const chat = ovr.Route.get("/demo/chat", (c) => {
 });
 
 export const stream = ovr.Route.post(
-	{ message: ovr.Schema.Field.text() },
+	{ message: ovr.Field.text() },
 	async (c) => {
 		const Layout = createLayout(c);
 
