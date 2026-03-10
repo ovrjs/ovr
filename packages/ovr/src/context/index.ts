@@ -1,5 +1,4 @@
 import type { App } from "../app/index.js";
-import { Auth } from "../auth/index.js";
 import { Cookie } from "../cookie/index.js";
 import { type Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -94,9 +93,6 @@ export class Context<
 
 	/** Forwarded app options */
 	readonly #options: App.Options;
-
-	/** Cached auth instance */
-	#auth?: Auth;
 
 	/** Cached multipart instance */
 	#multipart?: Multipart;
@@ -271,12 +267,6 @@ export class Context<
 
 			return result as Context.Result<Shape>;
 		})());
-	}
-
-	get auth() {
-		if (!this.#options.auth) throw new Error("Set App.Options.auth to enable");
-
-		return (this.#auth ??= new Auth(this, this.#options.auth));
 	}
 
 	/**

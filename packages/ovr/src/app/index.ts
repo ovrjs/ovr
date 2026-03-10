@@ -1,5 +1,3 @@
-import { Auth } from "../auth/index.js";
-import { Passkey } from "../auth/passkey.js";
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
@@ -46,9 +44,6 @@ export namespace App {
 		 * (overridden by options passed into `Context.form(options)`)
 		 */
 		readonly form?: Multipart.Options;
-
-		/** Authentication options */
-		readonly auth?: Auth.Options;
 	};
 }
 
@@ -73,8 +68,6 @@ export class App {
 			{ csrf: true, trailingSlash: "never" },
 			options,
 		);
-
-		if (this.#options.auth) this.use(Passkey.options);
 
 		if (this.#options.csrf === true) this.#global.push(App.#csrf);
 

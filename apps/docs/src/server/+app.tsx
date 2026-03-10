@@ -8,9 +8,7 @@ import * as seo from "@/server/seo";
 import "dotenv/config";
 import * as o from "ovr";
 
-if (!process.env.AUTH_SECRET) throw new Error("No auth secret set");
-
-const app = new o.App({ auth: { secret: process.env.AUTH_SECRET } });
+const app = new o.App();
 
 app.use(redirect, notFound, home, docs, demo, seo);
 
