@@ -1592,6 +1592,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						// expose current and rest of the parts to the user
 						stream = (async function* () {
 							try {
+								// have to yield the current part first
+								// this is why the multipart can't be passed directly
 								yield part;
 
 								let next: IteratorResult<Multipart.Part>;

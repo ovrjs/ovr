@@ -16,7 +16,6 @@
 		"@fontsource-variable/literata": "^5.2.8",
 		"@ovrjs/size": "0.0.1",
 		"@robino/md": "^5.0.0",
-		"@vitejs/plugin-basic-ssl": "^2.1.4",
 		"clsx": "^2.1.1",
 		"dotenv": "^17.3.1",
 		"drab": "^7.0.3",

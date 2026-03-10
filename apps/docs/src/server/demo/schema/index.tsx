@@ -4,8 +4,8 @@ import { Meta } from "@/ui/meta";
 import { Field, Form, Render, Route } from "ovr";
 
 const student = Form.from({
-	name: Field.text({ placeholder: "Harry Potter" }).refine(
-		(v) => v.trim().length >= 2,
+	name: Field.text({ placeholder: "Harry Potter" }).min(
+		2,
 		"Expected at least 2 characters",
 	),
 	email: Field.email({ placeholder: "name@hogwarts.edu" }).refine(
@@ -14,14 +14,11 @@ const student = Form.from({
 	),
 	house: Field.select(["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]),
 	wand: Field.radio(["Phoenix feather", "Dragon heartstring", "Unicorn hair"]),
-	year: Field.number({ min: 1, max: 7 }).refine(
-		(v) => v >= 1 && v <= 7,
-		"Expected a year between 1 and 7",
-	),
+	year: Field.number().min(1).max(7),
 	pet: Field.checkboxes(["Owl", "Cat", "Toad"]),
 	arrival: Field.date().transform((d) => d || "2026-09-01"),
 	rules: Field.checkbox().refine((v) => v, "You must accept the castle rules"),
-	license: Field.file().stream(), // put stream last to parse fields first
+	license: Field.file().stream(), // put `.stream()` last to parse fields first
 });
 
 export const enroll = Route.post(student, async (c) => {
@@ -30,10 +27,10 @@ export const enroll = Route.post(student, async (c) => {
 	if (result.issues) return c.redirect(result.url, 303);
 
 	if (result.stream) {
-		for await (const part of result.stream) {
-			console.log(part);
-			await part.bytes();
-		}
+		// for await (const _part of result.stream) {
+		// 	// console.log(part);
+		// 	// await part.bytes();
+		// }
 	}
 
 	// create new student record...
