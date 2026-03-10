@@ -333,6 +333,18 @@ describe("Array and object schemas", () => {
 		expect(valid(schema.parse({ a: "x", b: 2 }))).toEqual({ a: "x", b: 2 });
 	});
 
+	test("object extend accepts another object schema", () => {
+		const base = Schema.object({ a: Schema.string() });
+		const extra = Schema.object({ b: Schema.number() });
+		const schema = base.extend(extra);
+		const result = valid(schema.parse({ a: "x", b: 2 })) satisfies {
+			a: string;
+			b: number;
+		};
+
+		expect(result).toEqual({ a: "x", b: 2 });
+	});
+
 	test("object mode is preserved through extend", () => {
 		const schema = Schema.object({ a: Schema.string() })
 			.strict()
@@ -604,6 +616,20 @@ describe("Form schema", () => {
 			a: "x",
 			c: true,
 		});
+	});
+
+	test("form extend accepts another form schema", async () => {
+		const base = Schema.form({ a: Schema.Field.text() });
+		const extra = Schema.form({ b: Schema.Field.checkbox() });
+		const extended = base.extend(extra);
+		const data = new FormData();
+
+		data.set("a", "x");
+		data.set("b", "on");
+
+		const result = valid(await extended.parse(data));
+
+		expect(result).toEqual({ a: "x", b: true });
 	});
 
 	test("form field helper APIs stay available after pick", () => {

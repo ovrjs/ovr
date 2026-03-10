@@ -48,6 +48,18 @@ export class Passkey {
 	/** Challenge validity window in milliseconds. */
 	static #challengeTtl = Time.minute;
 
+	/** Hidden passkey field schema shared by route prep and raw form fallback. */
+	static #form = Schema.form({
+		credential: Schema.Field.hidden().json(Schema.unknown()),
+		signed: Schema.Field.hidden(),
+	});
+
+	/** Parsed passkey field payload shape. */
+	static #payload = Schema.object({
+		credential: Schema.unknown(),
+		signed: Schema.string(),
+	});
+
 	/** Request-scoped auth helper for challenge signing and verification. */
 	readonly #auth: Auth;
 
@@ -67,6 +79,21 @@ export class Passkey {
 		this.#c = c;
 		this.#auth = auth;
 		this.#rpId = this.#c.url.hostname;
+	}
+
+	/**
+	 * Ensure passkey routes account for hidden passkey form fields.
+	 *
+	 * @template Pattern Route pattern
+	 * @param route Target route
+	 */
+	static #prepareRoute<Pattern extends string>(route: Passkey.Post<Pattern>) {
+		if (
+			route.extend &&
+			!(route.names?.includes("credential") && route.names?.includes("signed"))
+		) {
+			Object.assign(route, route.extend(Passkey.#form));
+		}
 	}
 
 	/**
@@ -245,13 +272,24 @@ export class Passkey {
 
 					form.dataset.auth = "";
 
-					const credential = document.createElement("input");
-					credential.type = "hidden";
-					credential.name = "credential";
+					const hidden = (name: string) => {
+						const field = form.elements.namedItem(name);
 
-					const signed = document.createElement("input");
-					signed.type = "hidden";
-					signed.name = "signed";
+						if (field instanceof HTMLInputElement) {
+							return field;
+						}
+
+						const input = document.createElement("input");
+						input.type = "hidden";
+						input.name = name;
+
+						form.append(input);
+
+						return input;
+					};
+
+					const credentialInput = hidden("credential");
+					const signedInput = hidden("signed");
 
 					form.addEventListener("submit", async (e) => {
 						e.preventDefault();
@@ -280,8 +318,8 @@ export class Passkey {
 									PublicKeyCredentialRequestOptionsJSON;
 							};
 
-							signed.value = options.signed;
-							credential.value = JSON.stringify(
+							signedInput.value = options.signed;
+							credentialInput.value = JSON.stringify(
 								await navigator.credentials[method]({
 									publicKey: (method === "create"
 										? Client.#decodeCreationOptions(options.options)
@@ -292,7 +330,6 @@ export class Passkey {
 								}),
 							);
 
-							form.append(credential, signed);
 							form.submit();
 							return;
 						} catch (e) {
@@ -397,6 +434,8 @@ export class Passkey {
 		exclude?: string[],
 		user: string = crypto.randomUUID(),
 	): Route.Form<Pattern> {
+		Passkey.#prepareRoute(route);
+
 		return (props) => {
 			return route.Form({
 				...props,
@@ -446,11 +485,16 @@ export class Passkey {
 	get<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
 	): Route.Form<Pattern> {
+		Passkey.#prepareRoute(route);
+
 		return (props) => {
 			return route.Form({
 				...props,
 				children: [
-					props.children ?? jsx("button", { children: "Log in" }),
+					props.children ?? [
+						route.Fields?.(),
+						jsx("button", { children: "Log in" }),
+					],
 					jsx("script", {
 						type: "module",
 						children: async () => {
@@ -684,14 +728,15 @@ export class Passkey {
 	 * @throws Schema.AggregateIssue when required fields are missing or invalid
 	 */
 	async #parseForm() {
-		const data = await this.#c.form().data();
-		const result = Schema.object({
-			credential: Schema.string().json(Schema.unknown()),
-			signed: Schema.string(),
-		}).parse({
-			credential: data.get("credential"),
-			signed: data.get("signed"),
-		});
+		const data = (await this.#c.data()) as Context.Result<never> | null;
+
+		if (data?.issues) {
+			throw data;
+		}
+
+		const result = data?.data
+			? Passkey.#payload.parse(data.data)
+			: await Passkey.#form.parse(await this.#c.form().data());
 
 		if (result.issues) throw result;
 

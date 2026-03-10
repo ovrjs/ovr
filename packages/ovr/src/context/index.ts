@@ -101,6 +101,9 @@ export class Context<
 	/** Cached multipart instance */
 	#multipart?: Multipart;
 
+	/** Cached result from `data()` to avoid re-reading request bodies. */
+	#parsed?: Promise<Context.Result<Shape>>;
+
 	/**
 	 * Creates a new `Context` with the current `Request`.
 	 *
@@ -231,41 +234,43 @@ export class Context<
 	 * @returns Parsed form data with possible invalid redirect URL state
 	 */
 	async data(options?: Multipart.Options): Promise<Context.Result<Shape>> {
-		const post = this.req.method === Method.post;
-		const form = this.route as Route.Post | undefined;
+		return (this.#parsed ??= (async () => {
+			const post = this.req.method === Method.post;
+			const form = this.route as Route.Post | undefined;
 
-		if (!form?.parse) return null as Context.Result<Shape>;
+			if (!form?.parse) return null as Context.Result<Shape>;
 
-		const result = await form.parse(
-			post
-				? this.form(Object.assign({ parts: form.parts }, options))
-				: this.url.searchParams,
-		);
+			const result = await form.parse(
+				post
+					? this.form(Object.assign({ parts: form.parts }, options))
+					: this.url.searchParams,
+			);
 
-		if (result.issues) {
-			// create encoded URL state with invalid fields
-			let url = new URL(this.url);
+			if (result.issues) {
+				// create encoded URL state with invalid fields
+				let url = new URL(this.url);
 
-			if (post) {
-				const referer = this.req.headers.get(Header.name.ref);
+				if (post) {
+					const referer = this.req.headers.get(Header.name.ref);
 
-				if (referer) {
-					try {
-						const refererUrl = new URL(referer, url);
+					if (referer) {
+						try {
+							const refererUrl = new URL(referer, url);
 
-						if (refererUrl.origin === this.url.origin) url = refererUrl;
-					} catch {
-						// invalid referer
+							if (refererUrl.origin === this.url.origin) url = refererUrl;
+						} catch {
+							// invalid referer
+						}
 					}
 				}
+
+				if (result.search) url.searchParams.set(...result.search);
+
+				return Object.assign(result, { url }) as Context.Result<Shape>;
 			}
 
-			if (result.search) url.searchParams.set(...result.search);
-
-			return Object.assign(result, { url }) as Context.Result<Shape>;
-		}
-
-		return result as Context.Result<Shape>;
+			return result as Context.Result<Shape>;
+		})());
 	}
 
 	get auth() {

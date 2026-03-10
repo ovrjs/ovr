@@ -382,6 +382,95 @@ describe("passkey script", () => {
 		);
 		expect(() => new Function(script!)).not.toThrow();
 	});
+
+	test("prepare route accepts passkey hidden fields with schema c.data()", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+		const register = Route.post(
+			{ email: Schema.Field.email() },
+			async (c) => {
+				try {
+					const result = await c.data();
+
+					if (result.issues) {
+						c.text("issues");
+						return;
+					}
+
+					await c.auth.passkey.verify();
+				} catch (e) {
+					c.text(e instanceof Error ? e.message : String(e));
+					return;
+				}
+
+				c.text("ok");
+			},
+		);
+
+		app.use(
+			register,
+			Route.get("/", (c) => {
+				const Register = c.auth.passkey.create(register);
+				return Register({});
+			}),
+		);
+
+		await app.fetch("https://example.com/");
+
+		const body = new FormData();
+		body.set("email", "user@example.com");
+		body.set(
+			"credential",
+			JSON.stringify({
+				type: "public-key",
+				id: "a",
+				rawId: "a",
+				response: {
+					clientDataJSON: Codec.Base64Url.encode(
+						Codec.encode(
+							JSON.stringify({
+								type: "webauthn.create",
+								challenge: "x",
+								origin: "https://example.com",
+							}),
+						),
+					),
+					attestationObject: "a",
+				},
+			}),
+		);
+		body.set("signed", "bad");
+
+		const res = await app.fetch(
+			new Request(`https://example.com${register.url()}`, {
+				method: "POST",
+				body,
+				headers: { origin: "https://example.com" },
+			}),
+		);
+
+		expect(await res.text()).toBe("Invalid token");
+		expect((register as Route.Post & { parts?: number }).parts).toBe(3);
+	});
+
+	test("get renders prepared hidden fields by default for schema routes", async () => {
+		const app = new App({ auth: { secret: "secret" }, csrf: false });
+		const login = Route.post({ email: Schema.Field.email() }, (c) => c.text("ok"));
+
+		app.use(
+			login,
+			Route.get("/", (c) => {
+				const Login = c.auth.passkey.get(login);
+				return Login({});
+			}),
+		);
+
+		const html = await (await app.fetch("https://example.com/")).text();
+
+		expect(html).toContain('name="email"');
+		expect(html).toContain('name="credential"');
+		expect(html).toContain('name="signed"');
+		expect(html).toContain(">Log in<");
+	});
 });
 
 describe("passkey parsing", () => {

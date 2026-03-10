@@ -1537,7 +1537,7 @@ export class ObjectSchema<
 	Mode extends Schema.Object.Mode = "strip",
 > extends Schema<Schema.Object.Output<Shape, Mode>> {
 	/** Object shape definitions. */
-	readonly #shape: Shape;
+	readonly shape: Shape;
 
 	/** Object parsing mode. */
 	readonly #mode: Mode;
@@ -1593,7 +1593,7 @@ export class ObjectSchema<
 				: ({ data } as { data: Schema.Object.Output<Shape, Mode> });
 		});
 
-		this.#shape = shape;
+		this.shape = shape;
 		this.#mode = mode;
 	}
 
@@ -1601,13 +1601,23 @@ export class ObjectSchema<
 	 * Merge `extra` into the current shape.
 	 *
 	 * @template E Extra shape type
-	 * @param extra Extra shape to merge
+	 * @param extra Extra shape or object schema to merge
 	 * @returns New object schema with the merged shape
 	 */
 	extend<E extends Schema.Object.Shape>(
 		extra: E,
-	): Schema.Object<Shape.Extend<Shape, E>, Mode> {
-		return new Schema.Object(Shape.extend(this.#shape, extra), this.#mode);
+	): Schema.Object<Shape.Extend<Shape, E>, Mode>;
+	extend<E extends Schema.Object.Shape>(
+		extra: Schema.Object<E>,
+	): Schema.Object<Shape.Extend<Shape, E>, Mode>;
+	extend(extra: Schema.Object.Shape | Schema.Object<any>) {
+		return new Schema.Object(
+			Shape.extend(
+				this.shape,
+				extra instanceof ObjectSchema ? extra.shape : extra,
+			),
+			this.#mode,
+		);
 	}
 
 	/**
@@ -1618,7 +1628,7 @@ export class ObjectSchema<
 	 * @returns New object schema with only selected keys
 	 */
 	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return new Schema.Object(Shape.pick(this.#shape, names), this.#mode);
+		return new Schema.Object(Shape.pick(this.shape, names), this.#mode);
 	}
 
 	/**
@@ -1629,7 +1639,7 @@ export class ObjectSchema<
 	 * @returns New object schema without selected keys
 	 */
 	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return new Schema.Object(Shape.omit(this.#shape, names), this.#mode);
+		return new Schema.Object(Shape.omit(this.shape, names), this.#mode);
 	}
 
 	/**
@@ -1638,7 +1648,7 @@ export class ObjectSchema<
 	 * @returns New object schema in strict mode
 	 */
 	strict() {
-		return new Schema.Object(this.#shape, "strict");
+		return new Schema.Object(this.shape, "strict");
 	}
 
 	/**
@@ -1647,7 +1657,7 @@ export class ObjectSchema<
 	 * @returns New object schema in loose mode
 	 */
 	loose() {
-		return new Schema.Object(this.#shape, "loose");
+		return new Schema.Object(this.shape, "loose");
 	}
 }
 
@@ -1674,14 +1684,14 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 		Schema.array(Schema.string()),
 	]);
 
-	/** Field definitions. */
-	readonly #fields: Shape;
-
-	/** Field names in definition order. */
-	readonly #names: Shape.Name<Shape>[];
-
 	/** Form id. */
 	readonly #id: string;
+
+	/** Field definitions. */
+	readonly shape: Shape;
+
+	/** Field names in definition order. */
+	readonly names: Shape.Name<Shape>[];
 
 	/** Maximum expected multipart parts derived from field cardinality. */
 	readonly parts: number;
@@ -1689,13 +1699,13 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	/**
 	 * Create a new form schema validator.
 	 *
-	 * @param fields Form fields
+	 * @param shape Form fields
 	 */
-	constructor(fields: Shape) {
-		this.#fields = fields;
-		this.#names = Object.keys(this.#fields) as Shape.Name<Shape>[];
-		this.#id = Checksum.djb2(this.#names.join());
-		this.parts = Object.values(this.#fields).reduce(
+	constructor(shape: Shape) {
+		this.shape = shape;
+		this.names = Object.keys(this.shape) as Shape.Name<Shape>[];
+		this.#id = Checksum.djb2(this.names.join());
+		this.parts = Object.values(this.shape).reduce(
 			(sum, field) => sum + field.parts,
 			0,
 		);
@@ -1705,14 +1715,26 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * Merge `extra` into the current fields.
 	 *
 	 * @template E Extra field shape type
-	 * @param extra Extra fields to merge
+	 * @param extra Extra fields or form schema to merge
 	 * @returns New form schema with merged fields
 	 */
-	extend<E extends Schema.Form.Shape>(
-		extra: E,
-	): Schema.Form<Shape.Extend<Shape, E>> {
-		return Schema.form(Shape.extend(this.#fields, extra));
-	}
+	extend: {
+		<E extends Schema.Form.Shape>(
+			extra: E,
+		): Schema.Form<Shape.Extend<Shape, E>>;
+		<E extends Schema.Form.Shape>(
+			extra: Schema.Form<E>,
+		): Schema.Form<Shape.Extend<Shape, E>>;
+		(
+			extra: Schema.Form<any>,
+		): Schema.Form<Shape.Extend<Shape, Schema.Form.Shape>>;
+	} = (extra: Schema.Form.Shape | Schema.Form<any>) =>
+		Schema.form(
+			Shape.extend(
+				this.shape,
+				extra instanceof FormSchema ? extra.shape : extra,
+			),
+		);
 
 	/**
 	 * Keep only selected field names.
@@ -1721,9 +1743,8 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * @param names Non-empty list of field names to keep
 	 * @returns New form schema with only selected fields
 	 */
-	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return Schema.form(Shape.pick(this.#fields, names));
-	}
+	pick = <N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) =>
+		Schema.form(Shape.pick(this.shape, names));
 
 	/**
 	 * Remove selected field names.
@@ -1732,9 +1753,8 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * @param names Non-empty list of field names to remove
 	 * @returns New form schema without selected fields
 	 */
-	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return Schema.form(Shape.omit(this.#fields, names));
-	}
+	omit = <N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) =>
+		Schema.form(Shape.omit(this.shape, names));
 
 	/**
 	 * Determines whether a field value may be persisted in encoded form state.
@@ -1772,7 +1792,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 
 		if (values) {
 			for (const [name, value] of Object.entries(values)) {
-				const field = this.#fields[name];
+				const field = this.shape[name];
 
 				if (field && FormSchema.#persist(field) && value != null) {
 					const result = FormSchema.#valueSchema.parse(value);
@@ -1814,7 +1834,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 				if (encoded && encoded.length <= FormSchema.#maxStateBytes * 2) {
 					const valuesShape: Schema.Object.Shape = {};
 
-					for (const name of Object.keys(this.#fields)) {
+					for (const name of Object.keys(this.shape)) {
 						valuesShape[name] = FormSchema.#valueSchema.optional();
 					}
 
@@ -1867,7 +1887,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 				const part = current.value;
 
 				if (part.name) {
-					const field = this.#fields[part.name];
+					const field = this.shape[part.name];
 
 					if (!field) {
 						issues.push(this.#unexpected(part.name, path));
@@ -1899,14 +1919,14 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 			form = source;
 
 			for (const name of new Set(source.keys())) {
-				if (!this.#fields[name]) issues.push(this.#unexpected(name, path));
+				if (!this.shape[name]) issues.push(this.#unexpected(name, path));
 			}
 		} else {
 			// allow passthrough for URLSearchParams
 			form = source;
 		}
 
-		for (const [name, field] of Object.entries(this.#fields)) {
+		for (const [name, field] of Object.entries(this.shape)) {
 			if (!field.streaming) {
 				const value = field.read(form, name);
 				const result = field.parse(value, [...path, name]);
@@ -1927,11 +1947,11 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 
 			if (result.values) {
 				// encode into search
-				const len = this.#names.length;
+				const len = this.names.length;
 
 				for (let i = len; i >= 0; i--) {
 					// skip on the first time - try to encode everything first
-					if (i !== len) delete result.values[this.#names[i]!];
+					if (i !== len) delete result.values[this.names[i]!];
 
 					const state = Codec.encode(
 						JSON.stringify({
@@ -1973,7 +1993,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	 * ```
 	 */
 	Field = (props: Field.Component.Props<Shape>) =>
-		this.#fields[props.name]!.render({
+		this.shape[props.name]!.render({
 			...props,
 			state: this.#decode(props.state),
 		});
@@ -1994,8 +2014,8 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	) => {
 		const state = this.#decode(props.state); // pulled out to not call each map iteration
 
-		return this.#names.map((name) =>
-			this.#fields[name]!.render({ ...props, name, state }),
+		return this.names.map((name) =>
+			this.shape[name]!.render({ ...props, name, state }),
 		);
 	};
 
@@ -2016,7 +2036,7 @@ export class FormSchema<Shape extends Schema.Form.Shape> {
 	component = <N extends Shape.Name<Shape>>(
 		props: { name: N } & Field.Component.Props<Shape>,
 	): Field.Component<Shape[N]> =>
-		this.#fields[props.name]!.component({
+		this.shape[props.name]!.component({
 			...props,
 			state: this.#decode(props.state),
 		});
