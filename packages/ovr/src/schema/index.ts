@@ -1110,13 +1110,6 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	}
 
 	/**
-	 * Runtime constructor for object schemas.
-	 */
-	static get Object() {
-		return ObjectSchema;
-	}
-
-	/**
 	 * Validates each key in the shape and returns a new object of parsed outputs.
 	 *
 	 * @template S Object shape type
@@ -1126,12 +1119,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	static object<S extends Schema.Object.Shape = {}>(
 		shape: S = {} as S,
 	): Schema.Object<S> {
-		return new Schema.Object(shape, "strip");
-	}
-
-	/** Runtime constructor for form schemas. */
-	static get Form() {
-		return Form;
+		return new ObjectSchema(shape, "strip");
 	}
 }
 
@@ -1141,7 +1129,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
  * @template Shape Object shape type
  * @template Mode Object parsing mode
  */
-export class ObjectSchema<
+class ObjectSchema<
 	Shape extends Schema.Object.Shape,
 	Mode extends Schema.Object.Mode = "strip",
 > extends Schema<Schema.Object.Output<Shape, Mode>> {
@@ -1220,7 +1208,7 @@ export class ObjectSchema<
 		extra: Schema.Object<E>,
 	): Schema.Object<Shape.Extend<Shape, E>, Mode>;
 	extend(extra: Schema.Object.Shape | Schema.Object<any>) {
-		return new Schema.Object(
+		return new ObjectSchema(
 			Shape.extend(
 				this.shape,
 				extra instanceof ObjectSchema ? extra.shape : extra,
@@ -1237,7 +1225,7 @@ export class ObjectSchema<
 	 * @returns New object schema with only selected keys
 	 */
 	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return new Schema.Object(Shape.pick(this.shape, names), this.#mode);
+		return new ObjectSchema(Shape.pick(this.shape, names), this.#mode);
 	}
 
 	/**
@@ -1248,7 +1236,7 @@ export class ObjectSchema<
 	 * @returns New object schema without selected keys
 	 */
 	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return new Schema.Object(Shape.omit(this.shape, names), this.#mode);
+		return new ObjectSchema(Shape.omit(this.shape, names), this.#mode);
 	}
 
 	/**
@@ -1257,7 +1245,7 @@ export class ObjectSchema<
 	 * @returns New object schema in strict mode
 	 */
 	strict() {
-		return new Schema.Object(this.shape, "strict");
+		return new ObjectSchema(this.shape, "strict");
 	}
 
 	/**
@@ -1266,7 +1254,7 @@ export class ObjectSchema<
 	 * @returns New object schema in loose mode
 	 */
 	loose() {
-		return new Schema.Object(this.shape, "loose");
+		return new ObjectSchema(this.shape, "loose");
 	}
 }
 
