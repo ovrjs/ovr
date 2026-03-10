@@ -120,8 +120,8 @@ export namespace Schema {
 	}
 }
 
-/** @internal Shared shape types for `Shape` related runtime methods. */
-namespace Shape {
+/** Shared shape types for `Shape` related runtime methods. */
+namespace ShapeUtil {
 	/**
 	 * Shape key name string.
 	 *
@@ -144,8 +144,8 @@ namespace Shape {
 	> = globalThis.Omit<A, keyof B> & B;
 }
 
-/** @internal Shared runtime shape operations used by object and form schema methods. */
-class Shape {
+/** Shared runtime shape operations used by object and form schema methods. */
+class ShapeUtil {
 	/**
 	 * Merge two record-like shapes where `extra` keys override `shape`.
 	 *
@@ -158,8 +158,8 @@ class Shape {
 	static extend<
 		S extends Record<string, unknown>,
 		E extends Record<string, unknown>,
-	>(shape: S, extra: E): Shape.Extend<S, E> {
-		return { ...shape, ...extra } as Shape.Extend<S, E>;
+	>(shape: S, extra: E): ShapeUtil.Extend<S, E> {
+		return { ...shape, ...extra } as ShapeUtil.Extend<S, E>;
 	}
 
 	/**
@@ -171,7 +171,7 @@ class Shape {
 	 * @param names Non-empty list of keys to include
 	 * @returns Picked shape
 	 */
-	static pick<S extends Record<string, unknown>, N extends Shape.Name<S>>(
+	static pick<S extends Record<string, unknown>, N extends ShapeUtil.Name<S>>(
 		shape: S,
 		names: readonly [N, ...N[]],
 	): Pick<S, N> {
@@ -193,7 +193,7 @@ class Shape {
 	 * @param names Non-empty list of keys to remove
 	 * @returns Omitted shape
 	 */
-	static omit<S extends Record<string, unknown>, N extends Shape.Name<S>>(
+	static omit<S extends Record<string, unknown>, N extends ShapeUtil.Name<S>>(
 		shape: S,
 		names: readonly [N, ...N[]],
 	): Omit<S, N> {
@@ -1203,13 +1203,13 @@ class ObjectSchema<
 	 */
 	extend<E extends Schema.Object.Shape>(
 		extra: E,
-	): Schema.Object<Shape.Extend<Shape, E>, Mode>;
+	): Schema.Object<ShapeUtil.Extend<Shape, E>, Mode>;
 	extend<E extends Schema.Object.Shape>(
 		extra: Schema.Object<E>,
-	): Schema.Object<Shape.Extend<Shape, E>, Mode>;
+	): Schema.Object<ShapeUtil.Extend<Shape, E>, Mode>;
 	extend(extra: Schema.Object.Shape | Schema.Object<any>) {
 		return new ObjectSchema(
-			Shape.extend(
+			ShapeUtil.extend(
 				this.shape,
 				extra instanceof ObjectSchema ? extra.shape : extra,
 			),
@@ -1224,8 +1224,8 @@ class ObjectSchema<
 	 * @param names Non-empty list of key names to keep
 	 * @returns New object schema with only selected keys
 	 */
-	pick<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return new ObjectSchema(Shape.pick(this.shape, names), this.#mode);
+	pick<N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) {
+		return new ObjectSchema(ShapeUtil.pick(this.shape, names), this.#mode);
 	}
 
 	/**
@@ -1235,8 +1235,8 @@ class ObjectSchema<
 	 * @param names Non-empty list of key names to remove
 	 * @returns New object schema without selected keys
 	 */
-	omit<N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) {
-		return new ObjectSchema(Shape.omit(this.shape, names), this.#mode);
+	omit<N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) {
+		return new ObjectSchema(ShapeUtil.omit(this.shape, names), this.#mode);
 	}
 
 	/**
@@ -1272,7 +1272,7 @@ export namespace Form {
 		 * @template S Shape type
 		 */
 		export type Map<S extends Shape = Shape> = Partial<
-			Record<Shape.Name<S>, Value>
+			Record<ShapeUtil.Name<S>, Value>
 		>;
 	}
 
@@ -1399,7 +1399,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	readonly shape: Shape;
 
 	/** Field names in definition order. */
-	readonly names: Shape.Name<Shape>[];
+	readonly names: ShapeUtil.Name<Shape>[];
 
 	/** Maximum expected multipart parts derived from field cardinality. */
 	readonly parts: number;
@@ -1411,7 +1411,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 */
 	constructor(shape: Shape) {
 		this.shape = shape;
-		this.names = Object.keys(this.shape) as Shape.Name<Shape>[];
+		this.names = Object.keys(this.shape) as ShapeUtil.Name<Shape>[];
 		this.#id = Checksum.djb2(this.names.join());
 		this.parts = Object.values(this.shape).reduce(
 			(sum, field) => sum + field.parts,
@@ -1427,12 +1427,12 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * @returns New form schema with merged fields
 	 */
 	extend: {
-		<E extends Form.Shape>(extra: E): Form<Shape.Extend<Shape, E>>;
-		<E extends Form.Shape>(extra: Form<E>): Form<Shape.Extend<Shape, E>>;
-		(extra: Form<any>): Form<Shape.Extend<Shape, Form.Shape>>;
+		<E extends Form.Shape>(extra: E): Form<ShapeUtil.Extend<Shape, E>>;
+		<E extends Form.Shape>(extra: Form<E>): Form<ShapeUtil.Extend<Shape, E>>;
+		(extra: Form<any>): Form<ShapeUtil.Extend<Shape, Form.Shape>>;
 	} = (extra: Form.Shape | Form<any>) =>
 		Form.from(
-			Shape.extend(this.shape, extra instanceof Form ? extra.shape : extra),
+			ShapeUtil.extend(this.shape, extra instanceof Form ? extra.shape : extra),
 		);
 
 	/**
@@ -1442,8 +1442,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * @param names Non-empty list of field names to keep
 	 * @returns New form schema with only selected fields
 	 */
-	pick = <N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) =>
-		Form.from(Shape.pick(this.shape, names));
+	pick = <N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) =>
+		Form.from(ShapeUtil.pick(this.shape, names));
 
 	/**
 	 * Remove selected field names.
@@ -1452,8 +1452,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * @param names Non-empty list of field names to remove
 	 * @returns New form schema without selected fields
 	 */
-	omit = <N extends Shape.Name<Shape>>(names: readonly [N, ...N[]]) =>
-		Form.from(Shape.omit(this.shape, names));
+	omit = <N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) =>
+		Form.from(ShapeUtil.omit(this.shape, names));
 
 	/**
 	 * Determines whether a field value may be persisted in encoded form state.
@@ -1500,7 +1500,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						!result.issues &&
 						JSON.stringify(result.data).length <= Form.#maxValueChars
 					) {
-						sanitized[name as Shape.Name<Shape>] = result.data;
+						sanitized[name as ShapeUtil.Name<Shape>] = result.data;
 					}
 				}
 			}
@@ -1730,7 +1730,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * <Radio.Control />
 	 * ```
 	 */
-	component = <N extends Shape.Name<Shape>>(
+	component = <N extends ShapeUtil.Name<Shape>>(
 		props: { name: N } & Field.Component.Props<Shape>,
 	): Field.Component<Shape[N]> =>
 		this.shape[props.name]!.component({
@@ -2132,7 +2132,7 @@ export namespace Field {
 		 */
 		export type Props<S extends Form.Shape, I extends boolean = true> = {
 			/** Field name attribute */
-			readonly name: Shape.Name<S>;
+			readonly name: ShapeUtil.Name<S>;
 
 			/** Form state */
 			readonly state?: I extends true ? Form.State.Input<S> : Form.State<S>;
