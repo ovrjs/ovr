@@ -54,7 +54,7 @@ export class Trie {
 		this.seg = segment;
 
 		if (children?.length) {
-			this.map ??= new Map();
+			this.map = new Map();
 
 			for (const child of children) {
 				this.map.set(child.seg.charCodeAt(0), child);

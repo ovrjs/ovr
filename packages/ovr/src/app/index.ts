@@ -64,12 +64,13 @@ export class App {
 	 * @param options configuration options
 	 */
 	constructor(options?: App.Options) {
-		this.#options = Object.assign(
-			{ csrf: true, trailingSlash: "never" },
-			options,
-		);
+		this.#options = {
+			csrf: true,
+			trailingSlash: "never" as const,
+			...options,
+		};
 
-		if (this.#options.csrf === true) this.#global.push(App.#csrf);
+		if (this.#options.csrf) this.#global.push(App.#csrf);
 
 		if (this.#options.trailingSlash !== "ignore") {
 			this.#global.push(App.#createTrailingSlash(this.#options.trailingSlash));
@@ -150,12 +151,12 @@ export class App {
 
 			if (c.res.status && c.res.status !== 404) return;
 
-			const last = c.url.pathname.at(-1);
+			const slash = c.url.pathname.endsWith("/");
 
-			if (mode === "always" && last !== "/") {
+			if (mode === "always" && !slash) {
 				c.url.pathname += "/";
 				c.redirect(c.url, 308);
-			} else if (mode === "never" && c.url.pathname !== "/" && last === "/") {
+			} else if (mode === "never" && c.url.pathname !== "/" && slash) {
 				c.url.pathname = c.url.pathname.slice(0, -1);
 				c.redirect(c.url, 308);
 			}

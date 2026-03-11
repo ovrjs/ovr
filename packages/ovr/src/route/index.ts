@@ -258,30 +258,24 @@ export class Route<Pattern extends string = string> {
 			? [Route.URLOptions<ExtractParams<Pattern>>] | []
 			: [Route.URLOptions<ExtractParams<Pattern>>]
 	) {
-		const pathname = this.pathname(
-			// @ts-expect-error - do not have to pass in {} if no params
-			options?.params,
+		return (
+			this.pathname(
+				// @ts-expect-error - do not have to pass in {} if no params
+				options?.params,
+			) +
+			(options?.search
+				? // use the value as the init
+					// @ts-expect-error - see above
+					"?" + new URLSearchParams(options.search)
+				: "") +
+			(options?.hash
+				? // adding # prefix if not present matches the URL setter:
+					// https://developer.mozilla.org/en-US/docs/Web/API/URL/hash
+					options.hash[0] === "#"
+					? options.hash
+					: "#" + options.hash
+				: "")
 		);
-		let search = "";
-		let hash = "";
-
-		if (options?.search) {
-			// use the value as the init
-			// @ts-expect-error - see above
-			search = "?" + new URLSearchParams(options.search);
-		}
-
-		if (options?.hash) {
-			// adding # prefix if not present matches the URL setter:
-			// https://developer.mozilla.org/en-US/docs/Web/API/URL/hash
-			if (options.hash.startsWith("#")) {
-				hash = options.hash;
-			} else {
-				hash = "#" + options.hash;
-			}
-		}
-
-		return pathname + search + hash;
 	}
 
 	/**

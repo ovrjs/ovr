@@ -217,7 +217,7 @@ export class Context<
 	form(options?: Multipart.Options) {
 		return (this.#multipart ??= new Multipart(
 			this.req,
-			Object.assign({}, this.#options.form, options),
+			{ ...this.#options.form, ...options },
 		));
 	}
 
@@ -236,7 +236,7 @@ export class Context<
 
 			const result = await form.parse(
 				post
-					? this.form(Object.assign({ parts: form.parts }, options))
+					? this.form({ parts: form.parts, ...options })
 					: this.url.searchParams,
 			);
 

@@ -35,7 +35,7 @@ export class Mime {
 		text: Mime.#text("plain"),
 		json: Mime.#application("json"),
 		stream: Mime.#application("octet-stream"),
-		mp: Mime.#multipart("form-data"),
+		mp: "multipart/form-data",
 	} as const;
 
 	static #text<T extends string>(type: T) {
@@ -44,10 +44,6 @@ export class Mime {
 
 	static #application<T extends string>(type: T) {
 		return `application/${type}` as const;
-	}
-
-	static #multipart<T extends string>(type: T = "" as T) {
-		return `multipart/${type}` as const;
 	}
 
 	static readonly #markup = new Set<string>([
@@ -73,7 +69,7 @@ export class Mime {
 	 * @returns `true` if the mime is multipart
 	 */
 	static multipart(mime: string | null) {
-		return mime?.startsWith(Mime.#multipart());
+		return mime?.startsWith("multipart/");
 	}
 }
 
@@ -107,14 +103,11 @@ export class Header {
 	 * @returns Base/first param
 	 */
 	static shift(header: string | null): [string | null, string | null] {
-		if (header) {
-			const semi = header.indexOf(";");
-			if (semi !== -1) {
-				return [header.slice(0, semi), header.slice(semi)];
-			}
-		}
+		const semi = header?.indexOf(";") ?? -1;
 
-		return [header, null];
+		return semi === -1
+			? [header, null]
+			: [header!.slice(0, semi), header!.slice(semi)];
 	}
 
 	/**
@@ -262,8 +255,8 @@ export class Codec {
 		 */
 		static decode(s: string) {
 			const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
-			const pad = b64.length % 4;
-			return Codec.Base64.decode(pad ? b64 + "=".repeat(4 - pad) : b64);
+
+			return Codec.Base64.decode(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
 		}
 	};
 }
