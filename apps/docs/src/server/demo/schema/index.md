@@ -3,14 +3,10 @@ title: Schema
 description: First class form validation with ovr.
 ---
 
-Use a `Schema` to generate an HTML `<form>` and validate the submitted data.
-
-## Best practices
-
-- Use css `text-transform: capitalize` for `<label>` and `<legend>` elements to prevent having to provide a custom `label` prop for each field.
+`Schema` is modeled after [Zod](https://zod.dev/) and powers the `Field` and `Form` helpers used below. This demo builds a typed multipart form, preserves invalid values through redirects, and streams the uploaded license file when validation succeeds.
 
 ```tsx
-import { Route, Schema } from "ovr";
+import { Field, Form, Route } from "ovr";
 
 const student = Form.from({
 	name: Field.text({ placeholder: "Harry Potter" }).min(
@@ -30,17 +26,22 @@ const student = Form.from({
 	license: Field.file().stream(), // put `.stream()` last to parse fields first
 });
 
-export const register = Route.post(student, async (c) => {
+export const enroll = Route.post(student, async (c) => {
 	const result = await c.data();
 
 	if (result.issues) return c.redirect(result.url, 303);
 
-	// create new student record...
+	if (result.stream) {
+		for await (const part of result.stream) {
+			// stream the uploaded file somewhere
+			// await write(part.body);
+		}
+	}
 
 	c.redirect(schema, 303);
 });
 
 export const schema = Route.get("/demo/schema", (c) => (
-	<register.Form state={c.url} />
+	<enroll.Form state={c.url} />
 ));
 ```

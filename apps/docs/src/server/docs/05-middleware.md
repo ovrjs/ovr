@@ -53,11 +53,11 @@ app.use(
 
 ## Context
 
-ovr creates `Context` _(in these docs it's abbreviated as `c`)_ with the current request, then passes it as the first argument into each middleware function to be read and modified.
+For each request, ovr creates a `Context` object _(abbreviated as `c` in these docs)_ and passes it as the first argument to every middleware function.
 
-## Request
+## Properties
 
-`Context.req` contains information about the current request such as the [`url`](https://developer.mozilla.org/en-US/docs/Web/API/URL) or [`params`](/06-routing#parameters).
+`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/04-route#parameters), the matched `route`, and helpers for cookies and request parsing.
 
 ```ts
 Route.get("/api/:id", (c) => {
@@ -67,8 +67,11 @@ Route.get("/api/:id", (c) => {
 	c.route; // matched `Route`
 	c.cookie.get(name); // get cookie
 	c.form(); // multipart form data
+	c.data(); // route schema data
 });
 ```
+
+> On [schema-enabled POST routes](/07-schema#post-forms), `Context.data` parses typed form data, and on [schema-enabled GET routes](/07-schema#get-forms) it parses typed search params. Routes without a schema return `null`.
 
 ## Response
 
