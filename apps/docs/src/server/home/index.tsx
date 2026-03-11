@@ -62,8 +62,7 @@ function* Features() {
 			title: "Type-Safe Forms",
 			href: "/demo/form",
 			noPrefetch: true,
-			content:
-				"Generate forms, validate input, preserve invalid state, and stream uploads.",
+			content: "Generate forms, validate input, and stream uploads.",
 		},
 		{
 			title: "Lightweight",
@@ -71,7 +70,7 @@ function* Features() {
 			content: "Essential features, zero dependencies.",
 		},
 		{
-			title: "User Data",
+			title: "Streaming Uploads",
 			href: "/06-multipart",
 			content: "Low memory multipart form data streaming.",
 		},

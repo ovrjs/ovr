@@ -3,6 +3,8 @@ title: ovr
 description: The Streaming Framework
 ---
 
+Build server-rendered apps with JSX, routes, forms, and uploads, with HTML streamed as soon as it is ready.
+
 ## Introduction
 
 Designed to optimize [Time-To-First-Byte](https://web.dev/articles/ttfb#what_is_ttfb), ovr evaluates components in parallel and streams HTML in order by producing an [`AsyncGenerator`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/AsyncGenerator) of HTML that feeds directly into the streamed response.
