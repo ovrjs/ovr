@@ -1456,18 +1456,6 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		Form.from(ShapeUtil.omit(this.shape, names));
 
 	/**
-	 * Determines whether a field value may be persisted in encoded form state.
-	 *
-	 * Password and file inputs are intentionally excluded.
-	 *
-	 * @param field Field definition
-	 * @returns `true` when the field value can be persisted
-	 */
-	static #persist(field: Field.Any) {
-		return field.type !== "password" && field.type !== "file";
-	}
-
-	/**
 	 * @param name Unexpected form field name
 	 * @param path Parent path
 	 * @returns Schema issue for unexpected form field names
@@ -1493,7 +1481,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			for (const [name, value] of Object.entries(values)) {
 				const field = this.shape[name];
 
-				if (field && Form.#persist(field) && value != null) {
+				if (field && FieldSchema.persisted(field) && value != null) {
 					const result = Form.#valueSchema.parse(value);
 
 					if (
@@ -1649,7 +1637,9 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					data[name] = result.data;
 				}
 
-				if (Form.#persist(field) && value != null) values[name] = value;
+				if (FieldSchema.persisted(field) && value != null) {
+					values[name] = value;
+				}
 			}
 		}
 
@@ -1658,18 +1648,18 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			let search: Form.Parse.Result.Search;
 
 			if (result.values) {
-				// encode into search
-				const len = this.names.length;
-
-				for (let i = len; i >= 0; i--) {
+				// trim persisted values until the encoded state fits
+				for (let i = this.names.length; i >= 0; i--) {
 					// skip on the first time - try to encode everything first
-					if (i !== len) delete result.values[this.names[i]!];
+					if (i !== this.names.length) delete result.values[this.names[i]!];
 
 					const state = Codec.encode(
 						JSON.stringify({
 							issues: result.issues,
-							values: result.values,
 							id: this.#id,
+							...(Object.keys(result.values).length
+								? { values: result.values }
+								: {}),
 						} satisfies Form.State),
 					);
 
@@ -1678,11 +1668,22 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						break;
 					}
 				}
+			} else {
+				// fall back to issues-only state when nothing persisted.
+				const state = Codec.encode(
+					JSON.stringify({
+						issues: result.issues,
+						id: this.#id,
+					} satisfies Form.State),
+				);
+
+				if (state.byteLength <= Form.#maxStateBytes) {
+					search = [Form.#param, Codec.Base64Url.encode(state)];
+				}
 			}
 
 			if (stream) {
-				// invalid result does not expose streamed parts, drain the remainder
-				// so adapters that require body consumption can respond
+				// invalid result does not expose streamed parts, drain
 				try {
 					for await (const _ of stream);
 				} catch {}
@@ -1800,6 +1801,9 @@ class FieldSchema<
 	/** If the field should be streamed as a part */
 	readonly streaming?: Stream;
 
+	/** If the field should persist invalid-state values. */
+	readonly #persist: boolean;
+
 	/** Field options */
 	readonly #options: Field.Options<Values, Tag>;
 
@@ -1811,6 +1815,7 @@ class FieldSchema<
 	 * @param read How to read the form data
 	 * @param parts Maximum expected multipart parts for this field
 	 * @param stream If this field should be streamed as a multipart part
+	 * @param persist If this field should persist invalid state values
 	 */
 	constructor(
 		options: Field.Options<Values, Tag>,
@@ -1818,6 +1823,7 @@ class FieldSchema<
 		read?: Field.Read,
 		parts = 1,
 		stream?: Stream,
+		persist = false,
 	) {
 		super(parse instanceof Schema ? parse.parse : parse);
 
@@ -1836,6 +1842,7 @@ class FieldSchema<
 		this.type = options.props?.type as Type;
 		this.parts = parts;
 		this.streaming = stream;
+		this.#persist = persist;
 	}
 
 	/**
@@ -1849,6 +1856,31 @@ class FieldSchema<
 			this.parse,
 			this.read,
 			this.parts,
+			true,
+			this.#persist,
+		);
+	}
+
+	/**
+	 * Persist this field in the encoded invalid form state.
+	 *
+	 * Use this for non-sensitive values that should refill after an invalid
+	 * redirect.
+	 *
+	 * @returns Field that persists submitted values across invalid redirects
+	 */
+	persist<
+		U extends Tag extends "input" ? Exclude<Type, "password" | "file"> : Type,
+	>(
+		this: Field.Instance<Output, Tag, U, Values, Stream>,
+	): Field.Instance<Output, Tag, U, Values, Stream>;
+	persist() {
+		return new FieldSchema<Output, Tag, Type, Values, Stream>(
+			this.#options,
+			this.parse,
+			this.read,
+			this.parts,
+			this.streaming,
 			true,
 		);
 	}
@@ -1869,6 +1901,7 @@ class FieldSchema<
 			this.read,
 			this.parts,
 			this.streaming,
+			this.#persist,
 		);
 	}
 
@@ -2062,6 +2095,14 @@ class FieldSchema<
 		}
 
 		return this.#Input(props);
+	}
+
+	/**
+	 * @param field Field definition
+	 * @returns `true` when the field persists invalid-state values
+	 */
+	static persisted(field: Field.Any) {
+		return field.#persist;
 	}
 }
 

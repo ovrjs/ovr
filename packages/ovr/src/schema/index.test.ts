@@ -24,6 +24,16 @@ const formInvalid = <S extends Form.Shape>(result: Form.Parse.Result<S>) => {
 	return result;
 };
 
+const decodeState = <S extends Form.Shape>(
+	search: Form.Parse.Result<S>["search"],
+) => {
+	if (!search) throw new Error("Expected _form search state");
+
+	return JSON.parse(
+		Codec.decode(Codec.Base64Url.decode(search[1])),
+	) as Form.State<S>;
+};
+
 describe("Schema core", () => {
 	test("unknown passes through values", () => {
 		const input = { hello: "world" };
@@ -499,16 +509,16 @@ describe("Form schema", () => {
 	});
 
 	test("required text fields are invalid when omitted", async () => {
-		const form = Form.from({
-			name: Field.text(),
-			bio: Field.textarea(),
-		});
+		const form = Form.from({ name: Field.text(), bio: Field.textarea() });
 		const result = formInvalid(await form.parse(new FormData()));
 
-		expect(result.issues.map((issue) => issue.path[0])).toEqual(["name", "bio"]);
+		expect(result.issues.map((issue) => issue.path[0])).toEqual([
+			"name",
+			"bio",
+		]);
 	});
 
-	test("invalid parse includes encoded _form state without password/file values", async () => {
+	test("invalid FormData parse encodes issues-only _form by default", async () => {
 		const form = Form.from({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
@@ -524,72 +534,92 @@ describe("Form schema", () => {
 		data.append("avatar", file);
 
 		const result = formInvalid(await form.parse(data));
-		if (!result.search) throw new Error("Expected _form search state");
+		const state = decodeState(result.search);
 
-		expect(result.search[0]).toBe("_form");
-
-		const state = JSON.parse(
-			Codec.decode(Codec.Base64Url.decode(result.search[1])),
-		) as Form.State;
-
-		expect(state.values?.name).toBe("ross");
-		expect(state.values?.role).toBe("owner");
-		expect(state.values?.password).toBeUndefined();
-		expect(state.values?.avatar).toBeUndefined();
+		expect(result.search?.[0]).toBe("_form");
+		expect(state.values).toBeUndefined();
 		expect(state.id).toBeTruthy();
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
-	test("invalid URLSearchParams parse includes encoded _form state", async () => {
+	test("invalid parse persists only opted-in values", async () => {
+		const form = Form.from({
+			name: Field.text().persist().min(2),
+			role: Field.radio(["reader", "admin"]).persist(),
+			password: Field.password(),
+		});
+		const data = new FormData();
+
+		data.set("name", "x");
+		data.set("role", "owner");
+		data.set("password", "secret");
+
+		const result = formInvalid(await form.parse(data));
+		const state = decodeState(result.search);
+
+		expect(result.search?.[0]).toBe("_form");
+		expect(state.values?.name).toBe("x");
+		expect(state.values?.role).toBe("owner");
+		expect(state.values?.password).toBeUndefined();
+		expect(state.id).toBeTruthy();
+		expect(state.issues?.length).toBeGreaterThan(0);
+	});
+
+	test("invalid URLSearchParams parse encodes issues-only _form by default", async () => {
 		const form = Form.from({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
-			password: Field.password(),
 		});
 		const params = new URLSearchParams();
 
 		params.set("name", "ross");
 		params.set("role", "owner");
-		params.set("password", "secret");
 
 		const result = formInvalid(await form.parse(params));
-		if (!result.search) throw new Error("Expected _form search state");
+		const state = decodeState(result.search);
 
-		expect(result.search[0]).toBe("_form");
+		expect(result.search?.[0]).toBe("_form");
+		expect(state.values).toBeUndefined();
+		expect(state.issues?.length).toBeGreaterThan(0);
+	});
 
-		const state = JSON.parse(
-			Codec.decode(Codec.Base64Url.decode(result.search[1])),
-		) as Form.State;
+	test("oversize persisted values fall back to issues-only _form state", async () => {
+		const notes = `notes-${"a".repeat(5000)}`;
+		const form = Form.from({
+			[notes]: Field.text().persist(),
+			role: Field.radio(["reader", "admin"]),
+		});
+		const data = new FormData();
 
-		expect(state.values?.name).toBe("ross");
-		expect(state.values?.role).toBe("owner");
-		expect(state.values?.password).toBeUndefined();
-		expect(state.id).toBeTruthy();
+		data.set(notes, "kept");
+		data.set("role", "owner");
+
+		const result = formInvalid(await form.parse(data));
+		const state = decodeState(result.search);
+
+		expect(result.search?.[0]).toBe("_form");
+		expect(state.values).toBeUndefined();
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
 	test("invalid URL _form state is ignored when rendering fields", async () => {
 		const form = Form.from({
-			name: Field.text(),
+			name: Field.text().persist(),
+			email: Field.email(),
 			role: Field.radio(["reader", "admin"]),
 		});
 		const data = new FormData();
 
 		data.set("name", "ross");
+		data.set("email", "ross@example.com");
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		if (!result.search) throw new Error("Expected _form search state");
-
-		const state = JSON.parse(
-			Codec.decode(Codec.Base64Url.decode(result.search[1])),
-		) as Form.State;
 		const tampered = {
-			...state,
+			...decodeState(result.search),
 			issues: undefined,
 			values: { name: { bad: true } },
 		};
-
 		const url = new URL("https://example.com/form");
 
 		url.searchParams.set(
@@ -606,6 +636,107 @@ describe("Form schema", () => {
 		expect(html.includes("aria-invalid")).toBe(false);
 	});
 
+	test("render state restores only opted-in values", async () => {
+		const form = Form.from({
+			name: Field.text().persist(),
+			email: Field.email(),
+			role: Field.radio(["reader", "admin"]),
+		});
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("email", "ross@example.com");
+		data.set("role", "owner");
+
+		const result = formInvalid(await form.parse(data));
+		const url = new URL("https://example.com/form");
+
+		url.searchParams.set("_form", result.search![1]);
+
+		const name = await new Render(null).string(
+			form.Field({ name: "name", state: url }),
+		);
+		const email = await new Render(null).string(
+			form.Field({ name: "email", state: url }),
+		);
+
+		expect(name.includes('value="ross"')).toBe(true);
+		expect(email.includes('value="ross@example.com"')).toBe(false);
+	});
+
+	test("tampered _form state does not restore non-persisted fields", async () => {
+		const form = Form.from({
+			name: Field.text().persist(),
+			email: Field.email(),
+			password: Field.password(),
+			role: Field.radio(["reader", "admin"]),
+		});
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("email", "ross@example.com");
+		data.set("password", "secret");
+		data.set("role", "owner");
+
+		const result = formInvalid(await form.parse(data));
+		const url = new URL("https://example.com/form");
+
+		url.searchParams.set(
+			"_form",
+			Codec.Base64Url.encode(
+				Codec.encode(
+					JSON.stringify({
+						...decodeState(result.search),
+						values: {
+							name: "ross",
+							email: "ross@example.com",
+							password: "secret",
+						},
+					} satisfies Form.State),
+				),
+			),
+		);
+
+		const name = await new Render(null).string(
+			form.Field({ name: "name", state: url }),
+		);
+		const email = await new Render(null).string(
+			form.Field({ name: "email", state: url }),
+		);
+		const password = await new Render(null).string(
+			form.Field({ name: "password", state: url }),
+		);
+
+		expect(name.includes('value="ross"')).toBe(true);
+		expect(email.includes('value="ross@example.com"')).toBe(false);
+		expect(password.includes('value="secret"')).toBe(false);
+	});
+
+	test("forced file persistence still does not serialize file values", async () => {
+		const avatar = (
+			Field.file() as Field.Any & { persist(): Field.Any }
+		).persist();
+		const form = Form.from({
+			name: Field.text().persist(),
+			role: Field.radio(["reader", "admin"]),
+			avatar,
+		});
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("role", "owner");
+		data.append(
+			"avatar",
+			new File(["x"], "avatar.txt", { type: "text/plain" }),
+		);
+
+		const result = formInvalid(await form.parse(data));
+		const state = decodeState(result.search);
+
+		expect(state.values?.name).toBe("ross");
+		expect(state.values?.avatar).toBeUndefined();
+	});
+
 	test("malformed URL _form issues are ignored when rendering fields", async () => {
 		const form = Form.from({
 			name: Field.text(),
@@ -617,11 +748,7 @@ describe("Form schema", () => {
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		if (!result.search) throw new Error("Expected _form search state");
-
-		const state = JSON.parse(
-			Codec.decode(Codec.Base64Url.decode(result.search[1])),
-		) as Form.State;
+		const state = decodeState(result.search);
 		const url = new URL("https://example.com/form");
 
 		url.searchParams.set(

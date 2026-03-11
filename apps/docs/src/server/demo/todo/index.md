@@ -6,13 +6,13 @@ description: A basic todo app built with ovr.
 A server driven todo app that stores data in the URL.
 
 ```tsx
-import { Route, Schema } from "ovr";
+import { Field, Route, Schema } from "ovr";
 
 const id = Field.hidden().transform(Number).int();
-const text = Field.text().refine(
-	(s) => s.trim().length > 0,
-	"Expected at least 1 character",
-);
+const text = Field.text()
+	.transform((s) => s.trim())
+	.min(1)
+	.persist();
 const list = Field.hidden()
 	.json(Schema.array(Schema.object({ done: Field.checkbox(), id, text })))
 	.default([{ done: false, id: 0, text: "Build a todo app" }]);
@@ -51,7 +51,7 @@ export const todo = Route.get("/demo/todo", { list }, async (c) => {
 
 	const { list } = result.data;
 	const json = JSON.stringify(list);
-	const TextField = add.field({ name: "text", state: c.url });
+	const TextField = add.component({ name: "text", state: c.url });
 
 	return (
 		<>

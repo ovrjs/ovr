@@ -47,26 +47,28 @@ export const page = o.Route.get("/", (c) => {
 function* Features() {
 	const features = [
 		{
+			title: "Async Generator JSX",
+			href: "/#introduction",
+			content:
+				"Stream HTML with familiar JSX components, no client-side JS required.",
+		},
+		{
 			title: "Performance First",
 			href: "/demo/parallel",
 			noPrefetch: true,
 			content: "Run operations in parallel and stream results on the fly.",
 		},
 		{
+			title: "Type-Safe Forms",
+			href: "/demo/form",
+			noPrefetch: true,
+			content:
+				"Generate forms, validate input, preserve invalid state, and stream uploads.",
+		},
+		{
 			title: "Lightweight",
 			href: "https://npmgraph.js.org/?q=ovr",
 			content: "Essential features, zero dependencies.",
-		},
-		{
-			title: "Type Safe",
-			href: "/04-route#pathname",
-			content: "Type safe path parameters, components, and more.",
-		},
-		{
-			title: "Async Generator JSX",
-			href: "/#introduction",
-			content:
-				"Stream HTML with familiar JSX components, no client-side JS required.",
 		},
 		{
 			title: "User Data",

@@ -39,7 +39,7 @@ if (result.issues) {
 
 ## POST forms
 
-Use `Field` to describe the expected inputs and pass the shape directly into `Route.post`. The route keeps the generated helpers from [`Route.post`](/04-route#post) and adds schema-specific `Fields`, `Field`, and `component(...)` helpers, while `c.data()` parses the [`multipart` request](/06-multipart) with the matching types.
+Use `Field` to describe the expected inputs and pass the shape directly into `Route.post`. The route keeps the generated helpers from [`Route.post`](/04-route#post) and adds schema-specific `Fields`, `Field`, and `component(...)` helpers, while `c.data()` parses the [`multipart` request](/06-multipart) with the matching types. Add `.persist()` to any non-sensitive field that should refill after an invalid redirect.
 
 ```tsx
 import { Field, Route } from "ovr";
@@ -85,20 +85,20 @@ On an invalid submission, the round trip looks like this:
 2. If validation fails, redirect to `result.url`, which contains the encoded `_form` state in a search param.
 3. Render the next request with `state={c.url}`.
 
-ovr stores sanitized values and issue metadata in the `_form` search param so the next render can:
+ovr stores issue metadata and any values marked with `.persist()` in the `_form` search param so the next render can:
 
-- persist user input for supported fields
+- persist user input for fields marked with `.persist()`
 - render the matching issue message
 - set `aria-invalid` and `aria-describedby`
 - autofocus the first invalid field
 
-Password and file inputs are never persisted in the encoded state, but because invalid state is stored in the URL, persisted inputs may also appear in browser history, analytics, server logs, and similar tooling. Avoid putting sensitive user input in URL-backed state.
+Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling.
 
 > Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup.
 
 ## GET forms
 
-`Route.get` can use the same schema helpers for forms that submit into the URL. The API is the same, but `c.data()` reads from `URLSearchParams` instead of the request body.
+`Route.get` can use the same schema helpers for forms that submit into the URL. `c.data()` reads from `URLSearchParams`, so successful requests usually render from `result.data`, while invalid requests can render `_form` state directly from `result.url`.
 
 ```tsx
 import { Field, Route } from "ovr";
@@ -107,31 +107,25 @@ export const search = Route.get(
 	"/search",
 	{
 		q: Field.search({ placeholder: "travel backpack" }).optional(),
-		sort: Field.select(["relevance", "price", "newest"]).default("relevance"),
+		minPrice: Field.number().min(0).optional(),
 		inStock: Field.checkbox(),
 	},
 	async (c) => {
 		const result = await c.data();
 
-		if (result.issues) return c.redirect(result.url, 303);
+		if (result.issues) return <search.Form state={result.url} />;
 
-		c.url; // /search?q=travel+backpack&sort=newest&inStock=on
-		result.data; // { q: "travel backpack", sort: "newest", inStock: true }
+		c.url; // /search?q=travel+backpack&minPrice=50&inStock=on
+		result.data; // { q: "travel backpack", minPrice: 50, inStock: true }
 
 		// fetch results...
 
-		return (
-			<>
-				<search.Form state={c.url} />
-
-				<h2>Results for {result.data.q || "all products"}</h2>
-			</>
-		);
+		return <h2>Results for {result.data.q || "all products"}</h2>;
 	},
 );
 ```
 
-For `Route.get`, both the query and invalid `_form` state live directly in the URL, so the search can be linked, refreshed, or revisited without losing state, while `c.data()` parses values such as `inStock=on` into the expected types.
+For `Route.get`, the query itself lives in the URL. Use `result.data` for successful requests, and use `state={result.url}` when you want to render invalid `_form` state with issues and any `.persist()` values.
 
 ## Streaming
 
@@ -174,7 +168,3 @@ const submit = Route.post(
 - App-wide multipart defaults can be set with `new App({ form: { memory, payload, parts } })`.
 - Unexpected names in `FormData` or multipart requests become validation issues instead of being silently accepted.
 - Encoded `_form` state is capped at `4kb`, and each persisted value is capped at `512` serialized characters.
-
-## Example
-
-See the complete [schema demo](/demo/schema) for a larger form using text inputs, selects, radios, checkboxes, defaults, redirect state, and a streamed file upload.

@@ -4,10 +4,10 @@ import { Meta } from "@/ui/meta";
 import { Field, Render, Route, Schema } from "ovr";
 
 const id = Field.hidden().transform(Number).int();
-const text = Field.text().refine(
-	(s) => s.trim().length > 0,
-	"Expected at least 1 character",
-);
+const text = Field.text()
+	.transform((s) => s.trim())
+	.min(1)
+	.persist();
 const list = Field.hidden()
 	.json(Schema.array(Schema.object({ done: Field.checkbox(), id, text })))
 	.default([{ done: false, id: 0, text: "Build a todo app" }]);
