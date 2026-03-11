@@ -1516,13 +1516,6 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 */
 	#decode(stateInput?: Form.State.Input<Shape>): Form.State<Shape> | undefined {
 		if (stateInput) {
-			let state: Form.State<Shape> | undefined;
-			const shape: Schema.Object.Shape = {};
-
-			for (const name of Object.keys(this.shape)) {
-				shape[name] = Form.#valueSchema.optional();
-			}
-
 			const schema = Schema.object({
 				id: Schema.literal(this.#id),
 				issues: Schema.array(
@@ -1537,13 +1530,19 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 							new Schema.Issue(issue.expected, issue.path, issue.message),
 					),
 				).optional(),
-				values: Schema.object(shape).optional(),
+				values: Schema.object(
+					this.names.reduce<Schema.Object.Shape>((shape, name) => {
+						shape[name] = Form.#valueSchema.optional();
+
+						return shape;
+					}, {}),
+				).optional(),
 			});
 
-			if (typeof stateInput === "object" && "id" in stateInput) {
-				const result = schema.parse(stateInput);
+			let result;
 
-				if (result.data) state = result.data as Form.State<Shape>;
+			if (typeof stateInput === "object" && "id" in stateInput) {
+				result = schema.parse(stateInput);
 			} else {
 				const encoded =
 					typeof stateInput === "string"
@@ -1554,17 +1553,18 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 				if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
 					try {
-						const result = Schema.string()
+						result = Schema.string()
 							.json(schema)
 							.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
-
-						if (result.data) state = result.data as Form.State<Shape>;
 					} catch {}
 				}
 			}
 
-			if (state?.id === this.#id) {
-				return { ...state, values: this.#sanitize(state.values) };
+			if (result?.data?.id === this.#id) {
+				return {
+					...(result.data as Form.State<Shape>),
+					values: this.#sanitize(result.data.values),
+				};
 			}
 		}
 	}
