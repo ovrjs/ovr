@@ -1,11 +1,11 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
-import { type Middleware } from "../middleware/index.js";
+import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import type { Form } from "../schema/index.js";
-import { type Trie } from "../trie/index.js";
+import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
 /** Properties to build the final `Response` with once middleware has run. */
