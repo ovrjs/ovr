@@ -1547,9 +1547,10 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				const encoded =
 					typeof stateInput === "string"
 						? stateInput
-						: stateInput instanceof URL
-							? stateInput.searchParams.get(Form.#param)
-							: stateInput.get(Form.#param);
+						: (stateInput instanceof URL
+								? stateInput.searchParams
+								: stateInput
+							).get(Form.#param);
 
 				if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
 					try {
