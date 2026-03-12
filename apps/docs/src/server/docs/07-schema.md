@@ -98,7 +98,7 @@ Only opt in non-sensitive fields. Values marked with `.persist()` are encoded in
 
 ## GET forms
 
-`Route.get` can use the same schema helpers for forms that submit into the URL. `c.data()` reads from `URLSearchParams`, and `state={c.url}` reads the matching query params so the form reflects the current URL on both valid and invalid requests.
+`Route.get` can use the same schema helpers for forms that submit into the URL. `c.data()` reads from `URLSearchParams`, and `state={c.url}` reads the current query params unless an encoded `_form` state is present. When `_form` exists, its persisted values take precedence so the next render can restore the invalid submission.
 
 ```tsx
 import { Field, Route } from "ovr";
@@ -130,7 +130,7 @@ export const search = Route.get(
 );
 ```
 
-For `Route.get`, the query itself lives in the URL. Use `result.data` for the parsed values, and use `state={c.url}` or `state={result.url}` when you want the generated form to reflect the current query params alongside any invalid `_form` issues.
+For `Route.get`, the query itself lives in the URL. Use `result.data` for the parsed values. Use `state={result.url}` immediately after an invalid parse when you want to restore the submitted values and issues. Use `state={c.url}` when you want to reflect the current URL.
 
 ## Streaming
 
