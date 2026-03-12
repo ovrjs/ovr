@@ -847,6 +847,59 @@ describe("Form schema", () => {
 		expect(email.includes('value="ross@example.com"')).toBe(false);
 	});
 
+	test("render state reads matching query params from the URL", async () => {
+		const form = Form.from({
+			q: Field.search(),
+			sort: Field.select(["relevance", "newest"]),
+			inStock: Field.checkbox(),
+		});
+		const url = new URL(
+			"https://example.com/search?q=travel+backpack&sort=newest&inStock=on",
+		);
+
+		const q = await new Render(null).string(
+			form.Field({ name: "q", state: url }),
+		);
+		const sort = await new Render(null).string(
+			form.Field({ name: "sort", state: url }),
+		);
+		const inStock = await new Render(null).string(
+			form.Field({ name: "inStock", state: url }),
+		);
+
+		expect(q.includes('value="travel backpack"')).toBe(true);
+		expect(sort.includes('<option selected value="newest">')).toBe(true);
+		expect(inStock.includes("checked")).toBe(true);
+	});
+
+	test("query params fill GET form state alongside _form issues", async () => {
+		const form = Form.from({
+			q: Field.search().min(2),
+			sort: Field.select(["relevance", "newest"]),
+		});
+		const params = new URLSearchParams();
+
+		params.set("q", "travel backpack");
+		params.set("sort", "oldest");
+
+		const result = formInvalid(await form.parse(params));
+		const url = new URL("https://example.com/search");
+
+		url.searchParams.set("q", "travel backpack");
+		url.searchParams.set("sort", "oldest");
+		url.searchParams.set("_form", result.search![1]);
+
+		const q = await new Render(null).string(
+			form.Field({ name: "q", state: url }),
+		);
+		const sort = await new Render(null).string(
+			form.Field({ name: "sort", state: url }),
+		);
+
+		expect(q.includes('value="travel backpack"')).toBe(true);
+		expect(sort.includes("aria-invalid")).toBe(true);
+	});
+
 	test("tampered _form state does not restore non-persisted fields", async () => {
 		const form = Form.from({
 			name: Field.text().persist(),

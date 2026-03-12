@@ -1469,19 +1469,25 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	}
 
 	/**
-	 * Sanitizes persisted values by removing unsupported or oversized entries.
+	 * Sanitizes render-state values by removing unsupported or oversized entries.
 	 *
-	 * @param values Candidate values to persist
+	 * @param values Candidate values to keep
+	 * @param persist When `true`, only allow fields marked with `.persist()`
 	 * @returns Sanitized values
 	 */
-	#sanitize(values?: Record<string, unknown>) {
+	#sanitize(values?: Record<string, unknown>, persist = true) {
 		const sanitized: Form.Value.Map<Shape> = {};
 
 		if (values) {
 			for (const [name, value] of Object.entries(values)) {
 				const field = this.shape[name];
 
-				if (field && FieldSchema.persisted(field) && value != null) {
+				if (
+					field &&
+					field.type !== "file" &&
+					(!persist || FieldSchema.persisted(field)) &&
+					value != null
+				) {
 					const result = Form.#valueSchema.parse(value);
 
 					if (
@@ -1495,6 +1501,26 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 			if (Object.keys(sanitized).length) return sanitized;
 		}
+	}
+
+	/**
+	 * Reads matching query params into form state values.
+	 *
+	 * @param search Search params to read from
+	 * @returns Sanitized values derived from the query string
+	 */
+	#query(search: URLSearchParams) {
+		const values: Record<string, unknown> = {};
+
+		for (const [name, field] of Object.entries(this.shape)) {
+			if (search.has(name)) {
+				const value = field.read(search, name);
+
+				if (value != null) values[name] = value;
+			}
+		}
+
+		return this.#sanitize(values, false);
 	}
 
 	/**
@@ -1527,33 +1553,58 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				).optional(),
 			});
 
-			let result;
+			if (typeof stateInput === "object") {
+				if ("id" in stateInput) {
+					const result = schema.parse(stateInput);
 
-			if (typeof stateInput === "object" && "id" in stateInput) {
-				result = schema.parse(stateInput);
-			} else {
-				const encoded =
-					typeof stateInput === "string"
-						? stateInput
-						: (stateInput instanceof URL
-								? stateInput.searchParams
-								: stateInput
-							).get(Form.#param);
+					return result.data?.id === this.#id
+						? {
+								...(result.data as Form.State<Shape>),
+								values: this.#sanitize(result.data.values),
+							}
+						: undefined;
+				}
+
+				const search = stateInput instanceof URL ? stateInput.searchParams : stateInput;
+				const values = this.#query(search);
+				const encoded = search.get(Form.#param);
 
 				if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
 					try {
-						result = Schema.string()
+						const result = Schema.string()
 							.json(schema)
 							.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
+
+						if (result.data?.id === this.#id) {
+							const current = this.#sanitize(result.data.values);
+
+							return {
+								...(result.data as Form.State<Shape>),
+								values:
+									values || current
+										? ({ ...values, ...current } as Form.Value.Map<Shape>)
+										: undefined,
+							};
+						}
 					} catch {}
 				}
+
+				return values ? { id: this.#id, values } : undefined;
 			}
 
-			if (result?.data?.id === this.#id) {
-				return {
-					...(result.data as Form.State<Shape>),
-					values: this.#sanitize(result.data.values),
-				};
+			if (stateInput.length <= Form.#maxStateBytes * 2) {
+				try {
+					const result = Schema.string()
+						.json(schema)
+						.parse(Codec.decode(Codec.Base64Url.decode(stateInput)));
+
+					if (result.data?.id === this.#id) {
+						return {
+							...(result.data as Form.State<Shape>),
+							values: this.#sanitize(result.data.values),
+						};
+					}
+				} catch {}
 			}
 		}
 	}
