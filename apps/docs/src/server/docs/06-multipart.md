@@ -26,9 +26,10 @@ async function fetch(req: Request) {
 		part; // extends Request
 		part.headers; // Headers
 		part.body; // ReadableStream
-		part.name; // form input name
+		part.name; // form input name attribute
 		part.filename; // filename if available
 		part.type; // media type
+		part.value(); // Promise<string | File>
 
 		if (part.name === "name") {
 			// buffer a text input
