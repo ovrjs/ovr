@@ -84,9 +84,13 @@ describe("Primitive schemas", () => {
 		);
 	});
 
-	test("number validates finite number and rejects NaN", () => {
+	test("number validates finite number and rejects non-finite values", () => {
 		expect(valid(Schema.number().parse(1))).toBe(1);
 		expect(invalid(Schema.number().parse(NaN))[0]?.expected).toBe("number");
+		expect(invalid(Schema.number().parse(Infinity))[0]?.expected).toBe("number");
+		expect(invalid(Schema.number().parse(-Infinity))[0]?.expected).toBe(
+			"number",
+		);
 	});
 
 	test("int validates safe integers", () => {
@@ -430,6 +434,10 @@ describe("Preprocess schemas", () => {
 
 		expect(valid(field.parse("0"))).toBe(0);
 		expect(invalid(field.parse(""))[0]?.expected).toBe("number");
+	});
+
+	test("field number rejects non-finite coerced values", () => {
+		expect(invalid(Field.number().parse("1e309"))[0]?.expected).toBe("number");
 	});
 
 	test("field text still parses blank strings directly", () => {

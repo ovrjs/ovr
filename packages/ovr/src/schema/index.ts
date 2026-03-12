@@ -955,15 +955,15 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	/**
 	 * Validate an input is a number.
 	 *
-	 * Rejects `NaN`.
+	 * Rejects non-finite values like `NaN` and `Infinity`.
 	 *
 	 * @param message Issue message when invalid
 	 * @returns Number schema
 	 */
 	static number(message?: string) {
 		return new Schema((v, path) => {
-			return typeof v === "number" && !Number.isNaN(v)
-				? { data: v }
+			return Number.isFinite(v) // isFinite checks type
+				? { data: v as number }
 				: new Schema.AggregateIssue([
 						new Schema.Issue("number", path, message),
 					]);
