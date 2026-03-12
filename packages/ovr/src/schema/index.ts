@@ -1565,7 +1565,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						: undefined;
 				}
 
-				const search = stateInput instanceof URL ? stateInput.searchParams : stateInput;
+				const search =
+					stateInput instanceof URL ? stateInput.searchParams : stateInput;
 				const values = this.#query(search);
 				const encoded = search.get(Form.#param);
 
@@ -2482,6 +2483,16 @@ export class Field {
 	}
 
 	/**
+	 * @param data Form data
+	 * @param name HTML name attribute
+	 * @returns Field values or `undefined` when missing
+	 */
+	static #list(data: FormData | URLSearchParams, name: string) {
+		const value = data.getAll(name);
+		return value.length ? value : undefined;
+	}
+
+	/**
 	 * @param props Input props
 	 * @returns Generic input field
 	 */
@@ -2722,12 +2733,12 @@ export class Field {
 	 */
 	static files(
 		props?: Field.Props.Input,
-		message?: string,
+		message = Field.#required,
 	): Field.Instance<File[], "input", "file"> {
 		return new FieldSchema(
 			{ props: { ...props, type: "file", multiple: true } },
-			Schema.array(Schema.instance(File, message)),
-			(formData, name) => formData.getAll(name),
+			Schema.array(Schema.instance(File, message), message),
+			Field.#list,
 			Infinity,
 		);
 	}
@@ -2742,12 +2753,12 @@ export class Field {
 	static checkboxes<const V extends string>(
 		values: readonly [V, ...V[]],
 		props?: Field.Props.Input,
-		message?: string,
+		message = Field.#required,
 	): Field.Instance<V[], "input", "checkbox", readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ values, props: { ...props, type: "checkbox" } },
-			Schema.array(Schema.enum(values, message)),
-			(formData, name) => formData.getAll(name),
+			Schema.array(Schema.enum(values, message), message),
+			Field.#list,
 			values.length,
 		);
 	}
@@ -2814,12 +2825,12 @@ export class Field {
 	static multiselect<const V extends string>(
 		values: readonly [V, ...V[]],
 		props?: Field.Props.Select,
-		message?: string,
+		message = Field.#required,
 	): Field.Instance<V[], "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ tag: "select", values, props: { ...props, multiple: true } },
-			Schema.array(Schema.enum(values, message)),
-			(formData, name) => formData.getAll(name),
+			Schema.array(Schema.enum(values, message), message),
+			Field.#list,
 			values.length,
 		);
 	}

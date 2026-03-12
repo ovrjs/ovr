@@ -524,6 +524,45 @@ describe("Form schema", () => {
 		expect(valid(await form.parse(data))).toEqual({ age: undefined, count: 5 });
 	});
 
+	test("missing multi-value fields are invalid by default", async () => {
+		const form = Form.from({
+			roles: Field.checkboxes(["reader", "admin"]),
+			tags: Field.multiselect(["a", "b", "c"]),
+			uploads: Field.files(),
+		});
+		const result = formInvalid(await form.parse(new FormData()));
+
+		expect(result.issues.map((issue) => issue.path[0])).toEqual([
+			"roles",
+			"tags",
+			"uploads",
+		]);
+		expect(result.issues.map((issue) => issue.expected)).toEqual([
+			"Array",
+			"Array",
+			"Array",
+		]);
+		expect(result.issues.map((issue) => issue.message)).toEqual([
+			"Required field",
+			"Required field",
+			"Required field",
+		]);
+	});
+
+	test("missing multi-value fields respect optional and default", async () => {
+		const form = Form.from({
+			roles: Field.checkboxes(["reader", "admin"]).optional(),
+			tags: Field.multiselect(["a", "b", "c"]).default(["a"]),
+			uploads: Field.files().optional(),
+		});
+
+		expect(valid(await form.parse(new FormData()))).toEqual({
+			roles: undefined,
+			tags: ["a"],
+			uploads: undefined,
+		});
+	});
+
 	test("blank date-like fields are treated as missing during form parsing", async () => {
 		const form = Form.from({
 			date: Field.date().optional(),
