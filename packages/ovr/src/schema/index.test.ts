@@ -894,6 +894,21 @@ describe("Form schema", () => {
 		expect(email.includes('value="ross@example.com"')).toBe(false);
 	});
 
+	test("field label metadata renders text without leaking to controls", async () => {
+		const form = Form.from({
+			email: Field.email({ label: "Email Address" }),
+			role: Field.radio(["reader", "admin"], { label: "Role" }),
+		});
+
+		const email = await new Render(null).string(form.Field({ name: "email" }));
+		const role = await new Render(null).string(form.Field({ name: "role" }));
+
+		expect(email.includes(">Email Address</label>")).toBe(true);
+		expect(email.includes(' label="Email Address"')).toBe(false);
+		expect(role.includes("<legend>Role</legend>")).toBe(true);
+		expect(role.includes(' label="Role"')).toBe(false);
+	});
+
 	test("render state reads matching query params from the URL", async () => {
 		const form = Form.from({
 			q: Field.search(),

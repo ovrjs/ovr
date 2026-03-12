@@ -1972,7 +1972,8 @@ class FieldSchema<
 		const value = state?.values?.[props.name];
 		const issue = state?.issues?.find((i) => i.path[0] === props.name);
 		const issueId = issue && `${props.name}-issue`;
-		const control: Field.Props = {
+		const hidden = this.type === "hidden";
+		const { label = props.name, ...control } = {
 			id: props.name,
 			autofocus: issue?.path[0] === props.name, // first issue
 			"aria-invalid": issue && "true",
@@ -1980,7 +1981,6 @@ class FieldSchema<
 			...this.#options.props,
 			...props,
 		};
-		const hidden = control.type === "hidden";
 
 		const Issue = (data: Field.Component.Issue = {}) =>
 			issue && // render nothing if no issue
@@ -2032,7 +2032,7 @@ class FieldSchema<
 						...rest,
 					}),
 				Legend: (data: Field.Component.Legend = {}) =>
-					jsx("legend", { children: control.name, ...data }),
+					jsx("legend", { children: label, ...data }),
 				...this,
 			};
 		}
@@ -2042,8 +2042,7 @@ class FieldSchema<
 			Root: (data: Field.Component.Root = {}) =>
 				hidden ? Fragment(data) : jsx("div", data),
 			Label: (data: Field.Component.Label = {}) =>
-				!hidden &&
-				jsx("label", { for: control.id, children: control.name, ...data }),
+				!hidden && jsx("label", { for: control.id, children: label, ...data }),
 			Control: (data?: Field.Component.Control<Tag>) => {
 				const attrs = { ...control, ...data };
 
@@ -2089,7 +2088,8 @@ class FieldSchema<
 
 		return c.Root({
 			children: [
-				jsx("legend", { children: props.name }),
+				// @ts-expect-error - `#Group` runs for grouped inputs, includes `Legend` with label
+				c.Legend(),
 				this.values.map((value: string) => {
 					return jsx("div", {
 						children: [c.Control({ value }), c.Label({ value })],

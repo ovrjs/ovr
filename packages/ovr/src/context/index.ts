@@ -92,9 +92,6 @@ export class Context<
 	/** Forwarded app options */
 	readonly #options: App.Options;
 
-	/** Cached multipart instance */
-	#multipart?: Multipart;
-
 	/** Cached result from `data()` to avoid re-reading request bodies. */
 	#parsed?: Promise<Context.Result<Shape>>;
 
@@ -215,10 +212,7 @@ export class Context<
 	 * ```
 	 */
 	form(options?: Multipart.Options) {
-		return (this.#multipart ??= new Multipart(
-			this.req,
-			{ ...this.#options.form, ...options },
-		));
+		return new Multipart(this.req, { ...this.#options.form, ...options });
 	}
 
 	/**

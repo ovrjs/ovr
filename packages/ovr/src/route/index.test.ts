@@ -202,11 +202,11 @@ describe("Route schema helpers", () => {
 					return;
 				}
 
-					if (result.stream) {
-						for await (const part of result.stream) {
-							await part.bytes();
-						}
+				if (result.stream) {
+					for await (const part of result.stream) {
+						await part.bytes();
 					}
+				}
 
 				c.text("ok");
 			},
