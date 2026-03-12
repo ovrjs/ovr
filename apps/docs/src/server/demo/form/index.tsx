@@ -25,9 +25,7 @@ export const enroll = Route.post(
 		]).persist(),
 		year: Field.number().min(1).max(7).persist(),
 		pet: Field.checkboxes(["Owl", "Cat", "Toad"]).persist(),
-		arrival: Field.date()
-			.transform((d) => d || "2026-09-01")
-			.persist(),
+		arrival: Field.date().persist(),
 		rules: Field.checkbox()
 			.refine((v) => v, "You must accept the castle rules")
 			.persist(),

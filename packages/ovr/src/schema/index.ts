@@ -1922,7 +1922,6 @@ class FieldSchema<
 		const issueId = issue && `${props.name}-issue`;
 		const control: Field.Props = {
 			id: props.name,
-			autocomplete: "on",
 			autofocus: issue?.path[0] === props.name, // first issue
 			"aria-invalid": issue && "true",
 			"aria-describedby": issueId,
@@ -2419,6 +2418,18 @@ export namespace Field {
 
 /** Field factory functions */
 export class Field {
+	/** Default message for missing string-like field values. */
+	static readonly #required = "Required field";
+
+	/**
+	 * @param data Form data
+	 * @param name HTML name attribute
+	 * @returns Field value or `undefined` when blank
+	 */
+	static #read(data: FormData | URLSearchParams, name: string) {
+		return data.get(name) || undefined;
+	}
+
 	/**
 	 * @param props Input props
 	 * @returns Generic input field
@@ -2428,9 +2439,10 @@ export class Field {
 	): Field.Instance<string, "input", T> {
 		return new FieldSchema(
 			{ props },
-			Schema.string().preprocess((value) =>
+			Schema.string(Field.#required).preprocess((value) =>
 				value == null ? value : String(value),
 			),
+			Field.#read,
 		);
 	}
 
@@ -2557,7 +2569,8 @@ export class Field {
 	): Field.Instance<string, "input", "email"> {
 		return new FieldSchema(
 			{ props: { ...props, type: "email" } },
-			Schema.string().email(message),
+			Schema.string(Field.#required).email(message),
+			Field.#read,
 		);
 	}
 
@@ -2574,7 +2587,8 @@ export class Field {
 	): Field.Instance<string, "input", "url"> {
 		return new FieldSchema(
 			{ props: { ...props, type: "url" } },
-			Schema.string().url(message),
+			Schema.string(Field.#required).url(message),
+			Field.#read,
 		);
 	}
 
@@ -2590,7 +2604,7 @@ export class Field {
 			Schema.number().preprocess((value) =>
 				value == null || value === "" ? undefined : Number(value),
 			),
-			(data, name) => data.get(name) || undefined,
+			Field.#read,
 		);
 	}
 
@@ -2714,9 +2728,10 @@ export class Field {
 	): Field.Instance<string, "textarea"> {
 		return new FieldSchema(
 			{ tag: "textarea", props },
-			Schema.string().preprocess((value) =>
+			Schema.string(Field.#required).preprocess((value) =>
 				value == null ? value : String(value),
 			),
+			Field.#read,
 		);
 	}
 

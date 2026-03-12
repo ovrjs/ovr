@@ -4,6 +4,16 @@ import { Codec } from "../util/index.js";
 import { Field, Form, Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
+type FormValid<S extends Form.Shape> = Extract<
+	Form.Parse.Result<S>,
+	{ data: Form.Parse.Data<S> }
+>;
+
+type FormInvalid<S extends Form.Shape> = Exclude<
+	Form.Parse.Result<S>,
+	FormValid<S>
+>;
+
 const valid = <T>(result: Schema.Parse.Result<T>): T => {
 	if ("issues" in result) throw new Error("Expected no issues");
 	return result.data;
@@ -16,16 +26,16 @@ const invalid = <T>(result: Schema.Parse.Result<T>) => {
 
 const formValid = <S extends Form.Shape>(result: Form.Parse.Result<S>) => {
 	if (result.issues) throw new Error("Expected no issues");
-	return result;
+	return result as FormValid<S>;
 };
 
 const formInvalid = <S extends Form.Shape>(result: Form.Parse.Result<S>) => {
 	if (!result.issues) throw new Error("Expected issues");
-	return result;
+	return result as FormInvalid<S>;
 };
 
 const decodeState = <S extends Form.Shape>(
-	search: Form.Parse.Result<S>["search"],
+	search: Form.Parse.Result.Search,
 ) => {
 	if (!search) throw new Error("Expected _form search state");
 
@@ -421,6 +431,12 @@ describe("Preprocess schemas", () => {
 		expect(valid(field.parse("0"))).toBe(0);
 		expect(invalid(field.parse(""))[0]?.expected).toBe("number");
 	});
+
+	test("field text still parses blank strings directly", () => {
+		expect(valid(Field.text().default("fallback").parse(""))).toBe("");
+		expect(valid(Field.textarea().default("fallback").parse(""))).toBe("");
+	});
+
 });
 
 describe("Form schema", () => {
@@ -508,6 +524,125 @@ describe("Form schema", () => {
 		expect(valid(await form.parse(data))).toEqual({ age: undefined, count: 5 });
 	});
 
+	test("blank date-like fields are treated as missing during form parsing", async () => {
+		const form = Form.from({
+			date: Field.date().optional(),
+			time: Field.time().default("09:00"),
+			datetime: Field.datetime().default("2026-09-01T09:00"),
+			month: Field.month().default("2026-09"),
+			week: Field.week().default("2026-W36"),
+		});
+		const data = new FormData();
+
+		data.set("date", "");
+		data.set("time", "");
+		data.set("datetime", "");
+		data.set("month", "");
+		data.set("week", "");
+
+		expect(valid(await form.parse(data))).toEqual({
+			date: undefined,
+			time: "09:00",
+			datetime: "2026-09-01T09:00",
+			month: "2026-09",
+			week: "2026-W36",
+		});
+	});
+
+	test("blank date-like search params are treated as missing", async () => {
+		const form = Form.from({
+			date: Field.date().optional(),
+			time: Field.time().default("09:00"),
+		});
+		const params = new URLSearchParams();
+
+		params.set("date", "");
+		params.set("time", "");
+
+		expect(valid(await form.parse(params))).toEqual({
+			date: undefined,
+			time: "09:00",
+		});
+	});
+
+	test("blank single-value text fields are treated as missing", async () => {
+		const form = Form.from({
+			text: Field.text().optional(),
+			password: Field.password().optional(),
+			search: Field.search().default("fallback"),
+			tel: Field.tel().default("555-0100"),
+			color: Field.color().default("#000000"),
+			hidden: Field.hidden().default("token"),
+			email: Field.email().optional(),
+			url: Field.url().default("https://example.com"),
+			bio: Field.textarea().optional(),
+		});
+		const data = new FormData();
+
+		data.set("text", "");
+		data.set("password", "");
+		data.set("search", "");
+		data.set("tel", "");
+		data.set("color", "");
+		data.set("hidden", "");
+		data.set("email", "");
+		data.set("url", "");
+		data.set("bio", "");
+
+		expect(valid(await form.parse(data))).toEqual({
+			text: undefined,
+			password: undefined,
+			search: "fallback",
+			tel: "555-0100",
+			color: "#000000",
+			hidden: "token",
+			email: undefined,
+			url: "https://example.com",
+			bio: undefined,
+		});
+	});
+
+	test("blank single-value text search params are treated as missing", async () => {
+		const form = Form.from({
+			text: Field.text().optional(),
+			email: Field.email().optional(),
+			url: Field.url().default("https://example.com"),
+			bio: Field.textarea().optional(),
+		});
+		const params = new URLSearchParams();
+
+		params.set("text", "");
+		params.set("email", "");
+		params.set("url", "");
+		params.set("bio", "");
+
+		expect(valid(await form.parse(params))).toEqual({
+			text: undefined,
+			email: undefined,
+			url: "https://example.com",
+			bio: undefined,
+		});
+	});
+
+	test("default empty strings still resolve after blank submissions", async () => {
+		const form = Form.from({
+			text: Field.text().default(""),
+			password: Field.password().default(""),
+			bio: Field.textarea().default(""),
+		});
+		const data = new FormData();
+
+		data.set("text", "");
+		data.set("password", "");
+		data.set("bio", "");
+
+		expect(valid(await form.parse(data))).toEqual({
+			text: "",
+			password: "",
+			bio: "",
+		});
+	});
+
 	test("required text fields are invalid when omitted", async () => {
 		const form = Form.from({ name: Field.text(), bio: Field.textarea() });
 		const result = formInvalid(await form.parse(new FormData()));
@@ -515,6 +650,37 @@ describe("Form schema", () => {
 		expect(result.issues.map((issue) => issue.path[0])).toEqual([
 			"name",
 			"bio",
+		]);
+	});
+
+	test("required blank single-value text fields fail at the base layer", async () => {
+		const form = Form.from({
+			name: Field.text(),
+			email: Field.email(),
+			bio: Field.textarea(),
+		});
+		const data = new FormData();
+
+		data.set("name", "");
+		data.set("email", "");
+		data.set("bio", "");
+
+		const result = formInvalid(await form.parse(data));
+
+		expect(result.issues.map((issue) => issue.path[0])).toEqual([
+			"name",
+			"email",
+			"bio",
+		]);
+		expect(result.issues.map((issue) => issue.expected)).toEqual([
+			"string",
+			"string",
+			"string",
+		]);
+		expect(result.issues.map((issue) => issue.message)).toEqual([
+			"Required field",
+			"Required field",
+			"Required field",
 		]);
 	});
 
@@ -563,6 +729,23 @@ describe("Form schema", () => {
 		expect(state.values?.password).toBeUndefined();
 		expect(state.id).toBeTruthy();
 		expect(state.issues?.length).toBeGreaterThan(0);
+	});
+
+	test("blank opted-in text values are omitted from invalid state", async () => {
+		const form = Form.from({
+			name: Field.text().persist().min(2),
+			role: Field.radio(["reader", "admin"]).persist(),
+		});
+		const data = new FormData();
+
+		data.set("name", "");
+		data.set("role", "owner");
+
+		const result = formInvalid(await form.parse(data));
+		const state = decodeState(result.search);
+
+		expect(state.values?.name).toBeUndefined();
+		expect(state.values?.role).toBe("owner");
 	});
 
 	test("invalid URLSearchParams parse encodes issues-only _form by default", async () => {
@@ -912,7 +1095,7 @@ describe("Form schema", () => {
 			new Request("http://localhost/upload", { method: "POST", body }),
 		);
 		const result = formInvalid(await form.parse(multipart));
-		expect(result.parts).toBeUndefined();
+		expect(result.stream).toBeUndefined();
 	});
 
 	test("multipart parse adds issues for unexpected field names", async () => {
