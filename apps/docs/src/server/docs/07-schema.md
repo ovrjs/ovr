@@ -64,10 +64,16 @@ This adds a few helpers to the route:
 - `signup.Field` renders one field by `name`
 - `signup.component(...)` exposes the low-level field pieces
 
+`state` is the current page `URL`. For `Route.post(...).Form`, it also encodes a same-origin `_return` query param on the action URL so invalid redirects can return to the page that rendered the form.
+
 The default markup from `<signup.Form state={c.url} />` looks like this:
 
 ```html
-<form action="/_p/generated-hash" method="POST" enctype="multipart/form-data">
+<form
+	action="/_p/generated-hash?_return=%2Fsignup"
+	method="POST"
+	enctype="multipart/form-data"
+>
 	<div>
 		<label for="name">name</label>
 		<input id="name" type="text" name="name" />
@@ -82,8 +88,9 @@ The default markup from `<signup.Form state={c.url} />` looks like this:
 On an invalid submission, the round trip looks like this:
 
 1. `c.data()` validates the current request.
-2. If validation fails, redirect to `result.url`, which contains the encoded `_form` state in a search param.
-3. Render the next request with `state={c.url}`.
+2. If validation fails, `c.data()` uses the same-origin `_return` query param from the form action, or the current request URL when `_return` is missing.
+3. `result.url` contains the chosen page URL plus the encoded `_form` state in a search param.
+4. Render the next request with `state={c.url}`.
 
 ovr stores issue metadata and any values marked with `.persist()` in the `_form` search param so the next render can:
 

@@ -1292,21 +1292,6 @@ export namespace Form {
 		readonly values?: Value.Map<S>;
 	}
 
-	export namespace State {
-		/**
-		 * Form state input.
-		 *
-		 * Can be the actual state or the encoded URL like object.
-		 *
-		 * @template S Shape type
-		 */
-		export type Input<S extends Shape = Shape> =
-			| State<S>
-			| URL
-			| URLSearchParams
-			| string;
-	}
-
 	export namespace Parse {
 		/**
 		 * Field names that are not marked to stream as multipart parts.
@@ -1375,8 +1360,8 @@ export namespace Form {
  * @template Shape Form field shape type
  */
 export class Form<Shape extends Form.Shape = Form.Shape> {
-	/** Form state param key. */
-	static readonly #param = "_form";
+	/** Query param keys ordered as `[return, form]`. */
+	static readonly params = ["_return", "_form"] as const;
 
 	/** Maximum encoded state size in bytes. */
 	static readonly #maxStateBytes = 4 * Size.kb;
@@ -1504,109 +1489,74 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	}
 
 	/**
-	 * Reads matching query params into form state values.
-	 *
-	 * @param search Search params to read from
-	 * @returns Sanitized values derived from the query string
-	 */
-	#query(search: URLSearchParams) {
-		const values: Record<string, unknown> = {};
-
-		for (const [name, field] of Object.entries(this.shape)) {
-			if (search.has(name)) {
-				const value = field.read(search, name);
-
-				if (value != null) values[name] = value;
-			}
-		}
-
-		return this.#sanitize(values, false);
-	}
-
-	/**
 	 * Decode form state from input.
 	 *
-	 * @param stateInput URL, URLSearchParams, encoded string, or state
+	 * @param stateInput Current page URL
 	 */
-	#decode(stateInput?: Form.State.Input<Shape>): Form.State<Shape> | undefined {
+	#decode(stateInput?: URL): Form.State<Shape> | undefined {
 		if (stateInput) {
-			const schema = Schema.object({
-				id: Schema.literal(this.#id),
-				issues: Schema.array(
-					Schema.object({
-						expected: Schema.string(),
-						path: Schema.array(
-							Schema.union([Schema.string(), Schema.number()]),
-						),
-						message: Schema.string(),
-					}).transform(
-						(issue) =>
-							new Schema.Issue(issue.expected, issue.path, issue.message),
-					),
-				).optional(),
-				values: Schema.object(
-					this.names.reduce<Schema.Object.Shape>((shape, name) => {
-						shape[name] = Form.#valueSchema.optional();
+			const values = this.#sanitize(
+				this.names.reduce<Record<string, unknown>>((data, name) => {
+					if (stateInput.searchParams.has(name)) {
+						const value = this.shape[name]!.read(stateInput.searchParams, name);
 
-						return shape;
-					}, {}),
-				).optional(),
-			});
+						if (value != null) data[name] = value;
+					}
 
-			if (typeof stateInput === "object") {
-				if ("id" in stateInput) {
-					const result = schema.parse(stateInput);
+					return data;
+				}, {}),
+				false,
+			);
+			const encoded = stateInput.searchParams.get(Form.params[1]);
 
-					return result.data?.id === this.#id
-						? {
-								...(result.data as Form.State<Shape>),
-								values: this.#sanitize(result.data.values),
-							}
-						: undefined;
-				}
-
-				const search =
-					stateInput instanceof URL ? stateInput.searchParams : stateInput;
-				const values = this.#query(search);
-				const encoded = search.get(Form.#param);
-
-				if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
-					try {
-						const result = Schema.string()
-							.json(schema)
-							.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
-
-						if (result.data?.id === this.#id) {
-							const current = this.#sanitize(result.data.values);
-
-							return {
-								...(result.data as Form.State<Shape>),
-								values:
-									values || current
-										? ({ ...values, ...current } as Form.Value.Map<Shape>)
-										: undefined,
-							};
-						}
-					} catch {}
-				}
-
-				return values ? { id: this.#id, values } : undefined;
-			}
-
-			if (stateInput.length <= Form.#maxStateBytes * 2) {
+			if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
 				try {
 					const result = Schema.string()
-						.json(schema)
-						.parse(Codec.decode(Codec.Base64Url.decode(stateInput)));
+						.json(
+							Schema.object({
+								id: Schema.literal(this.#id),
+								issues: Schema.array(
+									Schema.object({
+										expected: Schema.string(),
+										path: Schema.array(
+											Schema.union([Schema.string(), Schema.number()]),
+										),
+										message: Schema.string(),
+									}).transform(
+										(issue) =>
+											new Schema.Issue(
+												issue.expected,
+												issue.path,
+												issue.message,
+											),
+									),
+								).optional(),
+								values: Schema.object(
+									this.names.reduce<Schema.Object.Shape>((shape, name) => {
+										shape[name] = Form.#valueSchema.optional();
+
+										return shape;
+									}, {}),
+								).optional(),
+							}),
+						)
+						.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
 
 					if (result.data?.id === this.#id) {
+						const current = this.#sanitize(result.data.values);
+
 						return {
 							...(result.data as Form.State<Shape>),
-							values: this.#sanitize(result.data.values),
+							values:
+								values || current
+									? ({ ...values, ...current } as Form.Value.Map<Shape>)
+									: undefined,
 						};
 					}
 				} catch {}
 			}
+
+			return values ? { id: this.#id, values } : undefined;
 		}
 	}
 
@@ -1716,7 +1666,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					);
 
 					if (state.byteLength <= Form.#maxStateBytes) {
-						search = [Form.#param, Codec.Base64Url.encode(state)];
+						search = [Form.params[1], Codec.Base64Url.encode(state)];
 						break;
 					}
 				}
@@ -1730,7 +1680,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				);
 
 				if (state.byteLength <= Form.#maxStateBytes) {
-					search = [Form.#param, Codec.Base64Url.encode(state)];
+					search = [Form.params[1], Codec.Base64Url.encode(state)];
 				}
 			}
 
@@ -2235,14 +2185,14 @@ export namespace Field {
 		 * constructed `<Field />` component.
 		 *
 		 * @template S Form shape type
-		 * @template I `true` the state is a `State.Input`, `false` is just `State`
+		 * @template I `true` the state is a `URL`, `false` is just `State`
 		 */
 		export type Props<S extends Form.Shape, I extends boolean = true> = {
 			/** Field name attribute */
 			readonly name: ShapeUtil.Name<S>;
 
 			/** Form state */
-			readonly state?: I extends true ? Form.State.Input<S> : Form.State<S>;
+			readonly state?: I extends true ? URL : Form.State<S>;
 		} & Field.Props;
 
 		/** Root element for the Field component */

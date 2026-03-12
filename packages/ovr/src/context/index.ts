@@ -4,7 +4,7 @@ import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
-import type { Form } from "../schema/index.js";
+import { Form as FormSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
@@ -40,10 +40,12 @@ export namespace Context {
 	 *
 	 * @template S Form shape
 	 */
-	export type Result<S extends Form.Shape> = [Form.Shape] extends [S]
+	export type Result<S extends FormSchema.Shape> = [FormSchema.Shape] extends [
+		S,
+	]
 		? null
 		: Util.Prettify<
-				Form.Parse.Result<
+				FormSchema.Parse.Result<
 					S,
 					{
 						/** URL with invalid field values encoded into a search parameter. */
@@ -61,7 +63,7 @@ export namespace Context {
  */
 export class Context<
 	Params extends Trie.Params = Trie.Params,
-	Shape extends Form.Shape = Form.Shape,
+	Shape extends FormSchema.Shape = FormSchema.Shape,
 > {
 	/**
 	 * Incoming `Request` to the server.
@@ -239,18 +241,20 @@ export class Context<
 				let url = new URL(this.url);
 
 				if (post) {
-					const referer = this.req.headers.get(Header.name.ref);
+					const returnParam = url.searchParams.get(FormSchema.params[0]);
 
-					if (referer) {
+					if (returnParam) {
 						try {
-							const refererUrl = new URL(referer, url);
+							const returnUrl = new URL(returnParam, url);
 
-							if (refererUrl.origin === this.url.origin) url = refererUrl;
+							if (returnUrl.origin === url.origin) url = returnUrl;
 						} catch {
-							// invalid referer
+							// invalid redirect target
 						}
 					}
 				}
+
+				for (const param of FormSchema.params) url.searchParams.delete(param);
 
 				if (result.search) url.searchParams.set(...result.search);
 

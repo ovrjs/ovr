@@ -84,7 +84,6 @@ export class Header {
 		none: "if-none-match",
 		cookie: "cookie",
 		set: "set-cookie",
-		ref: "referer",
 		loc: "location",
 		origin: "origin",
 		fetch: "sec-fetch-site",

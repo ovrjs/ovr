@@ -196,7 +196,7 @@ export namespace Route {
 	 */
 	export type Form<Pattern extends string> = (
 		props: JSX.IntrinsicElements["form"] &
-			URLOptions<ExtractParams<Pattern>> & { state?: FormSchema.State.Input },
+			URLOptions<ExtractParams<Pattern>> & { state?: URL },
 	) => JSX.Element;
 
 	/**
@@ -265,7 +265,7 @@ export class Route<Pattern extends string = string> {
 			) +
 			(options?.search
 				? // use the value as the init
-					// @ts-expect-error - see above
+					// @ts-expect-error - see type above
 					"?" + new URLSearchParams(options.search)
 				: "") +
 			(options?.hash
@@ -319,15 +319,38 @@ export class Route<Pattern extends string = string> {
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: (({ params, search, hash, state: _state, ...rest }) =>
-				jsx("form", {
-					action: route.url({ params, search, hash } as Route.URLOptions<
-						ExtractParams<Pattern>
-					>),
+			Form: (({ params, search, hash, state, ...rest }) => {
+				let query: URLSearchParams | undefined;
+
+				if (route.method === Method.post && state) {
+					const target = new URL(state);
+
+					for (const param of FormSchema.params) {
+						target.searchParams.delete(param);
+					}
+
+					query = new URLSearchParams(
+						// @ts-expect-error - see type above
+						search,
+					);
+
+					query.set(
+						FormSchema.params[0],
+						target.pathname + target.search + target.hash,
+					);
+				}
+
+				return jsx("form", {
+					action: route.url({
+						params,
+						search: query ?? search,
+						hash,
+					} as Route.URLOptions<ExtractParams<Pattern>>),
 					method: route.method,
 					enctype,
 					...rest,
-				})) as Route.Form<Pattern>,
+				});
+			}) as Route.Form<Pattern>,
 		});
 	}
 
@@ -355,6 +378,7 @@ export class Route<Pattern extends string = string> {
 						schema.Fields({ state }),
 						jsx("button", { children: "Submit" }),
 					],
+					state,
 					...rest,
 				} as Parameters<typeof Form>[0])) as Route.Form<Pattern>,
 		});

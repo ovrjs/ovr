@@ -147,7 +147,68 @@ describe("Route schema helpers", () => {
 		expect(html.includes(">Submit</button>")).toBe(true);
 	});
 
-	test("invalid POST schema parse still prefers same-origin referer URL", async () => {
+	test("schema-enabled Route.post Form encodes _return from URL state", async () => {
+		const submit = Route.post("/submit", { name: Field.text() }, (c) =>
+			c.text("ok"),
+		);
+		const state = new URL(
+			"http://localhost:5173/signup?tab=profile&_form=stale&_return=%2Fold#details",
+		);
+		const html = await new Render(null).string(submit.Form({ state }));
+
+		expect(
+			html.includes(
+				'action="/submit?_return=%2Fsignup%3Ftab%3Dprofile%23details"',
+			),
+		).toBe(true);
+		expect(html.includes("_form=stale")).toBe(false);
+		expect(html.includes("_return=%252Fold")).toBe(false);
+	});
+
+	test("invalid POST schema parse prefers same-origin _return query", async () => {
+		const submit = Route.post(
+			"/submit",
+			{ role: Field.radio(["reader", "admin"]) },
+			async (c) => {
+				const result = await c.data();
+
+				if (result.issues) {
+					c.redirect(result.url, 303);
+					return;
+				}
+
+				c.text("ok");
+			},
+		);
+		const app = new App().use(submit);
+		const data = new FormData();
+
+		data.set("role", "owner");
+
+		const res = await app.fetch(
+			new Request(
+				"http://localhost:5173/submit?_return=%2Fsource%3Ffrom%3Dreturn",
+				{
+					method: "POST",
+					body: data,
+					headers: { origin: "http://localhost:5173" },
+				},
+			),
+		);
+
+		expect(res.status).toBe(303);
+
+		const location = res.headers.get("location");
+		if (!location) throw new Error("Expected redirect location");
+
+		const url = new URL(location);
+
+		expect(url.pathname).toBe("/source");
+		expect(url.searchParams.get("from")).toBe("return");
+		expect(url.searchParams.get("_form")).toBeTruthy();
+	});
+
+	test("invalid POST schema parse falls back to request URL when _return is missing", async () => {
 		const submit = Route.post(
 			"/submit",
 			{ role: Field.radio(["reader", "admin"]) },
@@ -185,8 +246,57 @@ describe("Route schema helpers", () => {
 
 		const url = new URL(location);
 
-		expect(url.pathname).toBe("/source");
-		expect(url.searchParams.get("from")).toBe("referer");
+		expect(url.pathname).toBe("/submit");
+		expect(url.searchParams.get("from")).toBeNull();
+		expect(url.searchParams.get("_return")).toBeNull();
+		expect(url.searchParams.get("role")).toBeNull();
+		expect(url.searchParams.get("_form")).toBeTruthy();
+	});
+
+	test("invalid POST schema parse ignores cross-origin _return query", async () => {
+		const submit = Route.post(
+			"/submit",
+			{ role: Field.radio(["reader", "admin"]) },
+			async (c) => {
+				const result = await c.data();
+
+				if (result.issues) {
+					c.redirect(result.url, 303);
+					return;
+				}
+
+				c.text("ok");
+			},
+		);
+		const app = new App().use(submit);
+		const data = new FormData();
+
+		data.set("role", "owner");
+
+		const res = await app.fetch(
+			new Request(
+				"http://localhost:5173/submit?_return=https%3A%2F%2Fevil.example%2Fsource%3Ffrom%3Dreturn",
+				{
+					method: "POST",
+					body: data,
+					headers: {
+						origin: "http://localhost:5173",
+						referer: "http://localhost:5173/source?from=referer",
+					},
+				},
+			),
+		);
+
+		expect(res.status).toBe(303);
+
+		const location = res.headers.get("location");
+		if (!location) throw new Error("Expected redirect location");
+
+		const url = new URL(location);
+
+		expect(url.pathname).toBe("/submit");
+		expect(url.searchParams.get("from")).toBeNull();
+		expect(url.searchParams.get("_return")).toBeNull();
 		expect(url.searchParams.get("_form")).toBeTruthy();
 	});
 
