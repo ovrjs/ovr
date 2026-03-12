@@ -24,7 +24,7 @@ export const enroll = Route.post(
 			"Unicorn hair",
 		]).persist(),
 		year: Field.number().min(1).max(7).persist(),
-		pet: Field.checkboxes(["Owl", "Cat", "Toad"]).persist(),
+		pet: Field.checkboxes(["Owl", "Cat", "Toad"]).optional().persist(),
 		arrival: Field.date().persist(),
 		rules: Field.checkbox()
 			.refine((v) => v, "You must accept the castle rules")
