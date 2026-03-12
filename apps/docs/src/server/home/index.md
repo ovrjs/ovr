@@ -67,3 +67,11 @@ Web browsers are [built for streaming](https://developer.mozilla.org/en-US/docs/
 <video aria-label="A video showing the network waterfall of a website loading. The HTML head element is streamed immediately, allowing JavaScript and CSS files to download while the rest of the HTML body streams in simultaneously." src="https://zsbsjhwuth2a2ck8.public.blob.vercel-storage.com/html-streaming-network-Owka5ZckQQIo791h0LQ771O5ZZV3Wb.mp4" autoplay loop muted loading="lazy" playsinline></video>
 
 ovr's architecture gives you streaming server-side rendering out of the box. No hydration bundle, no buffering---just HTML delivered _in order_, as soon as it's ready.
+
+## Constraints
+
+ovr is intentionally constrained. These rules keep the framework small and shape the API.
+
+- **No client JS required.** Everything should work when no client-side JavaScript runs.
+- **Streaming first.** Responses and request parsing should start immediately, without buffering whole documents or uploads in memory.
+- **Stateless by default.** Core APIs should not require server-side state to work correctly.
