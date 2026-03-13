@@ -124,14 +124,6 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 	);
 };
 
-// const Logo = () => (
-// 	<picture>
-// 		<source srcset={logo.black} media="(prefers-color-scheme: light)" />
-// 		<source srcset={logo.white} media="(prefers-color-scheme: dark)" />
-// 		<img src={logo.black} alt="ovr logo" class="size-8" />
-// 	</picture>
-// );
-
 const HomeLink = () => {
 	return (
 		<a
