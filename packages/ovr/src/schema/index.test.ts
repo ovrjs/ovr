@@ -996,6 +996,21 @@ describe("Form schema", () => {
 		expect(html.includes('<input id="second" autofocus')).toBe(false);
 	});
 
+	test("render state without issues does not autofocus the first field", async () => {
+		const form = Form.from({
+			first: Field.text(),
+			second: Field.text(),
+		});
+		const url = new URL("https://example.com/form");
+
+		url.searchParams.set("first", "ross");
+
+		const html = await new Render(null).string(form.Fields({ state: url }));
+		const autofocus = html.match(/autofocus/g) ?? [];
+
+		expect(autofocus).toHaveLength(0);
+	});
+
 	test("field label metadata renders text without leaking to controls", async () => {
 		const form = Form.from({
 			email: Field.email({ label: "Email Address" }),
