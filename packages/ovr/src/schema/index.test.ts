@@ -973,6 +973,29 @@ describe("Form schema", () => {
 		expect(email.includes('value="ross@example.com"')).toBe(false);
 	});
 
+	test("render state autofocuses only the first invalid field", async () => {
+		const form = Form.from({
+			first: Field.text().min(2),
+			second: Field.text().min(2),
+		});
+		const data = new FormData();
+
+		data.set("first", "x");
+		data.set("second", "y");
+
+		const result = formInvalid(await form.parse(data));
+		const url = new URL("https://example.com/form");
+
+		url.searchParams.set("_form", result.search![1]);
+
+		const html = await new Render(null).string(form.Fields({ state: url }));
+		const autofocus = html.match(/autofocus/g) ?? [];
+
+		expect(autofocus).toHaveLength(1);
+		expect(html.includes('<input id="first" autofocus')).toBe(true);
+		expect(html.includes('<input id="second" autofocus')).toBe(false);
+	});
+
 	test("field label metadata renders text without leaking to controls", async () => {
 		const form = Form.from({
 			email: Field.email({ label: "Email Address" }),
