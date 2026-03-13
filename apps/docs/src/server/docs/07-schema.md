@@ -89,6 +89,8 @@ The default markup from `<signup.Form state={c.url} />` looks like this:
 
 > If you want to reuse the schema outside a route, create it up front with `Form.from(shape)` and pass the resulting form into `Route.get` or `Route.post`.
 
+### Input normalization
+
 ovr also normalizes a few common HTML form quirks before validation:
 
 - Single-value text-like inputs read blank values as missing (`undefined`) during form parsing, so `.optional()` and `.default(...)` behave like you would expect from browser forms.
@@ -96,11 +98,15 @@ ovr also normalizes a few common HTML form quirks before validation:
 - `Field.checkbox()` reads presence as a boolean, so omitted checkboxes become `false`.
 - `Field.file()` and `Field.files()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.
 
+### Invalid submissions
+
 `Context.data()` validates the current request. When validation fails, the round trip looks like this:
 
 1. `Context.data()` uses the same-origin `_return` query param from the form action, or the current request URL when `_return` is missing.
 2. `result.url` contains the chosen page URL plus the encoded `_form` state in a search param.
 3. Render the next request with `state={c.url}`.
+
+### Persisted form state
 
 ovr stores issue metadata and any values marked with `.persist()` in the `_form` search param so the next render can:
 
@@ -123,7 +129,7 @@ import { Field, Route } from "ovr";
 export const search = Route.get(
 	"/search",
 	{
-		q: Field.search({ placeholder: "travel backpack" }).optional(),
+		q: Field.search({ label: "Search" }).optional(),
 		minPrice: Field.number().min(0).optional(),
 		inStock: Field.checkbox(),
 	},
