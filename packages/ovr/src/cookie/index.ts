@@ -92,7 +92,7 @@ export namespace Cookie {
 
 	type InsecureOptions = BaseOptions & {
 		/** Limits the scope of the cookie to a secure context (HTTPS). */
-		readonly secure?: false;
+		readonly secure?: boolean;
 
 		/**
 		 * Controls whether the cookie is sent with cross-site requests.
@@ -147,7 +147,7 @@ export class Cookie {
 	 */
 	get(name: string) {
 		return (this.#parsed ??= Header.params(
-			this.#c.req.headers.get(Header.cookie),
+			this.#c.req.headers.get(Header.name.cookie),
 		))[name];
 	}
 
@@ -184,6 +184,6 @@ export class Cookie {
 		if (options.expires)
 			cookie.push(`Expires=${options.expires.toUTCString()}`);
 
-		this.#c.res.headers.append(Header.setCookie, cookie.join("; "));
+		this.#c.res.headers.append(Header.name.set, cookie.join("; "));
 	}
 }

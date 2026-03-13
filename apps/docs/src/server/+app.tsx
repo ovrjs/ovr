@@ -5,6 +5,7 @@ import * as home from "@/server/home";
 import * as notFound from "@/server/mw/not-found";
 import * as redirect from "@/server/mw/redirect";
 import * as seo from "@/server/seo";
+import "dotenv/config";
 import * as o from "ovr";
 
 const app = new o.App();

@@ -6,6 +6,6 @@
 		"ovr": "*"
 	},
 	"devDependencies": {
-		"@remix-run/multipart-parser": "^0.14.0"
+		"@remix-run/multipart-parser": "^0.14.2"
 	}
 }

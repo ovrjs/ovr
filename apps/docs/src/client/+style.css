@@ -101,7 +101,6 @@
 @layer base {
 	:root {
 		--accent: var(--base-500);
-		--light-end: 0.002;
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -119,12 +118,11 @@
 		--shiki-token-string-expression: var(--base-200);
 		--shiki-token-punctuation: var(--base-500);
 		--shiki-token-link: var(--base-300);
-
-		scrollbar-gutter: stable;
 	}
 
 	* {
 		scroll-padding-block-start: calc(var(--spacing) * 4);
+		scrollbar-gutter: stable;
 	}
 
 	body {
@@ -141,7 +139,7 @@
 
 @layer components {
 	pre {
-		@apply m-0 rounded-none px-4 text-base font-light sm:rounded-b-sm;
+		@apply m-0 rounded-none px-4 text-base font-light sm:rounded-b-md;
 	}
 
 	a:not(h1 a, h2 a, h3 a, h4 a),
@@ -191,13 +189,18 @@
 		@apply font-semibold;
 	}
 
-	label {
-		@apply font-headings mb-2 text-base;
+	label,
+	legend {
+		@apply font-headings text-base;
 	}
 
 	button,
 	.button {
 		@apply font-headings font-medium transition-colors ease-out active:scale-99;
+	}
+
+	form {
+		@apply bg-muted border-secondary grid gap-4 rounded-md border p-4 **:data-issue:mt-1 **:data-issue:text-sm **:data-issue:italic sm:max-w-sm [&_label,&_legend]:capitalize;
 	}
 
 	doc-search {

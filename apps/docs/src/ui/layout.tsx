@@ -8,23 +8,17 @@ import { FontPreload } from "@/ui/font-preload";
 import { GitHub } from "@/ui/github";
 import { Popover } from "@/ui/popover";
 import { SkipLink } from "@/ui/skip-link";
-import { tags } from "client:script";
+import * as script from "client:script";
+import * as style from "client:style";
 import { clsx } from "clsx";
 import * as o from "ovr";
 
 const Assets = () => {
-	return (
-		<>
-			{import.meta.env.DEV && (
-				<link rel="stylesheet" href="/client/tailwind.css" />
-			)}
-			{o.Render.html(tags)}
-		</>
-	);
+	return o.Render.html(script.tags + style.tags);
 };
 
 export const createLayout =
-	(c: o.Middleware.Context) =>
+	(c: o.Middleware.Context<any, any>) =>
 	(props: { head: o.JSX.Element; children: o.JSX.Element }) => {
 		return (
 			<html lang="en">
@@ -129,14 +123,6 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 		</div>
 	);
 };
-
-// const Logo = () => (
-// 	<picture>
-// 		<source srcset={logo.black} media="(prefers-color-scheme: light)" />
-// 		<source srcset={logo.white} media="(prefers-color-scheme: dark)" />
-// 		<img src={logo.black} alt="ovr logo" class="size-8" />
-// 	</picture>
-// );
 
 const HomeLink = () => {
 	return (

@@ -26,9 +26,10 @@ async function fetch(req: Request) {
 		part; // extends Request
 		part.headers; // Headers
 		part.body; // ReadableStream
-		part.name; // form input name
+		part.name; // form input name attribute
 		part.filename; // filename if available
 		part.type; // media type
+		part.value(); // Promise<string | File>
 
 		if (part.name === "name") {
 			// buffer a text input
@@ -71,7 +72,7 @@ Options are available for the maximum `memory` allocation, max total `payload` s
 
 ```ts
 const options: Multipart.Options = {
-	memory: 12 * 1024 * 1024, // increase to 12MB
+	memory: 12 * 1024 ** 2, // increase to 12MB
 	payload: 1024 ** 3, // increase to 1GB
 	parts: 4, // only accept up to 4 parts
 };
@@ -96,7 +97,7 @@ c.form(options);
 
 [`@remix-run/multipart-parser`](https://github.com/remix-run/remix/tree/main/packages/multipart-parser) is a great option for multipart processing. Its [search function](https://github.com/remix-run/remix/blob/main/packages/multipart-parser/src/lib/buffer-search.ts) (Boyer-Moore-Horspool) has been adapted for use in ovr. It also depends on [`@remix-run/headers`](https://github.com/remix-run/remix/tree/main/packages/headers) which provides a rich API for accessing additional information about each part if needed.
 
-Remix incrementally **buffers each _part_ in memory** compared to ovr's incremental processing of each _chunk_. This makes Remix [unable to stream extremely large files](https://github.com/remix-run/remix/pull/10764) if your server cannot hold them in memory, it requires them to be fully buffered before use.
+Remix incrementally **buffers each _part_ in memory** compared to ovr's incremental processing of each _chunk_. This makes Remix [unable to stream extremely large files](https://github.com/remix-run/remix/issues/10845) if your server cannot hold them in memory, it requires them to be fully buffered before use.
 
 ### SvelteKit
 

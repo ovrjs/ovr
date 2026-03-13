@@ -1,11 +1,12 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
-import { type Middleware } from "../middleware/index.js";
+import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
-import { type Trie } from "../trie/index.js";
-import { Hash, Header, Method, Mime } from "../util/index.js";
+import { Form as FormSchema } from "../schema/index.js";
+import type { Trie } from "../trie/index.js";
+import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
 /** Properties to build the final `Response` with once middleware has run. */
 class PreparedResponse {
@@ -32,16 +33,38 @@ class PreparedResponse {
 }
 
 export namespace Context {
-	// gives users access to Middleware.Context.Cookie.Options
-	export type Cookie = InstanceType<typeof Cookie>;
+	/**
+	 * Context.data return type.
+	 *
+	 * Routes without a schema return `null`.
+	 *
+	 * @template S Form shape
+	 */
+	export type Result<S extends FormSchema.Shape> = [FormSchema.Shape] extends [
+		S,
+	]
+		? null
+		: Util.Prettify<
+				FormSchema.Parse.Result<
+					S,
+					{
+						/** URL with invalid field values encoded into a search parameter. */
+						readonly url: URL;
+					}
+				>
+			>;
 }
 
 /**
  * Request context.
  *
  * @template Params Parameters created from a route match
+ * @template Shape Parsed form data shape
  */
-export class Context<Params extends Trie.Params = Trie.Params> {
+export class Context<
+	Params extends Trie.Params = Trie.Params,
+	Shape extends FormSchema.Shape = FormSchema.Shape,
+> {
 	/**
 	 * Incoming `Request` to the server.
 	 *
@@ -71,6 +94,9 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	/** Forwarded app options */
 	readonly #options: App.Options;
 
+	/** Cached result from `data()` to avoid re-reading request bodies. */
+	#parsed?: Promise<Context.Result<Shape>>;
+
 	/**
 	 * Creates a new `Context` with the current `Request`.
 	 *
@@ -91,7 +117,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	html(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.type, Header.utf8(Mime.html));
+		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.html));
 	}
 
 	/**
@@ -103,7 +129,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	json<D>(data: D extends bigint ? never : D, status?: number) {
 		this.res.body = JSON.stringify(data);
 		this.res.status = status;
-		this.res.headers.set(Header.type, Mime.json);
+		this.res.headers.set(Header.name.type, Mime.type.json);
 	}
 
 	/**
@@ -115,7 +141,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	text(body: BodyInit | null, status?: number) {
 		this.res.body = body;
 		this.res.status = status;
-		this.res.headers.set(Header.type, Header.utf8(Mime.text));
+		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.text));
 	}
 
 	/**
@@ -130,27 +156,33 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * - [307 Temporary Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/307)
 	 * - [308 Permanent Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/308)
 	 */
-	redirect(location: string | URL, status: 301 | 302 | 303 | 307 | 308 = 302) {
+	redirect(
+		location: string | URL | Route,
+		status: 301 | 302 | 303 | 307 | 308 = 302,
+	) {
 		this.res.body = null;
 		this.res.status = status;
-		this.res.headers.set("location", String(location));
+		this.res.headers.set(
+			Header.name.loc,
+			location instanceof Route ? location.pathname() : String(location),
+		);
 	}
 
 	/**
-	 * Generates an etag from a hash of the string provided.
+	 * Generates an etag from a checksum of the string provided.
 	 * If the etag matches, sets the response to not modified.
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag)
 	 *
-	 * @param string string to hash
+	 * @param string string to check
 	 * @returns `true` if the etag matches, `false` otherwise
 	 */
 	etag(string: string) {
-		const etag = `"${Hash.djb2(string)}"`;
+		const etag = `"${Checksum.djb2(string)}"`;
 
-		this.res.headers.set(Header.etag, etag);
+		this.res.headers.set(Header.name.etag, etag);
 
-		if (this.req.headers.get(Header.ifNoneMatch) === etag) {
+		if (this.req.headers.get(Header.name.none) === etag) {
 			this.res.body = null;
 			this.res.status = 304;
 
@@ -161,10 +193,12 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	}
 
 	/**
-	 * Parse multipart requests.
+	 * Parse a multipart request.
+	 *
+	 * _Prefer_ `Context.data()` _when possible to parse
+	 * with a type-safe schema._
 	 *
 	 * @yields Multipart request `Part`(s)
-	 *
 	 * @example
 	 *
 	 * ```ts
@@ -180,10 +214,55 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * ```
 	 */
 	form(options?: Multipart.Options) {
-		return new Multipart(
-			this.req,
-			Object.assign({}, this.#options.form, options),
-		);
+		return new Multipart(this.req, { ...this.#options.form, ...options });
+	}
+
+	/**
+	 * Parse route form data from search params or multipart requests.
+	 *
+	 * @param options Multipart options for POST requests
+	 * @returns Parsed form data with possible invalid redirect URL state
+	 */
+	async data(options?: Multipart.Options): Promise<Context.Result<Shape>> {
+		return (this.#parsed ??= (async () => {
+			const post = this.req.method === Method.post;
+			const form = this.route as Route.Post | undefined;
+
+			if (!form?.parse) return null as Context.Result<Shape>;
+
+			const result = await form.parse(
+				post
+					? this.form({ parts: form.parts, ...options })
+					: this.url.searchParams,
+			);
+
+			if (result.issues) {
+				// create encoded URL state with invalid fields
+				let url = new URL(this.url);
+
+				if (post) {
+					const returnParam = url.searchParams.get(FormSchema.params[0]);
+
+					if (returnParam) {
+						try {
+							const returnUrl = new URL(returnParam, url);
+
+							if (returnUrl.origin === url.origin) url = returnUrl;
+						} catch {
+							// invalid redirect target
+						}
+					}
+				}
+
+				for (const param of FormSchema.params) url.searchParams.delete(param);
+
+				if (result.search) url.searchParams.set(...result.search);
+
+				return Object.assign(result, { url }) as Context.Result<Shape>;
+			}
+
+			return result as Context.Result<Shape>;
+		})());
 	}
 
 	/**
@@ -193,7 +272,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 	 * @param i current middleware index (default `0`)
 	 * @returns return value of `middleware[i]`
 	 */
-	async #run(middleware: Middleware<Params>[], i = 0) {
+	async #run(middleware: Middleware<Params, Shape>[], i = 0) {
 		const mw = middleware[i];
 
 		if (!mw) return; // end of stack
@@ -215,7 +294,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 			}
 		} else if (r !== undefined) {
 			// something to stream
-			const [mime] = Header.shift(this.res.headers.get(Header.type));
+			const [mime] = Header.shift(this.res.headers.get(Header.name.type));
 
 			this.res.body = Render.stream(r, {
 				// other defined types are safe
@@ -224,7 +303,7 @@ export class Context<Params extends Trie.Params = Trie.Params> {
 
 			if (!mime) {
 				// default to HTML
-				this.res.headers.set(Header.type, Header.utf8(Mime.html));
+				this.res.headers.set(Header.name.type, Header.utf8(Mime.type.html));
 			}
 
 			// do not overwrite/remove status - that way user can set it before returning

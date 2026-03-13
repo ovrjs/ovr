@@ -1,16 +1,42 @@
 /** General utility types */
 export namespace Util {
+	/**
+	 * Function type wrapper that opts into bivariant parameter checking.
+	 *
+	 * Useful for public structural types that need to accept handlers from
+	 * compatible but differently-parameterized generic instances.
+	 *
+	 * @template Fn Function type
+	 */
+	export type Bivariant<Fn extends (...args: any[]) => any> = {
+		bivariant(...args: Parameters<Fn>): ReturnType<Fn>;
+	}["bivariant"];
+
+	/**
+	 * Recursive array type that allows a value or nested arrays of that value.
+	 *
+	 * @template T Item type
+	 */
 	export type DeepArray<T> = T | DeepArray<T>[];
+
+	/**
+	 * Flattens an inferred object type for improved readability in tooling.
+	 *
+	 * @template T Object type to normalize
+	 */
+	export type Prettify<T> = { [K in keyof T]: T[K] } & {};
 }
 
 /** Media type utils */
 export class Mime {
-	static readonly html = Mime.#text("html");
-	static readonly text = Mime.#text("plain");
-	static readonly json = Mime.#application("json");
-	static readonly stream = Mime.#application("octet-stream");
-	static readonly #multipartBase = "multipart/";
-	static readonly multipartFormData = Mime.#multipart("form-data");
+	/** Mime type constants */
+	static type = {
+		html: Mime.#text("html"),
+		text: Mime.#text("plain"),
+		json: Mime.#application("json"),
+		stream: Mime.#application("octet-stream"),
+		mp: "multipart/form-data",
+	} as const;
 
 	static #text<T extends string>(type: T) {
 		return `text/${type}` as const;
@@ -20,12 +46,8 @@ export class Mime {
 		return `application/${type}` as const;
 	}
 
-	static #multipart<T extends string>(type: T) {
-		return `${Mime.#multipartBase}${type}` as const;
-	}
-
 	static readonly #markup = new Set<string>([
-		Mime.html,
+		Mime.type.html,
 		Mime.#text("xml"),
 		Mime.#application("xml"),
 	]);
@@ -47,18 +69,25 @@ export class Mime {
 	 * @returns `true` if the mime is multipart
 	 */
 	static multipart(mime: string | null) {
-		return mime?.startsWith(Mime.#multipartBase);
+		return mime?.startsWith("multipart/");
 	}
 }
 
 /** Header parsing utils */
 export class Header {
-	static readonly type = "content-type";
-	static readonly disposition = "content-disposition";
-	static readonly etag = "etag";
-	static readonly ifNoneMatch = "if-none-match";
-	static readonly cookie = "cookie";
-	static readonly setCookie = "set-cookie";
+	/** Header name constants */
+	static readonly name = {
+		type: "content-type",
+		disp: "content-disposition",
+		etag: "etag",
+		cache: "cache-control",
+		none: "if-none-match",
+		cookie: "cookie",
+		set: "set-cookie",
+		loc: "location",
+		origin: "origin",
+		fetch: "sec-fetch-site",
+	} as const;
 
 	/**
 	 * @param mime
@@ -73,14 +102,11 @@ export class Header {
 	 * @returns Base/first param
 	 */
 	static shift(header: string | null): [string | null, string | null] {
-		if (header) {
-			const semi = header.indexOf(";");
-			if (semi !== -1) {
-				return [header.slice(0, semi), header.slice(semi)];
-			}
-		}
+		const semi = header?.indexOf(";") ?? -1;
 
-		return [header, null];
+		return semi === -1
+			? [header, null]
+			: [header!.slice(0, semi), header!.slice(semi)];
 	}
 
 	/**
@@ -140,21 +166,21 @@ export class Header {
 	}
 }
 
-/** Hash util */
-export class Hash {
+/** Checksum util */
+export class Checksum {
 	/**
-	 * Fast hashing algorithm - [djb2](http://www.cse.yorku.ca/~oz/hash.html)
+	 * Fast checksum algorithm - [djb2](http://www.cse.yorku.ca/~oz/hash.html)
 	 *
-	 * @param s String to hash
-	 * @returns Hashed string
+	 * @param s String to check
+	 * @returns Checksum
 	 */
 	static djb2(s: string) {
-		let hash = 5381;
+		let c = 5381;
 		let i = s.length;
 
-		while (i) hash = (hash * 33) ^ s.charCodeAt(--i);
+		while (i) c = (c * 33) ^ s.charCodeAt(--i);
 
-		return (hash >>> 0).toString(36);
+		return (c >>> 0).toString(36);
 	}
 }
 
@@ -163,10 +189,75 @@ export class Codec {
 	static #encoder = new TextEncoder();
 	static #decoder = new TextDecoder("utf-8", { fatal: true });
 
-	static encode = (s: string) => Codec.#encoder.encode(s);
+	/**
+	 * Encodes a string into UTF-8 bytes.
+	 *
+	 * @param s String to encode
+	 * @returns UTF-8 bytes
+	 */
+	static encode(s: string) {
+		return Codec.#encoder.encode(s);
+	}
 
-	/** DO NOT USE FOR STREAMS */
-	static decode = (input?: Uint8Array) => Codec.#decoder.decode(input);
+	/**
+	 * Decodes UTF-8 bytes into a string.
+	 *
+	 * Note: do not use this for incremental/stream decoding.
+	 *
+	 * @param bytes UTF-8 bytes
+	 * @returns Decoded string
+	 */
+	static decode(bytes?: Uint8Array) {
+		return Codec.#decoder.decode(bytes);
+	}
+
+	static readonly Base64 = class Base64 {
+		/**
+		 * Encodes bytes into a Base64 string.
+		 *
+		 * @param bytes Bytes to encode
+		 * @returns Base64 string
+		 */
+		static encode(bytes: Uint8Array) {
+			return btoa(String.fromCharCode(...bytes));
+		}
+
+		/**
+		 * Decodes a Base64 string into bytes.
+		 *
+		 * @param s Base64 string
+		 * @returns Decoded bytes
+		 */
+		static decode(s: string) {
+			return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+		}
+	};
+
+	static readonly Base64Url = class Base64Url {
+		/**
+		 * Encodes bytes into a Base64Url string.
+		 *
+		 * @param bytes Bytes to encode
+		 * @returns Base64Url string
+		 */
+		static encode(bytes: Uint8Array) {
+			return btoa(String.fromCharCode(...bytes))
+				.replace(/[+/]/g, (c) => (c === "+" ? "-" : "_"))
+				.replace(/=+$/, "");
+		}
+
+		/**
+		 * Decodes a Base64Url string into bytes.
+		 *
+		 * @param s Base64Url string
+		 * @returns Decoded bytes
+		 */
+		static decode(s: string) {
+			const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
+
+			return Codec.Base64.decode(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+		}
+	};
 }
 
 /** HTTP methods */
@@ -174,4 +265,19 @@ export class Method {
 	static readonly get = "GET";
 	static readonly post = "POST";
 	static readonly head = "HEAD";
+}
+
+/** Byte size constants */
+export class Size {
+	static readonly kb = 1024;
+	static readonly mb = 1024 * Size.kb;
+}
+
+/** Times in milliseconds */
+export class Time {
+	static readonly second = 1000;
+	static readonly minute = 60 * Time.second;
+	static readonly hour = 60 * Time.minute;
+	static readonly day = 24 * Time.hour;
+	static readonly week = 7 * Time.day;
 }

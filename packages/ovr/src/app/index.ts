@@ -3,7 +3,7 @@ import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
-import { Method, type Util } from "../util/index.js";
+import { Header, Method, type Util } from "../util/index.js";
 
 export namespace App {
 	export namespace Options {
@@ -64,12 +64,13 @@ export class App {
 	 * @param options configuration options
 	 */
 	constructor(options?: App.Options) {
-		this.#options = Object.assign(
-			{ csrf: true, trailingSlash: "never" },
-			options,
-		);
+		this.#options = {
+			csrf: true,
+			trailingSlash: "never" as const,
+			...options,
+		};
 
-		if (this.#options.csrf === true) this.#global.push(App.#csrf);
+		if (this.#options.csrf) this.#global.push(App.#csrf);
 
 		if (this.#options.trailingSlash !== "ignore") {
 			this.#global.push(App.#createTrailingSlash(this.#options.trailingSlash));
@@ -88,7 +89,7 @@ export class App {
 		for (const route of routes) {
 			if (route instanceof Route) {
 				this.#trie.add(route);
-			} else if (route instanceof Array) {
+			} else if (Array.isArray(route)) {
 				this.use(...route);
 			} else if (typeof route === "function") {
 				this.#global.push(route);
@@ -134,8 +135,8 @@ export class App {
 		if (
 			c.req.method === Method.get ||
 			c.req.method === Method.head ||
-			c.req.headers.get("sec-fetch-site") === "same-origin" ||
-			c.req.headers.get("origin") === c.url.origin
+			c.req.headers.get(Header.name.fetch) === "same-origin" ||
+			c.req.headers.get(Header.name.origin) === c.url.origin
 		) {
 			return next();
 		}
@@ -150,12 +151,12 @@ export class App {
 
 			if (c.res.status && c.res.status !== 404) return;
 
-			const last = c.url.pathname.at(-1);
+			const slash = c.url.pathname.endsWith("/");
 
-			if (mode === "always" && last !== "/") {
+			if (mode === "always" && !slash) {
 				c.url.pathname += "/";
 				c.redirect(c.url, 308);
-			} else if (mode === "never" && c.url.pathname !== "/" && last === "/") {
+			} else if (mode === "never" && c.url.pathname !== "/" && slash) {
 				c.url.pathname = c.url.pathname.slice(0, -1);
 				c.redirect(c.url, 308);
 			}

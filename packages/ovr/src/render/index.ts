@@ -1,5 +1,5 @@
 import type { JSX } from "../jsx/index.js";
-import { Codec } from "../util/index.js";
+import { Codec, Size } from "../util/index.js";
 
 type Next = { i: number; result: IteratorResult<Chunk, void> };
 
@@ -83,9 +83,11 @@ export class Render {
 		if (element instanceof Promise) element = await element;
 
 		// resolve based on type
-		// should not render
-		if (element == null || typeof element === "boolean" || element === "")
+
+		if (element == null || typeof element === "boolean" || element === "") {
+			// should not render
 			return;
+		}
 
 		if (element instanceof Chunk) {
 			// already escaped or safe
@@ -201,7 +203,7 @@ export class Render {
 				// https://blog.cloudflare.com/unpacking-cloudflare-workers-cpu-performance-benchmarks/#inefficient-streams-adapters
 				// in Node, the default is 16kb, so this stacks another 2kb in front
 				// https://nodejs.org/api/http.html#outgoingmessagewritablehighwatermark
-				highWaterMark: 2048,
+				highWaterMark: 2 * Size.kb,
 			},
 		);
 	}
@@ -212,6 +214,7 @@ export class Render {
 	 * ### WARNING
 	 *
 	 * This negates streaming benefits and buffers the result into a string.
+	 *
 	 * @param element Element to render
 	 * @param options Render options
 	 * @returns Concatenated HTML

@@ -1,51 +1,64 @@
 import * as formContent from "@/server/demo/form/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-// import { createWriteStream } from "node:fs";
-// import { Writable } from "node:stream";
-import * as ovr from "ovr";
+import { Field, Render, Route } from "ovr";
 
-export const form = ovr.Route.get("/demo/form", (c) => {
+export const enroll = Route.post(
+	{
+		name: Field.text({ placeholder: "Harry Potter" })
+			.min(2, "Expected at least 2 characters")
+			.persist(),
+		email: Field.email({ placeholder: "name@hogwarts.edu" }).refine(
+			(v) => v.endsWith("@hogwarts.edu"),
+			"Expected a @hogwarts.edu email",
+		),
+		house: Field.select([
+			"Gryffindor",
+			"Hufflepuff",
+			"Ravenclaw",
+			"Slytherin",
+		]).persist(),
+		wand: Field.radio([
+			"Phoenix feather",
+			"Dragon heartstring",
+			"Unicorn hair",
+		]).persist(),
+		year: Field.number().min(1).max(7).persist(),
+		pet: Field.checkboxes(["Owl", "Cat", "Toad"]).optional().persist(),
+		arrival: Field.date().persist(),
+		rules: Field.checkbox()
+			.refine((v) => v, "You must accept the castle rules")
+			.persist(),
+		license: Field.file().stream(), // put `.stream()` last to parse fields first
+	},
+	async (c) => {
+		const result = await c.data();
+
+		if (result.issues) return c.redirect(result.url, 303);
+
+		if (result.stream) {
+			for await (const _part of result.stream) {
+				// console.log(part);
+				// await part.bytes();
+			}
+		}
+
+		// create new student record...
+
+		c.redirect(form, 303);
+	},
+);
+
+export const form = Route.get("/demo/form", (c) => {
 	const Layout = createLayout(c);
 
 	return (
 		<Layout head={<Meta {...formContent.frontmatter} />}>
 			<h1>{formContent.frontmatter.title}</h1>
 
-			{ovr.Render.html(formContent.html)}
+			{Render.html(formContent.html)}
 
-			<hr />
-
-			<post.Form class="bg-muted border-secondary grid max-w-sm gap-4 rounded-md border p-4">
-				<div>
-					<label for="name">Name</label>
-					<input type="text" name="name" id="name" />
-				</div>
-
-				<button>Submit</button>
-			</post.Form>
+			<enroll.Form state={c.url} />
 		</Layout>
 	);
-});
-
-export const post = ovr.Route.post(async (c) => {
-	for await (const part of c.form()) {
-		if (part.name === "name") {
-			console.log(part);
-			// NODE
-			// await part.body.pipeTo(
-			// 	Writable.toWeb(createWriteStream(`${process.cwd()}/output.png`)),
-			// );
-			//
-			// DENO
-			// await Deno.writeFile("output.txt", part.body);
-			//
-			// BUN
-			// this should work but doesn't!
-			// https://github.com/oven-sh/bun/issues/21455
-			// await Bun.write(`${process.cwd()}/output.txt`, part);
-		}
-	}
-
-	c.redirect("/", 303);
 });

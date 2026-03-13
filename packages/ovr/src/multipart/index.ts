@@ -1,4 +1,4 @@
-import { Codec, Header, Mime } from "../util/index.js";
+import { Codec, Header, Mime, Size } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
 class Needle extends Uint8Array {
@@ -92,11 +92,25 @@ class Part extends Request {
 			duplex: "half",
 		});
 
-		[this.type] = Header.shift(this.headers.get(Header.type));
+		[this.type] = Header.shift(this.headers.get(Header.name.type));
 
 		({ name: this.name = null, filename: this.filename = null } = Header.params(
-			this.headers.get(Header.disposition),
+			this.headers.get(Header.name.disp),
 		));
+	}
+
+	/**
+	 *
+	 * @returns Buffered FormDataEntryValue
+	 */
+	async value(): Promise<FormDataEntryValue> {
+		if (this.filename || this.type === Mime.type.stream) {
+			const blob = await this.blob();
+
+			return new File([blob], this.filename ?? "blob", { type: blob.type });
+		}
+
+		return this.text();
 	}
 }
 
@@ -160,16 +174,13 @@ export namespace Multipart {
 
 /** Multipart request */
 export class Multipart extends Request {
-	static readonly #kb = 1024;
-	static readonly #mb = 1024 ** 2;
-
 	/** New line needle to share across requests and parts */
 	static readonly #newLine = new Needle("\r\n\r\n");
 
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
-		memory: 4 * Multipart.#mb,
-		payload: 16 * Multipart.#mb,
+		memory: 4 * Size.mb,
+		payload: 16 * Size.mb,
 		parts: Infinity,
 	};
 
@@ -215,7 +226,7 @@ export class Multipart extends Request {
 	constructor(req: Request, options?: Multipart.Options) {
 		super(req);
 
-		const [mime, params] = Header.shift(this.headers.get(Header.type));
+		const [mime, params] = Header.shift(this.headers.get(Header.name.type));
 
 		if (!Mime.multipart(mime)) throw new TypeError("Unsupported Media Type");
 
@@ -233,7 +244,7 @@ export class Multipart extends Request {
 			new ArrayBuffer(
 				// slightly larger than common chunk size/high water mark 64kb for leftover boundary
 				// prevents having to resize memory for most requests
-				65 * Multipart.#kb,
+				65 * Size.kb,
 				// cap max chunk size + leftover
 				{ maxByteLength: this.#options.memory },
 			),
@@ -426,6 +437,7 @@ export class Multipart extends Request {
 				// cannot cancel, chunks would be in the next header
 				if (part.body && !part.bodyUsed) {
 					const partReader = part.body.getReader();
+
 					try {
 						while (!(await partReader.read()).done);
 					} finally {
@@ -463,20 +475,7 @@ export class Multipart extends Request {
 		const data = new FormData();
 
 		for await (const part of this) {
-			if (part.name) {
-				let value: string | File;
-
-				if (part.filename || part.type === Mime.stream) {
-					const blob = await part.blob();
-					value = new File([blob], part.filename ?? "blob", {
-						type: blob.type,
-					});
-				} else {
-					value = await part.text();
-				}
-
-				data.append(part.name, value);
-			}
+			if (part.name) data.append(part.name, await part.value());
 		}
 
 		return data;
