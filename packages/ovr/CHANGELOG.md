@@ -1,5 +1,57 @@
 # ovr
 
+## 6.2.0
+
+### Minor Changes
+
+- 9a1256d: feat: Redirect directly to a `Route` instead of having to call `Route.pathname()`
+
+  ```tsx
+  import { Route } from "ovr";
+
+  const form = Route.get("/signup", () => {
+  	// ...
+  });
+
+  const redirect = Route.post((c) =>
+  	c.redirect(
+  		form, // redirect to the route directly
+  		303,
+  	),
+  );
+  ```
+
+- 9a1256d: feat(schema): add `Schema`, `Field`, and `Form` helpers for typed parsing and form rendering
+
+  This adds a built-in schema layer for validating values, parsing search params and multipart form data with `c.data()`, and rendering forms with reusable field helpers.
+
+  Highlights:
+  - `Schema` for parsing, refinement, transformation, and object/array composition
+  - `Field` and `Form` helpers for typed HTML controls and render-state handling
+  - Support for persisted invalid form values and streamed multipart uploads
+
+  Docs: https://ovrjs.com/07-schema
+
+- 9a1256d: feat(multipart): `Multipart.Part` now has a `value` method to get the `FormDataEntryValue` from the part.
+
+  ```ts
+  for await (const part of new Multipart(req)) {
+  	const formDataEntryValue = await part.value(); // string | File
+  }
+  ```
+
+### Patch Changes
+
+- 9a1256d: fix(router): throw on conflicting param names at the same path segment
+
+  Adding sibling routes like `/:id` and `/:name` at the same segment now throws a conflict error instead of registering ambiguous parameter names.
+
+- 9a1256d: fix(form): fail fast when `c.data()` is called after consuming `c.form()`
+
+  `c.form()` no longer caches a multipart parser on the context. If the request body has already been consumed through `c.form()`, a later call to `c.data()` now throws immediately instead of reusing stale parser state.
+
+- 9a1256d: fix(types): fix secure cookie type
+
 ## 6.1.0
 
 ### Minor Changes
