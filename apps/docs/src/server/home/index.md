@@ -1,6 +1,6 @@
 ---
 title: The Streaming Framework
-description: Build server-rendered applications with HTML and web standards.
+description: Server-rendered applications with standards.
 ---
 
 ## Introduction
