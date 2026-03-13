@@ -101,7 +101,6 @@
 @layer base {
 	:root {
 		--accent: var(--base-500);
-		--light-end: 0.05;
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -141,7 +140,7 @@
 
 @layer components {
 	pre {
-		@apply m-0 rounded-none px-4 text-base font-light sm:rounded-b-sm;
+		@apply m-0 rounded-none px-4 text-base font-light sm:rounded-b-md;
 	}
 
 	a:not(h1 a, h2 a, h3 a, h4 a),

@@ -9,19 +9,24 @@ export const codeControls: PluginSimple = (md: MarkdownIt) => {
 	md.renderer.rules.fence = (tokens, i, opts, env, self) => {
 		const token = tokens[i];
 
-		if (!token?.markup?.startsWith("`"))
+		if (!token?.markup?.startsWith("`")) {
 			return defaultFence(tokens, i, opts, env, self);
+		}
 
 		const code = defaultFence(tokens, i, opts, env, self);
-		const lang = token.info?.trim().split(/\s+/)[0] ?? "";
+		const lang = token.info?.trim().split(/\s+/).join() ?? "";
 		const escaped = Render.escape(token.content, true);
 
-		return /* html */ `
-<div class="bg-base-800 rounded-none sm:rounded-md my-6 -mx-4 sm:mx-0 shadow-sm selection:bg-base-50 selection:text-base-900 border border-base-800">
-	<div class="flex justify-between items-center pt-px px-4 sm:px-2 gap-2">
+		return `
+<div class="bg-base-900 rounded-none sm:rounded-md my-6 -mx-4 sm:mx-0 shadow-sm selection:bg-base-50 selection:text-base-900 *:rounded-t-md">
+	${
+		!lang.endsWith("hide")
+			? `<div class="flex justify-between items-center bg-base-800 pt-px px-4 sm:px-2 gap-2 rounded-t-md">
 		<div class="font-mono px-2 text-base-200 text-sm">${lang}</div>
 		${Share(escaped)}
-	</div>
+	</div>`
+			: ""
+	}
 	${code}
 </div>
 `.trim();
@@ -29,7 +34,7 @@ export const codeControls: PluginSimple = (md: MarkdownIt) => {
 };
 
 const Share = (value: string) =>
-	/* html */ `
+	`
 <drab-share text="${value}">
 	<button
 		data-trigger

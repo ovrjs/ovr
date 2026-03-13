@@ -8,38 +8,32 @@ export const page = o.Route.get("/", (c) => {
 
 	return (
 		<Layout head={<Meta {...result.frontmatter} />}>
-			<h1>{result.frontmatter.title}</h1>
+			<h1 class="mb-4">{result.frontmatter.title}</h1>
 
-			<p class="text-lg">The Streaming Framework</p>
+			<p class="mb-7 text-lg">{result.frontmatter.description}</p>
 
-			<hr />
-
-			<div class="mb-5 grid gap-4 sm:grid-cols-2">
-				<Features />
+			<div class="mb-7 flex gap-3">
+				<a href="/01-get-started" class="button h-11 px-5 text-base">
+					Get Started
+				</a>
+				<a
+					href="/demo/memory"
+					data-no-prefetch
+					class="button ghost h-11 px-5 text-base"
+				>
+					Demo
+				</a>
 			</div>
 
-			<a
-				href="/demo/memory"
-				data-no-prefetch
-				class="bg-foreground block rounded-md p-5 no-underline transition-shadow hover:shadow-sm"
-			>
-				<h2 class="text-background mt-0 mb-1 text-2xl">Demo</h2>
-				<p class="text-muted mb-0 font-light">
-					Check out the demos to see ovr in action.
-				</p>
-			</a>
+			<div class="mb-7 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+				<Features />
+			</div>
 
 			<hr />
 
 			{o.Render.html(result.html)}
 
 			<hr />
-
-			<div class="mb-12 flex justify-center">
-				<a href="/01-get-started" class="button h-12 px-5 text-lg">
-					Get Started
-				</a>
-			</div>
 		</Layout>
 	);
 });
