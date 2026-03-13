@@ -118,12 +118,11 @@
 		--shiki-token-string-expression: var(--base-200);
 		--shiki-token-punctuation: var(--base-500);
 		--shiki-token-link: var(--base-300);
-
-		scrollbar-gutter: stable;
 	}
 
 	* {
 		scroll-padding-block-start: calc(var(--spacing) * 4);
+		scrollbar-gutter: stable;
 	}
 
 	body {
