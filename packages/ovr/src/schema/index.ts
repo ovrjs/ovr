@@ -1498,7 +1498,11 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			const values = this.#sanitize(
 				this.names.reduce<Record<string, unknown>>((data, name) => {
 					if (stateInput.searchParams.has(name)) {
-						const value = this.shape[name]!.read(stateInput.searchParams, name);
+						const value = FieldSchema.read(
+							this.shape[name]!,
+							stateInput.searchParams,
+							name,
+						);
 
 						if (value != null) data[name] = value;
 					}
@@ -1630,7 +1634,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 		for (const [name, field] of Object.entries(this.shape)) {
 			if (!field.streaming) {
-				const value = field.read(form, name);
+				const value = FieldSchema.read(field, form, name);
 				const result = field.parse(value, [...path, name]);
 
 				if (result.issues) {
@@ -1784,7 +1788,7 @@ class FieldSchema<
 	Stream extends boolean | undefined = undefined,
 > extends Schema<Output> {
 	/** Read the value from form data */
-	readonly read: Field.Read;
+	readonly #read: Field.Read;
 
 	/** Field type */
 	readonly type: Type;
@@ -1822,7 +1826,8 @@ class FieldSchema<
 	constructor(
 		options: Field.Options<Values, Tag>,
 		parse: Schema<Output> | Schema.Parse.Constructor<Output>,
-		read?: Field.Read,
+		// default to a single value, treating blank as missing
+		read: Field.Read = (data, name) => data.get(name) || undefined,
 		parts = 1,
 		stream?: Stream,
 		persist = false,
@@ -1832,19 +1837,25 @@ class FieldSchema<
 		this.#options = options;
 		this.tag = (options.tag ?? "input") as Tag;
 		this.values = options.values as Values;
-
-		this.read =
-			read ??
-			// default to .get()
-			((data, name) => {
-				const v = data.get(name);
-				return v == null ? undefined : v;
-			});
-
+		this.#read = read;
 		this.type = options.props?.type as Type;
 		this.parts = parts;
 		this.streaming = stream;
 		this.#persist = persist;
+	}
+
+	/**
+	 * @param field Field instance
+	 * @param data Form data source
+	 * @param name HTML name attribute
+	 * @returns Raw field input
+	 */
+	static read(
+		field: Field.Any,
+		data: FormData | URLSearchParams,
+		name: string,
+	) {
+		return field.#read(data, name);
 	}
 
 	/**
@@ -1856,7 +1867,7 @@ class FieldSchema<
 		return new FieldSchema<Output, Tag, Type, Values, true>(
 			this.#options,
 			this.parse,
-			this.read,
+			this.#read,
 			this.parts,
 			true,
 			this.#persist,
@@ -1880,7 +1891,7 @@ class FieldSchema<
 		return new FieldSchema<Output, Tag, Type, Values, Stream>(
 			this.#options,
 			this.parse,
-			this.read,
+			this.#read,
 			this.parts,
 			this.streaming,
 			true,
@@ -1900,7 +1911,7 @@ class FieldSchema<
 		return new FieldSchema<O, Tag, Type, Values, Stream>(
 			this.#options,
 			parse,
-			this.read,
+			this.#read,
 			this.parts,
 			this.streaming,
 			this.#persist,
@@ -2133,14 +2144,23 @@ export namespace Field {
 	}
 
 	/**
+	 * Raw field value before schema parsing.
+	 *
+	 * Single-value fields read one entry, multi-value fields read all entries,
+	 * and checkboxes read presence.
+	 */
+	export type Input =
+		| FormDataEntryValue
+		| FormDataEntryValue[]
+		| boolean
+		| undefined;
+
+	/**
 	 * @param data FormData or URLSearchParams
 	 * @param name HTML name attribute
 	 * @returns Resolved value read from the form data
 	 */
-	export type Read = (
-		data: FormData | URLSearchParams,
-		name: string,
-	) => unknown;
+	export type Read = (data: FormData | URLSearchParams, name: string) => Input;
 
 	/** Form field tag name */
 	export type Tag = "input" | "textarea" | "select";
@@ -2420,16 +2440,17 @@ export namespace Field {
 
 /** Field factory functions */
 export class Field {
-	/** Default message for missing string-like field values. */
+	// this is used instead of the defaults for example "Expected string"
+	// since "string" doesn't make sense to end users
+	/** Default message for required field values. */
 	static readonly #required = "Required field";
 
 	/**
-	 * @param data Form data
-	 * @param name HTML name attribute
-	 * @returns Field value or `undefined` when blank
+	 * @param value Raw form entry
+	 * @returns `true` when the file input contains a real file value
 	 */
-	static #read(data: FormData | URLSearchParams, name: string) {
-		return data.get(name) || undefined;
+	static #nonEmptyFile(value: FormDataEntryValue | null) {
+		return value instanceof File && (value.name !== "" || value.size > 0);
 	}
 
 	/**
@@ -2437,8 +2458,9 @@ export class Field {
 	 * @param name HTML name attribute
 	 * @returns Field values or `undefined` when missing
 	 */
-	static #list(data: FormData | URLSearchParams, name: string) {
+	static #readMany(data: FormData | URLSearchParams, name: string) {
 		const value = data.getAll(name);
+
 		return value.length ? value : undefined;
 	}
 
@@ -2449,13 +2471,7 @@ export class Field {
 	static #input<T extends Field.Type>(
 		props: Field.Props.Input & { type: T },
 	): Field.Instance<string, "input", T> {
-		return new FieldSchema(
-			{ props },
-			Schema.string(Field.#required).preprocess((value) =>
-				value == null ? value : String(value),
-			),
-			Field.#read,
-		);
+		return new FieldSchema({ props }, Schema.string(Field.#required));
 	}
 
 	/**
@@ -2582,7 +2598,6 @@ export class Field {
 		return new FieldSchema(
 			{ props: { ...props, type: "email" } },
 			Schema.string(Field.#required).email(message),
-			Field.#read,
 		);
 	}
 
@@ -2600,7 +2615,6 @@ export class Field {
 		return new FieldSchema(
 			{ props: { ...props, type: "url" } },
 			Schema.string(Field.#required).url(message),
-			Field.#read,
 		);
 	}
 
@@ -2613,10 +2627,10 @@ export class Field {
 	): Field.Instance<number, "input", T> {
 		return new FieldSchema(
 			{ props },
-			Schema.number().preprocess((value) =>
+			Schema.number(Field.#required).preprocess((value) =>
+				// form submissions read numeric controls as strings
 				value == null || value === "" ? undefined : Number(value),
 			),
-			Field.#read,
 		);
 	}
 
@@ -2663,32 +2677,37 @@ export class Field {
 
 	/**
 	 * @param props Input props
-	 * @param message Issue message when invalid
 	 * @returns File input field
 	 */
 	static file(
 		props?: Field.Props.Input,
-		message?: string,
 	): Field.Instance<File, "input", "file"> {
 		return new FieldSchema(
 			{ props: { ...props, type: "file" } },
-			Schema.instance(File, message),
+			Schema.instance(File, Field.#required),
+			(data, name) => {
+				const value = data.get(name);
+
+				return (Field.#nonEmptyFile(value) && value) || undefined;
+			},
 		);
 	}
 
 	/**
 	 * @param props Input props
-	 * @param message Issue message when invalid
 	 * @returns Multiple file input field
 	 */
 	static files(
 		props?: Field.Props.Input,
-		message = Field.#required,
 	): Field.Instance<File[], "input", "file"> {
 		return new FieldSchema(
 			{ props: { ...props, type: "file", multiple: true } },
-			Schema.array(Schema.instance(File, message), message),
-			Field.#list,
+			Schema.array(Schema.instance(File, Field.#required), Field.#required),
+			(data, name) => {
+				const value = data.getAll(name).filter(Field.#nonEmptyFile);
+
+				return value.length ? value : undefined;
+			},
 			Infinity,
 		);
 	}
@@ -2697,18 +2716,16 @@ export class Field {
 	 * @template V Value type
 	 * @param values Checkbox values
 	 * @param props Input props
-	 * @param message Issue message when invalid
 	 * @returns Checkbox group input field
 	 */
 	static checkboxes<const V extends string>(
 		values: readonly [V, ...V[]],
 		props?: Field.Props.Input,
-		message = Field.#required,
 	): Field.Instance<V[], "input", "checkbox", readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ values, props: { ...props, type: "checkbox" } },
-			Schema.array(Schema.enum(values, message), message),
-			Field.#list,
+			Schema.array(Schema.enum(values, Field.#required), Field.#required),
+			Field.#readMany,
 			values.length,
 		);
 	}
@@ -2717,17 +2734,15 @@ export class Field {
 	 * @template V Value type
 	 * @param values Radio button values
 	 * @param props Input props
-	 * @param message Issue message when invalid
 	 * @returns Radio group input field
 	 */
 	static radio<const V extends string>(
 		values: readonly [V, ...V[]],
 		props?: Field.Props.Input,
-		message?: string,
 	): Field.Instance<V, "input", "radio", readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ values, props: { ...props, type: "radio" } },
-			Schema.enum(values, message),
+			Schema.enum(values, Field.#required),
 		);
 	}
 
@@ -2740,10 +2755,7 @@ export class Field {
 	): Field.Instance<string, "textarea"> {
 		return new FieldSchema(
 			{ tag: "textarea", props },
-			Schema.string(Field.#required).preprocess((value) =>
-				value == null ? value : String(value),
-			),
-			Field.#read,
+			Schema.string(Field.#required),
 		);
 	}
 
@@ -2751,17 +2763,15 @@ export class Field {
 	 * @template V Value type
 	 * @param values Select options
 	 * @param props Select props
-	 * @param message Issue message when invalid
 	 * @returns Select field
 	 */
 	static select<const V extends string>(
 		values: readonly [V, ...V[]],
 		props?: Field.Props.Select,
-		message?: string,
 	): Field.Instance<V, "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ tag: "select", values, props },
-			Schema.enum(values, message),
+			Schema.enum(values, Field.#required),
 		);
 	}
 
@@ -2769,18 +2779,16 @@ export class Field {
 	 * @template V Value type
 	 * @param values Select options
 	 * @param props Select props
-	 * @param message Issue message when invalid
 	 * @returns Multi-select field
 	 */
 	static multiselect<const V extends string>(
 		values: readonly [V, ...V[]],
 		props?: Field.Props.Select,
-		message = Field.#required,
 	): Field.Instance<V[], "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ tag: "select", values, props: { ...props, multiple: true } },
-			Schema.array(Schema.enum(values, message), message),
-			Field.#list,
+			Schema.array(Schema.enum(values, Field.#required), Field.#required),
+			Field.#readMany,
 			values.length,
 		);
 	}

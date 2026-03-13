@@ -433,7 +433,7 @@ describe("Preprocess schemas", () => {
 		const field = Field.number();
 
 		expect(valid(field.parse("0"))).toBe(0);
-		expect(invalid(field.parse(""))[0]?.expected).toBe("number");
+		expect(invalid(field.parse(""))[0]?.message).toBe("Required field");
 	});
 
 	test("field number rejects non-finite coerced values", () => {
@@ -443,6 +443,11 @@ describe("Preprocess schemas", () => {
 	test("field text still parses blank strings directly", () => {
 		expect(valid(Field.text().default("fallback").parse(""))).toBe("");
 		expect(valid(Field.textarea().default("fallback").parse(""))).toBe("");
+	});
+
+	test("field text no longer coerces non-string values", () => {
+		expect(invalid(Field.text().parse(1))[0]?.expected).toBe("string");
+		expect(invalid(Field.textarea().parse(true))[0]?.expected).toBe("string");
 	});
 
 });
@@ -530,6 +535,35 @@ describe("Form schema", () => {
 		data.set("count", "");
 
 		expect(valid(await form.parse(data))).toEqual({ age: undefined, count: 5 });
+	});
+
+	test("empty file inputs are treated as missing during form parsing", async () => {
+		const form = Form.from({
+			license: Field.file().optional(),
+			uploads: Field.files().optional(),
+		});
+		const data = new FormData();
+		const empty = new File([""], "", {
+			type: "application/octet-stream",
+		});
+
+		data.set("license", empty);
+		data.append("uploads", empty);
+
+		expect(valid(await form.parse(data))).toEqual({
+			license: undefined,
+			uploads: undefined,
+		});
+	});
+
+	test("zero-byte named files are preserved during form parsing", async () => {
+		const form = Form.from({ license: Field.file() });
+		const data = new FormData();
+		const file = new File([""], "license.pdf", { type: "application/pdf" });
+
+		data.set("license", file);
+
+		expect(valid(await form.parse(data))).toEqual({ license: file });
 	});
 
 	test("missing multi-value fields are invalid by default", async () => {
@@ -697,6 +731,51 @@ describe("Form schema", () => {
 		expect(result.issues.map((issue) => issue.path[0])).toEqual([
 			"name",
 			"bio",
+		]);
+	});
+
+	test("required single-value non-text fields use the required message", async () => {
+		const form = Form.from({
+			age: Field.number(),
+			role: Field.radio(["reader", "admin"]),
+			sort: Field.select(["relevance", "newest"]),
+			avatar: Field.file(),
+		});
+		const result = formInvalid(await form.parse(new FormData()));
+
+		expect(result.issues.map((issue) => issue.path[0])).toEqual([
+			"age",
+			"role",
+			"sort",
+			"avatar",
+		]);
+		expect(result.issues.map((issue) => issue.message)).toEqual([
+			"Required field",
+			"Required field",
+			"Required field",
+			"Required field",
+		]);
+	});
+
+	test("blank single-value select and radio fields are treated as missing", async () => {
+		const form = Form.from({
+			role: Field.radio(["reader", "admin"]),
+			sort: Field.select(["relevance", "newest"]),
+		});
+		const data = new FormData();
+
+		data.set("role", "");
+		data.set("sort", "");
+
+		const result = formInvalid(await form.parse(data));
+
+		expect(result.issues.map((issue) => issue.path[0])).toEqual([
+			"role",
+			"sort",
+		]);
+		expect(result.issues.map((issue) => issue.message)).toEqual([
+			"Required field",
+			"Required field",
 		]);
 	});
 
