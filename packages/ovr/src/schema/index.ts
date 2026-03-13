@@ -1552,15 +1552,14 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						return {
 							...(result.data as Form.State<Shape>),
 							values:
-								values || current
-									? ({ ...values, ...current } as Form.Value.Map<Shape>)
-									: undefined,
+								(values || current) &&
+								({ ...values, ...current } as Form.Value.Map<Shape>),
 						};
 					}
 				} catch {}
 			}
 
-			return values ? { id: this.#id, values } : undefined;
+			return values && { id: this.#id, values };
 		}
 	}
 
