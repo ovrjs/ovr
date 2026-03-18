@@ -256,7 +256,7 @@ export class Context<
 
 				for (const param of FormSchema.params) url.searchParams.delete(param);
 
-				if (result.search) url.searchParams.set(...result.search);
+				if (result.search) url.searchParams.set(...result.search[0]);
 
 				return Object.assign(result, { url }) as Context.Result<Shape>;
 			}

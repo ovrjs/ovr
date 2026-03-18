@@ -208,6 +208,47 @@ describe("Route schema helpers", () => {
 		expect(url.searchParams.get("_form")).toBeTruthy();
 	});
 
+	test("invalid POST schema parse exposes search object for explicit page redirects", async () => {
+		const page = Route.get("/source", (c) => c.text("source"));
+		const submit = Route.post(
+			"/submit",
+			{ role: Field.radio(["reader", "admin"]) },
+			async (c) => {
+				const result = await c.data();
+
+				if (result.issues) {
+					c.redirect(page.url({ search: result.search }), 303);
+					return;
+				}
+
+				c.text("ok");
+			},
+		);
+		const app = new App().use(page).use(submit);
+		const data = new FormData();
+
+		data.set("role", "owner");
+
+		const res = await app.fetch(
+			new Request("http://localhost:5173/submit", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+
+		expect(res.status).toBe(303);
+
+		const location = res.headers.get("location");
+		if (!location) throw new Error("Expected redirect location");
+
+		const url = new URL(location, "http://localhost:5173");
+
+		expect(url.pathname).toBe("/source");
+		expect(url.searchParams.get("_form")).toBeTruthy();
+		expect(url.searchParams.get("_return")).toBeNull();
+	});
+
 	test("invalid POST schema parse falls back to request URL when _return is missing", async () => {
 		const submit = Route.post(
 			"/submit",

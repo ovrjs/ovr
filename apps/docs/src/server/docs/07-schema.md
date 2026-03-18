@@ -106,6 +106,8 @@ ovr also normalizes a few common HTML form quirks before validation:
 2. `result.url` contains the chosen page URL plus the encoded `_form` state in a search param.
 3. Render the next request with `state={c.url}`.
 
+When you want to choose the destination route explicitly, use the low-level `result.search` `_form` payload with a route helper such as `page.url({ search: result.search })`.
+
 ### Persisted form state
 
 ovr stores issue metadata and any values marked with `.persist()` in the `_form` search param so the next render can:

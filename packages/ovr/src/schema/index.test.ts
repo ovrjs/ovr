@@ -40,7 +40,7 @@ const decodeState = <S extends Form.Shape>(
 	if (!search) throw new Error("Expected _form search state");
 
 	return JSON.parse(
-		Codec.decode(Codec.Base64Url.decode(search[1])),
+		Codec.decode(Codec.Base64Url.decode(search[0][1])),
 	) as Form.State<S>;
 };
 
@@ -828,7 +828,7 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const state = decodeState(result.search);
 
-		expect(result.search?.[0]).toBe("_form");
+		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values).toBeUndefined();
 		expect(state.id).toBeTruthy();
 		expect(state.issues?.length).toBeGreaterThan(0);
@@ -849,7 +849,7 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const state = decodeState(result.search);
 
-		expect(result.search?.[0]).toBe("_form");
+		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values?.name).toBe("x");
 		expect(state.values?.role).toBe("owner");
 		expect(state.values?.password).toBeUndefined();
@@ -887,7 +887,7 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(params));
 		const state = decodeState(result.search);
 
-		expect(result.search?.[0]).toBe("_form");
+		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values).toBeUndefined();
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
@@ -906,7 +906,7 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const state = decodeState(result.search);
 
-		expect(result.search?.[0]).toBe("_form");
+		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values).toBeUndefined();
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
@@ -960,7 +960,7 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const url = new URL("https://example.com/form");
 
-		url.searchParams.set("_form", result.search![1]);
+		url.searchParams.set("_form", result.search![0][1]);
 
 		const name = await new Render(null).string(
 			form.Field({ name: "name", state: url }),
@@ -986,7 +986,7 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const url = new URL("https://example.com/form");
 
-		url.searchParams.set("_form", result.search![1]);
+		url.searchParams.set("_form", result.search![0][1]);
 
 		const html = await new Render(null).string(form.Fields({ state: url }));
 		const autofocus = html.match(/autofocus/g) ?? [];
@@ -1066,7 +1066,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set("q", "travel backpack");
 		url.searchParams.set("sort", "oldest");
-		url.searchParams.set("_form", result.search![1]);
+		url.searchParams.set("_form", result.search![0][1]);
 
 		const q = await new Render(null).string(
 			form.Field({ name: "q", state: url }),

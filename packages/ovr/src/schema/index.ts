@@ -1345,8 +1345,8 @@ export namespace Form {
 		>;
 
 		export namespace Result {
-			/** Form search param key/value */
-			export type Search = ["_form", string] | undefined;
+			/** Form search params iterable */
+			export type Search = [[(typeof Form.params)[1], string]] | undefined;
 		}
 	}
 }
@@ -1669,7 +1669,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					);
 
 					if (state.byteLength <= Form.#maxStateBytes) {
-						search = [Form.params[1], Codec.Base64Url.encode(state)];
+						search = [[Form.params[1], Codec.Base64Url.encode(state)]];
 						break;
 					}
 				}
@@ -1683,7 +1683,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				);
 
 				if (state.byteLength <= Form.#maxStateBytes) {
-					search = [Form.params[1], Codec.Base64Url.encode(state)];
+					search = [[Form.params[1], Codec.Base64Url.encode(state)]];
 				}
 			}
 
