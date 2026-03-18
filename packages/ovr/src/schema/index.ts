@@ -1224,7 +1224,9 @@ class ObjectSchema<
 	 * @param names Non-empty list of key names to keep
 	 * @returns New object schema with only selected keys
 	 */
-	pick<N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) {
+	pick<N extends ShapeUtil.Name<Shape>>(
+		names: readonly [N, ...N[]],
+	): Schema.Object<Pick<Shape, N>, Mode> {
 		return new ObjectSchema(ShapeUtil.pick(this.shape, names), this.#mode);
 	}
 
@@ -1235,7 +1237,9 @@ class ObjectSchema<
 	 * @param names Non-empty list of key names to remove
 	 * @returns New object schema without selected keys
 	 */
-	omit<N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) {
+	omit<N extends ShapeUtil.Name<Shape>>(
+		names: readonly [N, ...N[]],
+	): Schema.Object<Omit<Shape, N>, Mode> {
 		return new ObjectSchema(ShapeUtil.omit(this.shape, names), this.#mode);
 	}
 
@@ -1244,7 +1248,7 @@ class ObjectSchema<
 	 *
 	 * @returns New object schema in strict mode
 	 */
-	strict() {
+	strict(): Schema.Object<Shape, "strict"> {
 		return new ObjectSchema(this.shape, "strict");
 	}
 
@@ -1253,7 +1257,7 @@ class ObjectSchema<
 	 *
 	 * @returns New object schema in loose mode
 	 */
-	loose() {
+	loose(): Schema.Object<Shape, "loose"> {
 		return new ObjectSchema(this.shape, "loose");
 	}
 }
