@@ -1,5 +1,17 @@
 # ovr
 
+## 6.2.1
+
+### Patch Changes
+
+- 8a5c7cd: fix(form): make `result.search` URLSearchParams-compatible
+
+  The undocumented `result.search` value returned from invalid form parses is now exposed as a single-entry search params init (`[["_form", value]]`). This lets it work directly with `new URLSearchParams(...)`, route `url({ search })` helpers, and similar URL APIs without reshaping the value first.
+
+- 6e5febf: fix(schema): avoid TS7056 on exported object schemas using mode helpers
+
+  `Schema.object(...).strict()` and `Schema.object(...).loose()` now return the public object schema alias instead of exposing the concrete internal object schema type. This avoids declaration emit failures like TS7056 when exporting larger object schemas. The same return-type cleanup also applies to `pick()` and `omit()`.
+
 ## 6.2.0
 
 ### Minor Changes
