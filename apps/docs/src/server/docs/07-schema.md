@@ -85,7 +85,7 @@ The `state` prop for each component takes the current page `c.url`. The URL cont
 
 ovr also normalizes a few common HTML form quirks before validation:
 
-- Single-value text-like inputs read blank values as missing (`undefined`) during form parsing, so `.optional()` and `.default(...)` behave like you would expect.
+- Single-value text-like inputs read blank values as missing during form parsing, so optional fields are omitted from the parsed output and `.default(...)` still applies like you would expect.
 - `Field.number()` and `Field.range()` coerce submitted strings into numbers, while blank submissions still count as missing instead of becoming `0`.
 - `Field.checkbox()` reads presence as a boolean, so omitted checkboxes become `false`.
 - `Field.file()` and `Field.files()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.

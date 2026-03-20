@@ -14,6 +14,10 @@ type FormInvalid<S extends Form.Shape> = Exclude<
 	FormValid<S>
 >;
 
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+type Assert<T extends true> = T;
+
 const valid = <T>(result: Schema.Parse.Result<T>): T => {
 	if ("issues" in result) throw new Error("Expected no issues");
 	return result.data;
@@ -321,9 +325,43 @@ describe("Array and object schemas", () => {
 		});
 		const result = valid(schema.parse({ a: "hello" }));
 
-		expect(result.a).toBe("hello");
-		expect(result.b).toBeUndefined();
-		expect(result.c).toBe("x");
+		expect(result).toEqual({ a: "hello", c: "x" });
+	});
+
+	test("object inference marks undefined outputs optional", () => {
+		const schema = Schema.object({
+			a: Schema.string(),
+			b: Schema.number().optional(),
+			c: Schema.boolean().nullish(),
+		});
+		const result = valid(schema.parse({ a: "hello" })) satisfies {
+			a: string;
+			b?: number;
+			c?: boolean | null;
+		};
+		type Got = Schema.Infer<typeof schema>;
+		type Want = {
+			a: string;
+			b?: number;
+			c?: boolean | null;
+		};
+		type Check = Assert<Same<Got, Want>>;
+		const check: Check = true;
+
+		expect(check).toBe(true);
+		expect(result).toEqual({ a: "hello" });
+	});
+
+	test("object keeps defined nullish values", () => {
+		const schema = Schema.object({
+			a: Schema.string(),
+			b: Schema.boolean().nullish(),
+		});
+
+		expect(valid(schema.parse({ a: "hello", b: null }))).toEqual({
+			a: "hello",
+			b: null,
+		});
 	});
 
 	test("object shape methods pick and omit work", () => {
@@ -534,7 +572,12 @@ describe("Form schema", () => {
 		data.set("age", "");
 		data.set("count", "");
 
-		expect(valid(await form.parse(data))).toEqual({ age: undefined, count: 5 });
+		const result = formValid(await form.parse(data)).data satisfies {
+			age?: number;
+			count: number;
+		};
+
+		expect(result).toEqual({ count: 5 });
 	});
 
 	test("empty file inputs are treated as missing during form parsing", async () => {
@@ -550,10 +593,12 @@ describe("Form schema", () => {
 		data.set("license", empty);
 		data.append("uploads", empty);
 
-		expect(valid(await form.parse(data))).toEqual({
-			license: undefined,
-			uploads: undefined,
-		});
+		const result = formValid(await form.parse(data)).data satisfies {
+			license?: File;
+			uploads?: File[];
+		};
+
+		expect(result).toEqual({});
 	});
 
 	test("zero-byte named files are preserved during form parsing", async () => {
@@ -599,9 +644,7 @@ describe("Form schema", () => {
 		});
 
 		expect(valid(await form.parse(new FormData()))).toEqual({
-			roles: undefined,
 			tags: ["a"],
-			uploads: undefined,
 		});
 	});
 
@@ -622,7 +665,6 @@ describe("Form schema", () => {
 		data.set("week", "");
 
 		expect(valid(await form.parse(data))).toEqual({
-			date: undefined,
 			time: "09:00",
 			datetime: "2026-09-01T09:00",
 			month: "2026-09",
@@ -641,7 +683,6 @@ describe("Form schema", () => {
 		params.set("time", "");
 
 		expect(valid(await form.parse(params))).toEqual({
-			date: undefined,
 			time: "09:00",
 		});
 	});
@@ -671,15 +712,11 @@ describe("Form schema", () => {
 		data.set("bio", "");
 
 		expect(valid(await form.parse(data))).toEqual({
-			text: undefined,
-			password: undefined,
 			search: "fallback",
 			tel: "555-0100",
 			color: "#000000",
 			hidden: "token",
-			email: undefined,
 			url: "https://example.com",
-			bio: undefined,
 		});
 	});
 
@@ -698,10 +735,7 @@ describe("Form schema", () => {
 		params.set("bio", "");
 
 		expect(valid(await form.parse(params))).toEqual({
-			text: undefined,
-			email: undefined,
 			url: "https://example.com",
-			bio: undefined,
 		});
 	});
 

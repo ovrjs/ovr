@@ -69,8 +69,8 @@ export namespace Schema {
 			? // regular schema
 				Output
 			: S extends Object.Shape
-				? // infer value of each schema (value) in the shape
-					{ [K in keyof S]: Infer<S[K]> }
+				? // object shape with optional keys preserved
+					Object.Infer<S>
 				: S extends any[]
 					? // array - better zod compat
 						Infer<S[number]>[]
@@ -104,6 +104,31 @@ export namespace Schema {
 
 		/** Object parsing mode. */
 		export type Mode = "strip" | "strict" | "loose";
+
+		/**
+		 * Names of shape keys whose output includes `undefined`.
+		 *
+		 * @template S Object shape
+		 */
+		export type Optional<S extends Shape> = {
+			[K in keyof S]-?: undefined extends Schema.Infer<S[K]> ? K : never;
+		}[keyof S];
+
+		/**
+		 * Names of shape keys whose output does not include `undefined`.
+		 *
+		 * @template S Object shape
+		 */
+		export type Required<S extends Shape> = Exclude<keyof S, Optional<S>>;
+
+		/**
+		 * Infer an object shape while turning `undefined` unions into optional keys.
+		 *
+		 * @template S Object shape
+		 */
+		export type Infer<S extends Shape> = {
+			[K in Required<S>]: Schema.Infer<S[K]>;
+		} & { [K in Optional<S>]?: Exclude<Schema.Infer<S[K]>, undefined> };
 
 		/**
 		 * Object output type by mode.
@@ -1162,7 +1187,7 @@ class ObjectSchema<
 
 				if (result.issues) {
 					issues.push(...result.issues);
-				} else {
+				} else if (result.data !== undefined) {
 					data[name] = result.data;
 				}
 			}
@@ -1642,7 +1667,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 				if (result.issues) {
 					issues.push(...result.issues);
-				} else {
+				} else if (result.data !== undefined) {
 					data[name] = result.data;
 				}
 
