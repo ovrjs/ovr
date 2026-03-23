@@ -118,9 +118,9 @@ export class JSX {
 	 * @param props containing `children` to render
 	 * @yields concatenated children
 	 */
-	static async *Fragment(
-		props: { children?: JSX.Element },
-	): AsyncGenerator<Render.Chunk, void, unknown> {
+	static async *Fragment(props: {
+		children?: JSX.Element;
+	}): AsyncGenerator<Render.Chunk, void, unknown> {
 		yield* new Render(props.children);
 	}
 }

@@ -91,7 +91,9 @@ describe("Primitive schemas", () => {
 	test("number validates finite number and rejects non-finite values", () => {
 		expect(valid(Schema.number().parse(1))).toBe(1);
 		expect(invalid(Schema.number().parse(NaN))[0]?.expected).toBe("number");
-		expect(invalid(Schema.number().parse(Infinity))[0]?.expected).toBe("number");
+		expect(invalid(Schema.number().parse(Infinity))[0]?.expected).toBe(
+			"number",
+		);
 		expect(invalid(Schema.number().parse(-Infinity))[0]?.expected).toBe(
 			"number",
 		);
@@ -340,11 +342,7 @@ describe("Array and object schemas", () => {
 			c?: boolean | null;
 		};
 		type Got = Schema.Infer<typeof schema>;
-		type Want = {
-			a: string;
-			b?: number;
-			c?: boolean | null;
-		};
+		type Want = { a: string; b?: number; c?: boolean | null };
 		type Check = Assert<Same<Got, Want>>;
 		const check: Check = true;
 
@@ -487,7 +485,6 @@ describe("Preprocess schemas", () => {
 		expect(invalid(Field.text().parse(1))[0]?.expected).toBe("string");
 		expect(invalid(Field.textarea().parse(true))[0]?.expected).toBe("string");
 	});
-
 });
 
 describe("Form schema", () => {
@@ -586,9 +583,7 @@ describe("Form schema", () => {
 			uploads: Field.files().optional(),
 		});
 		const data = new FormData();
-		const empty = new File([""], "", {
-			type: "application/octet-stream",
-		});
+		const empty = new File([""], "", { type: "application/octet-stream" });
 
 		data.set("license", empty);
 		data.append("uploads", empty);
@@ -643,9 +638,7 @@ describe("Form schema", () => {
 			uploads: Field.files().optional(),
 		});
 
-		expect(valid(await form.parse(new FormData()))).toEqual({
-			tags: ["a"],
-		});
+		expect(valid(await form.parse(new FormData()))).toEqual({ tags: ["a"] });
 	});
 
 	test("blank date-like fields are treated as missing during form parsing", async () => {
@@ -682,9 +675,7 @@ describe("Form schema", () => {
 		params.set("date", "");
 		params.set("time", "");
 
-		expect(valid(await form.parse(params))).toEqual({
-			time: "09:00",
-		});
+		expect(valid(await form.parse(params))).toEqual({ time: "09:00" });
 	});
 
 	test("blank single-value text fields are treated as missing", async () => {
@@ -1031,10 +1022,7 @@ describe("Form schema", () => {
 	});
 
 	test("render state without issues does not autofocus the first field", async () => {
-		const form = Form.from({
-			first: Field.text(),
-			second: Field.text(),
-		});
+		const form = Form.from({ first: Field.text(), second: Field.text() });
 		const url = new URL("https://example.com/form");
 
 		url.searchParams.set("first", "ross");

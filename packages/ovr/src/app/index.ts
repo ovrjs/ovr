@@ -64,11 +64,7 @@ export class App {
 	 * @param options configuration options
 	 */
 	constructor(options?: App.Options) {
-		this.#options = {
-			csrf: true,
-			trailingSlash: "never" as const,
-			...options,
-		};
+		this.#options = { csrf: true, trailingSlash: "never" as const, ...options };
 
 		if (this.#options.csrf) this.#global.push(App.#csrf);
 
