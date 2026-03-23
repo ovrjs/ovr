@@ -180,7 +180,6 @@ export class Render {
 
 					if (result.done) {
 						c.close();
-						gen.return();
 						return;
 					}
 
@@ -191,8 +190,8 @@ export class Render {
 						Codec.encode(String(result.value)),
 					);
 				},
-				cancel() {
-					gen.return();
+				async cancel() {
+					await gen.return();
 				},
 			},
 			{
@@ -291,13 +290,7 @@ export class Render {
 				}
 			}
 		} finally {
-			for (const gen of generators) {
-				try {
-					gen.return();
-				} catch {
-					// could have already returned
-				}
-			}
+			await Promise.allSettled(generators.map((gen) => gen.return()));
 		}
 	}
 }
