@@ -1,5 +1,15 @@
 # ovr
 
+## 6.2.3
+
+### Patch Changes
+
+- 44224ef: Fix `Schema.optional()`, `Schema.nullable()`, and `Schema.nullish()` types for newer TypeScript inference.
+
+  Fix JSX declaration emit for newer TypeScript versions so `ovr` builds without private field export errors.
+
+- dd961e7: Fix `Render.stream()` generator cleanup and related TypeScript issues in `render`, `jsx`, and test files.
+
 ## 6.2.2
 
 ### Patch Changes
