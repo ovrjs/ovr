@@ -2,8 +2,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { build } from "rolldown";
 
+/** @typedef {{ bytes: number, kb: number }} Size */
+
+/**
+ * @param {number} bytes
+ */
 const round = (bytes) => Math.round(bytes / 10) / 100;
 
+/**
+ * @param {import("rolldown").InputOption} input
+ */
 const getSize = async (input) => {
 	const result = await build({ input, output: { minify: true } });
 	const bytes = result.output[0].code.length;
@@ -11,15 +19,23 @@ const getSize = async (input) => {
 	return { bytes, kb: round(bytes) };
 };
 
+/**
+ * @param {Size} param0
+ */
 const format = ({ bytes, kb }) => `{ bytes: ${bytes}, kb: ${kb} }`;
 
-const isName = (value) => /^[A-Za-z_$][\w$]*$/u.test(value) && value !== "default";
+/**
+ * @param {string} value
+ */
+const isName = (value) =>
+	/^[A-Za-z_$][\w$]*$/u.test(value) && value !== "default";
 
 const temp = await fs.mkdtemp(path.join(process.cwd(), ".size-"));
 
 try {
 	const size = await getSize("entry.js");
 	const names = Object.keys(await import("ovr")).sort();
+	/** @type {[string, Size][]} */
 	const list = [];
 
 	for (const name of names) {
@@ -42,7 +58,9 @@ try {
 		]),
 		"export const sizes = {",
 		...named.map(([name]) => `\t${name},`),
-		...quoted.map(([name, value]) => `\t[${JSON.stringify(name)}]: ${format(value)},`),
+		...quoted.map(
+			([name, value]) => `\t[${JSON.stringify(name)}]: ${format(value)},`,
+		),
 		"} as const;",
 		"",
 	].join("\n");

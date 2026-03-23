@@ -63,7 +63,7 @@ export class JSX {
 	static async *jsx<P extends JSX.Props = JSX.Props>(
 		tag: ((props: P) => JSX.Element) | string,
 		props: P,
-	) {
+	): AsyncGenerator<Render.Chunk, void, unknown> {
 		// this function doesn't need to be called recursively
 		// JSX will be transformed into `jsx()` function calls automatically
 
@@ -118,7 +118,9 @@ export class JSX {
 	 * @param props containing `children` to render
 	 * @yields concatenated children
 	 */
-	static async *Fragment(props: { children?: JSX.Element }) {
+	static async *Fragment(
+		props: { children?: JSX.Element },
+	): AsyncGenerator<Render.Chunk, void, unknown> {
 		yield* new Render(props.children);
 	}
 }

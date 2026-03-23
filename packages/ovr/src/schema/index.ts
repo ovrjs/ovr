@@ -390,8 +390,8 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	optional(this: Schema<Output>): Schema<Output | undefined>;
 	optional(this: Schema<Output>) {
-		return this.derive((v, path) => {
-			if (v === undefined) return { data: v as Output | undefined };
+		return this.derive<Output | undefined>((v, path) => {
+			if (v === undefined) return { data: undefined };
 
 			return this.parse(v, path);
 		});
@@ -415,8 +415,8 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	nullable(this: Schema<Output>): Schema<Output | null>;
 	nullable(this: Schema<Output>) {
-		return this.derive((v, path) => {
-			if (v === null) return { data: v as Output | null };
+		return this.derive<Output | null>((v, path) => {
+			if (v === null) return { data: null };
 
 			return this.parse(v, path);
 		});
@@ -440,8 +440,8 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	nullish(this: Schema<Output>): Schema<Output | null | undefined>;
 	nullish(this: Schema<Output>) {
-		return this.derive((v, path) => {
-			if (v == null) return { data: v as Output | null | undefined };
+		return this.derive<Output | null | undefined>((v, path) => {
+			if (v == null) return { data: v };
 
 			return this.parse(v, path);
 		});

@@ -2,6 +2,9 @@
 	"name": "@ovrjs/bench",
 	"private": true,
 	"type": "module",
+	"scripts": {
+		"check": "tsc"
+	},
 	"dependencies": {
 		"ovr": "*"
 	},

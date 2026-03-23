@@ -38,9 +38,9 @@
 		"!src/**/*.test.ts"
 	],
 	"scripts": {
-		"check": "tsc --noEmit",
-		"dev": "tsc --watch",
-		"build": "tsc && cp ../../LICENSE.md dist"
+		"check": "tsc",
+		"dev": "tsc --watch -p tsconfig.build.json",
+		"build": "tsc -p tsconfig.build.json && cp ../../LICENSE.md dist"
 	},
 	"dependencies": {
 		"@standard-schema/spec": "^1.1.0"
