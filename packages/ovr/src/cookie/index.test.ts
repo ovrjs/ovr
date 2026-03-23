@@ -168,7 +168,8 @@ describe("Cookie Manager", () => {
 				partitioned: true,
 			});
 
-			const callArgs = appendSpy.mock.calls[0][1];
+			const callArgs = appendSpy.mock.calls[0]?.[1];
+			if (callArgs == null) throw new Error("Expected set-cookie append call");
 			expect(callArgs).toContain("HttpOnly");
 			expect(callArgs).toContain("Secure");
 			expect(callArgs).toContain("Partitioned");
@@ -184,7 +185,8 @@ describe("Cookie Manager", () => {
 				secure: true,
 			});
 
-			const callArgs = appendSpy.mock.calls[0][1];
+			const callArgs = appendSpy.mock.calls[0]?.[1];
+			if (callArgs == null) throw new Error("Expected set-cookie append call");
 			expect(callArgs).toContain("SameSite=Strict");
 			expect(callArgs).toContain("Priority=High");
 		});

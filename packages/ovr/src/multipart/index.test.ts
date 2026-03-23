@@ -273,9 +273,12 @@ describe("MultipartParser", () => {
 					expect(content).toBe(fieldValue);
 				}
 
+				const byte = rawBytes[i];
+				if (byte == null) throw new Error(`Expected byte at index ${i}`);
+
 				expect(
 					partCount,
-					`Failed when split at index ${i} ('${String.fromCharCode(rawBytes[i])}')`,
+					`Failed when split at index ${i} ('${String.fromCharCode(byte)}')`,
 				).toBe(1);
 			}
 		});
@@ -589,6 +592,7 @@ describe("MultipartParser", () => {
 
 			await expect(async () => {
 				for await (const part of new Multipart(req)) {
+					void part;
 					// Intentionally empty to trigger full drain and size check
 				}
 			}).rejects.toThrow("Payload Too Large");
@@ -690,6 +694,7 @@ describe("MultipartParser", () => {
 
 			await expect(async () => {
 				for await (const part of new Multipart(req, { payload: customSize })) {
+					void part;
 					// Intentionally empty to trigger full drain and size check
 				}
 			}).rejects.toThrow("Payload Too Large");
