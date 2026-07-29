@@ -58,6 +58,25 @@ test("GET /", async () => {
 	expect(text).toBe("hello world");
 });
 
+test("passes Request directly unless options are provided", async () => {
+	const req = new Request("http://localhost:5173/request");
+	const reuse = new App({ csrf: false }).use(
+		Route.get("/request", (c) => {
+			expect(c.req).toBe(req);
+			c.text("request");
+		}),
+		Route.post("/request", (c) => {
+			expect(c.req).not.toBe(req);
+			c.text(c.req.method);
+		}),
+	);
+
+	expect(await (await reuse.fetch(req)).text()).toBe("request");
+	expect(await (await reuse.fetch(req, { method: Method.post })).text()).toBe(
+		Method.post,
+	);
+});
+
 test("HEAD /", async () => {
 	const res = await appFetch("/", Method.head);
 

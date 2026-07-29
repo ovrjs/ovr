@@ -110,7 +110,12 @@ export class App {
 		resource: RequestInfo | URL,
 		options?: RequestInit,
 	) => {
-		const c = new Context(new Request(resource, options), this.#options);
+		const c = new Context(
+			resource instanceof Request && !options
+				? resource
+				: new Request(resource, options),
+			this.#options,
+		);
 
 		return Context.compose(
 			Object.assign(

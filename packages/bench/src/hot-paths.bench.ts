@@ -49,6 +49,12 @@ describe("routing hot path", () => {
 			await app.fetch("http://localhost:5173" + path);
 		}
 	});
+
+	bench("route Request objects", async () => {
+		for (const path of paths) {
+			await app.fetch(new Request("http://localhost:5173" + path));
+		}
+	});
 });
 
 describe("rendering hot path", () => {
