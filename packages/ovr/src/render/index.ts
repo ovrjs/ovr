@@ -1,8 +1,8 @@
 import type { JSX } from "../jsx/index.js";
 import { Codec, Size } from "../util/index.js";
 
-/** Settled result from reading the next chunk of a generator */
-type Next = {
+/** Completed generator read */
+type Read = {
 	/** Index of the generator within the merged list */
 	i: number;
 
@@ -256,18 +256,6 @@ export class Render {
 	}
 
 	/**
-	 * @param gen
-	 * @param i index of the generator within the list
-	 * @returns promise containing the index and the next result of the iteration
-	 */
-	static async #next(
-		gen: AsyncGenerator<Chunk, void, unknown>,
-		i: number,
-	): Promise<Next> {
-		return { i, result: await gen.next() };
-	}
-
-	/**
 	 * Merges `Render[]` into a single `AsyncGenerator`, resolving all in parallel.
 	 * The return of each `Render` is yielded from the generator with `done: true`.
 	 *
@@ -276,18 +264,19 @@ export class Render {
 	 */
 	static async *#merge(renders: Render[]) {
 		const generators = renders.map((render) => render[Symbol.asyncIterator]());
-		const settled: Next[] = [];
+		const ready: Read[] = [];
 		let cursor = 0;
 		let active = generators.length;
 		let notify: (() => void) | undefined;
 		let error: unknown;
 		let failed = false;
+		let value: Read;
 
 		// keep one read in flight per generator
 		const next = (i: number) => {
-			Render.#next(generators[i]!, i).then(
-				(value) => {
-					settled.push(value);
+			generators[i]!.next().then(
+				(result) => {
+					ready.push({ i, result });
 					notify?.();
 					notify = undefined;
 				},
@@ -299,26 +288,27 @@ export class Render {
 				},
 			);
 		};
-		let value: Next;
 
 		try {
 			for (let i = 0; i < active; i++) next(i);
 
 			while (active) {
-				if (cursor === settled.length) {
-					settled.length = cursor = 0;
+				if (cursor === ready.length) {
+					ready.length = cursor = 0;
 					if (!failed) await new Promise<void>((resolve) => (notify = resolve));
 				}
 
 				if (failed) throw error;
 
-				yield (value = settled[cursor++]!);
+				yield (value = ready[cursor++]!);
 
 				if (value.result.done) active--;
 				else next(value.i);
 			}
 		} finally {
-			await Promise.allSettled(generators.map((gen) => gen.return()));
+			if (active) {
+				await Promise.allSettled(generators.map((gen) => gen.return()));
+			}
 		}
 	}
 }

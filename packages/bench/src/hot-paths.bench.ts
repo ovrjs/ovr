@@ -69,4 +69,12 @@ describe("rendering hot path", () => {
 			));
 		});
 	}
+
+	bench("render 100 fragments", async () => {
+		for await (const _ of new o.Render(
+			Array.from({ length: 100 }, (_, i) =>
+				o.JSX.jsx(o.JSX.Fragment, { children: ["Hello, world!", i] }),
+			),
+		));
+	});
 });

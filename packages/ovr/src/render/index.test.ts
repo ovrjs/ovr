@@ -1,3 +1,4 @@
+import { JSX } from "../jsx/index.js";
 import { Render } from "./index.js";
 import { expect, test, vi } from "vitest";
 
@@ -20,6 +21,11 @@ test("escape attribute", () => {
 	expect(escaped.includes("&amp")).toBe(true);
 	expect(escaped.includes("<")).toBe(false);
 	expect(escaped.includes('"')).toBe(false);
+});
+
+test("fragment", () => {
+	const children = ["Hello", ", world!"];
+	expect(JSX.Fragment({ children })).toBe(children);
 });
 
 test("parallel children render in source order", async () => {

@@ -116,12 +116,10 @@ export class JSX {
 	 * JSX requires a `Fragment` export to resolve `<></>`
 	 *
 	 * @param props containing `children` to render
-	 * @yields concatenated children
+	 * @returns children to render
 	 */
-	static async *Fragment(props: {
-		children?: JSX.Element;
-	}): AsyncGenerator<Render.Chunk, void, unknown> {
-		yield* new Render(props.children);
+	static Fragment(props: { children?: JSX.Element }) {
+		return props.children;
 	}
 }
 
