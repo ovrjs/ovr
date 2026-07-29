@@ -248,21 +248,25 @@ export class Trie {
 
 	/**
 	 * @param pathname Path to find
+	 * @param start Start of the current segment within the pathname
 	 * @returns `Route` and the matched `params` if found, otherwise `null`
 	 */
-	find(pathname: string): { route: Route; params: Trie.Params } | null {
-		const segmentLength = this.seg.length;
+	find(
+		pathname: string,
+		start = 0,
+	): { route: Route; params: Trie.Params } | null {
+		const end = start + this.seg.length;
 
 		if (
 			// too short
-			pathname.length < segmentLength ||
+			pathname.length < end ||
 			// segment does not match current node segment
-			!pathname.startsWith(this.seg)
+			!pathname.startsWith(this.seg, start)
 		) {
 			return null;
 		}
 
-		if (pathname === this.seg) {
+		if (pathname.length === end) {
 			// reached the end of the path
 			if (this.route) return { route: this.route, params: {} };
 
@@ -273,20 +277,20 @@ export class Trie {
 
 		if (this.map) {
 			// check for a static leaf that starts with the first character
-			const staticChild = this.map.get(pathname.charCodeAt(segmentLength));
+			const staticChild = this.map.get(pathname.charCodeAt(end));
 
 			if (staticChild) {
-				const result = staticChild.find(pathname.slice(segmentLength));
+				const result = staticChild.find(pathname, end);
 				if (result) return result;
 			}
 		}
 
 		// check for param leaf
 		if (this.param) {
-			const slashIndex = pathname.indexOf("/", segmentLength);
+			const slashIndex = pathname.indexOf("/", end);
 
 			// if there is not a slash immediately following this.segment
-			if (slashIndex !== segmentLength) {
+			if (slashIndex !== end) {
 				// there is a valid parameter
 				if (
 					// param is the end of the pathname
@@ -295,19 +299,16 @@ export class Trie {
 				) {
 					return {
 						route: this.param.route,
-						params: { [this.param.name]: pathname.slice(segmentLength) },
+						params: { [this.param.name]: pathname.slice(end) },
 					};
 				} else if (this.param.child) {
 					// there's a static node after the param
 					// this is how there can be multiple params, "/" in between
-					const result = this.param.child.find(pathname.slice(slashIndex));
+					const result = this.param.child.find(pathname, slashIndex);
 
 					if (result) {
 						// add original params to the result
-						result.params[this.param.name] = pathname.slice(
-							segmentLength,
-							slashIndex,
-						);
+						result.params[this.param.name] = pathname.slice(end, slashIndex);
 
 						return result;
 					}
@@ -317,10 +318,7 @@ export class Trie {
 
 		// check for wildcard leaf
 		if (this.wild) {
-			return {
-				route: this.wild,
-				params: { "*": pathname.slice(segmentLength) },
-			};
+			return { route: this.wild, params: { "*": pathname.slice(end) } };
 		}
 
 		return null;
