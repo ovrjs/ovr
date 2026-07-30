@@ -1,7 +1,14 @@
 import type { JSX } from "../jsx/index.js";
 import { Codec, Size } from "../util/index.js";
 
-type Next = { i: number; result: IteratorResult<Chunk, void> };
+/** Completed generator read */
+type Read = {
+	/** Index of the generator within the merged list */
+	i: number;
+
+	/** Result returned by the generator */
+	result: IteratorResult<Chunk, void>;
+};
 
 /** Chunk containing the HTML from a rendered element */
 class Chunk {
@@ -249,48 +256,59 @@ export class Render {
 	}
 
 	/**
-	 * @param gen
-	 * @param i index of the generator within the list
-	 * @returns promise containing the index and the next result of the iteration
-	 */
-	static async #next(
-		gen: AsyncGenerator<Chunk, void, unknown>,
-		i: number,
-	): Promise<Next> {
-		return { i, result: await gen.next() };
-	}
-
-	/**
 	 * Merges `Render[]` into a single `AsyncGenerator`, resolving all in parallel.
 	 * The return of each `Render` is yielded from the generator with `done: true`.
 	 *
-	 * Adapted from [stack overflow answers](https://stackoverflow.com/questions/50585456).
-	 *
 	 * @param renders Resolved in parallel.
-	 * @yields `NextResult` and index of the resolved generator.
+	 * @yields Iteration result and index of the resolved generator.
 	 */
 	static async *#merge(renders: Render[]) {
 		const generators = renders.map((render) => render[Symbol.asyncIterator]());
-		const promises = new Map<number, Promise<Next>>();
+		const ready: Read[] = [];
+		let cursor = 0;
+		let active = generators.length;
+		let notify: (() => void) | undefined;
+		let error: unknown;
+		let failed = false;
+		let value: Read;
 
-		for (let i = 0; i < generators.length; i++) {
-			promises.set(i, Render.#next(generators[i]!, i));
-		}
-
-		let next: Next;
+		// keep one read in flight per generator
+		const next = (i: number) => {
+			generators[i]!.next().then(
+				(result) => {
+					ready.push({ i, result });
+					notify?.();
+					notify = undefined;
+				},
+				(reason) => {
+					if (!failed) error = reason;
+					failed = true;
+					notify?.();
+					notify = undefined;
+				},
+			);
+		};
 
 		try {
-			while (promises.size > 0) {
-				yield (next = await Promise.race(promises.values()));
+			for (let i = 0; i < active; i++) next(i);
 
-				if (next.result.done) {
-					promises.delete(next.i);
-				} else {
-					promises.set(next.i, Render.#next(generators[next.i]!, next.i));
+			while (active) {
+				if (cursor === ready.length) {
+					ready.length = cursor = 0;
+					if (!failed) await new Promise<void>((resolve) => (notify = resolve));
 				}
+
+				if (failed) throw error;
+
+				yield (value = ready[cursor++]!);
+
+				if (value.result.done) active--;
+				else next(value.i);
 			}
 		} finally {
-			await Promise.allSettled(generators.map((gen) => gen.return()));
+			if (active) {
+				await Promise.allSettled(generators.map((gen) => gen.return()));
+			}
 		}
 	}
 }

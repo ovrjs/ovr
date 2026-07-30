@@ -3,7 +3,7 @@ title: Parallelization
 description: Understand how ovr processes async components in parallel.
 ---
 
-With ovr, every component is streamed independently allowing you to read this content immediately instead of waiting for the last component to render. The delay does not waterfall since components are generated in parallel with [`Promise.race`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/race).
+With ovr, every component is streamed independently allowing you to read this content immediately instead of waiting for the last component to render. The delay does not waterfall since components are generated in parallel.
 
 ```tsx
 async function Delay({ ms }: { ms: number }) {
