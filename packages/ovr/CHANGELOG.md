@@ -1,5 +1,17 @@
 # ovr
 
+## 6.2.4
+
+### Patch Changes
+
+- 15bd7fe: Improve parallel rendering performance by scheduling generator reads through a settled-result queue instead of repeatedly racing every active child. Compiled Vitest benchmarks on Node 26 render 10 sibling elements 1.6x faster, 100 sibling elements 3.8x faster, and 500 sibling elements 13x faster.
+
+  Removing redundant promise wrapping and completed-generator cleanup improves the settled-result queue by another 1.1x with 10 or 100 siblings and 1.13x with 500 siblings. Returning fragment children directly makes a 100-fragment render 1.28x faster, while a mixed 500-component render improves 1.06x.
+
+- 15bd7fe: Improve server request routing by passing an incoming `Request` directly when no `RequestInit` overrides are supplied instead of cloning it. Compiled Vitest benchmarks on Node 26 measure 1.5x higher throughput (about 34% lower latency) across a 12-request routing workload.
+- 15bd7fe: Improve route matching performance by traversing the trie with pathname offsets instead of allocating a new substring for each node. Compiled Vitest benchmarks on Node 26 measure direct trie matching approximately 7–8% faster.
+- a18009e: Improve TypeScript 7 compatibility by accurately typing optional values forwarded internally with `exactOptionalPropertyTypes`. Optional properties remain omittable and now also accept an explicitly forwarded `undefined` where supported.
+
 ## 6.2.3
 
 ### Patch Changes
