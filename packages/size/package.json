@@ -11,9 +11,9 @@
 		"ovr": "*"
 	},
 	"devDependencies": {
-		"@types/node": "^25.5.0",
-		"rolldown": "^1.0.0-rc.9",
-		"typescript": "^5.9.3"
+		"@types/node": "^26.1.2",
+		"rolldown": "^1.2.1",
+		"typescript": "^7.0.2"
 	},
 	"exports": {
 		".": {

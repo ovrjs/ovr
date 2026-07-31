@@ -42,8 +42,7 @@ export namespace Schema {
 		 * @template V Extra valid result metadata
 		 */
 		export type Result<O, M extends object = {}, V extends object = {}> =
-			| (Valid<O> & V)
-			| (Invalid & M);
+			(Valid<O> & V) | (Invalid & M);
 
 		/**
 		 * Type of constructor input (path is required).
@@ -296,7 +295,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		readonly issues: Schema.Issue.List;
 
 		/** User submitted / sanitized values */
-		readonly values?: Form.Value.Map;
+		readonly values: Form.Value.Map | undefined;
 
 		/**
 		 * Create a new AggregateIssue.
@@ -1369,7 +1368,7 @@ export namespace Form {
 			} & M,
 			{
 				/** Rest of the multipart parts to stream */
-				readonly stream?: AsyncGenerator<Multipart.Part>;
+				readonly stream?: AsyncGenerator<Multipart.Part> | undefined;
 			}
 		>;
 
@@ -1579,11 +1578,9 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						const current = this.#sanitize(result.data.values);
 
 						return {
-							...(result.data as Form.State<Shape>),
-							values:
-								(values || current) &&
-								({ ...values, ...current } as Form.Value.Map<Shape>),
-						};
+							...result.data,
+							values: (values || current) && { ...values, ...current },
+						} as unknown as Form.State<Shape>;
 					}
 				} catch {}
 			}
@@ -1833,7 +1830,7 @@ class FieldSchema<
 	readonly parts: number;
 
 	/** If the field should be streamed as a part */
-	readonly streaming?: Stream;
+	readonly streaming: Stream | undefined;
 
 	/** If the field should persist invalid-state values. */
 	readonly #persist: boolean;
@@ -1911,7 +1908,7 @@ class FieldSchema<
 	 * @returns Field that persists submitted values across invalid redirects
 	 */
 	persist<
-		U extends Tag extends "input" ? Exclude<Type, "password" | "file"> : Type,
+		U extends (Tag extends "input" ? Exclude<Type, "password" | "file"> : Type),
 	>(
 		this: Field.Instance<Output, Tag, U, Values, Stream>,
 	): Field.Instance<Output, Tag, U, Values, Stream>;
@@ -2168,7 +2165,7 @@ export namespace Field {
 		readonly values?: V;
 
 		/** Field props */
-		readonly props?: Props;
+		readonly props?: Props | undefined;
 	}
 
 	/**
@@ -2178,10 +2175,7 @@ export namespace Field {
 	 * and checkboxes read presence.
 	 */
 	export type Input =
-		| FormDataEntryValue
-		| FormDataEntryValue[]
-		| boolean
-		| undefined;
+		FormDataEntryValue | FormDataEntryValue[] | boolean | undefined;
 
 	/**
 	 * @param data FormData or URLSearchParams
@@ -2240,7 +2234,7 @@ export namespace Field {
 			readonly name: ShapeUtil.Name<S>;
 
 			/** Form state */
-			readonly state?: I extends true ? URL : Form.State<S>;
+			readonly state?: (I extends true ? URL : Form.State<S>) | undefined;
 		} & Field.Props;
 
 		/** Root element for the Field component */

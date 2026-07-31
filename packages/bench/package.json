@@ -9,7 +9,7 @@
 		"ovr": "*"
 	},
 	"devDependencies": {
-		"@remix-run/multipart-parser": "^0.14.2",
-		"@types/node": "^25.5.0"
+		"@remix-run/multipart-parser": "^0.16.3",
+		"@types/node": "^26.1.2"
 	}
 }

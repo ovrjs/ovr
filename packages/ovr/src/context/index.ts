@@ -22,7 +22,7 @@ class PreparedResponse {
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 */
-	status?: number;
+	status?: number | undefined;
 
 	/**
 	 * `Headers` used to create the `Response`.
@@ -332,7 +332,8 @@ export class Context<
 		return new Response(
 			c.res.body,
 			// prevents users from setting the response during the stream
-			Object.freeze(c.res),
+			// `Response` treats an explicitly undefined status as omitted
+			Object.freeze(c.res) as ResponseInit,
 		);
 	}
 }

@@ -10,27 +10,27 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
-		"@docsearch/css": "^4.6.0",
-		"@docsearch/js": "^4.6.0",
-		"@fontsource-variable/inconsolata": "^5.2.8",
-		"@fontsource-variable/literata": "^5.2.8",
+		"@docsearch/css": "^4.7.0",
+		"@docsearch/js": "^4.7.0",
+		"@fontsource-variable/inconsolata": "^5.3.0",
+		"@fontsource-variable/literata": "^5.3.0",
 		"@ovrjs/size": "0.0.1",
-		"@robino/md": "^5.0.0",
+		"@robino/md": "^6.0.1",
 		"clsx": "^2.1.1",
-		"dotenv": "^17.3.1",
-		"drab": "^7.0.3",
-		"openai": "^6.32.0",
+		"dotenv": "^17.4.2",
+		"drab": "^8.0.0",
+		"openai": "^7.1.0",
 		"ovr": "*",
 		"uico": "^0.12.0"
 	},
 	"devDependencies": {
 		"@domcojs/vercel": "^3.1.3",
-		"@iconify-json/lucide": "^1.2.98",
+		"@iconify-json/lucide": "^1.2.120",
 		"@iconify/tailwind4": "^1.2.3",
-		"@tailwindcss/vite": "^4.2.2",
+		"@tailwindcss/vite": "^4.3.3",
 		"domco": "^5.0.2",
-		"tailwindcss": "^4.2.2",
-		"vite": "^8.0.2",
-		"vite-imagetools": "^10.0.0"
+		"tailwindcss": "^4.3.3",
+		"vite": "^8.2.0",
+		"vite-imagetools": "^10.0.1"
 	}
 }

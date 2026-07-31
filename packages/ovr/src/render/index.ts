@@ -66,7 +66,7 @@ export class Render {
 	readonly #element: JSX.Element;
 
 	/** Render options */
-	readonly #options?: Render.Options;
+	readonly #options: Render.Options | undefined;
 
 	/**
 	 * Creates an `AsyncIterable` that renders the `Element`.

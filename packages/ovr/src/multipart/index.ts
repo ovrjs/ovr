@@ -165,7 +165,7 @@ export namespace Multipart {
 		 * new Multipart(request, { parts });
 		 * ```
 		 */
-		parts?: number;
+		parts?: number | undefined;
 	};
 
 	/** Type for a `Part` of the multipart body */

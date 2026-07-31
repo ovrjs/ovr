@@ -153,18 +153,19 @@ export namespace Route {
 			// Iterable is more accurate than the built in string[][] + URLSearchParams
 			// https://github.com/microsoft/TypeScript-DOM-lib-generator/pull/2070
 			| Iterable<[string, string]>
-			| Record<string, string>;
+			| Record<string, string>
+			| undefined;
 
 		/**
 		 * Hash (fragment) of the URL. `"#"` prefix is added if not present.
 		 *
 		 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash)
 		 */
-		readonly hash?: string;
+		readonly hash?: string | undefined;
 	} & (keyof Params extends never
 		? {
 				/** Route pattern does not contain parameters */
-				readonly params?: never;
+				readonly params?: undefined;
 			}
 		: {
 				/** Route pattern parameters */
@@ -196,7 +197,7 @@ export namespace Route {
 	 */
 	export type Form<Pattern extends string> = (
 		props: JSX.IntrinsicElements["form"] &
-			URLOptions<ExtractParams<Pattern>> & { state?: URL },
+			URLOptions<ExtractParams<Pattern>> & { state?: URL | undefined },
 	) => JSX.Element;
 
 	/**

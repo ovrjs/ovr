@@ -121,13 +121,7 @@ type Attributes<
 	"aria-busy": "true" | "false";
 	"aria-controls": string;
 	"aria-current":
-		| "page"
-		| "step"
-		| "location"
-		| "date"
-		| "time"
-		| "true"
-		| "false";
+		"page" | "step" | "location" | "date" | "time" | "true" | "false";
 	"aria-describedby": string;
 	"aria-description": string;
 	"aria-details": string;
@@ -137,13 +131,7 @@ type Attributes<
 	"aria-flowto": string;
 	"aria-grabbed": "true" | "false";
 	"aria-haspopup":
-		| "menu"
-		| "listbox"
-		| "tree"
-		| "grid"
-		| "dialog"
-		| "true"
-		| "false";
+		"menu" | "listbox" | "tree" | "grid" | "dialog" | "true" | "false";
 	"aria-hidden": "true" | "false";
 	"aria-invalid": "grammar" | "false" | "spelling" | "true";
 	"aria-keyshortcuts": string;
@@ -173,9 +161,7 @@ type SharedAttributes = {
 		| (string & {});
 	crossorigin: boolean | "anonymous" | "use-credentials";
 	enctype:
-		| "application/x-www-form-urlencoded"
-		| "multipart/form-data"
-		| "text/plain";
+		"application/x-www-form-urlencoded" | "multipart/form-data" | "text/plain";
 	fetchpriority: "high" | "low" | "auto";
 	loading: "eager" | "lazy";
 	method: "get" | "post" | "dialog";

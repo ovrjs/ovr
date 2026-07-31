@@ -125,7 +125,7 @@ export namespace Cookie {
 /** HTTP cookie manager */
 export class Cookie {
 	/** Current context */
-	readonly #c: Context;
+	readonly #c: Pick<Context, "req" | "res">;
 
 	/** Lazily parsed cookie map */
 	#parsed?: Record<string, string>;
@@ -135,7 +135,7 @@ export class Cookie {
 	 *
 	 * @param c Request context
 	 */
-	constructor(c: Context) {
+	constructor(c: Pick<Context, "req" | "res">) {
 		this.#c = c;
 	}
 

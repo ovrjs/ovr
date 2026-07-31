@@ -4,6 +4,7 @@ import type * as ovr from "ovr";
 type TriggerProps = ovr.JSX.IntrinsicElements["button"];
 type PopoverProps = ovr.JSX.IntrinsicElements["div"] & {
 	trigger: TriggerProps;
+	title: string;
 	titleHref?: string;
 	titleContent?: ovr.JSX.Element;
 };
@@ -58,15 +59,15 @@ export const Popover = (props: PopoverProps) => {
 	);
 };
 
-const Trigger = (props: TriggerProps) => {
+const Trigger = (props: TriggerProps & { id: string }) => {
 	const { id, class: className, children, ...rest } = props;
 
 	return (
 		<button
+			{...rest}
 			popovertarget={id}
 			type="button"
 			class={clsx(!className && "icon ghost", className)}
-			{...rest}
 		>
 			{children}
 		</button>

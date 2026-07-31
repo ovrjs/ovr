@@ -1,6 +1,7 @@
 {
 	"extends": "@robino/tsconfig/bundler.json",
 	"compilerOptions": {
+		"allowImportingTsExtensions": true,
 		"jsx": "react-jsx",
 		"jsxImportSource": "ovr",
 		"paths": { "@": ["./src"], "@/*": ["./src/*"] }

@@ -119,7 +119,7 @@ export class Header {
 		if (header) {
 			const headerLength = header.length;
 
-			for (let cursor = 0; cursor < headerLength; ) {
+			for (let cursor = 0; cursor < headerLength;) {
 				const equal = header.indexOf("=", cursor);
 				if (equal === -1) break; // done
 

@@ -1,5 +1,5 @@
-import { codeControls } from "./code-controls";
-import { externalLink } from "./external-link";
+import { codeControls } from "./code-controls.ts";
+import { externalLink } from "./external-link.ts";
 import { type Options, Processor } from "@robino/md";
 import { Schema } from "ovr";
 import langBash from "shiki/langs/bash.mjs";

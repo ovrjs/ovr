@@ -30,16 +30,16 @@ export class Trie {
 	readonly seg: string;
 
 	/** Static child node map, key is the first character in the segment */
-	map?: Map<number, Trie>;
+	map: Map<number, Trie> | undefined;
 
 	/** Parametric child node */
-	param?: ParamNode;
+	param: ParamNode | undefined;
 
 	/** Matched route */
-	route?: Route;
+	route: Route | undefined;
 
 	/** Matched wildcard route */
-	wild?: Route;
+	wild: Route | undefined;
 
 	static readonly #paramMatch = /:.+?(?=\/|$)/g;
 	static readonly #paramSplit = /:.+?(?=\/|$)/;
@@ -180,7 +180,7 @@ export class Trie {
 			}
 
 			// check if the staticSegment matches the current node
-			for (let charIndex = 0; ; ) {
+			for (let charIndex = 0; ;) {
 				if (charIndex === staticSegment.length) {
 					// finished iterating through the staticSegment
 					if (charIndex < current.seg.length) {
