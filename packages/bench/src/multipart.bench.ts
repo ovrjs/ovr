@@ -5,9 +5,6 @@ import { bench, describe, expect } from "vitest";
 const { Multipart: Before }: { Multipart: typeof Multipart } = await import(
 	baseline("multipart")
 );
-const { Multipart: Compaction }: { Multipart: typeof Multipart } = await import(
-	baseline("multipart", {}, "1ded0b04d90b8c00ab1462624d7f842714685c01")
-);
 const { Multipart: After }: { Multipart: typeof Multipart } = await import(
 	new URL("../../ovr/dist/multipart/index.js", import.meta.url).href
 );
@@ -99,7 +96,7 @@ async function consume(
 	return { parts, bytes: length };
 }
 
-const parsers = { before: Before, compaction: Compaction, after: After };
+const parsers = { before: Before, after: After };
 for (const workload of workloads) {
 	for (const byob of workload.parts === 1 ? [false, true] : [false]) {
 		for (const parser of Object.values(parsers)) {

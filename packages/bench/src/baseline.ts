@@ -5,12 +5,14 @@ import { stripTypeScriptTypes } from "node:module";
 export function baseline(
 	name: "render" | "jsx" | "multipart",
 	imports: Record<string, string> = {},
-	commit = "068d6608db7a02283e4be64f5bcfb313305db1bb",
 ) {
 	let source = stripTypeScriptTypes(
 		execFileSync(
 			"git",
-			["show", `${commit}:packages/ovr/src/${name}/index.ts`],
+			[
+				"show",
+				`068d6608db7a02283e4be64f5bcfb313305db1bb:packages/ovr/src/${name}/index.ts`,
+			],
 			{ encoding: "utf8" },
 		),
 	);
