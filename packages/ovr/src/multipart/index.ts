@@ -202,6 +202,9 @@ export class Multipart extends Request {
 	/** Start index of the found needle */
 	#start = 0;
 
+	/** Start of unread data within the buffer. */
+	#offset = 0;
+
 	/** End index of the found needle */
 	#end = 0;
 
@@ -270,6 +273,15 @@ export class Multipart extends Request {
 		}
 
 		if (append) {
+			// Compact only when the next chunk needs the consumed buffer space.
+			if (this.#offset && this.#valid + nextLength > this.#memory.length) {
+				this.#memory.copyWithin(0, this.#offset, this.#valid);
+				this.#valid -= this.#offset;
+				this.#start -= this.#offset;
+				this.#end -= this.#offset;
+				this.#offset = 0;
+			}
+
 			const required = this.#valid + nextLength;
 			const size = this.#memory.buffer.byteLength;
 
@@ -295,20 +307,8 @@ export class Multipart extends Request {
 	 * @returns Shifted off buffer < start index
 	 */
 	#shift() {
-		const before = this.#memory.slice(0, this.#start);
-
-		// how much data is left after the found needle
-		const remainder = this.#valid - this.#end;
-
-		if (remainder) {
-			// copy remainder to the start of the buffer
-			// this doesn't move the chunks, just copies to the start
-			// old will be overwritten
-			this.#memory.copyWithin(0, this.#end, this.#valid);
-		}
-
-		this.#valid = remainder;
-		this.#start = this.#end = 0;
+		const before = this.#memory.slice(this.#offset, this.#start);
+		this.#offset = this.#start = this.#end;
 
 		return before;
 	}
@@ -346,8 +346,10 @@ export class Multipart extends Request {
 
 		// where to safely start the next search in the concatenated chunk result
 		// go back len - 1 in case it was partially at the end
-		this.#start = this.#end =
-			needle.length < haystackLength ? haystackLength - (needle.length - 1) : 0;
+		this.#start = this.#end = Math.max(
+			this.#offset,
+			haystackLength - (needle.length - 1),
+		);
 	}
 
 	/**
@@ -380,7 +382,10 @@ export class Multipart extends Request {
 				) {
 					// not found within current chunk
 					const lastIndex = this.#valid - 1;
-					const needleIndices = needle.loc[this.#memory[lastIndex]!];
+					const needleIndices =
+						this.#valid > this.#offset
+							? needle.loc[this.#memory[lastIndex]!]
+							: undefined;
 
 					if (needleIndices) {
 						// last char is in the boundary, check for partial boundary
@@ -389,6 +394,7 @@ export class Multipart extends Request {
 							for (
 								let needleIndex = needleIndices[i]!, cursor = lastIndex;
 								needleIndex >= 0 &&
+								cursor >= this.#offset &&
 								needle[needleIndex] === this.#memory[cursor];
 								needleIndex--, cursor--
 							) {
@@ -447,11 +453,11 @@ export class Multipart extends Request {
 
 				if (
 					// ensures invalid characters aren't used to determine if it's done
-					this.#valid > 1 &&
+					this.#valid - this.#offset > 1 &&
 					// check for --
 					// if not done it would be \r\nNEXT-HEADER
-					this.#memory[0] === 45 &&
-					this.#memory[1] === 45
+					this.#memory[this.#offset] === 45 &&
+					this.#memory[this.#offset + 1] === 45
 				) {
 					// done, drain any epilogue
 					while (!(await this.#read(false)));

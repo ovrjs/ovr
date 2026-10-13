@@ -105,8 +105,10 @@ export class Render {
 		if (typeof element === "object") {
 			if (Symbol.asyncIterator in element) {
 				// any async iterable - lazily resolve
-				for await (const children of element)
-					yield* new Render(children, this.#options);
+				for await (const children of element) {
+					if (children instanceof Chunk) yield children;
+					else yield* new Render(children, this.#options);
+				}
 				return;
 			}
 
@@ -114,8 +116,10 @@ export class Render {
 				// sync iterable
 				if ("next" in element) {
 					// sync generator - lazily resolve, avoids loading all in memory
-					for (const children of element)
-						yield* new Render(children, this.#options);
+					for (const children of element) {
+						if (children instanceof Chunk) yield children;
+						else yield* new Render(children, this.#options);
+					}
 					return;
 				}
 
