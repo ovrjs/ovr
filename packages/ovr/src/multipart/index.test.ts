@@ -1165,3 +1165,196 @@ describe("MultipartParser", () => {
 		});
 	});
 });
+
+describe("Multipart input ownership", () => {
+	const entries = [
+		{ name: "empty", filename: "empty.bin", content: "" },
+		{
+			name: "file",
+			filename: "file.bin",
+			content: "payload\r\n--almost a boundary\0".repeat(40),
+		},
+		{ name: "tail", content: "café ☕\r\n-false-boundary" },
+	];
+	const encoder = new TextEncoder();
+	const input = encoder.encode(multipartPayload(BOUNDARY, entries));
+
+	/** Create demand-driven input, optionally overwriting the same source buffer. */
+	function request(size: number, reuse = false) {
+		let offset = 0;
+		const buffer = new Uint8Array(size);
+		return new Request("http://localhost/upload", {
+			method: "POST",
+			headers: { "content-type": `multipart/form-data; boundary=${BOUNDARY}` },
+			body: new ReadableStream(
+				{
+					pull(controller) {
+						if (offset === input.length) controller.close();
+						else {
+							const bytes = input.subarray(offset, offset + size);
+							offset += bytes.length;
+							if (reuse) {
+								buffer.fill(0);
+								buffer.set(bytes);
+								controller.enqueue(buffer.subarray(0, bytes.length));
+							} else controller.enqueue(bytes);
+						}
+					},
+				},
+				{ highWaterMark: 0 },
+			),
+			// @ts-expect-error - Node requires duplex for streaming request bodies
+			duplex: "half",
+		});
+	}
+
+	it("mutating and transferring output cannot change input or later parts", async () => {
+		const snapshot = input.slice();
+		for (const size of [1, 7, 257, 65536]) {
+			let i = 0;
+			for await (const part of new Multipart(request(size))) {
+				expect(part).toBeInstanceOf(Request);
+				expect(part.name).toBe(entries[i]!.name);
+				const bytes: number[] = [];
+				for await (const chunk of part.body) {
+					bytes.push(...chunk);
+					new Uint8Array(chunk.buffer).fill(0);
+					structuredClone(chunk.buffer, { transfer: [chunk.buffer] });
+				}
+				expect(new Uint8Array(bytes)).toEqual(
+					encoder.encode(entries[i++]!.content),
+				);
+			}
+			expect(i).toBe(entries.length);
+			expect(input).toEqual(snapshot);
+		}
+	});
+
+	it.each([1, 7, 257, 65536])(
+		"BYOB handles empty parts, split boundaries and view offsets with %i-byte input",
+		async (size) => {
+			for (const length of [1, 7, 1024, 65536]) {
+				let i = 0;
+				for await (const part of new Multipart(request(size))) {
+					const reader = part.body.getReader({ mode: "byob" });
+					let buffer = new ArrayBuffer(length + 16);
+					const bytes: number[] = [];
+					try {
+						while (true) {
+							new Uint8Array(buffer).fill(0xa5);
+							const result = await reader.read(
+								new Uint8Array(buffer, 8, length),
+							);
+							if (result.value) {
+								bytes.push(...result.value);
+								buffer = result.value.buffer;
+								expect(new Uint8Array(buffer, 0, 8)).toEqual(
+									new Uint8Array(8).fill(0xa5),
+								);
+								expect(new Uint8Array(buffer, 8 + length)).toEqual(
+									new Uint8Array(8).fill(0xa5),
+								);
+							}
+							if (result.done) break;
+						}
+					} finally {
+						reader.releaseLock();
+					}
+					expect(new Uint8Array(bytes)).toEqual(
+						encoder.encode(entries[i++]!.content),
+					);
+				}
+				expect(i).toBe(entries.length);
+			}
+		},
+	);
+
+	it("default and BYOB reads survive producers reusing their input buffer", async () => {
+		for (const size of [1, 7, 257]) {
+			for (const byob of [false, true]) {
+				const bodies: Uint8Array[][] = [];
+				for await (const part of new Multipart(request(size, true))) {
+					const chunks: Uint8Array[] = [];
+					if (byob) {
+						const reader = part.body.getReader({ mode: "byob" });
+						let buffer = new ArrayBuffer(17);
+						try {
+							while (true) {
+								const result = await reader.read(new Uint8Array(buffer));
+								if (result.value) {
+									chunks.push(result.value.slice());
+									buffer = result.value.buffer;
+								}
+								if (result.done) break;
+							}
+						} finally {
+							reader.releaseLock();
+						}
+					} else {
+						for await (const chunk of part.body) chunks.push(chunk);
+					}
+					bodies.push(chunks);
+				}
+				expect(bodies).toHaveLength(entries.length);
+				for (let i = 0; i < bodies.length; i++) {
+					expect(
+						new Uint8Array(bodies[i]!.flatMap((chunk) => [...chunk])),
+					).toEqual(encoder.encode(entries[i]!.content));
+				}
+			}
+		}
+	});
+
+	it("typed BYOB views preserve alignment and finish a short final read", async () => {
+		let i = 0;
+		for await (const part of new Multipart(request(7))) {
+			if (!part.filename) expect(await part.text()).toBe(entries[i++]!.content);
+			else {
+				const reader = part.body.getReader({ mode: "byob" });
+				let buffer = new ArrayBuffer(32);
+				const bytes: number[] = [];
+				try {
+					while (true) {
+						const result = await reader.read(new Uint16Array(buffer, 6, 8), {
+							min: 8,
+						});
+						if (result.value) {
+							expect(result.value).toBeInstanceOf(Uint16Array);
+							expect(result.value.byteOffset).toBe(6);
+							bytes.push(
+								...new Uint8Array(
+									result.value.buffer,
+									result.value.byteOffset,
+									result.value.byteLength,
+								),
+							);
+							buffer = result.value.buffer;
+						}
+						if (result.done) break;
+					}
+				} finally {
+					reader.releaseLock();
+				}
+				expect(new Uint8Array(bytes)).toEqual(
+					encoder.encode(entries[i++]!.content),
+				);
+			}
+		}
+		expect(i).toBe(entries.length);
+	});
+
+	it("switching from BYOB to a default reader preserves pending bytes", async () => {
+		let i = 0;
+		for await (const part of new Multipart(request(65536))) {
+			const reader = part.body.getReader({ mode: "byob" });
+			const result = await reader.read(new Uint8Array(3));
+			const bytes = result.value ? [...result.value] : [];
+			reader.releaseLock();
+			for await (const chunk of part.body) bytes.push(...chunk);
+			expect(new Uint8Array(bytes)).toEqual(
+				encoder.encode(entries[i++]!.content),
+			);
+		}
+		expect(i).toBe(entries.length);
+	});
+});

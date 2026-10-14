@@ -28,6 +28,22 @@ test("fragment", () => {
 	expect(JSX.Fragment({ children })).toBe(children);
 });
 
+test("generators preserve trusted HTML and escape ordinary children", async () => {
+	function* sync() {
+		yield Render.html("<b>trusted</b>");
+		yield "<&";
+	}
+	async function* async() {
+		yield Render.html("<b>trusted</b>");
+		yield "<&";
+	}
+	for (const element of [sync(), async()]) {
+		expect((await Array.fromAsync(new Render(element))).join("")).toBe(
+			"<b>trusted</b>&lt;&amp;",
+		);
+	}
+});
+
 test("parallel children render in source order", async () => {
 	const first = deferred();
 	const second = deferred();

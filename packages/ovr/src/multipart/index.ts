@@ -188,7 +188,10 @@ export class Multipart extends Request {
 	readonly #reader: ReadableStreamDefaultReader;
 
 	/** Current values being buffered in memory */
-	readonly #memory: Uint8Array<ArrayBuffer>;
+	#memory = new Uint8Array(0);
+
+	/** Owned storage for headers and boundaries spanning input chunks. */
+	readonly #scratch: Uint8Array<ArrayBuffer>;
 
 	/** Opening boundary needle */
 	readonly #opening: Needle;
@@ -201,6 +204,9 @@ export class Multipart extends Request {
 
 	/** Start index of the found needle */
 	#start = 0;
+
+	/** Start of unread data within the buffer. */
+	#offset = 0;
 
 	/** End index of the found needle */
 	#end = 0;
@@ -240,7 +246,7 @@ export class Multipart extends Request {
 		this.#opening = new Needle(`--${boundary}\r\n`);
 		this.#boundary = new Needle(`\r\n--${boundary}`);
 
-		this.#memory = new Uint8Array(
+		this.#scratch = new Uint8Array(
 			new ArrayBuffer(
 				// slightly larger than common chunk size/high water mark 64kb for leftover boundary
 				// prevents having to resize memory for most requests
@@ -251,42 +257,55 @@ export class Multipart extends Request {
 		);
 	}
 
-	/**
-	 * Reads the next chunk in the request stream and concatenates it
-	 * onto the buffer.
-	 *
-	 * @param append
-	 * @returns `true` if done
-	 */
-	async #read(append = true) {
-		const next = await this.#reader.read();
-
+	/** Account for a source read and append or temporarily borrow its bytes. */
+	#read(
+		next: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>,
+		append = true,
+		borrow = false,
+	) {
 		if (next.done) return true;
-
 		const nextLength = next.value.length;
-
 		if ((this.#payloadSize += nextLength) > this.#options.payload) {
 			throw new RangeError("Payload Too Large");
 		}
-
 		if (append) {
-			const required = this.#valid + nextLength;
-			const size = this.#memory.buffer.byteLength;
-
-			// resize if full
-			if (required > size) {
-				this.#memory.buffer.resize(
-					Math.min(
-						this.#options.memory, // in case double is larger than the max
-						Math.max(required, size * 2),
-					),
-				);
+			const length = this.#valid - this.#offset;
+			const required = length + nextLength;
+			if (required > this.#scratch.buffer.maxByteLength) {
+				throw new RangeError("Multipart buffer limit exceeded");
 			}
-
-			// write at the valid cutoff
-			this.#memory.set(next.value, this.#valid);
-			this.#valid += nextLength;
+			if (length || !borrow) {
+				this.#retain();
+				if (required > this.#scratch.length) {
+					this.#scratch.buffer.resize(
+						Math.min(
+							this.#scratch.buffer.maxByteLength,
+							Math.max(required, this.#scratch.length * 2),
+						),
+					);
+				}
+				this.#scratch.set(next.value, length);
+			} else {
+				// The caller must consume or retain these bytes before yielding.
+				this.#memory = next.value;
+			}
+			this.#valid = required;
+			this.#start -= this.#offset;
+			this.#end -= this.#offset;
+			this.#offset = 0;
 		}
+	}
+
+	/** Preserve unread bytes before the source can reuse its input storage. */
+	#retain() {
+		const length = this.#valid - this.#offset;
+		if (length > this.#scratch.length) this.#scratch.buffer.resize(length);
+		this.#scratch.set(this.#memory.subarray(this.#offset, this.#valid));
+		this.#memory = this.#scratch;
+		this.#valid = length;
+		this.#start -= this.#offset;
+		this.#end -= this.#offset;
+		this.#offset = 0;
 	}
 
 	/**
@@ -295,20 +314,8 @@ export class Multipart extends Request {
 	 * @returns Shifted off buffer < start index
 	 */
 	#shift() {
-		const before = this.#memory.slice(0, this.#start);
-
-		// how much data is left after the found needle
-		const remainder = this.#valid - this.#end;
-
-		if (remainder) {
-			// copy remainder to the start of the buffer
-			// this doesn't move the chunks, just copies to the start
-			// old will be overwritten
-			this.#memory.copyWithin(0, this.#end, this.#valid);
-		}
-
-		this.#valid = remainder;
-		this.#start = this.#end = 0;
+		const before = this.#memory.subarray(this.#offset, this.#start);
+		this.#offset = this.#start = this.#end;
 
 		return before;
 	}
@@ -346,8 +353,10 @@ export class Multipart extends Request {
 
 		// where to safely start the next search in the concatenated chunk result
 		// go back len - 1 in case it was partially at the end
-		this.#start = this.#end =
-			needle.length < haystackLength ? haystackLength - (needle.length - 1) : 0;
+		this.#start = this.#end = Math.max(
+			this.#offset,
+			haystackLength - (needle.length - 1),
+		);
 	}
 
 	/**
@@ -359,7 +368,10 @@ export class Multipart extends Request {
 	 */
 	async #findConcat(needle: Needle) {
 		let found: Uint8Array | undefined;
-		while (!(found = this.#find(needle)) && !(await this.#read()));
+		while (
+			!(found = this.#find(needle)) &&
+			!this.#read(await this.#reader.read())
+		);
 		return found;
 	}
 
@@ -368,50 +380,78 @@ export class Multipart extends Request {
 	 * @returns Stream that streams the content until the next find
 	 */
 	#findStream(needle: Needle) {
+		let pending: Uint8Array<ArrayBuffer> | undefined;
+		let ended = false;
 		return new ReadableStream({
 			type: "bytes",
 			pull: async (c) => {
-				let found: Uint8Array<ArrayBuffer> | undefined;
-
-				for (
-					let done: boolean | undefined;
-					!(found = this.#find(needle)) && !done;
-					done = await this.#read()
-				) {
-					// not found within current chunk
-					const lastIndex = this.#valid - 1;
-					const needleIndices = needle.loc[this.#memory[lastIndex]!];
-
-					if (needleIndices) {
-						// last char is in the boundary, check for partial boundary
-						// iterate backwards through the indices
-						indices: for (let i = needleIndices.length - 1; i >= 0; i--) {
-							for (
-								let needleIndex = needleIndices[i]!, cursor = lastIndex;
-								needleIndex >= 0 &&
-								needle[needleIndex] === this.#memory[cursor];
-								needleIndex--, cursor--
-							) {
-								if (needleIndex === 0) {
-									// these are the same since no needle was found
-									this.#start = this.#end = cursor;
-									// rerun check if next has the rest
-									break indices;
+				if (!pending?.length) {
+					let found: Uint8Array<ArrayBuffer> | undefined;
+					for (
+						let done: boolean | undefined;
+						!(found = this.#find(needle)) && !done;
+						done = this.#read(await this.#reader.read(), true, true)
+					) {
+						// Retain only a suffix that could begin a boundary.
+						this.#start = this.#end = this.#valid;
+						const last = this.#valid - 1;
+						const indices =
+							this.#valid > this.#offset
+								? needle.loc[this.#memory[last]!]
+								: undefined;
+						if (indices) {
+							search: for (let i = indices.length - 1; i >= 0; i--) {
+								for (
+									let match = indices[i]!, cursor = last;
+									match >= 0 &&
+									cursor >= this.#offset &&
+									needle[match] === this.#memory[cursor];
+									match--, cursor--
+								) {
+									if (match === 0) {
+										this.#start = this.#end = cursor;
+										break search;
+									}
 								}
 							}
 						}
+						pending = this.#shift();
+						if (pending.length) break;
+						if (this.#memory !== this.#scratch) this.#retain();
 					}
-
-					const before = this.#shift();
-					if (before.length) {
-						c.enqueue(before);
-						return; // wait for next pull
+					if (!pending?.length) {
+						pending = found;
+						ended = true;
 					}
 				}
 
-				if (found?.length) c.enqueue(found);
-
-				c.close();
+				if (pending?.length) {
+					const request = c.byobRequest;
+					const view = request?.view;
+					if (view) {
+						const length = Math.min(view.byteLength, pending.length);
+						new Uint8Array(view.buffer, view.byteOffset, length).set(
+							pending.subarray(0, length),
+						);
+						pending = pending.subarray(length);
+						request.respond(length);
+					} else {
+						// Byte-stream enqueue transfers this independent allocation.
+						c.enqueue(new Uint8Array(pending));
+						pending = undefined;
+					}
+				}
+				if (this.#memory !== this.#scratch) {
+					// Source buffers may be reused on the next pull. Borrow only
+					// within this synchronous continuation, including small BYOB reads.
+					if (pending?.length) pending = new Uint8Array(pending);
+					this.#retain();
+				}
+				if (ended && !pending?.length) {
+					c.close();
+					// An empty part or final short BYOB read still needs a response.
+					c.byobRequest?.respond(0);
+				}
 			},
 		});
 	}
@@ -447,14 +487,14 @@ export class Multipart extends Request {
 
 				if (
 					// ensures invalid characters aren't used to determine if it's done
-					this.#valid > 1 &&
+					this.#valid - this.#offset > 1 &&
 					// check for --
 					// if not done it would be \r\nNEXT-HEADER
-					this.#memory[0] === 45 &&
-					this.#memory[1] === 45
+					this.#memory[this.#offset] === 45 &&
+					this.#memory[this.#offset + 1] === 45
 				) {
 					// done, drain any epilogue
-					while (!(await this.#read(false)));
+					while (!this.#read(await this.#reader.read(), false));
 					break;
 				}
 			}
