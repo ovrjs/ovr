@@ -1,18 +1,8 @@
+import { credentials, users } from "./store";
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import {
-	type Auth,
-	Field,
-	Form,
-	type JSX,
-	type Middleware,
-	Render,
-	Route,
-} from "ovr";
-
-const users = new Map<string, { id: string; email: string }>();
-const credentials = new Map<string, Auth.Credential>();
+import { Field, Form, type JSX, type Middleware, Render, Route } from "ovr";
 
 /** Auth utility that loads both session and user for protected routes. */
 const guard = (
@@ -35,7 +25,7 @@ const guard = (
 		const user = users.get(session.id);
 
 		if (!user) {
-			c.auth.logout();
+			await c.auth.logout();
 			c.redirect(auth, 303);
 			return;
 		}
@@ -52,8 +42,8 @@ export const auth = Route.get("/demo/auth", async (c) => {
 	const session = await c.auth.session();
 	const user = session ? users.get(session.id) : null;
 
-	const Register = c.auth.passkey.create(register);
-	const Login = c.auth.passkey.get(login);
+	const Register = c.auth.passkey.register.form(register);
+	const Login = c.auth.passkey.login.form(login);
 
 	return (
 		<Layout head={<Meta {...content.frontmatter} />}>
@@ -84,14 +74,14 @@ export const auth = Route.get("/demo/auth", async (c) => {
 });
 
 /** Logout handler clears the auth session cookie. */
-export const logout = Route.post((c) => {
-	c.auth.logout();
+export const logout = Route.post(async (c) => {
+	await c.auth.logout();
 	c.redirect(auth, 303);
 });
 
 /** Protected dashboard route for demo session/credential output. */
 export const admin = Route.get(
-	"/auth/admin",
+	"/demo/auth/admin",
 	guard((c, auth) => {
 		const userCredentials = Array.from(credentials.values()).filter(
 			(v) => v.user === auth.user.id,
@@ -130,7 +120,11 @@ export const register = Route.post(User, async (c) => {
 
 	if (result.issues) return c.redirect(result.url, 303);
 
-	const credential = await c.auth.passkey.verify();
+	const credential = await c.auth.passkey.register.verify();
+
+	if (credentials.has(credential.id)) {
+		return c.text("This passkey is already registered.", 409);
+	}
 
 	const user = users.get(credential.user) ?? {
 		email: result.data.email,
@@ -146,11 +140,18 @@ export const register = Route.post(User, async (c) => {
 });
 
 export const login = Route.post(async (c) => {
-	const credential = await c.auth.passkey.assert((id) => credentials.get(id));
+	const credential = await c.auth.passkey.login.verify({
+		find: (id) => credentials.get(id),
+		update(credential, previous) {
+			if (credentials.get(credential.id) !== previous) return false;
+			credentials.set(credential.id, credential);
+			return true;
+		},
+	});
 	const user = users.get(credential.user);
 
 	if (!user) {
-		c.auth.logout();
+		await c.auth.logout();
 		c.redirect(auth, 303);
 		return;
 	}

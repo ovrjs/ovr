@@ -3,9 +3,10 @@ import { jsx } from "../jsx/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form, Schema } from "../schema/index.js";
-import { Codec, Header, Time } from "../util/index.js";
+import { Codec, Time } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
+import { listen } from "./client.js";
 import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 import { AuthIssue } from "./issue.js";
@@ -15,13 +16,7 @@ export namespace Passkey {
 	export type Context = Pick<ContextType, "cookie" | "url" | "res" | "form"> & {
 		data: () => Promise<unknown>;
 	};
-
-	/**
-	 * Route contract accepted by `create()` and `get()`.
-	 *
-	 * Pass any `Route.post(...)` route and this keeps route params typed
-	 * for both the rendered form action and challenge binding.
-	 */
+	/** POST route contract retaining typed pathname parameters. */
 	export interface Post<Pattern extends string> extends Omit<
 		Route.Post,
 		"url" | "pathname"
@@ -29,934 +24,425 @@ export namespace Passkey {
 		pattern: Pattern;
 		Form: Route.Form<Pattern>;
 		url: Route<Pattern>["url"];
-		pathname: (params?: Record<string, string>) => string;
+		pathname(params?: Record<string, string>): string;
+	}
+	/** Registration form configuration. */
+	export interface Options {
+		/** Opaque user handle, at most 64 UTF-8 bytes; defaults to a UUID. Never use an email. */
+		readonly user?: string;
+		/** Credential IDs already associated with this user. */
+		readonly exclude?: string[];
 	}
 }
 
-/**
- * Minimal stateless passkey authentication.
- *
- * Features:
- *
- * - Register and login form helpers for WebAuthn.
- * - Signed challenges bound to route path and origin.
- * - Fresh options generated at submit time.
- * - Built-in challenge expiry (1 minute).
- *
- * Security model:
- *
- * - Challenges are stateless and not one-time consumed.
- * - Replay is time-bounded by challenge expiry.
- * - Signature counters are not validated.
- */
+/** ES256 passkeys with single-use, browser-bound ceremonies. */
 export class Passkey {
-	/** Challenge validity window in milliseconds. */
-	static #challengeTtl = Time.minute;
-
-	/** Hidden passkey field schema shared by route prep and raw form fallback. */
-	static #form = new Form({
+	static readonly #ttl = Time.minute;
+	static readonly #routes = new WeakSet<object>();
+	static readonly #fields = new Form({
 		credential: Field.hidden().json(Schema.unknown()),
-		signed: Field.hidden(),
+		challenge: Field.hidden(),
 	});
-
-	/** Parsed passkey field payload shape. */
-	static #payload = Schema.object({
+	static readonly #payload = Schema.object({
 		credential: Schema.unknown(),
-		signed: Schema.string(),
-	});
-
-	/** Request-scoped auth helper for challenge signing and verification. */
-	readonly #auth: Auth;
-
-	/** Current request context used for origin/rp checks and form parsing. */
-	readonly #c: Passkey.Context;
-
-	/** Relying party identifier derived from the request hostname. */
-	readonly #rpId: string;
-
-	/**
-	 * Create a passkey helper for the current request.
-	 *
-	 * @param c Request context
-	 * @param auth Auth instance
-	 */
-	constructor(c: Passkey.Context, auth: Auth) {
-		this.#c = c;
-		this.#auth = auth;
-		this.#rpId = this.#c.url.hostname;
-	}
-
-	/**
-	 * Ensure passkey routes account for hidden passkey form fields.
-	 *
-	 * @template Pattern Route pattern
-	 * @param route Target route
-	 */
-	static #prepareRoute<Pattern extends string>(route: Passkey.Post<Pattern>) {
-		if (
-			route.extend &&
-			!(route.names?.includes("credential") && route.names?.includes("signed"))
-		) {
-			Object.assign(route, route.extend(Passkey.#form));
-		}
-	}
-
-	/**
-	 * Client runtime injected into passkey forms.
-	 *
-	 * - This function is serialized and executed in the browser.
-	 * - Keep dependencies self-contained and browser-native.
-	 * - Do not reference server-only helpers (for example `Schema`).
-	 *
-	 * @param bootstrap Signed bootstrap payload used to fetch fresh options
-	 * @param optionsAction Internal options route pathname
-	 * @param action Target form action pathname
-	 * @param method WebAuthn ceremony invoked by the browser
-	 */
-	static #addEventListeners = (
-		bootstrap: string,
-		optionsAction: string,
-		action: string,
-		method: "create" | "get",
-	) => {
-		class Client {
-			/** Allowed transport values accepted from JSON options. */
-			static #transports = new Set([
-				"ble",
-				"hybrid",
-				"internal",
-				"nfc",
-				"usb",
-				"smart-card",
-			]);
-
-			/** Allowed attestation values accepted from JSON options. */
-			static #attestations = new Set([
-				"none",
-				"indirect",
-				"direct",
-				"enterprise",
-			]);
-
-			/** Allowed verification values accepted from JSON options. */
-			static #verifications = new Set(["required", "preferred", "discouraged"]);
-
-			/**
-			 * Narrow transport values from untyped JSON.
-			 *
-			 * @param v Candidate transport list from options JSON
-			 * @returns `true` when all values are valid authenticator transports
-			 */
-			static #isTransports(v?: string[]): v is AuthenticatorTransport[] {
-				return Boolean(v && v.every((t) => Client.#transports.has(t)));
-			}
-
-			/**
-			 * Narrow attestation value from untyped JSON.
-			 *
-			 * @param v Candidate attestation value from options JSON
-			 * @returns `true` when value is a valid attestation preference
-			 */
-			static #isAttestation(v?: string): v is AttestationConveyancePreference {
-				return Boolean(v && Client.#attestations.has(v));
-			}
-
-			/**
-			 * Narrow user verification value from untyped JSON.
-			 *
-			 * @param v Candidate verification value from options JSON
-			 * @returns `true` when value is a valid verification requirement
-			 */
-			static #isVerification(v?: string): v is UserVerificationRequirement {
-				return Boolean(v && Client.#verifications.has(v));
-			}
-
-			/**
-			 * Decode base64url strings from JSON options into binary buffers.
-			 *
-			 * @param s Base64url-encoded input
-			 * @returns Decoded bytes as an `ArrayBuffer`
-			 */
-			static #decodeBase64Url(s: string) {
-				const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
-				const pad = b64.length % 4;
-
-				return Uint8Array.from(
-					atob(pad ? b64 + "=".repeat(4 - pad) : b64),
-					(c) => c.charCodeAt(0),
-				).buffer;
-			}
-
-			/**
-			 * Decode a credential descriptor payload for WebAuthn browser APIs.
-			 *
-			 * @param json Credential descriptor from JSON options
-			 * @returns Descriptor with decoded binary ID
-			 */
-			static #decodeCredential(
-				json: PublicKeyCredentialDescriptorJSON,
-			): PublicKeyCredentialDescriptor {
-				return {
-					type: "public-key",
-					id: Client.#decodeBase64Url(json.id),
-					...(Client.#isTransports(json.transports)
-						? { transports: json.transports }
-						: {}),
-				};
-			}
-
-			/**
-			 * Decode registration options into browser-native WebAuthn options.
-			 *
-			 * @param options Registration options JSON payload
-			 * @returns Browser-ready registration options
-			 */
-			static #decodeCreationOptions({
-				challenge,
-				user,
-				excludeCredentials,
-				attestation,
-				extensions: _extensions,
-				...rest
-			}: PublicKeyCredentialCreationOptionsJSON): PublicKeyCredentialCreationOptions {
-				return {
-					challenge: Client.#decodeBase64Url(challenge),
-					user: {
-						id: Client.#decodeBase64Url(user.id),
-						name: user.name,
-						displayName: user.displayName,
-					},
-					...(excludeCredentials
-						? {
-								excludeCredentials: excludeCredentials.map(
-									Client.#decodeCredential,
-								),
-							}
-						: {}),
-					...(Client.#isAttestation(attestation) ? { attestation } : {}),
-					...rest,
-				};
-			}
-
-			/**
-			 * Decode login options into browser-native WebAuthn options.
-			 *
-			 * @param options Authentication options JSON payload
-			 * @returns Browser-ready authentication options
-			 */
-			static #decodeRequestOptions({
-				challenge,
-				allowCredentials,
-				userVerification,
-				extensions: _extensions,
-				...rest
-			}: PublicKeyCredentialRequestOptionsJSON): PublicKeyCredentialRequestOptions {
-				return {
-					challenge: Client.#decodeBase64Url(challenge),
-					...(allowCredentials
-						? {
-								allowCredentials: allowCredentials.map(
-									Client.#decodeCredential,
-								),
-							}
-						: {}),
-					...(Client.#isVerification(userVerification)
-						? { userVerification }
-						: {}),
-					...rest,
-				};
-			}
-
-			/** Forms whose `action` starts with the bound route pathname. */
-			#forms = document.querySelectorAll(
-				'form[action^="' + action + '"]',
-			) as NodeListOf<HTMLFormElement>;
-
-			/** Shared submit lock to prevent duplicate requests across matching forms. */
-			static #loading = false;
-
-			/**
-			 * Attach one submit handler per matching form.
-			 *
-			 * The handler fetches fresh options, runs the WebAuthn API, writes hidden
-			 * fields, then triggers native form submission.
-			 */
-			init() {
-				for (const form of this.#forms) {
-					if (form.hasAttribute("data-auth")) continue;
-
-					form.dataset.auth = "";
-
-					const hidden = (name: string) => {
-						const field = form.elements.namedItem(name);
-
-						if (field instanceof HTMLInputElement) {
-							return field;
-						}
-
-						const input = document.createElement("input");
-						input.type = "hidden";
-						input.name = name;
-
-						form.append(input);
-
-						return input;
-					};
-
-					const credentialInput = hidden("credential");
-					const signedInput = hidden("signed");
-
-					form.addEventListener("submit", async (e) => {
-						e.preventDefault();
-
-						if (Client.#loading) return;
-						Client.#loading = true;
-
-						try {
-							const data = new FormData();
-							data.append("bootstrap", bootstrap);
-
-							const res = await fetch(optionsAction, {
-								method: "POST",
-								body: data,
-							});
-
-							if (!res.ok) {
-								throw new Error(
-									`Passkey options request failed (${res.status})`,
-								);
-							}
-
-							const options = (await res.json()) as {
-								signed: string;
-								options: PublicKeyCredentialCreationOptionsJSON &
-									PublicKeyCredentialRequestOptionsJSON;
-							};
-
-							signedInput.value = options.signed;
-							credentialInput.value = JSON.stringify(
-								await navigator.credentials[method]({
-									publicKey: (method === "create"
-										? Client.#decodeCreationOptions(options.options)
-										: Client.#decodeRequestOptions(
-												options.options,
-											)) as PublicKeyCredentialCreationOptions &
-										PublicKeyCredentialRequestOptions,
-								}),
-							);
-
-							form.submit();
-							return;
-						} catch (e) {
-							if (
-								!(e instanceof DOMException) ||
-								e.name !== "NotAllowedError"
-							) {
-								throw e;
-							}
-						} finally {
-							Client.#loading = false;
-						}
-					});
-				}
-			}
-		}
-
-		new Client().init();
-	};
-
-	/** Regex to find characters that can break inline script parsing. */
-	static readonly #escapeJsPattern = /[<>&\u2028\u2029]/g;
-
-	/** Character map to produce JS-safe unicode escapes. */
-	static readonly #escapeJsMap: Record<string, string> = {
-		"<": "\\u003c",
-		">": "\\u003e",
-		"&": "\\u0026",
-		"\u2028": "\\u2028",
-		"\u2029": "\\u2029",
-	};
-
-	/**
-	 * Escape unsafe characters for inline JavaScript source.
-	 *
-	 * @param s JavaScript source fragment
-	 * @returns Source with characters escaped as unicode sequences
-	 */
-	static #escapeJs(s: string) {
-		return s.replace(Passkey.#escapeJsPattern, (c) => Passkey.#escapeJsMap[c]!);
-	}
-
-	/**
-	 * Serialize the browser runtime with safely escaped arguments.
-	 *
-	 * @param args Runtime args injected into the client initializer
-	 * @returns Inline script source
-	 */
-	static #script(
-		...args: [
-			bootstrap: string,
-			optionsAction: string,
-			action: string,
-			method: "create" | "get",
-		]
-	) {
-		return `(${Passkey.#addEventListeners})(${args.map((arg) => Passkey.#escapeJs(JSON.stringify(arg))).join()})`;
-	}
-
-	/**
-	 * Create a random challenge payload with freshness bounds.
-	 *
-	 * @returns Challenge payload used by signed option responses
-	 */
-	static #newChallenge() {
-		const iat = Date.now();
-
-		return {
-			challenge: Codec.Base64Url.encode(
-				crypto.getRandomValues(new Uint8Array(32)),
-			),
-			iat,
-			exp: iat + Passkey.#challengeTtl,
-		};
-	}
-
-	/**
-	 * Render fallback markup for users with JavaScript disabled.
-	 *
-	 * @returns `<noscript>` fallback element
-	 */
-	static #NoScript() {
-		return jsx("noscript", {
-			children: "JavaScript is required for authentication.",
-		});
-	}
-
-	/**
-	 * Build a registration form component for a route.
-	 *
-	 * - Fetches fresh WebAuthn options when the form is submitted.
-	 * - Requires JavaScript on the page.
-	 * - Uses signed challenges that expire after 1 minute.
-	 *
-	 * @param route Route to handle/verify the registration
-	 * @param exclude Existing credential IDs to exclude from registration
-	 * @param user User ID for registration, defaults to `crypto.randomUUID()`
-	 * @returns Form component for passkey registration
-	 */
-	create<Pattern extends string>(
-		route: Passkey.Post<Pattern>,
-		exclude?: string[],
-		user: string = crypto.randomUUID(),
-	): Route.Form<Pattern> {
-		Passkey.#prepareRoute(route);
-
-		return (props) => {
-			return route.Form({
-				...props,
-				children: [
-					props.children ?? [
-						route.Fields?.(),
-						jsx("button", { children: "Register" }),
-					],
-					jsx("script", {
-						type: "module",
-						children: async () => {
-							const action = route.pathname(props.params);
-
-							return Render.html(
-								Passkey.#script(
-									await this.#auth.sign(
-										JSON.stringify({
-											method: "create",
-											action,
-											user,
-											...(exclude ? { exclude } : {}),
-										} satisfies Schema.Infer<typeof Passkey.bCreate>),
-									),
-									Passkey.options.url(),
-									action,
-									"create",
-								),
-							);
-						},
-					}),
-					Passkey.#NoScript,
-				],
-			});
-		};
-	}
-
-	/**
-	 * Build a login form component for a route.
-	 *
-	 * - Fetches fresh WebAuthn options when the form is submitted.
-	 * - Requires JavaScript on the page.
-	 * - Uses signed challenges that expire after 1 minute.
-	 *
-	 * @param route Route to handle the login
-	 * @returns Form component for passkey login
-	 */
-	get<Pattern extends string>(
-		route: Passkey.Post<Pattern>,
-	): Route.Form<Pattern> {
-		Passkey.#prepareRoute(route);
-
-		return (props) => {
-			return route.Form({
-				...props,
-				children: [
-					props.children ?? [
-						route.Fields?.(),
-						jsx("button", { children: "Log in" }),
-					],
-					jsx("script", {
-						type: "module",
-						children: async () => {
-							const action = route.pathname(props.params);
-
-							return Render.html(
-								Passkey.#script(
-									await this.#auth.sign(
-										JSON.stringify({
-											method: "get",
-											action,
-										} satisfies Schema.Infer<typeof Passkey.bGet>),
-									),
-									Passkey.options.url(),
-									action,
-									"get",
-								),
-							);
-						},
-					}),
-					Passkey.#NoScript,
-				],
-			});
-		};
-	}
-
-	/**
-	 * Create a SHA-256 digest from binary input.
-	 *
-	 * @param data Input bytes
-	 * @returns Digest bytes
-	 */
-	static async #sha256(data: Uint8Array<ArrayBuffer>) {
-		return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
-	}
-
-	/**
-	 * Build parser for decoded `clientDataJSON`.
-	 *
-	 * - Enforces ceremony type via literal match.
-	 * - Enforces expected origin via literal match.
-	 *
-	 * @param ceremony Expected WebAuthn ceremony
-	 * @param origin Expected request origin
-	 * @returns Schema parser for decoded client data
-	 */
-	static #clientData = (ceremony: "create" | "get", origin: string) =>
-		Schema.string().json(
-			Schema.object({
-				type: Schema.literal(`webauthn.${ceremony}`),
-				challenge: Schema.string(),
-				origin: Schema.literal(origin, AuthIssue.m("origin")),
-			}),
-		);
-
-	/**
-	 * Schema for signed login challenge payloads.
-	 *
-	 * Supports app-side type inference for signed challenge payloads.
-	 */
-	static get = Schema.object({
 		challenge: Schema.string(),
-		iat: Schema.number().int(),
-		exp: Schema.number().int(),
-		action: Schema.string(),
 	});
-
-	/**
-	 * Schema for signed registration challenge payloads.
-	 *
-	 * Supports app-side type inference for signed challenge payloads.
-	 */
-	static create = Passkey.get.extend({ user: Schema.string() });
-
-	/**
-	 * Build parser for signed challenge payloads bound to a route path.
-	 *
-	 * @param ceremony Expected WebAuthn ceremony
-	 * @param action Expected route pathname
-	 * @returns Schema parser for signed challenge payloads
-	 */
-	static #challenge = (ceremony: "create" | "get", action: string) => {
-		return Schema.string()
-			.json(
-				(ceremony === "create" ? Passkey.create : Passkey.get).extend({
-					action: Schema.literal(action, AuthIssue.m("action")),
-				}),
-			)
-			.refine((c) => Date.now() <= c.exp, AuthIssue.m("challenge (expired)"));
-	};
-
-	/** Schema for signed registration bootstrap payloads. */
-	static bCreate = Schema.object({
-		method: Schema.literal("create"),
+	static readonly #bootstrap = Schema.object({
+		method: Schema.union([Schema.literal("register"), Schema.literal("login")]),
 		action: Schema.string(),
-		user: Schema.string(),
+		origin: Schema.string(),
+		browser: Schema.string(),
+		expiration: Schema.number().int(),
+		user: Schema.string().optional(),
 		exclude: Schema.array(Schema.string()).optional(),
 	});
-
-	/** Schema for signed login bootstrap payloads. */
-	static bGet = Schema.object({
-		method: Schema.literal("get"),
-		action: Schema.string(),
-	});
-
-	/** Shared credential envelope for parsed registration/login form data. */
-	static #credential = Schema.object({
+	static readonly #credential = Schema.object({
 		type: Schema.literal("public-key"),
 		id: Schema.string(),
 		rawId: Schema.string(),
 	});
-
-	/** Shared response field shape required by both credential payload types. */
-	static #response = Schema.object({ clientDataJSON: Schema.string() });
-
-	/**
-	 * Schema for parsed registration credentials from form submissions.
-	 */
-	static reg = Passkey.#credential.extend({
-		response: Passkey.#response.extend({ attestationObject: Schema.string() }),
-	});
-
-	/**
-	 * Schema for parsed authentication credentials from form submissions.
-	 */
-	static auth = Passkey.#credential.extend({
-		response: Passkey.#response.extend({
-			authenticatorData: Schema.string(),
-			signature: Schema.string(),
+	static readonly #registration = Passkey.#credential.extend({
+		response: Schema.object({
+			clientDataJSON: Schema.string(),
+			attestationObject: Schema.string(),
 		}),
 	});
+	static readonly #assertion = Passkey.#credential.extend({
+		response: Schema.object({
+			clientDataJSON: Schema.string(),
+			authenticatorData: Schema.string(),
+			signature: Schema.string(),
+			userHandle: Schema.union([Schema.string(), Schema.literal(null)]),
+		}),
+	});
+	readonly #c: Passkey.Context;
+	readonly #auth: Auth;
+	readonly #rp: string;
 
-	/**
-	 * Route that returns fresh signed passkey options.
-	 *
-	 * Required route for `create()` and `get()` form helpers.
-	 */
+	/** Create request-scoped passkey helpers. */
+	constructor(c: Passkey.Context, auth: Auth) {
+		this.#c = c;
+		this.#auth = auth;
+		this.#rp = new URL(auth.options.origin).hostname;
+	}
+
+	/** Registration form creation and response verification. */
+	readonly register = {
+		/** Create a form component; call in the route handler before returning JSX. */
+		form: <Pattern extends string>(
+			route: Passkey.Post<Pattern>,
+			{ user = crypto.randomUUID(), exclude = [] }: Passkey.Options = {},
+		) => {
+			if (!Codec.encode(user).length || Codec.encode(user).length > 64)
+				throw new TypeError("Passkey user must contain 1–64 UTF-8 bytes");
+			return this.#form(route, "register", { user, exclude });
+		},
+		/** Verify registration; persist the credential with a unique ID constraint. */
+		verify: () => this.#register(),
+	};
+
+	/** Username-free login form creation and response verification. */
+	readonly login = {
+		/** Create a form component; call in the route handler before returning JSX. */
+		form: <Pattern extends string>(route: Passkey.Post<Pattern>) =>
+			this.#form(route, "login"),
+		/** Verify an assertion and atomically persist its counter and backup state. */
+		verify: (credentials: Auth.Credentials) => this.#login(credentials),
+	};
+
+	#form<Pattern extends string>(
+		route: Passkey.Post<Pattern>,
+		method: "register" | "login",
+		options: Passkey.Options = {},
+	): Route.Form<Pattern> {
+		this.#origin();
+		if (route.extend && !Passkey.#routes.has(route)) {
+			if (route.names?.some((v) => v === "credential" || v === "challenge"))
+				throw new TypeError(
+					"Passkey forms reserve credential and challenge fields",
+				);
+			Object.assign(route, route.extend(Passkey.#fields));
+			Passkey.#routes.add(route);
+		}
+		const browser = this.#auth.browser(true);
+		this.#c.res.headers.set("cache-control", "no-store");
+		return (props) => {
+			const id = `passkey-${crypto.randomUUID()}`;
+			return route.Form({
+				...props,
+				children: [
+					props.children ?? [
+						route.Fields?.(),
+						jsx("button", {
+							children: method === "register" ? "Register" : "Log in",
+						}),
+					],
+					jsx("p", { role: "status", "aria-live": "polite" }),
+					jsx("script", {
+						id,
+						type: "module",
+						children: async () =>
+							Render.html(
+								`(${listen})(${[
+									id,
+									await this.#auth.sign(
+										`passkey:${JSON.stringify({ method, action: route.pathname(props.params), origin: this.#auth.options.origin, browser, expiration: Date.now() + Time.hour, ...options })}`,
+									),
+									Passkey.options.url(),
+									method,
+								]
+									.map((v) =>
+										JSON.stringify(v).replace(
+											/[<>&\u2028\u2029]/g,
+											(c) =>
+												`\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+										),
+									)
+									.join()})`,
+							),
+					}),
+					jsx("noscript", {
+						children: "JavaScript is required for authentication.",
+					}),
+				],
+			});
+		};
+	}
+
+	#origin() {
+		if (this.#c.url.origin !== this.#auth.options.origin)
+			throw new AuthIssue("origin");
+	}
+
+	/** Fresh options endpoint, mounted by App when authentication is configured. */
 	static readonly options = Route.post(
+		"/_ovr/passkey/options",
 		{ bootstrap: Field.text() },
 		async (c) => {
 			const input = await c.data();
-
 			if (input.issues) throw input;
+			const payload = await c.auth.verify(input.data.bootstrap);
+			if (!payload.startsWith("passkey:")) throw new AuthIssue("bootstrap");
+			const result = Schema.string()
+				.json(Passkey.#bootstrap)
+				.parse(payload.slice(8));
+			if (result.issues) throw result;
+			const bootstrap = result.data;
+			if (
+				c.url.origin !== c.auth.options.origin ||
+				bootstrap.origin !== c.auth.options.origin
+			)
+				throw new AuthIssue("origin");
+			if (!c.auth.browser() || bootstrap.browser !== c.auth.browser())
+				throw new AuthIssue("browser");
+			if (bootstrap.expiration <= Date.now())
+				throw new AuthIssue("bootstrap (expired)");
+			if (
+				bootstrap.method === "register" &&
+				(!bootstrap.user || Codec.encode(bootstrap.user).length > 64)
+			)
+				throw new AuthIssue("user");
 
-			const bootstrap = Schema.string()
-				.json(Schema.union([Passkey.bCreate, Passkey.bGet]))
-				.parse(await c.auth.verify(input.data.bootstrap));
-
-			if (bootstrap.issues) throw bootstrap;
-
-			c.res.headers.set(Header.name.cache, "no-store");
-
-			const { challenge, iat, exp } = Passkey.#newChallenge();
-			const rpId = c.url.hostname;
-
-			if (bootstrap.data.method === "create") {
-				return c.json({
-					signed: await c.auth.sign(
-						JSON.stringify({
-							challenge,
-							user: bootstrap.data.user,
-							iat,
-							exp,
-							action: bootstrap.data.action,
-						} satisfies Schema.Infer<typeof Passkey.create>),
-					),
+			const id = crypto.randomUUID();
+			const challenge = Codec.Base64Url.encode(
+				crypto.getRandomValues(new Uint8Array(32)),
+			);
+			await c.auth.options.challenges.set(id, {
+				challenge,
+				browser: bootstrap.browser,
+				method: bootstrap.method,
+				action: bootstrap.action,
+				origin: bootstrap.origin,
+				expiration: Date.now() + Passkey.#ttl,
+				...(bootstrap.user ? { user: bootstrap.user } : {}),
+			});
+			const rp = new URL(c.auth.options.origin).hostname;
+			c.res.headers.set("cache-control", "no-store");
+			if (bootstrap.method === "register") {
+				c.json({
+					challenge: id,
 					options: {
 						challenge,
-						rp: { id: rpId, name: rpId },
+						rp: { id: rp, name: c.auth.options.name ?? rp },
 						user: {
-							id: Codec.Base64Url.encode(Codec.encode(bootstrap.data.user)),
-							name: bootstrap.data.user,
-							displayName: bootstrap.data.user,
+							id: Codec.Base64Url.encode(Codec.encode(bootstrap.user!)),
+							name: bootstrap.user!,
+							displayName: bootstrap.user!,
 						},
 						pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-						excludeCredentials: (bootstrap.data.exclude ?? []).map((id) => ({
+						excludeCredentials: (bootstrap.exclude ?? []).map((id) => ({
 							type: "public-key",
 							id,
 						})),
 						authenticatorSelection: {
-							residentKey: "preferred",
+							residentKey: "required",
+							requireResidentKey: true,
 							userVerification: "required",
 						},
-						timeout: Passkey.#challengeTtl,
+						timeout: Passkey.#ttl,
 						attestation: "none",
 					} satisfies PublicKeyCredentialCreationOptionsJSON,
 				});
-			}
-
-			return c.json({
-				signed: await c.auth.sign(
-					JSON.stringify({
+			} else {
+				c.json({
+					challenge: id,
+					options: {
 						challenge,
-						iat,
-						exp,
-						action: bootstrap.data.action,
-					} satisfies Schema.Infer<typeof Passkey.get>),
-				),
-				options: {
-					challenge,
-					rpId,
-					timeout: Passkey.#challengeTtl,
-					userVerification: "required",
-				} satisfies PublicKeyCredentialRequestOptionsJSON,
-			});
+						rpId: rp,
+						timeout: Passkey.#ttl,
+						userVerification: "required",
+					} satisfies PublicKeyCredentialRequestOptionsJSON,
+				});
+			}
 		},
 	);
 
-	/**
-	 * Compare byte arrays without early return.
-	 *
-	 * Maintainer note: use for security-sensitive comparisons.
-	 *
-	 * @param a First byte array
-	 * @param b Second byte array
-	 * @returns `true` when both arrays are equal
-	 */
-	static #safeEqual(a: Uint8Array, b: Uint8Array) {
-		if (a.length !== b.length) return false;
+	static #decode(value: string) {
+		if (!/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1)
+			throw new AuthIssue("base64url");
+		const bytes = Codec.Base64Url.decode(value);
+		if (Codec.Base64Url.encode(bytes) !== value)
+			throw new AuthIssue("base64url");
+		return bytes;
+	}
 
+	static async #hash(value: Uint8Array<ArrayBuffer>) {
+		return new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+	}
+
+	static async #key(value: Uint8Array<ArrayBuffer>) {
+		try {
+			return await crypto.subtle.importKey(
+				"spki",
+				value,
+				{ name: "ECDSA", namedCurve: "P-256" },
+				false,
+				["verify"],
+			);
+		} catch (e) {
+			if (e instanceof DOMException) throw new AuthIssue("public key");
+			throw e;
+		}
+	}
+
+	async #consume(method: "register" | "login") {
+		this.#origin();
+		const parsed = await this.#c.data();
+		// Schema routes cache their parsed body; routes without a schema use the raw form.
+		const result =
+			parsed == null
+				? await Passkey.#fields.parse(this.#c.form())
+				: Passkey.#payload.parse(
+						parsed && typeof parsed === "object" && "data" in parsed
+							? parsed.data
+							: undefined,
+					);
+		if (result.issues) throw result;
+		const state = await this.#auth.options.challenges.take(
+			result.data.challenge,
+		);
+		if (!state || state.expiration <= Date.now())
+			throw new AuthIssue("challenge (expired or consumed)");
+		if (!this.#auth.browser() || state.browser !== this.#auth.browser())
+			throw new AuthIssue("browser");
+		if (
+			state.origin !== this.#auth.options.origin ||
+			state.method !== method ||
+			state.action !== this.#c.url.pathname
+		)
+			throw new AuthIssue("challenge binding");
+		return { state, credential: result.data.credential };
+	}
+
+	async #client(value: string, state: Auth.Challenge) {
+		const result = Schema.string()
+			.json(
+				Schema.object({
+					type: Schema.literal(
+						state.method === "register" ? "webauthn.create" : "webauthn.get",
+					),
+					origin: Schema.literal(this.#auth.options.origin),
+					challenge: Schema.literal(state.challenge),
+					crossOrigin: Schema.literal(false).optional(),
+				}),
+			)
+			.parse(Codec.decode(Passkey.#decode(value)));
+		if (result.issues) throw result;
+	}
+
+	async #data(data: AuthData.Data) {
+		if (
+			!Passkey.#equal(
+				data.rpIdHash,
+				await Passkey.#hash(Codec.encode(this.#rp)),
+			)
+		)
+			throw new AuthIssue("RP ID");
+		if (!(data.flags & 1) || !(data.flags & 4)) throw new AuthIssue("user");
+		if (data.flags & 16 && !(data.flags & 8))
+			throw new AuthIssue("backup flags");
+	}
+
+	static #equal(a: Uint8Array, b: Uint8Array) {
+		if (a.length !== b.length) return false;
 		let result = 0;
 		for (let i = 0; i < a.length; i++) result |= a[i]! ^ b[i]!;
-
 		return result === 0;
 	}
 
-	/**
-	 * Parse and validate passkey fields from the current form request.
-	 *
-	 * @returns Parsed form payload
-	 * @throws Schema.AggregateIssue when required fields are missing or invalid
-	 */
-	async #parseForm() {
-		const data = (await this.#c.data()) as ContextType.Result<never> | null;
-
-		if (data?.issues) {
-			throw data;
-		}
-
-		const result = data?.data
-			? Passkey.#payload.parse(data.data)
-			: await Passkey.#form.parse(await this.#c.form().data());
-
+	async #register() {
+		const { state, credential } = await this.#consume("register");
+		const result = Passkey.#registration.parse(credential);
 		if (result.issues) throw result;
-
-		return result.data;
-	}
-
-	/**
-	 * Shared challenge + client-data verification for both ceremonies.
-	 *
-	 * - Verifies signed payload integrity via `auth.verify`.
-	 * - Validates origin, ceremony type, action binding, and expiry.
-	 * - Compares challenge bytes from client and signed payload.
-	 *
-	 * @param ceremony Ceremony to verify (`create` or `get`)
-	 * @param credential Parsed credential payload
-	 * @param signed Signed challenge payload string
-	 * @returns Parsed signed challenge payload for the ceremony
-	 * @throws Schema.AggregateIssue for invalid credential or challenge input shape
-	 * @throws Auth.Issue for invalid auth challenge state
-	 */
-	async #verifyCredentialBase<
-		C extends "create" | "get",
-		O extends (C extends "create"
-			? Schema.Infer<typeof Passkey.create>
-			: Schema.Infer<typeof Passkey.get>),
-	>(
-		ceremony: C,
-		credential:
-			Schema.Infer<typeof Passkey.reg> | Schema.Infer<typeof Passkey.auth>,
-		signed: string,
-	) {
-		const client = Passkey.#clientData(ceremony, this.#c.url.origin).parse(
-			Codec.decode(Codec.Base64Url.decode(credential.response.clientDataJSON)),
-		);
-
-		if (client.issues) throw client;
-
-		const options = Passkey.#challenge(ceremony, this.#c.url.pathname).parse(
-			await this.#auth.verify(signed),
-		);
-
-		if (options.issues) throw options;
-
-		if (
-			!Passkey.#safeEqual(
-				Codec.Base64Url.decode(client.data.challenge),
-				Codec.Base64Url.decode(options.data.challenge),
-			)
-		) {
-			throw new AuthIssue("challenge");
-		}
-
-		return options.data as O;
-	}
-
-	/**
-	 * Verify RP binding and required user flags in authenticator data.
-	 *
-	 * @param authData Parsed authenticator data structure
-	 * @throws Auth.Issue when RP ID hash mismatches or required flags are absent
-	 */
-	async #verifyAuthData(authData: AuthData.Data) {
-		if (
-			!Passkey.#safeEqual(
-				authData.rpIdHash,
-				await Passkey.#sha256(Codec.encode(this.#rpId)),
-			)
-		) {
-			throw new AuthIssue("RP ID");
-		}
-
-		if (!(authData.flags & 0x01) || !(authData.flags & 0x04)) {
-			throw new AuthIssue("user");
-		}
-	}
-
-	/**
-	 * Verify a registration response.
-	 *
-	 * Persist the returned credential and associate it with the user account.
-	 *
-	 * @returns Verified credential to persist
-	 * @throws Schema.AggregateIssue if form fields, credential payload, or signed challenge payload are invalid
-	 * @throws Auth.Issue if challenge, RP/user flags, or attested credential state is invalid
-	 */
-	async verify(): Promise<Auth.Credential> {
-		const { credential, signed } = await this.#parseForm();
-
-		const result = Passkey.reg.parse(credential);
-
-		if (result.issues) throw result;
-
-		const options = await this.#verifyCredentialBase(
-			"create",
-			result.data,
-			signed,
-		);
-
-		const authData = AuthData.parse(
+		await this.#client(result.data.response.clientDataJSON, state);
+		const data = AuthData.parse(
 			new CBOR(
-				Codec.Base64Url.decode(result.data.response.attestationObject),
+				Passkey.#decode(result.data.response.attestationObject),
 			).decodeAttestation(),
 		);
-
-		await this.#verifyAuthData(authData);
-
-		if (!authData.attestedCredentialData) {
+		await this.#data(data);
+		if (!data.attestedCredentialData || !state.user)
 			throw new AuthIssue("credential data");
-		}
-
+		const id = data.attestedCredentialData.credentialId;
+		if (
+			!Passkey.#equal(Passkey.#decode(result.data.id), id) ||
+			!Passkey.#equal(Passkey.#decode(result.data.rawId), id)
+		)
+			throw new AuthIssue("credential ID");
+		const key = COSE.toSPKI(data.attestedCredentialData.publicKey);
+		// Web Crypto validates that the P-256 point is on the curve before it is stored.
+		await Passkey.#key(key);
 		return {
-			id: Codec.Base64Url.encode(authData.attestedCredentialData.credentialId),
-			publicKey: Codec.Base64Url.encode(
-				COSE.toSPKI(authData.attestedCredentialData.publicKey),
-			),
-			user: options.user,
+			id: result.data.id,
+			user: state.user,
+			publicKey: Codec.Base64Url.encode(key),
+			counter: data.counter,
+			eligible: Boolean(data.flags & 8),
+			backedUp: Boolean(data.flags & 16),
 		};
 	}
 
-	/**
-	 * Verify a login assertion.
-	 *
-	 * - Signature counters are not validated.
-	 * - Challenge usage is stateless and replay-protected only by challenge expiry.
-	 *
-	 * @param find Lookup function that returns the stored credential by credential ID
-	 * @returns Stored credential when assertion verification succeeds
-	 * @throws Schema.AggregateIssue if form fields, credential payload, or signed challenge payload are invalid
-	 * @throws Auth.Issue if challenge, credential lookup/state, RP/user flags, or signature state is invalid
-	 */
-	async assert(
-		find: (
-			id: Auth.Credential["id"],
-		) =>
-			| Promise<Auth.Credential | null | undefined>
-			| Auth.Credential
-			| null
-			| undefined,
-	) {
-		const { credential, signed } = await this.#parseForm();
-
-		const result = Passkey.auth.parse(credential);
-
+	async #login(credentials: Auth.Credentials) {
+		const { state, credential } = await this.#consume("login");
+		const result = Passkey.#assertion.parse(credential);
 		if (result.issues) throw result;
-
-		await this.#verifyCredentialBase("get", result.data, signed);
-
-		const stored = await find(result.data.id);
-
-		if (!stored) throw new AuthIssue("credential");
-
+		await this.#client(result.data.response.clientDataJSON, state);
 		if (
-			!Passkey.#safeEqual(
-				Codec.Base64Url.decode(result.data.id),
-				Codec.Base64Url.decode(stored.id),
+			!Passkey.#equal(
+				Passkey.#decode(result.data.id),
+				Passkey.#decode(result.data.rawId),
 			)
-		) {
+		)
 			throw new AuthIssue("credential ID");
-		}
-
-		const authDataBytes = Codec.Base64Url.decode(
-			result.data.response.authenticatorData,
+		const stored = await credentials.find(result.data.id);
+		if (!stored || stored.id !== result.data.id)
+			throw new AuthIssue("credential");
+		if (
+			!result.data.response.userHandle ||
+			!Passkey.#equal(
+				Passkey.#decode(result.data.response.userHandle),
+				Codec.encode(stored.user),
+			)
+		)
+			throw new AuthIssue("user handle");
+		const bytes = Passkey.#decode(result.data.response.authenticatorData);
+		const data = AuthData.parse(bytes);
+		await this.#data(data);
+		if (data.attestedCredentialData) throw new AuthIssue("assertion flags");
+		if (Boolean(data.flags & 8) !== stored.eligible)
+			throw new AuthIssue("backup eligibility");
+		if (
+			!Number.isSafeInteger(stored.counter) ||
+			stored.counter < 0 ||
+			((stored.counter || data.counter) && data.counter <= stored.counter)
+		)
+			throw new AuthIssue("signature counter");
+		const hash = await Passkey.#hash(
+			Passkey.#decode(result.data.response.clientDataJSON),
 		);
-
-		await this.#verifyAuthData(AuthData.parse(authDataBytes));
-
-		const clientDataHash = await Passkey.#sha256(
-			Codec.Base64Url.decode(result.data.response.clientDataJSON),
+		const signed = new Uint8Array(bytes.length + hash.length);
+		signed.set(bytes);
+		signed.set(hash, bytes.length);
+		const key = await Passkey.#key(Passkey.#decode(stored.publicKey));
+		const signature = DER.unwrap(
+			Passkey.#decode(result.data.response.signature),
 		);
-
-		const signedData = new Uint8Array(
-			authDataBytes.length + clientDataHash.length,
-		);
-		signedData.set(authDataBytes);
-		signedData.set(clientDataHash, authDataBytes.length);
-
-		const key = await crypto.subtle.importKey(
-			"spki",
-			Codec.Base64Url.decode(stored.publicKey),
-			{ name: "ECDSA", namedCurve: "P-256" },
-			false,
-			["verify"],
-		);
-
-		const verify = async (signature: Uint8Array<ArrayBuffer>) => {
-			try {
-				return await crypto.subtle.verify(
-					{ name: "ECDSA", hash: "SHA-256" },
-					key,
-					signature,
-					signedData,
-				);
-			} catch {}
+		if (
+			!(await crypto.subtle.verify(
+				{ name: "ECDSA", hash: "SHA-256" },
+				key,
+				signature,
+				signed,
+			))
+		)
+			throw new AuthIssue("signature");
+		const updated = {
+			...stored,
+			counter: data.counter,
+			backedUp: Boolean(data.flags & 16),
 		};
-
-		const sig = Codec.Base64Url.decode(result.data.response.signature);
-
-		if (!(await verify(sig))) {
-			try {
-				if (!(await verify(DER.unwrap(sig)))) throw new AuthIssue("signature");
-			} catch {
-				throw new AuthIssue("signature");
-			}
-		}
-
-		return stored;
+		if (!(await credentials.update(updated, stored)))
+			throw new AuthIssue("credential changed");
+		return updated;
 	}
 }

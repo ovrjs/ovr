@@ -111,3 +111,23 @@ describe("AuthData", () => {
 		expect(() => AuthData.parse(data)).toThrow("Invalid credential");
 	});
 });
+
+describe("authenticator boundaries", () => {
+	test("parses counters and extensions with their exact byte boundaries", () => {
+		const header = bytes(new Uint8Array(32), Uint8Array.of(0x85, 0, 0, 1, 2));
+		const data = bytes(header, Uint8Array.of(0xa1, 0x61, 0x61, 0xf5));
+		expect(AuthData.parse(data).counter).toBe(258);
+		expect(() => AuthData.parse(bytes(data, Uint8Array.of(0)))).toThrow(
+			"length",
+		);
+		expect(() => AuthData.parse(header)).toThrow();
+	});
+
+	test("rejects trailing data when the extension flag is absent", () => {
+		expect(() =>
+			AuthData.parse(
+				bytes(new Uint8Array(32), Uint8Array.of(5, 0, 0, 0, 0, 0)),
+			),
+		).toThrow("length");
+	});
+});

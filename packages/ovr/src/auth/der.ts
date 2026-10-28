@@ -1,42 +1,35 @@
-/** DER (Distinguished Encoding Rules) format utilities for signatures */
+import { AuthIssue } from "./issue.js";
+
+/** Strict DER decoding for WebAuthn ES256 signatures. */
 export class DER {
-	/** P-256 coordinate length in bytes */
-	static readonly #coordinateLength = 32;
-
-	/** ECDSA raw signature length (r + s coordinates) */
-	static readonly #signatureLength = 64;
-
-	/**
-	 * Convert DER encoded signature to raw format.
-	 *
-	 * @param der - DER encoded ECDSA signature
-	 * @returns Raw signature (r and s coordinates concatenated)
-	 */
+	/** Convert a canonical DER ECDSA signature into Web Crypto's 64-byte format. */
 	static unwrap(der: Uint8Array<ArrayBuffer>) {
-		const view = new DataView(der.buffer, der.byteOffset, der.byteLength);
-
-		if (view.getUint8(0) !== 0x30) return der; // DER SEQUENCE tag
-
+		if (
+			der.length < 8 ||
+			der.length > 72 ||
+			der[0] !== 0x30 ||
+			der[1] !== der.length - 2
+		)
+			throw new AuthIssue("DER signature");
+		const raw = new Uint8Array(64);
 		let offset = 2;
-
-		if (view.getUint8(1) & 0x80) {
-			// long-form length flag
-			offset += view.getUint8(1) & 0x7f; // number of following length bytes
+		for (let i = 0; i < 2; i++) {
+			if (der[offset++] !== 2) throw new AuthIssue("DER integer");
+			const length = der[offset++];
+			if (!length || length > 33 || offset + length > der.length)
+				throw new AuthIssue("DER integer length");
+			let value = der.subarray(offset, offset + length);
+			offset += length;
+			if (value[0]! & 128) throw new AuthIssue("DER negative integer");
+			if (value[0] === 0 && value.length > 1) {
+				if (!(value[1]! & 128)) throw new AuthIssue("DER integer padding");
+				value = value.subarray(1);
+			}
+			if (value.length > 32 || value.every((v) => v === 0))
+				throw new AuthIssue("DER integer");
+			raw.set(value, (i + 1) * 32 - value.length);
 		}
-
-		const rLen = view.getUint8(offset + 1);
-		let r = der.subarray(offset + 2, offset + 2 + rLen);
-		offset += 2 + rLen;
-
-		const sLen = view.getUint8(offset + 1);
-		let s = der.subarray(offset + 2, offset + 2 + sLen);
-
-		while (r.length > DER.#coordinateLength && r[0] === 0) r = r.subarray(1);
-		while (s.length > DER.#coordinateLength && s[0] === 0) s = s.subarray(1);
-
-		const raw = new Uint8Array(DER.#signatureLength);
-		raw.set(r, DER.#signatureLength / 2 - r.length);
-		raw.set(s, DER.#signatureLength - s.length);
+		if (offset !== der.length) throw new AuthIssue("DER signature length");
 		return raw;
 	}
 }

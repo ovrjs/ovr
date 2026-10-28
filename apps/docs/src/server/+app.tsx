@@ -1,6 +1,7 @@
 import * as content from "@/lib/content";
 import * as demo from "@/server/demo";
 import * as auth from "@/server/demo/auth";
+import { options } from "@/server/demo/auth/store";
 import * as docs from "@/server/docs";
 import * as home from "@/server/home";
 import * as notFound from "@/server/mw/not-found";
@@ -10,10 +11,12 @@ import "dotenv/config";
 import * as o from "ovr";
 
 const app = new o.App(
-	process.env.AUTH_SECRET ? { auth: { secret: process.env.AUTH_SECRET } } : {},
+	import.meta.env.DEV && process.env.AUTH_SECRET
+		? { auth: options(process.env.AUTH_SECRET, process.env.AUTH_ORIGIN) }
+		: {},
 );
 
-if (process.env.AUTH_SECRET) app.use(auth);
+if (import.meta.env.DEV && process.env.AUTH_SECRET) app.use(auth);
 
 app.use(redirect, notFound, home, docs, demo, seo);
 

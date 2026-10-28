@@ -1,72 +1,25 @@
 import { DER } from "./der.js";
 import { describe, expect, test } from "vitest";
 
-/**
- * Concatenate byte arrays.
- *
- * @param parts Byte chunks
- * @returns Combined bytes
- */
-const bytes = (...parts: Uint8Array[]) => {
-	const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-	let offset = 0;
-
-	for (const part of parts) {
-		out.set(part, offset);
-		offset += part.length;
-	}
-
-	return out;
-};
-
 describe("DER", () => {
-	test("unwrap returns input when signature is not DER sequence", () => {
-		const raw = new Uint8Array(64).fill(9);
-		raw[0] = 0x31;
-
-		expect(DER.unwrap(raw)).toBe(raw);
+	test("decodes short scalars and necessary sign padding", () => {
+		const raw = DER.unwrap(Uint8Array.of(0x30, 7, 2, 2, 0, 0x80, 2, 1, 1));
+		expect(raw).toHaveLength(64);
+		expect(raw[31]).toBe(0x80);
+		expect(raw[63]).toBe(1);
 	});
 
-	test("unwrap decodes short-form DER sequence", () => {
-		const r = Uint8Array.from({ length: 32 }, (_v, i) => i + 1);
-		const s = Uint8Array.from({ length: 32 }, (_v, i) => i + 33);
-		const der = bytes(
-			Uint8Array.of(0x30, 0x44, 0x02, 0x20),
-			r,
-			Uint8Array.of(0x02, 0x20),
-			s,
-		);
-
-		expect(DER.unwrap(der)).toEqual(bytes(r, s));
-	});
-
-	test("unwrap decodes long-form DER sequence length", () => {
-		const r = new Uint8Array(32).fill(1);
-		const s = new Uint8Array(32).fill(2);
-		const der = bytes(
-			Uint8Array.of(0x30, 0x81, 0x44, 0x02, 0x20),
-			r,
-			Uint8Array.of(0x02, 0x20),
-			s,
-		);
-
-		expect(DER.unwrap(der)).toEqual(bytes(r, s));
-	});
-
-	test("unwrap trims leading zeros and left-pads short coordinates", () => {
-		const r = new Uint8Array(32).fill(0x11);
-		const s = new Uint8Array(31).fill(0x22);
-		const der = bytes(
-			Uint8Array.of(0x30, 0x44, 0x02, 0x21, 0x00),
-			r,
-			Uint8Array.of(0x02, 0x1f),
-			s,
-		);
-		const raw = DER.unwrap(der);
-
-		expect(raw.length).toBe(64);
-		expect(raw.slice(0, 32)).toEqual(new Uint8Array(32).fill(0x11));
-		expect(raw[32]).toBe(0x00);
-		expect(raw.slice(33)).toEqual(new Uint8Array(31).fill(0x22));
+	test.each([
+		[],
+		[0x31, 6, 2, 1, 1, 2, 1, 1],
+		[0x30, 0x81, 6, 2, 1, 1, 2, 1, 1],
+		[0x30, 6, 3, 1, 1, 2, 1, 1],
+		[0x30, 6, 2, 1, 0x80, 2, 1, 1],
+		[0x30, 7, 2, 2, 0, 1, 2, 1, 1],
+		[0x30, 6, 2, 1, 0, 2, 1, 1],
+		[0x30, 6, 2, 3, 1, 2, 1, 1],
+		[0x30, 7, 2, 1, 1, 2, 1, 1, 0],
+	])("rejects malformed or noncanonical signatures: %j", (...value) => {
+		expect(() => DER.unwrap(Uint8Array.from(value))).toThrow("Invalid DER");
 	});
 });

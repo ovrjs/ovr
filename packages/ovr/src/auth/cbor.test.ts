@@ -32,7 +32,10 @@ describe("CBOR", () => {
 	test("decodeAttestation returns authData for fmt none", () => {
 		const authData = Uint8Array.of(1, 2, 3, 4);
 		const encoded = bytes(
-			Uint8Array.of(0xa2),
+			Uint8Array.of(0xa3),
+			Uint8Array.of(0x67),
+			ascii("attStmt"),
+			Uint8Array.of(0xa0),
 			Uint8Array.of(0x63),
 			ascii("fmt"),
 			Uint8Array.of(0x64),
@@ -118,6 +121,7 @@ describe("COSE", () => {
 		const spki = COSE.toSPKI(
 			new Map<number, number | Uint8Array>([
 				[1, 2],
+				[3, -7],
 				[-1, 1],
 				[-2, x],
 				[-3, y],
@@ -137,6 +141,7 @@ describe("COSE", () => {
 			COSE.toSPKI(
 				new Map<number, number | Uint8Array>([
 					[1, 1],
+					[3, -7],
 					[-1, 1],
 					[-2, new Uint8Array(32)],
 					[-3, new Uint8Array(32)],
@@ -150,6 +155,7 @@ describe("COSE", () => {
 			COSE.toSPKI(
 				new Map<number, number | Uint8Array>([
 					[1, 2],
+					[3, -7],
 					[-1, 2],
 					[-2, new Uint8Array(32)],
 					[-3, new Uint8Array(32)],
@@ -163,11 +169,77 @@ describe("COSE", () => {
 			COSE.toSPKI(
 				new Map<number, number | Uint8Array>([
 					[1, 2],
+					[3, -7],
 					[-1, 1],
 					[-2, 1],
 					[-3, new Uint8Array(32)],
 				]),
 			),
 		).toThrow("Invalid COSE coordinates");
+	});
+});
+
+describe("CBOR boundaries", () => {
+	test("rejects duplicate labels, excessive nesting, and oversized input", () => {
+		expect(() =>
+			new CBOR(Uint8Array.of(0xa2, 1, 2, 1, 3)).decodeCOSEKey(),
+		).toThrow("duplicate");
+		expect(() =>
+			new CBOR(
+				Uint8Array.of(...new Array(10).fill(0x81), 1),
+			).decodeExtensions(),
+		).toThrow("depth");
+		expect(() => new CBOR(new Uint8Array(65537))).toThrow("size");
+	});
+
+	test("requires an empty attestation statement and rejects trailing bytes", () => {
+		const encoded = bytes(
+			Uint8Array.of(0xa3),
+			Uint8Array.of(0x63),
+			ascii("fmt"),
+			Uint8Array.of(0x64),
+			ascii("none"),
+			Uint8Array.of(0x68),
+			ascii("authData"),
+			Uint8Array.of(0x41, 0),
+			Uint8Array.of(0x67),
+			ascii("attStmt"),
+			Uint8Array.of(0xa0),
+		);
+		expect(new CBOR(encoded).decodeAttestation()).toEqual(Uint8Array.of(0));
+		expect(() =>
+			new CBOR(bytes(encoded, Uint8Array.of(0))).decodeAttestation(),
+		).toThrow();
+		expect(() =>
+			new CBOR(encoded.subarray(0, encoded.length - 1)).decodeAttestation(),
+		).toThrow();
+	});
+
+	test.each([0, 31, 33])("rejects EC coordinates of length %i", (length) => {
+		expect(() =>
+			COSE.toSPKI(
+				new Map<number, number | Uint8Array>([
+					[1, 2],
+					[3, -7],
+					[-1, 1],
+					[-2, new Uint8Array(length)],
+					[-3, new Uint8Array(32)],
+				]),
+			),
+		).toThrow("coordinates");
+	});
+
+	test("checks the ES256 algorithm instead of inferring it from the curve", () => {
+		expect(() =>
+			COSE.toSPKI(
+				new Map<number, number | Uint8Array>([
+					[1, 2],
+					[3, -8],
+					[-1, 1],
+					[-2, new Uint8Array(32)],
+					[-3, new Uint8Array(32)],
+				]),
+			),
+		).toThrow("algorithm");
 	});
 });
