@@ -166,3 +166,16 @@ test("bounds outstanding challenges across connections and reclaims consumed cap
 	second.challenges.take("challenge-0");
 	expect(first.challenges.set("replacement", challenge())).toBe(true);
 });
+
+test("does not attach a second credential by reusing an existing signup user ID", () => {
+	const store = open();
+	store.register(credential, "original@example.com");
+	expect(() =>
+		store.register(
+			{ ...credential, id: "second-credential" },
+			"replacement@example.com",
+		),
+	).toThrow();
+	expect(store.user(credential.user)?.email).toBe("original@example.com");
+	expect(store.list(credential.user)).toEqual([credential]);
+});

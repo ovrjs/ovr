@@ -13,38 +13,60 @@ class Element {
 	}
 }
 class Input extends Element {
+	validation = "";
+	setCustomValidity(message: string) {
+		this.validation = message;
+	}
 	name = "";
 	type = "";
 	value = "";
 }
+type Submission = {
+	submitter: unknown;
+	defaultPrevented: boolean;
+	preventDefault: () => void;
+	target?: Input;
+};
 class Form extends Element {
 	querySelector() {
 		return null;
 	}
 	fields = new Map<string, Input>();
 	elements = { namedItem: (name: string) => this.fields.get(name) };
-	handler?: (event: {
-		submitter: unknown;
-		preventDefault: () => void;
-	}) => Promise<void>;
+	handler?: (event: Submission) => Promise<void>;
+	listeners = new Map<string, NonNullable<Form["handler"]>>();
 	submissions: unknown[] = [];
-	events: { submitter: unknown; preventDefault: () => void }[] = [];
+	events: Submission[] = [];
+	valid = true;
+	cancel = false;
+	reportValidity = vi.fn();
 	append(input: Input) {
 		this.fields.set(input.name, input);
 	}
-	addEventListener(_name: string, handler: NonNullable<Form["handler"]>) {
-		this.handler = handler;
+	addEventListener(name: string, handler: NonNullable<Form["handler"]>) {
+		if (name === "submit") this.handler = handler;
+		else this.listeners.set(name, handler);
 	}
 	async fire(submitter: unknown = null) {
-		const event = { submitter, preventDefault: vi.fn() };
+		const event = {
+			submitter,
+			defaultPrevented: false,
+			preventDefault: vi.fn(() => {
+				event.defaultPrevented = true;
+			}),
+		};
 		this.events.push(event);
-		await this.handler?.(event);
+		const pending = this.handler?.(event);
+		// DOM dispatch calls other listeners synchronously, without awaiting async listeners.
+		if (this.cancel) event.preventDefault();
+		await pending;
 	}
 	requestSubmit(submitter: unknown) {
 		this.submissions.push(submitter);
-		void this.fire(submitter);
+		if (this.valid) void this.fire(submitter);
 	}
 }
+
 class Attestation {
 	clientDataJSON = Uint8Array.of(1).buffer;
 	attestationObject = Uint8Array.of(2).buffer;
@@ -92,7 +114,14 @@ function setup() {
 	vi.stubGlobal("PublicKeyCredential", Credential);
 	vi.stubGlobal("AuthenticatorAttestationResponse", Attestation);
 	vi.stubGlobal("AuthenticatorAssertionResponse", Assertion);
-	vi.stubGlobal("window", { PublicKeyCredential: Credential });
+	const pages = new Map<string, (event: { persisted: boolean }) => void>();
+	vi.stubGlobal("window", {
+		PublicKeyCredential: Credential,
+		addEventListener: (
+			name: string,
+			callback: (event: { persisted: boolean }) => void,
+		) => pages.set(name, callback),
+	});
 	vi.stubGlobal("document", {
 		getElementById: (id: string) => scripts.get(id),
 		createElement: () => new Input(),
@@ -114,7 +143,7 @@ function setup() {
 	const init: typeof listen = new Function(
 		`${source.slice(0, source.indexOf("// Modules execute")).replace("export function", "function")}\nreturn listen;`,
 	)();
-	return { first, second, status, fetcher, create, get, init };
+	return { first, second, status, fetcher, create, get, init, pages };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -152,7 +181,7 @@ describe("passkey browser runtime", () => {
 				.userHandle,
 		).toBe("BA");
 		expect(state.get).toHaveBeenCalledOnce();
-		expect(state.first.attributes.has("aria-busy")).toBe(false);
+		expect(state.first.attributes.has("aria-busy")).toBe(true);
 	});
 
 	test("announces cancellation, clears stale fields, and permits a fresh retry", async () => {
@@ -307,4 +336,103 @@ test("auto-initializes later streamed forms without attaching duplicate handlers
 	expect(state.first.handler).toBe(previous);
 	await state.second.fire();
 	expect(state.get).toHaveBeenCalledOnce();
+	state.pages.get("pageshow")?.({ persisted: false });
+	await state.second.fire();
+	expect(state.get).toHaveBeenCalledOnce();
+	state.pages.get("pageshow")?.({ persisted: true });
+	await state.second.fire();
+	expect(state.get).toHaveBeenCalledTimes(2);
+});
+
+test("keeps successful native submissions locked until back navigation resets the form", async () => {
+	const state = setup();
+	const reset = state.init("first", "bootstrap", "/options", "register");
+	await state.first.fire();
+	await state.first.fire();
+	expect(state.fetcher).toHaveBeenCalledOnce();
+	expect(state.first.submissions).toHaveLength(1);
+	expect(state.first.events.at(-1)?.defaultPrevented).toBe(true);
+	reset!();
+	await state.first.fire();
+	expect(state.fetcher).toHaveBeenCalledTimes(2);
+});
+
+test.each(["validation", "cancellation"])(
+	"unlocks a final submission stopped by %s",
+	async (reason) => {
+		const state = setup();
+		state.first.valid = reason !== "validation";
+		state.first.cancel = reason === "cancellation";
+		state.init("first", "bootstrap", "/options", "register");
+		await state.first.fire();
+		state.first.valid = true;
+		state.first.cancel = false;
+		await state.first.fire();
+		expect(state.fetcher).toHaveBeenCalledTimes(2);
+		expect(state.first.submissions).toHaveLength(2);
+	},
+);
+
+test.each(["seconds", "date"])(
+	"respects a Retry-After %s deadline without fetching early",
+	async (format) => {
+		const state = setup();
+		const now = Date.now();
+		const time = vi.spyOn(Date, "now").mockReturnValue(now);
+		state.fetcher.mockResolvedValueOnce(
+			new Response("Too many requests", {
+				status: 429,
+				headers: {
+					"retry-after":
+						format === "seconds" ? "60" : new Date(now + 60000).toUTCString(),
+				},
+			}),
+		);
+		try {
+			state.init("first", "bootstrap", "/options", "register");
+			await state.first.fire();
+			expect(state.status[0]?.textContent).toContain("Too many requests");
+			expect(state.status[0]?.textContent).not.toContain("Reload");
+			await state.first.fire();
+			expect(state.fetcher).toHaveBeenCalledOnce();
+			expect(state.create).not.toHaveBeenCalled();
+			time.mockReturnValue(now + 61000);
+			await state.first.fire();
+			expect(state.fetcher).toHaveBeenCalledTimes(2);
+			expect(state.create).toHaveBeenCalledOnce();
+		} finally {
+			time.mockRestore();
+		}
+	},
+);
+
+test("marks invalid application fields without echoing server messages or requiring a reload", async () => {
+	const state = setup();
+	const email = new Input();
+	email.name = "email";
+	state.first.append(email);
+	state.fetcher.mockResolvedValueOnce(
+		Response.json(
+			{ fields: ["email"], message: "private details" },
+			{ status: 422 },
+		),
+	);
+	state.init("first", "bootstrap", "/options", "register");
+	await state.first.fire();
+	expect(email.validation).toBe("Check this field.");
+	expect(state.first.reportValidity).toHaveBeenCalledOnce();
+	expect(state.create).not.toHaveBeenCalled();
+	expect(state.status[0]?.textContent).toContain(
+		"Check your registration details",
+	);
+	expect(state.status[0]?.textContent).not.toMatch(/private|Reload/);
+	await state.first.listeners.get("input")?.({
+		submitter: null,
+		preventDefault: () => {},
+		defaultPrevented: false,
+		target: email,
+	});
+	expect(email.validation).toBe("");
+	await state.first.fire();
+	expect(state.create).toHaveBeenCalledOnce();
 });

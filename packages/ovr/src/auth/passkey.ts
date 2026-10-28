@@ -2,10 +2,10 @@ import type { Context as ContextType } from "../context/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form, Schema } from "../schema/index.js";
-import { Codec, Time } from "../util/index.js";
+import { Codec, Size, Time } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
-import { source } from "./client-source.js";
+import { etag, source } from "./client-source.js";
 import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 import { AuthIssue } from "./issue.js";
@@ -18,7 +18,7 @@ export namespace Passkey {
 	};
 	/** Request capabilities needed by authentication helpers. */
 	export type Context = Pick<ContextType, "cookie" | "url" | "res" | "form"> & {
-		data: () => Promise<unknown>;
+		data: (options?: { payload: number }) => Promise<unknown>;
 	};
 	/** POST route contract retaining typed pathname parameters. */
 	export interface Post<Pattern extends string> extends Omit<
@@ -223,6 +223,21 @@ export class Passkey {
 		c.res.headers.set("content-type", "text/javascript; charset=utf-8");
 		c.res.headers.set("x-content-type-options", "nosniff");
 		c.res.headers.set("cache-control", "no-cache");
+		c.res.headers.set("etag", etag);
+		if (
+			c.req.headers
+				.get("if-none-match")
+				?.split(",")
+				.some(
+					(value) =>
+						value.trim() === "*" ||
+						value.trim().replace(/^W\//, "") === etag.slice(2),
+				)
+		) {
+			c.res.status = 304;
+			c.res.body = null;
+			return;
+		}
 		c.res.body = source;
 	});
 
@@ -331,12 +346,12 @@ export class Passkey {
 			});
 	}
 
-	/** Fresh options endpoint for explicitly composed protocol components. */
+	/** Advanced options component. Mount only behind application admission controls and error handling; App never mounts it implicitly. */
 	static readonly options = Route.post(
 		"/_ovr/passkey/options",
 		{ bootstrap: Field.text() },
 		async (c) => {
-			const input = await c.data();
+			const input = await c.data({ payload: 128 * Size.kb });
 			if (input.issues) throw input;
 			await Passkey.issue(c, input.data.bootstrap);
 		},
@@ -372,11 +387,16 @@ export class Passkey {
 
 	async #consume(method: "register" | "login") {
 		this.#origin();
-		const parsed = await this.#c.data();
+		const parsed = await this.#c.data({ payload: 128 * Size.kb });
 		// Schema routes cache their parsed body; routes without a schema use the raw form.
 		const result =
 			parsed == null
-				? await Passkey.#fields.parse(this.#c.form())
+				? await Passkey.#fields.parse(
+						this.#c.form({
+							payload: 128 * Size.kb,
+							parts: Passkey.#fields.parts,
+						}),
+					)
 				: Passkey.#payload.parse(
 						parsed && typeof parsed === "object" && "data" in parsed
 							? parsed.data

@@ -1,5 +1,4 @@
 import { Auth } from "../auth/index.js";
-import { Passkey } from "../auth/passkey.js";
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
@@ -71,11 +70,19 @@ export class App {
 	constructor(options?: App.Options) {
 		this.#options = { csrf: true, trailingSlash: "never" as const, ...options };
 
-		if (this.#options.auth) {
-			Auth.validate(this.#options.auth);
-			this.use(
-				...(this.#options.auth.routes ?? [Passkey.options, Passkey.client]),
-			);
+		const auth = this.#options.auth;
+		if (auth) {
+			Auth.validate(auth);
+			// Reject a noncanonical host before a handler can read a session or write auth state.
+			this.#global.push((c, next) => {
+				if (c.url.origin !== auth.origin) {
+					c.res.headers.set("cache-control", "no-store");
+					c.text("Misdirected Request", 421);
+					return;
+				}
+				return next();
+			});
+			if (auth.routes) this.use(...auth.routes);
 		}
 
 		if (this.#options.csrf) this.#global.push(App.#csrf);

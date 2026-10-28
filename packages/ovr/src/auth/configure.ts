@@ -3,7 +3,7 @@ import { jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form } from "../schema/index.js";
-import { Size, Time } from "../util/index.js";
+import { Size } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
 
@@ -15,7 +15,7 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 		readonly fields: Shape;
 		/** Human-readable account label, independent of the opaque user handle. */
 		readonly name: (data: Form.Parse.Data<Shape>) => Auth.Result<string>;
-		/** Atomically create the user and credential, enforcing a unique credential ID. */
+		/** Atomically insert a new user and credential, enforcing unique user and credential IDs. Never upsert an existing user. */
 		readonly create: (
 			data: Form.Parse.Data<Shape>,
 			credential: Auth.Credential,
@@ -29,8 +29,8 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 	readonly paths?: Partial<
 		Record<"register" | "login" | "logout" | "options" | "client", string>
 	>;
-	/** Optional shared rate limiter. Return false to deny before reading the request body. */
-	readonly allow?: (
+	/** Required deployment admission policy for registration/login. Use a trusted edge or shared limiter; logout bypasses it. */
+	readonly allow: (
 		c: Pick<Context, "req" | "url" | "cookie">,
 	) => Auth.Result<boolean>;
 	/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
@@ -44,6 +44,10 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 export function configure<Shape extends Form.Shape>(
 	options: Configuration<Shape>,
 ): Auth.Passkeys<Shape> {
+	if (typeof options.allow !== "function")
+		throw new TypeError(
+			"Auth.passkey requires an allow callback backed by your deployment admission policy",
+		);
 	const paths = {
 		register: "/auth/register",
 		login: "/auth/login",
@@ -98,10 +102,6 @@ export function configure<Shape extends Form.Shape>(
 		) as Form.Parse.Data<Shape>;
 	};
 
-	// Bounded, per-instance protection. A shared allow callback or edge limiter can enforce fleet-wide limits.
-	const attempts = new Map<string, number>();
-	let window = 0;
-	let total = 0;
 	const guard =
 		(method: "register" | "login" | "logout", prompt = false) =>
 		async (
@@ -112,24 +112,8 @@ export function configure<Shape extends Form.Shape>(
 			try {
 				if (c.url.origin !== options.origin)
 					return c.text("Authentication failed.", 400);
-				if (Date.now() - window >= Time.minute) {
-					window = Date.now();
-					total = 0;
-					attempts.clear();
-				}
-				const browser = c.cookie.get("__Host-auth-browser") ?? "unbound";
-				const count = attempts.get(browser) ?? 0;
-				if (total >= 1000 || count >= 20) {
-					c.res.headers.set("retry-after", "60");
-					return c.text(
-						"Too many authentication requests. Try again later.",
-						429,
-					);
-				}
-				total++;
-				attempts.set(browser, count + 1);
-				// Reserve local capacity before awaiting a shared limiter so concurrent calls cannot bypass it.
-				if (options.allow && !(await options.allow(c))) {
+				// Network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header.
+				if (method !== "logout" && !(await options.allow(c))) {
 					c.res.headers.set("retry-after", "60");
 					return c.text(
 						"Too many authentication requests. Try again later.",
@@ -189,7 +173,15 @@ export function configure<Shape extends Form.Shape>(
 		guard("register", true),
 		async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });
-			if (!input || input.issues) throw input;
+			if (!input) throw new TypeError("Missing registration schema");
+			if (input.issues) {
+				const invalid = fields.names.filter((name) =>
+					input.issues.some((issue) => issue.path[0] === name),
+				);
+				if (!invalid.length) throw input;
+				c.json({ fields: invalid }, 422);
+				return;
+			}
 			// The reserved bootstrap field is added to the validated application shape above.
 			const data = input.data as Form.Parse.Data<Shape> & { bootstrap: string };
 			await Passkey.issue(

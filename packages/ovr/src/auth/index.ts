@@ -119,7 +119,9 @@ export namespace Auth {
 		find(id: string): Result<Credential | null | undefined>;
 		/**
 		 * Atomically save `credential` only if the record still matches `previous`.
-		 * Return false for a concurrent change or deletion; never recreate a deleted passkey.
+		 * Return true when the snapshot matches, even when the values are unchanged.
+		 * Use matched rows (or RETURNING), not changed-row counts. Return false for a
+		 * concurrent change or deletion; never recreate a deleted passkey.
 		 */
 		update(credential: Credential, previous: Credential): Result<boolean>;
 	}
@@ -163,7 +165,7 @@ export class Auth {
 
 	/** Normalized authentication configuration. */
 	readonly options;
-	/** Registration and login helpers. */
+	/** Advanced protocol components. Direct use requires application admission limits, body limits, and error handling. */
 	readonly passkey: Passkey;
 
 	/** Create authentication helpers for the current request. */

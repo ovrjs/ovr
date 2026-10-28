@@ -196,6 +196,8 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		...extra,
 	};
 	const app = new App({ auth: options });
+	// Protocol tests explicitly compose advanced routes; the application no longer mounts them implicitly.
+	app.use(Passkey.options, Passkey.client);
 	const register = Route.post(
 		"/register",
 		{ email: Field.email() },
@@ -534,9 +536,9 @@ describe("passkey ceremonies", () => {
 
 	test("does not trust a different request host even with a valid browser cookie", async () => {
 		const state = setup();
-		await expect(
-			state.app.fetch("https://evil.example/register-page"),
-		).rejects.toThrow("origin");
+		expect(
+			(await state.app.fetch("https://evil.example/register-page")).status,
+		).toBe(421);
 	});
 });
 
@@ -749,6 +751,7 @@ function managed(
 	const service = Auth.passkey({
 		...storage.options,
 		credentials: storage.credentials,
+		allow: () => true,
 		page: "/auth",
 		redirect: "/account",
 		error,
@@ -943,8 +946,8 @@ describe("configured passkey callbacks", () => {
 		invalid.set("bootstrap", start.bootstrap);
 		invalid.set("email", "invalid");
 		const response = await state.post(start.endpoint, invalid, start.cookie);
-		expect(response.status).toBe(400);
-		expect(await response.text()).toBe("Authentication failed. Try again.");
+		expect(response.status).toBe(422);
+		expect(await response.json()).toEqual({ fields: ["email"] });
 		expect(set).not.toHaveBeenCalled();
 		allow.mockReturnValue(false);
 		const denied = await state.post(start.endpoint, invalid, start.cookie);
@@ -953,31 +956,21 @@ describe("configured passkey callbacks", () => {
 		expect(set).not.toHaveBeenCalled();
 	});
 
-	test("enforces default limits and respects a shared challenge capacity refusal", async () => {
+	test("respects a shared challenge capacity refusal", async () => {
 		const state = managed();
-		const start = await state.start("register");
-		const data = new FormData();
-		data.set("bootstrap", start.bootstrap);
-		data.set("email", "user@example.com");
-		for (let i = 1; i < 20; i++)
-			expect(
-				(await state.post(start.endpoint, data, start.cookie)).status,
-			).toBe(200);
-		expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
-			429,
-		);
-		const other = managed();
-		vi.spyOn(other.storage.options.challenges, "set").mockReturnValue(false);
-		const page = await other.app.fetch(origin + "/auth");
+		vi.spyOn(state.storage.options.challenges, "set").mockReturnValue(false);
+		const page = await state.app.fetch(origin + "/auth");
 		const html = await page.text();
-		const bootstrap = html
-			.match(/data-bootstrap="([^"]+)"/)![1]!
-			.replaceAll("&quot;", '"');
-		data.set("bootstrap", bootstrap);
+		const data = new FormData();
+		data.set(
+			"bootstrap",
+			html.match(/data-bootstrap="([^"]+)"/)![1]!.replaceAll("&quot;", '\"'),
+		);
+		data.set("email", "user@example.com");
 		expect(
 			(
-				await other.post(
-					start.endpoint,
+				await state.post(
+					"/_ovr/passkey/options/register",
 					data,
 					page.headers.getSetCookie()[0]!.split(";")[0],
 				)
@@ -1018,28 +1011,77 @@ describe("configured passkey callbacks", () => {
 	});
 });
 
-test("async shared limiting cannot bypass local limits with concurrent requests", async () => {
-	const state = managed(setup(), {
+test("junk traffic cannot exhaust a shared framework quota or deny another user login and logout", async () => {
+	const allow = vi.fn(async () => true);
+	const state = managed(setup(), { allow });
+	for (let i = 0; i < 1000; i++) {
+		const data = new FormData();
+		data.set("bootstrap", "invalid");
+		expect(
+			(
+				await state.post(
+					"/_ovr/passkey/options/login",
+					data,
+					`__Host-auth-browser=attacker-${i}`,
+				)
+			).status,
+		).toBe(400);
+	}
+	const start = await state.start("register");
+	const keys = await pair();
+	const registered = await state.submit(
+		start,
+		await registration(start.options.challenge, keys),
+	);
+	expect(registered.status).toBe(303);
+	const cookie = registered.headers.getSetCookie().at(-1)!.split(";")[0]!;
+	allow.mockResolvedValue(false);
+	allow.mockClear();
+	expect(
+		(await state.post("/auth/logout", new FormData(), cookie)).status,
+	).toBe(303);
+	expect(allow).not.toHaveBeenCalled();
+	expect(state.storage.sessions.size).toBe(0);
+});
+
+test("admission errors cannot prevent logout and unconfigured admission fails at startup", async () => {
+	const state = managed();
+	const { allow, ...options } = state.service;
+	void allow;
+	// @ts-expect-error A deployment policy must be explicit, even when the trusted edge already limits traffic.
+	expect(() => Auth.passkey(options)).toThrow("allow callback");
+	const blocked = managed(setup(), {
 		allow: async () => {
-			await Promise.resolve();
-			return true;
+			throw new Error("limiter unavailable");
 		},
 	});
-	const start = await state.start("register");
+	expect((await blocked.post("/auth/logout", new FormData())).status).toBe(303);
+});
+
+test("raw auth options no longer mount an unguarded options endpoint", async () => {
+	const storage = setup();
+	const app = new App({ auth: storage.options });
+	app.use((c, next) => (c.route ? next() : c.text("Not Found", 404)));
 	const data = new FormData();
-	data.set("bootstrap", start.bootstrap);
-	data.set("email", "user@example.com");
-	const requests = await Promise.all(
-		Array.from({ length: 25 }, () =>
-			state.post(start.endpoint, data, start.cookie),
-		),
-	);
-	expect(requests.filter((response) => response.status === 200)).toHaveLength(
-		19,
-	);
-	expect(requests.filter((response) => response.status === 429)).toHaveLength(
-		6,
-	);
+	data.set("bootstrap", "invalid");
+	expect(
+		(
+			await app.fetch(origin + "/_ovr/passkey/options", {
+				method: "POST",
+				headers: { origin },
+				body: data,
+			})
+		).status,
+	).toBe(404);
+});
+
+test("host mismatches return a controlled status before session reads or callbacks", async () => {
+	const state = managed();
+	const get = vi.spyOn(state.storage.options.sessions, "get");
+	const response = await state.app.fetch("https://wrong.example/whoami");
+	expect(response.status).toBe(421);
+	expect(response.headers.get("cache-control")).toBe("no-store");
+	expect(get).not.toHaveBeenCalled();
 });
 
 test("configured logout reports storage failure without claiming success", async () => {
@@ -1081,4 +1123,102 @@ test("configured options reject substituted operations and oversized bodies befo
 	const oversized = await state.post(start.endpoint, data, start.cookie);
 	expect(oversized.status).toBe(400);
 	expect(set).not.toHaveBeenCalled();
+});
+
+test("a zero-counter credential requires a matched snapshot even when its values do not change", async () => {
+	const storage = await enrolled();
+	const state = managed(storage);
+	const update = vi
+		.spyOn(storage.credentials, "update")
+		.mockReturnValueOnce(false);
+	const rejected = await state.start("login");
+	const failure = await state.submit(
+		rejected,
+		await assertion(rejected.options.challenge, storage.keys),
+		"/auth/login",
+	);
+	expect(failure.headers.get("location")).toBe(origin + "/auth?_auth=login");
+	expect(storage.sessions.size).toBe(0);
+	const accepted = await state.start("login");
+	const success = await state.submit(
+		accepted,
+		await assertion(accepted.options.challenge, storage.keys),
+		"/auth/login",
+	);
+	expect(success.headers.get("location")).toBe("/account");
+	expect(update).toHaveBeenCalledTimes(2);
+	expect(update.mock.calls[0]?.[0]).toEqual(update.mock.calls[0]?.[1]);
+	expect(storage.records.get(id)?.counter).toBe(0);
+	expect(storage.sessions.size).toBe(1);
+});
+
+test("account persistence may complete before session storage fails; normal login can recover", async () => {
+	const state = managed();
+	const keys = await pair();
+	vi.spyOn(state.storage.options.sessions, "set").mockRejectedValueOnce(
+		new Error("session unavailable"),
+	);
+	const start = await state.start("register");
+	const failed = await state.submit(
+		start,
+		await registration(start.options.challenge, keys),
+	);
+	expect(failed.headers.get("location")).toBe(origin + "/auth?_auth=register");
+	expect(failed.headers.getSetCookie()).toHaveLength(0);
+	expect(state.storage.records.size).toBe(1);
+	expect(state.storage.sessions.size).toBe(0);
+	const login = await state.start("login", start.cookie);
+	const result = await state.submit(
+		login,
+		await assertion(login.options.challenge, keys, {
+			handle: state.storage.records.get(id)!.user,
+		}),
+		"/auth/login",
+	);
+	expect(result.headers.get("location")).toBe("/account");
+	expect(state.create).toHaveBeenCalledOnce();
+	expect(state.storage.sessions.size).toBe(1);
+});
+
+test("browser assets revalidate with an ETag instead of downloading unchanged code", async () => {
+	const state = managed();
+	const first = await state.app.fetch(origin + "/_ovr/passkey/client.js");
+	const etag = first.headers.get("etag")!;
+	expect(etag).toMatch(/^W\/"[a-f0-9]{64}"$/);
+	for (const value of [etag, etag.slice(2), `"other", ${etag}`, "*"]) {
+		const cached = await state.app.fetch(origin + "/_ovr/passkey/client.js", {
+			headers: { "if-none-match": value },
+		});
+		expect(cached.status).toBe(304);
+		expect(await cached.text()).toBe("");
+	}
+	expect(
+		(
+			await state.app.fetch(origin + "/_ovr/passkey/client.js", {
+				headers: { "if-none-match": '"old"' },
+			})
+		).status,
+	).toBe(200);
+});
+
+test("a trusted per-request admission decision isolates denied clients without allocating challenges", async () => {
+	// Real deployment adapters supply trusted peer information separately from client-controlled headers.
+	const denied = new WeakSet<Request>();
+	const state = managed(setup(), { allow: (c) => !denied.has(c.req) });
+	const set = vi.spyOn(state.storage.options.challenges, "set");
+	for (let i = 0; i < 100; i++) {
+		const data = new FormData();
+		data.set("bootstrap", "invalid");
+		const request = new Request(origin + "/_ovr/passkey/options/login", {
+			method: "POST",
+			headers: { origin, cookie: `__Host-auth-browser=rotation-${i}` },
+			body: data,
+		});
+		denied.add(request);
+		expect((await state.app.fetch(request)).status).toBe(429);
+	}
+	expect(set).not.toHaveBeenCalled();
+	const allowed = await state.start("register");
+	expect(allowed.response.status).toBe(200);
+	expect(set).toHaveBeenCalledOnce();
 });

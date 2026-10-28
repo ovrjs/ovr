@@ -19,6 +19,8 @@ export function configure(
 		challenges: store.challenges,
 		sessions: store.sessions,
 		credentials: store.credentials,
+		// This UI is enabled only in development. Public deployments must supply a trusted limiter.
+		allow: () => import.meta.env.DEV,
 		register: {
 			fields: { email: Field.email({ label: "Email" }) },
 			name: (data) => data.email,

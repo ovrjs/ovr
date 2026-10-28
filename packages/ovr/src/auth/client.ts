@@ -44,11 +44,32 @@ export function listen(
 			.replace(/=+$/, "");
 	let loading = false;
 	let submitting = false;
+	let finalizing = false;
+	let submitted: SubmitEvent | undefined;
+	let retry = 0;
+	const clear = (e: Event) => {
+		if (
+			e.target instanceof HTMLElement &&
+			"setCustomValidity" in e.target &&
+			typeof e.target.setCustomValidity === "function"
+		)
+			e.target.setCustomValidity("");
+	};
+	form.addEventListener("input", clear);
+	form.addEventListener("change", clear);
 
 	form.addEventListener("submit", async (e) => {
-		if (submitting) return;
+		if (submitting) {
+			if (finalizing) submitted = e;
+			else e.preventDefault();
+			return;
+		}
 		e.preventDefault();
 		if (loading) return;
+		if (retry > Date.now()) {
+			status.textContent = `Too many requests. Try again in ${Math.ceil((retry - Date.now()) / 1000)} seconds.`;
+			return;
+		}
 		loading = true;
 		status.textContent = "";
 		form.setAttribute("aria-busy", "true");
@@ -65,10 +86,36 @@ export function listen(
 				credentials: "same-origin",
 				cache: "no-store",
 			});
-			if (!res.ok)
+			if (res.status === 429) {
+				const header = res.headers.get("retry-after") ?? "60";
+				const deadline = /^\d+$/.test(header)
+					? Date.now() + Number(header) * 1000
+					: Date.parse(header);
+				retry = Number.isFinite(deadline)
+					? Math.max(Date.now() + 1000, deadline)
+					: Date.now() + 60000;
 				throw new Error(
-					"Could not start the passkey request. Reload this page and try again.",
+					`Too many requests. Try again in ${Math.ceil((retry - Date.now()) / 1000)} seconds.`,
 				);
+			}
+			if (res.status === 422) {
+				const result: { fields?: unknown } = await res.json();
+				if (Array.isArray(result.fields))
+					for (const name of result.fields) {
+						if (typeof name !== "string") continue;
+						const field = form.elements.namedItem(name);
+						if (
+							field instanceof HTMLElement &&
+							"setCustomValidity" in field &&
+							typeof field.setCustomValidity === "function"
+						)
+							field.setCustomValidity("Check this field.");
+					}
+				form.reportValidity();
+				throw new Error("Check your registration details and try again.");
+			}
+			if (!res.ok)
+				throw new Error("Could not start the passkey request. Try again.");
 
 			let result: Credential | null;
 			if (method === "register") {
@@ -142,12 +189,21 @@ export function listen(
 							: null,
 			});
 			submitting = true;
+			finalizing = true;
+			submitted = undefined;
 			// Preserve native validation, submit events, and the original submitter.
 			HTMLFormElement.prototype.requestSubmit.call(
 				form,
 				e.submitter ?? undefined,
 			);
+			finalizing = false;
+			// requestSubmit synchronously re-enters this listener; TypeScript cannot see that assignment.
+			// Validation may prevent the final event; another listener may cancel it.
+			submitting = Boolean(
+				submitted && !(submitted as SubmitEvent).defaultPrevented,
+			);
 		} catch (error) {
+			submitting = false;
 			credential.value = "";
 			ceremony.value = "";
 			status.textContent =
@@ -158,31 +214,45 @@ export function listen(
 						: "Could not complete the passkey request. Try again.";
 		} finally {
 			loading = false;
-			submitting = false;
-			form.removeAttribute("aria-busy");
+			finalizing = false;
+			if (!submitting) form.removeAttribute("aria-busy");
 		}
 	});
+	return () => {
+		loading = submitting = finalizing = false;
+		submitted = undefined;
+		credential.value = ceremony.value = "";
+		form.removeAttribute("aria-busy");
+	};
 }
 
 // Modules execute once per document. Observe streamed HTML and subsequent fragment navigation too.
-const attached = new WeakSet<HTMLScriptElement>();
+const attached = new WeakMap<HTMLScriptElement, () => void>();
 const scan = () => {
 	for (const script of document.querySelectorAll<HTMLScriptElement>(
 		"script[data-ovr-passkey]",
 	)) {
 		if (attached.has(script)) continue;
-		attached.add(script);
 		const method = script.dataset.ovrPasskey;
-		if (method === "register" || method === "login")
-			listen(
+		if (method === "register" || method === "login") {
+			const reset = listen(
 				script.id,
 				script.dataset.bootstrap ?? "",
 				script.dataset.endpoint ?? "",
 				method,
 			);
+			if (reset) attached.set(script, reset);
+		}
 	}
 };
 if (typeof document !== "undefined") {
+	window.addEventListener("pageshow", (e) => {
+		if (e.persisted)
+			for (const script of document.querySelectorAll<HTMLScriptElement>(
+				"script[data-ovr-passkey]",
+			))
+				attached.get(script)?.();
+	});
 	scan();
 	new MutationObserver(scan).observe(document.documentElement, {
 		childList: true,
