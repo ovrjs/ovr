@@ -46,15 +46,15 @@ export namespace Auth {
 		delete(token: string): Result<void>;
 	}
 
-	/** Authentication configuration; storage adapters must be shared across requests. */
+	/** Database-backed authentication configuration; all instances must share persistence. */
 	export interface Options {
 		/** Random signing secret with at least 32 UTF-8 bytes. */
 		readonly secret: string;
 		/** Trusted HTTPS origin, for example `https://example.com`. */
 		readonly origin: string;
-		/** Atomic, single-use challenge storage. */
+		/** Required persistence for atomic, single-use challenges. */
 		readonly challenges: Challenges;
-		/** Revocable session storage. */
+		/** Required persistence for revocable sessions. */
 		readonly sessions: Sessions;
 		/** Display name shown by passkey providers; defaults to the origin hostname. */
 		readonly name?: string;

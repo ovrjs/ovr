@@ -1,7 +1,7 @@
 import * as content from "@/lib/content";
 import * as demo from "@/server/demo";
 import * as auth from "@/server/demo/auth";
-import { options } from "@/server/demo/auth/store";
+import { Store } from "@/server/demo/auth/store";
 import * as docs from "@/server/docs";
 import * as home from "@/server/home";
 import * as notFound from "@/server/mw/not-found";
@@ -10,13 +10,17 @@ import * as seo from "@/server/seo";
 import "dotenv/config";
 import * as o from "ovr";
 
-const app = new o.App(
+const store =
 	import.meta.env.DEV && process.env.AUTH_SECRET
-		? { auth: options(process.env.AUTH_SECRET, process.env.AUTH_ORIGIN) }
+		? new Store(process.env.AUTH_DATABASE)
+		: undefined;
+const app = new o.App(
+	store && process.env.AUTH_SECRET
+		? { auth: store.options(process.env.AUTH_SECRET, process.env.AUTH_ORIGIN) }
 		: {},
 );
 
-if (import.meta.env.DEV && process.env.AUTH_SECRET) app.use(auth);
+if (store) app.use(auth.routes(store));
 
 app.use(redirect, notFound, home, docs, demo, seo);
 

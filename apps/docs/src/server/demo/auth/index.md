@@ -3,7 +3,7 @@ title: Authentication
 description: Build passkey registration and login flows with Context.auth.
 ---
 
-Configure `App` with an HTTPS origin, a random signing secret of at least 32 bytes, and shared storage adapters. The passkey implementation uses Web Crypto and has no runtime dependencies. It currently supports **ES256 / P-256**, discoverable credentials, and `none` attestation.
+Authentication uses one database-backed flow. Users, passkeys, sessions, and short-lived challenges are persisted; authentication requires storage adapters. Configure `App` with an HTTPS origin, a random signing secret of at least 32 bytes, and adapters backed by the same database across application instances. The passkey implementation uses Web Crypto and has no runtime dependencies. It currently supports **ES256 / P-256**, discoverable credentials, and `none` attestation.
 
 ```ts
 import { App, type Auth } from "ovr";
@@ -22,7 +22,7 @@ const app = new App({
 `challenges` implements `Auth.Challenges`:
 
 - `set(id, challenge)` stores a ceremony until `challenge.expiration`.
-- `take(id)` **atomically returns and deletes** that ceremony. Concurrent requests must have exactly one winner. Use an atomic database operation, such as Redis `GETDEL` or SQL `DELETE ... RETURNING`; separate reads and deletes are unsafe across processes.
+- `take(id)` **atomically returns and deletes** that ceremony. Concurrent requests must have exactly one winner. Use a single SQL `DELETE ... RETURNING` statement; separate reads and deletes are unsafe across processes.
 
 `sessions` implements `Auth.Sessions`:
 
@@ -102,4 +102,20 @@ Use an opaque user ID of 1–64 UTF-8 bytes, never an email address. Registratio
 
 Forms include their own browser script and accessible error status. Multiple forms can target the same route independently. JavaScript and HTTPS are required. Handle `AuthIssue` and `Schema.AggregateIssue` in your application's error middleware to present registration or login failures.
 
-The local docs demo is enabled **only in development**, with `AUTH_SECRET` (at least 32 random bytes) and `AUTH_ORIGIN` (the exact HTTPS origin). Serve it through HTTPS; the default origin is `https://localhost:5173`. Its in-memory stores are for local exploration and reset on restart.
+The complete database example is `store.ts` alongside this demo. It uses Node 24's built-in SQLite driver, with no additional packages. One database holds users, passkeys, challenges, and sessions. Account and passkey registration runs in a transaction, credential IDs are unique, challenge consumption uses `DELETE ... RETURNING`, and credential updates compare the previously read values in a single `UPDATE` statement. Expired records are cleaned up on startup and writes.
+
+```ts
+import { Store } from "./store";
+
+const database = new Store(".auth.sqlite");
+const app = new App({
+	auth: database.options(secret, "https://localhost:5173"),
+});
+
+// In a login handler:
+const credential = await c.auth.passkey.login.verify(database.credentials);
+```
+
+The SQLite driver belongs to the example app. The ovr package continues to use Web APIs and database interfaces, so applications connect their existing database to this same authentication flow.
+
+The local docs demo is enabled **only in development**, with `AUTH_SECRET` (at least 32 random bytes) and `AUTH_ORIGIN` (the exact HTTPS origin). Serve it through HTTPS; the default origin is `https://localhost:5173`. `AUTH_DATABASE` selects the SQLite file; it defaults to `.auth.sqlite` in the docs app's working directory. The database persists across restarts and is excluded from Git. Keep the same signing secret across restarts to preserve existing sessions.
