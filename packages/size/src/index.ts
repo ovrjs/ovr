@@ -1,9 +1,9 @@
-export const bytes = 56190;
-export const kb = 56.19;
+export const bytes = 56205;
+export const kb = 56.21;
 
-export const App = { bytes: 56081, kb: 56.08 } as const;
+export const App = { bytes: 56096, kb: 56.1 } as const;
 
-export const Auth = { bytes: 50044, kb: 50.04 } as const;
+export const Auth = { bytes: 50059, kb: 50.06 } as const;
 
 export const AuthIssue = { bytes: 138, kb: 0.14 } as const;
 

@@ -254,7 +254,7 @@ export function configure<Shape extends Form.Shape>(
 			const retry = Number(c.url.searchParams.get("_retry"));
 			const wait =
 				Number.isSafeInteger(retry) && retry > 0
-					? Math.max(0, Math.ceil((retry - Date.now()) / 1000))
+					? Math.min(3600, Math.max(0, Math.ceil((retry - Date.now()) / 1000)))
 					: undefined;
 			const error =
 				(
