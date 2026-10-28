@@ -41,7 +41,7 @@ export namespace Passkey {
 		/** Friendly label shown by the provider. */
 		readonly displayName?: string;
 		/** Fresh options URL; supplied by the configured handlers. */
-		readonly endpoint?: string;
+		readonly endpoint: string;
 		/** External module URL; supplied by the configured handlers. */
 		readonly client?: string;
 		/** CSP nonce for strict nonce policies. */
@@ -106,11 +106,7 @@ export class Passkey {
 		/** Create a form component; call in the route handler before returning JSX. */
 		form: <Pattern extends string>(
 			route: Passkey.Post<Pattern>,
-			{
-				user = crypto.randomUUID(),
-				exclude = [],
-				...options
-			}: Passkey.Options = {},
+			{ user = crypto.randomUUID(), exclude = [], ...options }: Passkey.Options,
 		) => {
 			if (!Codec.encode(user).length || Codec.encode(user).length > 64)
 				throw new TypeError("Passkey user must contain 1–64 UTF-8 bytes");
@@ -125,7 +121,7 @@ export class Passkey {
 		/** Create a form component; call in the route handler before returning JSX. */
 		form: <Pattern extends string>(
 			route: Passkey.Post<Pattern>,
-			options: Passkey.Options = {},
+			options: Passkey.Options,
 		) => this.#form(route, "login", options),
 		/** Verify an assertion and atomically persist its counter and backup state. */
 		verify: (credentials: Auth.Credentials) => this.#login(credentials),
@@ -153,7 +149,7 @@ export class Passkey {
 	#form<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
 		method: "register" | "login",
-		options: Passkey.Options = {},
+		options: Passkey.Options,
 	): Passkey.Component<Pattern> {
 		this.#origin();
 		if (!Passkey.#routes.has(route))
@@ -190,7 +186,7 @@ export class Passkey {
 								src: options.client ?? Passkey.client.pathname(),
 								nonce: options.nonce,
 								"data-ovr-passkey": method,
-								"data-endpoint": options.endpoint ?? Passkey.options.pathname(),
+								"data-endpoint": options.endpoint,
 								"data-bootstrap": await Token.seal(
 									this.#auth.options.secret,
 									"passkey",
@@ -345,17 +341,6 @@ export class Passkey {
 				} satisfies PublicKeyCredentialRequestOptionsJSON,
 			});
 	}
-
-	/** Advanced options component. Mount only behind application admission controls and error handling; App never mounts it implicitly. */
-	static readonly options = Route.post(
-		"/_ovr/passkey/options",
-		{ bootstrap: Field.text() },
-		async (c) => {
-			const input = await c.data({ payload: 128 * Size.kb });
-			if (input.issues) throw input;
-			await Passkey.issue(c, input.data.bootstrap);
-		},
-	);
 
 	static #decode(value: string) {
 		if (!/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1)

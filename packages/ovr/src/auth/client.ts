@@ -47,6 +47,16 @@ export function listen(
 	let finalizing = false;
 	let submitted: SubmitEvent | undefined;
 	let retry = 0;
+	let lifetime = 120000;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const reset = () => {
+		clearTimeout(timer);
+		timer = undefined;
+		loading = submitting = finalizing = false;
+		submitted = undefined;
+		credential.value = ceremony.value = "";
+		form.removeAttribute("aria-busy");
+	};
 	const clear = (e: Event) => {
 		if (
 			e.target instanceof HTMLElement &&
@@ -124,6 +134,8 @@ export function listen(
 					options: PublicKeyCredentialCreationOptionsJSON;
 				} = await res.json();
 				ceremony.value = json.ceremony;
+				// Bound UI recovery even when a deployment configures an unusually long prompt.
+				lifetime = Math.min((json.options.timeout ?? 60000) + 60000, 300000);
 				const {
 					challenge: nonce,
 					user,
@@ -149,6 +161,8 @@ export function listen(
 					options: PublicKeyCredentialRequestOptionsJSON;
 				} = await res.json();
 				ceremony.value = json.ceremony;
+				// Bound UI recovery even when a deployment configures an unusually long prompt.
+				lifetime = Math.min((json.options.timeout ?? 60000) + 60000, 300000);
 				const { challenge: nonce, allowCredentials, ...options } = json.options;
 				result = await navigator.credentials.get({
 					publicKey: PublicKeyCredential.parseRequestOptionsFromJSON?.(
@@ -202,10 +216,16 @@ export function listen(
 			submitting = Boolean(
 				submitted && !(submitted as SubmitEvent).defaultPrevented,
 			);
+			if (submitting)
+				timer = setTimeout(() => {
+					reset();
+					status.textContent =
+						method === "register"
+							? "If registration already completed, sign in; otherwise try again."
+							: "If sign-in did not finish, try again.";
+				}, lifetime);
 		} catch (error) {
-			submitting = false;
-			credential.value = "";
-			ceremony.value = "";
+			reset();
 			status.textContent =
 				error instanceof DOMException && error.name === "NotAllowedError"
 					? "Passkey request canceled. Try again."
@@ -218,12 +238,7 @@ export function listen(
 			if (!submitting) form.removeAttribute("aria-busy");
 		}
 	});
-	return () => {
-		loading = submitting = finalizing = false;
-		submitted = undefined;
-		credential.value = ceremony.value = "";
-		form.removeAttribute("aria-busy");
-	};
+	return reset;
 }
 
 // Modules execute once per document. Observe streamed HTML and subsequent fragment navigation too.

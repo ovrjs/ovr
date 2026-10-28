@@ -73,15 +73,18 @@ export class App {
 		const auth = this.#options.auth;
 		if (auth) {
 			Auth.validate(auth);
-			// Reject a noncanonical host before a handler can read a session or write auth state.
-			this.#global.push((c, next) => {
-				if (c.url.origin !== auth.origin) {
-					c.res.headers.set("cache-control", "no-store");
-					c.text("Misdirected Request", 421);
-					return;
-				}
-				return next();
-			});
+			// Only generated auth endpoints reject alternate hosts before their handlers run.
+			if (auth.routes) {
+				const routes = new Set(auth.routes);
+				this.#global.push((c, next) => {
+					if (c.route && routes.has(c.route) && c.url.origin !== auth.origin) {
+						c.res.headers.set("cache-control", "no-store");
+						c.text("Misdirected Request", 421);
+						return;
+					}
+					return next();
+				});
+			}
 			if (auth.routes) this.use(...auth.routes);
 		}
 

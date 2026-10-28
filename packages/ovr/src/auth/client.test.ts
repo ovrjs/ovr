@@ -1,6 +1,6 @@
 import { source } from "./client-source.js";
 import type { listen } from "./client.js";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 class Element {
 	textContent = "";
@@ -146,7 +146,12 @@ function setup() {
 	return { first, second, status, fetcher, create, get, init, pages };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => {
+	vi.clearAllTimers();
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+});
 
 describe("passkey browser runtime", () => {
 	test("attaches only to the owning form, even when multiple forms share an action", async () => {
@@ -357,6 +362,66 @@ test("keeps successful native submissions locked until back navigation resets th
 	expect(state.fetcher).toHaveBeenCalledTimes(2);
 });
 
+test.each(["register", "login"] as const)(
+	"recovers a %s form when native navigation never completes",
+	async (method) => {
+		const state = setup();
+		state.init("first", "bootstrap", "/options", method);
+		await state.first.fire();
+		await vi.advanceTimersByTimeAsync(119999);
+		await state.first.fire();
+		expect(state.fetcher).toHaveBeenCalledOnce();
+		expect(state.first.fields.get("ceremony")?.value).toBe("ceremony");
+		await vi.advanceTimersByTimeAsync(1);
+		expect(state.first.fields.get("ceremony")?.value).toBe("");
+		expect(state.first.fields.get("credential")?.value).toBe("");
+		expect(state.first.attributes.has("aria-busy")).toBe(false);
+		expect(state.status[0]?.textContent).toContain(
+			method === "register" ? "sign in" : "try again",
+		);
+		await state.first.fire();
+		expect(state.fetcher).toHaveBeenCalledTimes(2);
+	},
+);
+
+test("bounds recovery by the configured timeout plus a minute, at most five minutes", async () => {
+	const state = setup();
+	state.fetcher.mockResolvedValueOnce(
+		Response.json({
+			ceremony: "id",
+			options: { challenge: "AQ", timeout: 1000, rpId: "example.com" },
+		}),
+	);
+	state.init("first", "bootstrap", "/options", "login");
+	await state.first.fire();
+	await vi.advanceTimersByTimeAsync(61000);
+	expect(state.first.fields.get("ceremony")?.value).toBe("");
+	state.fetcher.mockResolvedValueOnce(
+		Response.json({
+			ceremony: "id",
+			options: { challenge: "AQ", timeout: 3600000, rpId: "example.com" },
+		}),
+	);
+	await state.first.fire();
+	await vi.advanceTimersByTimeAsync(300000);
+	expect(state.first.fields.get("ceremony")?.value).toBe("");
+	expect(state.first.attributes.has("aria-busy")).toBe(false);
+});
+
+test("back navigation cancels the previous recovery timer before a fresh ceremony", async () => {
+	const state = setup();
+	const reset = state.init("first", "bootstrap", "/options", "login");
+	await state.first.fire();
+	await vi.advanceTimersByTimeAsync(60000);
+	reset!();
+	await state.first.fire();
+	await vi.advanceTimersByTimeAsync(60000);
+	expect(state.first.fields.get("ceremony")?.value).toBe("ceremony");
+	expect(state.first.attributes.has("aria-busy")).toBe(true);
+	await vi.advanceTimersByTimeAsync(60000);
+	expect(state.first.fields.get("ceremony")?.value).toBe("");
+});
+
 test.each(["validation", "cancellation"])(
 	"unlocks a final submission stopped by %s",
 	async (reason) => {
@@ -365,6 +430,7 @@ test.each(["validation", "cancellation"])(
 		state.first.cancel = reason === "cancellation";
 		state.init("first", "bootstrap", "/options", "register");
 		await state.first.fire();
+		expect(vi.getTimerCount()).toBe(0);
 		state.first.valid = true;
 		state.first.cancel = false;
 		await state.first.fire();

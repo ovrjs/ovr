@@ -8,6 +8,7 @@ import { Passkey } from "./passkey.js";
 import { describe, expect, test, vi } from "vitest";
 
 const origin = "https://example.com";
+const endpoint = "/_ovr/passkey/options";
 const user = "user-1";
 const id = Codec.Base64Url.encode(Uint8Array.of(1, 2, 3, 4));
 const bytes = (...parts: Uint8Array[]) => {
@@ -196,22 +197,29 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		...extra,
 	};
 	const app = new App({ auth: options });
-	// Protocol tests explicitly compose advanced routes; the application no longer mounts them implicitly.
-	app.use(Passkey.options, Passkey.client);
+	// Internal protocol tests compose their own routes; applications use Auth.passkey().
+	app.use(
+		Route.post(endpoint, { bootstrap: Field.text() }, async (c) => {
+			const input = await c.data({ payload: 128 * 1024 });
+			if (input.issues) throw input;
+			await Passkey.issue(c, input.data.bootstrap);
+		}),
+		Passkey.client,
+	);
 	const register = Route.post(
 		"/register",
 		{ email: Field.email() },
 		async (c) => {
 			const input = await c.data();
 			if (input.issues) throw input;
-			const credential = await c.auth.passkey.register.verify();
+			const credential = await new Passkey(c, c.auth).register.verify();
 			if (records.has(credential.id)) throw new Error("Duplicate credential");
 			records.set(credential.id, credential);
 			c.json(credential);
 		},
 	);
 	const login = Route.post("/login", async (c) =>
-		c.json(await c.auth.passkey.login.verify(credentials)),
+		c.json(await new Passkey(c, c.auth).login.verify(credentials)),
 	);
 	Passkey.prepare(register);
 	Passkey.prepare(login);
@@ -219,9 +227,14 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		register,
 		login,
 		Route.get("/register-page", (c) =>
-			jsx(c.auth.passkey.register.form(register, { user }), {}),
+			jsx(
+				new Passkey(c, c.auth).register.form(register, { user, endpoint }),
+				{},
+			),
 		),
-		Route.get("/login-page", (c) => jsx(c.auth.passkey.login.form(login), {})),
+		Route.get("/login-page", (c) =>
+			jsx(new Passkey(c, c.auth).login.form(login, { endpoint }), {}),
+		),
 		Route.get("/session", async (c) => c.json(await c.auth.session())),
 		Route.post("/session", async (c) => c.json(await c.auth.login(user))),
 		Route.post("/logout", async (c) => c.json(await c.auth.logout())),
@@ -253,7 +266,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 			.join("; ");
 		const data = new FormData();
 		data.set("bootstrap", bootstrap);
-		const response = await post(Passkey.options.pathname(), data, cookie);
+		const response = await post(endpoint, data, cookie);
 		const json: {
 			ceremony: string;
 			options: PublicKeyCredentialCreationOptionsJSON;
@@ -335,11 +348,7 @@ describe("passkey ceremonies", () => {
 		expect(start.page.headers.getSetCookie()[0]).toContain("HttpOnly");
 		const again = new FormData();
 		again.set("bootstrap", start.bootstrap);
-		const next = await state.post(
-			Passkey.options.pathname(),
-			again,
-			start.cookie,
-		);
+		const next = await state.post(endpoint, again, start.cookie);
 		expect((await next.json()).options.challenge).not.toBe(
 			start.options.challenge,
 		);
@@ -383,17 +392,15 @@ describe("passkey ceremonies", () => {
 		]) {
 			const data = new FormData();
 			data.set("bootstrap", bootstrap!);
-			await expect(
-				state.post(Passkey.options.pathname(), data, cookie),
-			).rejects.toThrow();
+			await expect(state.post(endpoint, data, cookie)).rejects.toThrow();
 		}
 		vi.spyOn(Date, "now").mockReturnValue(Date.now() + Time.hour + 1);
 		try {
 			const data = new FormData();
 			data.set("bootstrap", start.bootstrap);
-			await expect(
-				state.post(Passkey.options.pathname(), data, start.cookie),
-			).rejects.toThrow("expired");
+			await expect(state.post(endpoint, data, start.cookie)).rejects.toThrow(
+				"expired",
+			);
 		} finally {
 			vi.restoreAllMocks();
 		}
@@ -628,7 +635,8 @@ describe("form contracts", () => {
 		state.app.use(
 			route,
 			Route.get("/typed", (c) => {
-				const Register = c.auth.passkey.register.form(route, {
+				const Register = new Passkey(c, c.auth).register.form(route, {
+					endpoint,
 					user: "user</script><script>alert(1)</script>",
 				});
 				if (false) {
@@ -661,7 +669,7 @@ describe("form contracts", () => {
 		);
 		state.app.use(
 			Route.get("/conflict", (c) => {
-				c.auth.passkey.register.form(route);
+				new Passkey(c, c.auth).register.form(route, { endpoint });
 			}),
 		);
 		expect(() => Passkey.prepare(route)).toThrow("reserve");
@@ -769,6 +777,8 @@ function managed(
 			if (false) {
 				// @ts-expect-error Application field names remain exact.
 				Register.Field({ name: "missing" });
+				// @ts-expect-error Protocol internals are not part of the public request API.
+				c.auth.passkey;
 			}
 			return [
 				jsx(Register, {
@@ -933,7 +943,7 @@ describe("configured passkey callbacks", () => {
 		);
 		const page = await state.app.fetch(result.headers.get("location")!);
 		const html = await page.text();
-		expect(html).toContain("Authentication failed. Try again.");
+		expect(html).toContain("If you already registered, sign in");
 		expect(html).not.toContain("private database");
 	});
 
@@ -1084,6 +1094,68 @@ test("host mismatches return a controlled status before session reads or callbac
 	expect(get).not.toHaveBeenCalled();
 });
 
+test("alternate hosts can serve health checks and redirects without using authentication", async () => {
+	const state = managed();
+	state.app.use(
+		Route.get("/health", (c) => c.text("ok")),
+		Route.get("/canonical", (c) => c.redirect(origin + "/", 308)),
+	);
+	for (const host of [
+		"https://127.0.0.1",
+		"https://www.example.com",
+		"https://preview.example.com",
+	]) {
+		const health = await state.app.fetch(host + "/health");
+		expect(health.status).toBe(200);
+		expect(await health.text()).toBe("ok");
+		const redirect = await state.app.fetch(host + "/canonical");
+		expect(redirect.status).toBe(308);
+		expect(redirect.headers.get("location")).toBe(origin + "/");
+	}
+});
+
+test("every generated auth endpoint rejects an alternate host before admission or storage", async () => {
+	const allow = vi.fn(() => true);
+	const state = managed(setup(), { allow });
+	const set = vi.spyOn(state.storage.options.challenges, "set");
+	for (const path of [
+		"/auth/register",
+		"/auth/login",
+		"/auth/logout",
+		"/_ovr/passkey/options/register",
+		"/_ovr/passkey/options/login",
+	]) {
+		const response = await state.app.fetch("https://wrong.example" + path, {
+			method: "POST",
+			headers: { origin: "https://wrong.example" },
+			body: new FormData(),
+		});
+		expect(response.status).toBe(421);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+	}
+	for (const method of ["GET", "HEAD"]) {
+		expect(
+			(
+				await state.app.fetch("https://wrong.example/_ovr/passkey/client.js", {
+					method,
+				})
+			).status,
+		).toBe(421);
+	}
+	expect(allow).not.toHaveBeenCalled();
+	expect(set).not.toHaveBeenCalled();
+	expect(state.create).not.toHaveBeenCalled();
+});
+
+test("raw auth options also reject alternate hosts when a handler accesses c.auth", async () => {
+	const state = setup();
+	const app = new App({ auth: state.options });
+	app.use(Route.get("/private", async (c) => c.json(await c.auth.session())));
+	const response = await app.fetch("https://wrong.example/private");
+	expect(response.status).toBe(421);
+	expect(await response.text()).toBe("Misdirected Request");
+});
+
 test("configured logout reports storage failure without claiming success", async () => {
 	const state = managed();
 	const start = await state.start("register");
@@ -1167,6 +1239,8 @@ test("account persistence may complete before session storage fails; normal logi
 	expect(failed.headers.getSetCookie()).toHaveLength(0);
 	expect(state.storage.records.size).toBe(1);
 	expect(state.storage.sessions.size).toBe(0);
+	const page = await state.app.fetch(failed.headers.get("location")!);
+	expect(await page.text()).toContain("If you already registered, sign in");
 	const login = await state.start("login", start.cookie);
 	const result = await state.submit(
 		login,
@@ -1179,6 +1253,86 @@ test("account persistence may complete before session storage fails; normal logi
 	expect(state.create).toHaveBeenCalledOnce();
 	expect(state.storage.sessions.size).toBe(1);
 });
+
+test.each(["register", "login"] as const)(
+	"a denied final %s submit redirects to a recoverable form before verification",
+	async (method) => {
+		const retry = new Date(Date.now() + 45000);
+		const allow = vi.fn((_c: unknown, phase: "options" | "verify") =>
+			phase === "options" ? true : retry,
+		);
+		const state = managed(setup(), { allow });
+		const start = await state.start(method);
+		const take = vi.spyOn(state.storage.options.challenges, "take");
+		const response = await state.submit(start, {}, `/auth/${method}`);
+		expect(response.status).toBe(303);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+		const location = new URL(response.headers.get("location")!);
+		expect(location.pathname).toBe("/auth");
+		expect(location.searchParams.get("_auth")).toBe(method);
+		expect(location.searchParams.get("_retry")).toBe(String(retry.getTime()));
+		const page = await state.app.fetch(location, {
+			headers: { cookie: start.cookie },
+		});
+		expect(await page.text()).toMatch(
+			/Too many authentication requests\. Try again in \d+ seconds\./,
+		);
+		expect(allow.mock.calls.map((call) => call[1])).toEqual([
+			"options",
+			"verify",
+		]);
+		expect(take).not.toHaveBeenCalled();
+		expect(state.create).not.toHaveBeenCalled();
+		expect(state.storage.sessions.size).toBe(0);
+	},
+);
+
+test("a successful ceremony makes two separately admitted requests", async () => {
+	const allow = vi.fn((_c: unknown, _phase: "options" | "verify") => true);
+	const state = managed(setup(), { allow });
+	const start = await state.start("register");
+	const response = await state.submit(
+		start,
+		await registration(start.options.challenge, await pair()),
+	);
+	expect(response.headers.get("location")).toBe("/account");
+	expect(allow.mock.calls.map((call) => call[1])).toEqual([
+		"options",
+		"verify",
+	]);
+});
+
+test.each([false, 17000, -1000, NaN])(
+	"admission result %s controls the retry deadline without leaking errors",
+	async (value) => {
+		const now = Date.now();
+		const time = vi.spyOn(Date, "now").mockReturnValue(now);
+		try {
+			const state = managed(setup(), {
+				allow: () =>
+					typeof value === "number" ? new Date(now + value) : value,
+			});
+			const response = await state.post(
+				"/_ovr/passkey/options/login",
+				new FormData(),
+			);
+			expect(response.status).toBe(Number.isNaN(value) ? 400 : 429);
+			expect(response.headers.get("retry-after")).toBe(
+				Number.isNaN(value)
+					? null
+					: typeof value === "number"
+						? String(Math.max(1, value / 1000))
+						: "60",
+			);
+			if (Number.isNaN(value)) {
+				expect(await response.text()).toBe("Authentication failed. Try again.");
+				expect(state.error).toHaveBeenCalledOnce();
+			}
+		} finally {
+			time.mockRestore();
+		}
+	},
+);
 
 test("browser assets revalidate with an ETag instead of downloading unchanged code", async () => {
 	const state = managed();

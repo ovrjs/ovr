@@ -12,7 +12,7 @@ const auth = Auth.passkey({
 	secret, // At least 32 random bytes; keep it stable across restarts.
 	origin: "https://example.com",
 	name: "My app",
-	allow: (c) => limits.allow(c.req), // Your deployment's trusted admission policy.
+	allow: (c, phase) => limits.allow(c.req, phase), // Your deployment's trusted admission policy.
 	page: "/auth",
 	redirect: "/account",
 
@@ -64,7 +64,45 @@ app.use(
 );
 ```
 
-The persistence functions and `limits` above are application code. `allow(c)` is required for registration/login POSTs, including fresh options requests. Use your platform's trusted peer identity or a shared limiter behind an edge that supplies verified client identity. ovr's standard `Request` cannot tell which client-IP header is trustworthy, and an unauthenticated cookie or `Origin` header is not an abuse-control identity. If your edge already enforces the policy, an explicit `allow: () => true` acknowledges that external protection. There is no cookie-keyed process bucket or shared framework request quota that an attacker can exhaust to deny other users. Logout bypasses this admission callback, including when it throws or its backing service is unavailable.
+The persistence functions and `limits` above are application code. `allow(c, phase)` is required for registration/login POSTs. **One successful ceremony makes two admitted requests**: `phase === "options"` before the browser prompt, then `phase === "verify"` on the final form POST. Budget for both, or use separate budgets per phase; do not count both requests as separate failed login attempts. Return `true` to admit, `false` to deny for 60 seconds, or a `Date` specifying an absolute retry deadline. The callback may be asynchronous. A denied options request returns HTTP 429 with `Retry-After`; a denied final submit redirects to the auth page with a retry message. Neither reaches body parsing, challenge writes, or verification.
+
+Use your platform's trusted peer identity or a shared limiter behind an edge that supplies verified client identity. ovr's standard `Request` cannot tell which client-IP header is trustworthy, and an unauthenticated cookie or `Origin` header is not an abuse-control identity. If your edge already enforces the policy, an explicit `allow: () => true` acknowledges that external protection. There is no cookie-keyed process bucket or shared framework request quota that an attacker can exhaust to deny other users. Logout bypasses this admission callback, including when it throws or its backing service is unavailable.
+
+Keep runtime-specific connection information in your entry point. For example, a direct Deno HTTPS listener can associate the original request with the socket peer, without trusting forwarded headers:
+
+```ts
+const peers = new WeakMap<Request, string>();
+const auth = Auth.passkey({
+	...options, // Persistence and registration configuration from above.
+	allow: ({ req }, phase) => {
+		const peer = peers.get(req);
+		return peer ? limits.allow(peer, phase) : false;
+	},
+});
+const app = new App({ auth });
+// Mount your application routes here.
+
+Deno.serve({ cert, key }, (request, info) => {
+	peers.set(request, info.remoteAddr.hostname);
+	return app.fetch(request);
+});
+```
+
+Here `cert` and `key` are your TLS PEM strings and `limits` is your application's shared limiter, returning `boolean | Date` or a promise of that result. `app.fetch(request)` preserves the request identity; cloning it or passing additional fetch options would lose this association. Behind a reverse proxy, the socket peer identifies that proxy, so configure the proxy to overwrite client identity and accept connections only from that proxy before trusting its forwarded identity. [Deno HTTP server API](https://docs.deno.com/api/deno/http-server/).
+
+For a Cloudflare Worker exposed through its Internet-facing edge, with Worker-to-Worker subrequests blocked by your edge policy, the corresponding entry point can use the same `peers` map and callback:
+
+```ts
+export default {
+	fetch(request: Request) {
+		const peer = request.headers.get("CF-Connecting-IP");
+		if (peer) peers.set(request, peer);
+		return app.fetch(request);
+	},
+};
+```
+
+That trust comes from Cloudflare's edge and routing policy, not the header name. In same-zone Worker subrequests, `CF-Connecting-IP` can reflect an `x-real-ip` value modified by the calling Worker; cross-zone Worker subrequests use a fixed address. If those requests are allowed, use an authenticated caller identity and an appropriate shared quota instead of this example. Cloudflare documents an edge rule using `cf.worker.upstream_zone` to block Worker subrequests. Do not copy this header lookup into a directly reachable origin server. [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/), [blocking Worker subrequests](https://developers.cloudflare.com/waf/custom-rules/use-cases/block-worker-subrequests/).
 
 The persistence functions above are application code. The transaction shown uses the normal Drizzle API; ovr neither imports Drizzle nor chooses a database package for you. Registration fields determine the callback's data type and the available `Register.Field` names. `Register.Fields` renders all application fields. Omitting a form's children supplies fields, a button, and an accessible error status automatically. Plain HTML, field component customization, and normal form attributes remain available.
 
@@ -89,6 +127,8 @@ app.use(
 ```
 
 Load your user record using `session.id`. Email syntax validation does **not** verify ownership of an email address. Registration creates a new opaque UUID user handle; the account label returned by `register.name` is only for display in the passkey provider. Provider labels reflect the options-time fields; final registration fields are validated again and may differ if edited during the prompt. Labels are display data, not proof of a verified identity. This signup API does not attach passkeys to existing users. An account-management flow must separately authorize its current user before adding or removing credentials.
+
+Keep registration field schemas limited to format and other non-secret validation. Do not query account existence or uniqueness from a field schema: the HTTP 422 field names would reveal which values exist. Enforce uniqueness inside the transactional `register.create` callback and with database constraints, where failures receive the same generic registration message.
 
 Persistence callbacks may be synchronous or asynchronous. All instances must share the same persistence and signing secret:
 
@@ -150,24 +190,24 @@ const credentials = {
 };
 ```
 
-User creation and its first credential must commit together, but session creation is a later operation. If `sessions.set` fails after `register.create` commits, the account and passkey remain saved and no new session cookie is issued. The user can recover with the normal login form. Do not upsert the user or attach more credentials when replaying signup to recover from this condition.
+User creation and its first credential must commit together, but session creation is a later operation. If `sessions.set` fails after `register.create` commits, the account and passkey remain saved and no new session cookie is issued. The user can recover with the normal login form. All registration failures include the same guidance to sign in if already registered, without revealing whether an account was saved. Do not upsert the user or attach more credentials when replaying signup to recover from this condition.
 
 `credentials.update` returns a **matched-snapshot result**, not a changed-row count. It must return true when the stored record matches `previous`, even if the counter and backup state remain unchanged. MySQL normally reports changed rows unless matched-row reporting is enabled. Use your driver's matched-row mode, `RETURNING` where supported, or an atomic transaction that returns the match result. Do not interpret zero changed rows as success without checking the snapshot atomically. No separate `exists` callback is needed. [MySQL affected-row semantics](https://dev.mysql.com/doc/refman/8.4/en/information-functions.html).
 
 Use database columns matching the exported types. Separate challenge reads and deletes are unsafe. A credential update must compare the owner, key, counter, and backup flags, even when a credential always reports a zero counter. Enforce user/credential/session relationships in the database. Schedule cleanup of expired state, and cap outstanding challenges in shared storage when serving public traffic; the SQLite demo shows a bounded atomic insert.
 
-Default paths are `POST /auth/register`, `/auth/login`, `/auth/logout`, and `/_ovr/passkey/options/register` and `/login`, plus `GET /_ovr/passkey/client.js`. Override them together or individually with `paths: { register, login, logout, options, client }`; `options` is the base pathname for both options endpoints. `page` defaults to `/auth` and the success `redirect` defaults to `/`. Paths must be distinct literal local paths. Invalid application fields return HTTP 422 with field names and controlled browser validation messages; arbitrary schema messages and authentication details are not reflected to the browser. Other authentication failures return a generic status for options requests or redirect back to `page` with a generic form error. HTTP 429 responses include `Retry-After`; the client accepts seconds or an HTTP date and suppresses early retries. A failed logout returns HTTP 503 and leaves its session cookie intact. Supply `error(error, c)` for detailed server logging; the default uses `console.error`.
+Default paths are `POST /auth/register`, `/auth/login`, `/auth/logout`, and `/_ovr/passkey/options/register` and `/login`, plus `GET /_ovr/passkey/client.js`. Override them together or individually with `paths: { register, login, logout, options, client }`; `options` is the base pathname for both options endpoints. `page` defaults to `/auth` and the success `redirect` defaults to `/`. Paths must be distinct literal local paths. Invalid application fields return HTTP 422 with field names and controlled browser validation messages; arbitrary schema messages and authentication details are not reflected to the browser. Other authentication failures return a generic status for options requests or redirect back to `page` with a generic form error. Admission denials on the final POST return HTTP 303 to `page` with `_auth` and `_retry` display state; this avoids stranding users on a bare error page after the browser prompt. These query parameters only affect the message, never admission. HTTP 429 responses include `Retry-After`; the client accepts seconds or an HTTP date and suppresses early retries. A failed logout returns HTTP 503 and leaves its session cookie intact. Supply `error(error, c)` for detailed server logging; the default uses `console.error`.
 
-The browser runtime is a regular external JavaScript module. Policies allowing same-origin scripts work without inline JavaScript; nonce-based policies can use `auth.forms(c, { nonce })`. It handles streamed forms, cancellation, native validation, submitters, older browser option conversion, and newer native WebAuthn JSON parsers. A successful native submission stays locked while navigation is pending; a canceled or invalid final submission unlocks for retry. Forms restored from the back/forward cache reset their locks and stale ceremony fields. The browser module uses ETag revalidation, so an unchanged asset returns HTTP 304. JavaScript and HTTPS are required.
+The browser runtime is a regular external JavaScript module. Policies allowing same-origin scripts work without inline JavaScript; nonce-based policies can use `auth.forms(c, { nonce })`. It handles streamed forms, cancellation, native validation, submitters, older browser option conversion, and newer native WebAuthn JSON parsers. A successful native submission stays locked while navigation is pending; a canceled or invalid final submission unlocks for retry. If navigation never completes, a recovery timer unlocks the form and clears stale protocol fields after the configured prompt timeout plus one minute (two minutes by default, capped at five minutes). It does not automatically retry or extend the server's ceremony lifetime. Forms restored from the back/forward cache reset their locks, timers, and stale ceremony fields. The browser module uses ETag revalidation, so an unchanged asset returns HTTP 304. JavaScript and HTTPS are required.
 
 Session lifetime defaults to seven days (`duration` in milliseconds) without sliding refresh. `await c.auth.logout()` revokes the current session; `await c.auth.revoke(token)` revokes another selected session. Account-wide revocation can delete sessions by user ID in your own database. Each request reads shared session storage, so revocation applies across instances without a stale session cache. Authentication responses use `Cache-Control: no-store`.
 
 The browser prompt defaults to 60 seconds (`timeout` in milliseconds); the server accepts the ceremony for that timeout **plus one minute** to allow response verification. Options are fetched on submit, and each ceremony is browser-, operation-, pathname-, and origin-bound and atomically consumed on the first verification attempt. Signed form bootstrap tokens expire after an hour. `credential`, `ceremony`, and `bootstrap` are reserved field names.
 
-Admission and capacity limits serve different purposes. Your required `allow(c)` policy protects public registration/login traffic before body parsing and database writes; it must isolate abusive clients rather than put every user behind a single small global quota. Apply general network overload protection at your deployment edge, with logout handled separately. Authentication form bodies are limited to 128 KiB. The SQLite example's outstanding-challenge caps bound storage; they are not sufficient abuse protection and can still be saturated if admission permits abusive traffic. Choose storage capacity for your workload and enforce the trusted admission policy in public deployments. Challenges remain database-backed; signed ceremony tokens with a replay ledger are a separate possible design change.
+Admission and capacity limits serve different purposes. Your required `allow(c, phase)` policy protects public registration/login traffic before body parsing and database writes; it must isolate abusive clients rather than put every user behind a single small global quota. Apply general network overload protection at your deployment edge, with logout handled separately. Authentication form bodies are limited to 128 KiB. The SQLite example's outstanding-challenge caps bound storage; they are not sufficient abuse protection. Distributed clients or clients rotating IPv6 addresses can pass a per-IP limiter and still saturate shared challenge capacity. A browser cookie does not establish an abuse-control identity. Choose storage capacity for your workload and enforce the trusted admission policy in public deployments. Challenges remain database-backed; signed ceremony tokens with a replay ledger are a separate possible design change.
 
-An authentication-enabled App rejects a request whose origin differs from its configured HTTPS origin with HTTP 421, before handlers read sessions or write authentication state. ovr does not infer trust from arbitrary forwarded headers.
+Generated auth endpoints reject a request whose origin differs from the configured HTTPS origin with HTTP 421, before admission or protocol handling. Accessing `c.auth`, including through `auth.forms(c)`, also enforces this origin before reading sessions or changing auth state. Unrelated routes that do not access auth can serve health checks, canonical-host redirects, and alternate hostnames normally. ovr does not infer trust from arbitrary forwarded headers.
 
-`App` no longer mounts an options endpoint when passed raw `Auth.Options` without generated routes. Use `Auth.passkey()` for the recommended complete flow. Direct `c.auth.passkey.*.verify()` calls are advanced protocol components: they do not automatically run the configured admission policy or generic error boundary. They apply body limits when parsing an unread body; if your own handler parses first, it must set appropriate limits itself. Explicitly mounted low-level options components also require application admission and error handling. None of these lower-level helpers should be exposed as an unguarded public endpoint.
+`Auth.passkey()` and `auth.forms(c)` are the supported passkey entry points. The protocol implementation is internal; there is no exported `Passkey` class or `c.auth.passkey` member. `c.auth` supplies the session, login, logout, and revocation helpers described above. Passing raw `Auth.Options` to `App` enables those helpers without mounting passkey endpoints.
 
 The runnable demo uses Node 24's built-in SQLite driver in application code, with no additional package. Its permissive admission callback explicitly checks development mode and denies traffic otherwise; it is not an example public deployment limiter. Enable it in development using `AUTH_SECRET`, `AUTH_ORIGIN` (default `https://localhost:5173`), and optional `AUTH_DATABASE` (default `.auth.sqlite`). Serve through HTTPS. Its database persists across restarts, is excluded from Git, and holds users, credentials, challenges, and sessions. Cleanup runs on startup and at most once per minute during writes.

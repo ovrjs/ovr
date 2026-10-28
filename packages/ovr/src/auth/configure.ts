@@ -29,10 +29,11 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 	readonly paths?: Partial<
 		Record<"register" | "login" | "logout" | "options" | "client", string>
 	>;
-	/** Required deployment admission policy for registration/login. Use a trusted edge or shared limiter; logout bypasses it. */
+	/** Admit both ceremony requests, or deny with false (60 seconds) or an absolute retry Date. Logout bypasses this policy. */
 	readonly allow: (
 		c: Pick<Context, "req" | "url" | "cookie">,
-	) => Auth.Result<boolean>;
+		phase: "options" | "verify",
+	) => Auth.Result<boolean | Date>;
 	/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
 	readonly error?: (
 		error: unknown,
@@ -102,6 +103,13 @@ export function configure<Shape extends Form.Shape>(
 		) as Form.Parse.Data<Shape>;
 	};
 
+	const back = (c: Pick<Context, "redirect">, method: string, retry = 0) => {
+		const target = new URL(page, options.origin);
+		target.searchParams.set("_auth", method);
+		if (retry) target.searchParams.set("_retry", String(retry));
+		c.redirect(target, 303);
+	};
+
 	const guard =
 		(method: "register" | "login" | "logout", prompt = false) =>
 		async (
@@ -113,12 +121,31 @@ export function configure<Shape extends Form.Shape>(
 				if (c.url.origin !== options.origin)
 					return c.text("Authentication failed.", 400);
 				// Network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header.
-				if (method !== "logout" && !(await options.allow(c))) {
-					c.res.headers.set("retry-after", "60");
-					return c.text(
-						"Too many authentication requests. Try again later.",
-						429,
+				if (method !== "logout") {
+					const admission = await options.allow(
+						c,
+						prompt ? "options" : "verify",
 					);
+					if (admission !== true) {
+						if (admission !== false && !(admission instanceof Date))
+							throw new TypeError("Invalid auth admission result");
+						const retry =
+							admission instanceof Date
+								? admission.getTime()
+								: Date.now() + 60000;
+						if (!Number.isSafeInteger(retry))
+							throw new TypeError("Invalid auth retry deadline");
+						if (!prompt)
+							return back(c, method, Math.max(Date.now() + 1000, retry));
+						c.res.headers.set(
+							"retry-after",
+							String(Math.max(1, Math.ceil((retry - Date.now()) / 1000))),
+						);
+						return c.text(
+							"Too many authentication requests. Try again later.",
+							429,
+						);
+					}
 				}
 				await next();
 			} catch (error) {
@@ -131,11 +158,7 @@ export function configure<Shape extends Form.Shape>(
 				} else console.error(error);
 				if (method === "logout") c.text("Could not log out. Try again.", 503);
 				else if (prompt) c.text("Authentication failed. Try again.", 400);
-				else {
-					const target = new URL(page, options.origin);
-					target.searchParams.set("_auth", method);
-					c.redirect(target, 303);
-				}
+				else back(c, method);
 			}
 		};
 	const register = Passkey.prepare(
@@ -146,7 +169,7 @@ export function configure<Shape extends Form.Shape>(
 			async (c) => {
 				const input = await c.data({ payload: 128 * Size.kb });
 				if (!input || input.issues) throw input;
-				const credential = await c.auth.passkey.register.verify();
+				const credential = await new Passkey(c, c.auth).register.verify();
 				// Pass only application fields, never protocol fields, into the persistence callback.
 				await options.register.create(values(input.data), credential);
 				await c.auth.login(credential.user);
@@ -158,7 +181,9 @@ export function configure<Shape extends Form.Shape>(
 		Route.post(paths.login, {}, guard("login"), async (c) => {
 			// Parse with a bounded body even on the schema-free protocol route.
 			await c.data({ payload: 128 * Size.kb });
-			const credential = await c.auth.passkey.login.verify(options.credentials);
+			const credential = await new Passkey(c, c.auth).login.verify(
+				options.credentials,
+			);
 			await c.auth.login(credential.user);
 			c.redirect(redirect, 303);
 		}),
@@ -211,18 +236,24 @@ export function configure<Shape extends Form.Shape>(
 		...options,
 		routes: [register, login, logout, registration, assertion, client],
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */
-		forms(c: Pick<Context, "auth" | "url">, props: { nonce?: string } = {}) {
-			const Register = c.auth.passkey.register.form(register, {
+		forms(c: Auth.Context, props: { nonce?: string } = {}) {
+			const passkey = new Passkey(c, c.auth);
+			const Register = passkey.register.form(register, {
 				...props,
 				endpoint: registration.pathname(),
 				client: paths.client,
 			});
-			const Login = c.auth.passkey.login.form(login, {
+			const Login = passkey.login.form(login, {
 				...props,
 				endpoint: assertion.pathname(),
 				client: paths.client,
 			});
 			const failure = c.url.searchParams.get("_auth");
+			const retry = Number(c.url.searchParams.get("_retry"));
+			const wait =
+				Number.isSafeInteger(retry) && retry > 0
+					? Math.max(0, Math.ceil((retry - Date.now()) / 1000))
+					: undefined;
 			const error =
 				(
 					method: string,
@@ -234,7 +265,11 @@ export function configure<Shape extends Form.Shape>(
 						children:
 							props.children ??
 							(failure === method
-								? "Authentication failed. Try again."
+								? wait !== undefined
+									? `Too many authentication requests. ${wait ? `Try again in ${wait} seconds.` : "Try again now."}${method === "register" ? " If you already registered, sign in." : ""}`
+									: method === "register"
+										? "Registration could not be completed. If you already registered, sign in; otherwise try again."
+										: "Authentication failed. Try again."
 								: undefined),
 					});
 			Register.Error = error("register", Register.Error);

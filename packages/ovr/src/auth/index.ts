@@ -1,4 +1,4 @@
-import type { Context } from "../context/index.js";
+import type { Context as ContextType } from "../context/index.js";
 import type { JSX } from "../jsx/index.js";
 import type { Route } from "../route/index.js";
 import type { Form } from "../schema/index.js";
@@ -8,10 +8,15 @@ import {
 	configure,
 } from "./configure.js";
 import { AuthIssue } from "./issue.js";
-import { Passkey } from "./passkey.js";
+import { OriginIssue } from "./origin.js";
 import { Token } from "./token.js";
 
 export namespace Auth {
+	/** Request capabilities required while preparing the built-in UI. */
+	export type Context = Pick<
+		ContextType,
+		"auth" | "url" | "cookie" | "res" | "form"
+	> & { data: (options?: { payload: number }) => Promise<unknown> };
 	/** Complete ORM-independent passkey configuration. */
 	export type Configuration<Shape extends Form.Shape> =
 		ConfigurationType<Shape>;
@@ -34,10 +39,7 @@ export namespace Auth {
 	> extends Configuration<Shape> {
 		readonly routes: readonly Route[];
 		/** Call in the handler before returning JSX to prepare the secure browser binding. */
-		forms(
-			c: Pick<Context, "auth" | "url">,
-			props?: { nonce?: string },
-		): Forms<Shape>;
+		forms(c: Context, props?: { nonce?: string }): Forms<Shape>;
 	}
 	/** A synchronous or asynchronous storage result. */
 	export type Result<T> = T | Promise<T>;
@@ -159,21 +161,22 @@ export class Auth {
 	}
 	static readonly #cookie = "__Host-auth-session";
 	static readonly #binding = "__Host-auth-browser";
-	readonly #c: Pick<Context, "cookie" | "res">;
+	readonly #c: Pick<ContextType, "cookie" | "res">;
 	#browser: string | undefined;
 	#session: Promise<Auth.Session | null> | undefined;
 
 	/** Normalized authentication configuration. */
 	readonly options;
-	/** Advanced protocol components. Direct use requires application admission limits, body limits, and error handling. */
-	readonly passkey: Passkey;
 
 	/** Create authentication helpers for the current request. */
-	constructor(c: Passkey.Context, options: Auth.Options) {
-		if (c.url.origin !== options.origin) throw new AuthIssue("origin");
+	constructor(
+		c: Pick<ContextType, "url" | "cookie" | "res">,
+		options: Auth.Options,
+	) {
+		if (c.url.origin !== options.origin)
+			throw new OriginIssue("Authentication requires its configured origin");
 		this.#c = c;
 		this.options = { duration: Time.week, timeout: Time.minute, ...options };
-		this.passkey = new Passkey(c, this);
 	}
 
 	/** Read a browser binding; create it only while preparing a form in the handler. */

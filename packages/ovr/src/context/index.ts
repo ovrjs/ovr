@@ -1,5 +1,6 @@
 import type { App } from "../app/index.js";
 import { Auth } from "../auth/index.js";
+import { OriginIssue } from "../auth/origin.js";
 import { Cookie } from "../cookie/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -287,10 +288,15 @@ export class Context<
 
 		if (!mw) return; // end of stack
 
-		const r = await mw(
-			this, // c
-			() => this.#run(middleware, i + 1), // next
-		);
+		let r: unknown;
+		try {
+			r = await mw(this, () => this.#run(middleware, i + 1));
+		} catch (error) {
+			if (!(error instanceof OriginIssue)) throw error;
+			this.res.headers.set("cache-control", "no-store");
+			this.text("Misdirected Request", 421);
+			return;
+		}
 
 		// resolve the return value
 		if (r instanceof Response) {
