@@ -16,19 +16,23 @@ export namespace Limiter {
 	export interface Options extends Partial<Policy> {
 		/** Stable namespace, shared by all instances using the same external store. */
 		readonly name?: string;
+		/** IPv6 network prefix length, from 1 to 128. Defaults to 64; IPv4 is unchanged. */
+		readonly prefix?: number;
 		/** Override trusted-IP keying, for example with an authenticated user ID. Missing keys fail closed. */
 		readonly key?: (
 			c: Context,
 		) => string | undefined | Promise<string | undefined>;
 		/**
 		 * Shared storage. Atomically refill and consume a token for this key.
-		 * Return true when admitted, or an absolute retry time in milliseconds when denied.
+		 * Return literal true when admitted, or a positive absolute retry time in milliseconds when denied.
 		 * Every instance must use the same policy and stable namespace. Failures must throw.
 		 */
 		readonly consume: (
 			key: string,
 			policy: Policy,
 		) => true | number | Promise<true | number>;
+		/** Report middleware failures server-side. Defaults to console.error. */
+		readonly error?: (error: unknown, c: Context) => void | Promise<void>;
 	}
 }
 
@@ -48,6 +52,7 @@ export class Limiter {
 			limit: 60,
 			interval: 60000,
 			name: "requests",
+			prefix: 64,
 			...options,
 		};
 		for (const [name, value] of Object.entries({
@@ -63,25 +68,44 @@ export class Limiter {
 		}
 		if (!this.#options.name || this.#options.name.length > 512)
 			throw new TypeError("Invalid limiter namespace");
+		if (
+			!Number.isInteger(this.#options.prefix) ||
+			this.#options.prefix < 1 ||
+			this.#options.prefix > 128
+		)
+			throw new TypeError("Invalid limiter IPv6 prefix");
 	}
 
 	/** Admit a request or return its retry deadline. Scopes have independent budgets. */
 	async check(c: Limiter.Context, scope = ""): Promise<true | Date> {
 		const identity = this.#options.key
 			? await this.#options.key(c)
-			: Limiter.#ip(c.ip);
+			: Limiter.#ip(c.ip, this.#options.prefix);
 		if (typeof identity !== "string" || !identity || identity.length > 1024)
 			throw new LimitIssue(
 				"Rate limiting requires a trusted client IP in App.fetch(request, { ip }), or an explicit authenticated key",
 			);
-		const key = JSON.stringify([this.#options.name, scope, identity]);
 		const { limit, interval } = this.#options;
+		// Different policies cannot interpret the same stored token balance differently.
+		const key = JSON.stringify([
+			this.#options.name,
+			limit,
+			interval,
+			scope,
+			identity,
+		]);
 		const retry = await this.#options.consume(key, { limit, interval });
 		if (retry === true) return true;
-		if (!Number.isSafeInteger(retry) || retry <= 0)
+		if (
+			!Number.isFinite(retry) ||
+			retry <= 0 ||
+			retry > Number.MAX_SAFE_INTEGER
+		)
 			throw new LimitIssue("Invalid shared limiter result");
 		const now = Date.now();
-		return new Date(Math.min(now + 3600000, Math.max(now + 1000, retry)));
+		return new Date(
+			Math.min(now + 3600000, Math.max(now + 1000, Math.ceil(retry))),
+		);
 	}
 
 	/** Mount globally with app.use(), or on selected routes. Missing identity/storage failures return 503. */
@@ -89,7 +113,14 @@ export class Limiter {
 		let result: true | Date;
 		try {
 			result = await this.check(c);
-		} catch {
+		} catch (error) {
+			if (this.#options.error) {
+				try {
+					await this.#options.error(error, c);
+				} catch (failure) {
+					console.error(failure);
+				}
+			} else console.error(error);
 			c.res.headers.set("cache-control", "no-store");
 			c.text("Service temporarily unavailable. Try again later.", 503);
 			return;
@@ -103,18 +134,21 @@ export class Limiter {
 		c.text("Too many requests. Try again later.", 429);
 	};
 
-	static #ip(value: string | undefined) {
+	static #ip(value: string | undefined, prefix: number) {
 		if (!value || value.length > 64 || !/^[\da-f:.]+$/i.test(value)) return;
+		if (!value.includes(":"))
+			return value.split(".").length === 4 &&
+				value
+					.split(".")
+					.every((v) => /^(0|[1-9]\d{0,2})$/.test(v) && Number(v) <= 255)
+				? value
+				: undefined;
 		let host: string;
 		try {
-			host = new URL(
-				value.includes(":") ? `http://[${value}]` : `http://${value}`,
-			).hostname;
+			host = new URL(`http://[${value}]`).hostname;
 		} catch {
 			return;
 		}
-		if (!host.startsWith("["))
-			return /^(?:\d+\.){3}\d+$/.test(host) ? host : undefined;
 		const [head = "", tail = ""] = host.slice(1, -1).split("::");
 		const first = head ? head.split(":") : [];
 		const last = tail ? tail.split(":") : [];
@@ -129,6 +163,15 @@ export class Limiter {
 			const low = parseInt(groups[7]!, 16);
 			return [high >> 8, high & 255, low >> 8, low & 255].join(".");
 		}
-		return groups.slice(0, 4).join(":") + "::/64";
+		return (
+			groups
+				.map((v, i) =>
+					(
+						parseInt(v, 16) &
+						(0xffff << Math.min(16, Math.max(0, (i + 1) * 16 - prefix)))
+					).toString(16),
+				)
+				.join(":") + `/${prefix}`
+		);
 	}
 }

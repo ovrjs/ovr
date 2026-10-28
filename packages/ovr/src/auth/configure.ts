@@ -35,8 +35,10 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 	readonly limits: {
 		/** Atomically refill and consume a token across all workers and deployments sharing these policies. */
 		readonly consume: Limiter.Options["consume"];
-		readonly register?: Limiter;
-		readonly login?: Limiter;
+		/** Replace the registration policy with one limiter or a non-empty stack, checked in order. */
+		readonly register?: Limiter | readonly Limiter[];
+		/** Replace the login policy with one limiter or a non-empty stack, checked in order. */
+		readonly login?: Limiter | readonly Limiter[];
 	};
 	/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
 	readonly error?: (
@@ -57,24 +59,37 @@ export function configure<Shape extends Form.Shape>(
 		throw new TypeError(
 			"Auth requires shared rate-limit storage in limits.consume",
 		);
-	const limits = {
-		register:
-			options.limits?.register ??
-			new Limiter({
-				name: "auth:register:" + options.origin,
-				limit: 5,
-				interval: 600000,
-				consume: options.limits.consume,
-			}),
-		login:
-			options.limits?.login ??
-			new Limiter({
-				name: "auth:login:" + options.origin,
-				limit: 20,
-				interval: 60000,
-				consume: options.limits.consume,
-			}),
-	};
+	// Snapshot stacks at startup so later array mutations cannot disable admission.
+	const limits = Object.fromEntries(
+		Object.entries({
+			register:
+				options.limits?.register ??
+				new Limiter({
+					name: "auth:register:" + options.origin,
+					limit: 5,
+					interval: 600000,
+					consume: options.limits.consume,
+				}),
+			login:
+				options.limits?.login ??
+				new Limiter({
+					name: "auth:login:" + options.origin,
+					limit: 20,
+					interval: 60000,
+					consume: options.limits.consume,
+				}),
+		}).map(([method, value]) => {
+			const stack = value instanceof Limiter ? [value] : [...value];
+			if (
+				!stack.length ||
+				stack.some((limiter) => !(limiter instanceof Limiter))
+			)
+				throw new TypeError(
+					"Auth limiter stacks must contain at least one Limiter",
+				);
+			return [method, stack];
+		}),
+	);
 	const paths = {
 		register: "/auth/register",
 		login: "/auth/login",
@@ -151,33 +166,35 @@ export function configure<Shape extends Form.Shape>(
 					return c.text("Authentication failed.", 400);
 				// Network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header.
 				if (method !== "logout") {
-					const admission = await limits[method]
-						.check(c, prompt ? "options" : "verify")
-						.catch((cause: unknown) => {
-							throw new LimitIssue("Authentication rate limit unavailable", {
-								cause,
+					for (const limiter of limits[method]!) {
+						const admission = await limiter
+							.check(c, prompt ? "options" : "verify")
+							.catch((cause: unknown) => {
+								throw new LimitIssue("Authentication rate limit unavailable", {
+									cause,
+								});
 							});
-						});
-					if (admission !== true) {
-						if (!(admission instanceof Date))
-							throw new TypeError("Invalid auth admission result");
-						const now = Date.now();
-						const deadline = admission.getTime();
-						if (!Number.isSafeInteger(deadline))
-							throw new TypeError("Invalid auth retry deadline");
-						const retry = Math.min(
-							now + 3600000,
-							Math.max(now + 1000, deadline),
-						);
-						if (!prompt) return back(c, method, retry);
-						c.res.headers.set(
-							"retry-after",
-							String(Math.ceil((retry - now) / 1000)),
-						);
-						return c.text(
-							"Too many authentication requests. Try again later.",
-							429,
-						);
+						if (admission !== true) {
+							if (!(admission instanceof Date))
+								throw new TypeError("Invalid auth admission result");
+							const now = Date.now();
+							const deadline = admission.getTime();
+							if (!Number.isSafeInteger(deadline))
+								throw new TypeError("Invalid auth retry deadline");
+							const retry = Math.min(
+								now + 3600000,
+								Math.max(now + 1000, deadline),
+							);
+							if (!prompt) return back(c, method, retry);
+							c.res.headers.set(
+								"retry-after",
+								String(Math.ceil((retry - now) / 1000)),
+							);
+							return c.text(
+								"Too many authentication requests. Try again later.",
+								429,
+							);
+						}
 					}
 				}
 				await next();

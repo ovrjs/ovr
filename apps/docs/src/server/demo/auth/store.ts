@@ -116,6 +116,7 @@ export class Store {
 					)
 					.get(now)
 			)
+				// Evicting a live bucket would restore its burst and let rotating clients bypass quotas.
 				throw new Error("Rate limit storage capacity exhausted");
 			const tokens = previous
 				? Math.min(

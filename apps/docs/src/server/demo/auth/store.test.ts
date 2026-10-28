@@ -2,6 +2,7 @@ import { Store } from "./store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { Auth } from "ovr";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -50,6 +51,35 @@ afterEach(() => {
 });
 
 describe("SQLite authentication persistence", () => {
+	test("capacity preserves live budgets, fails closed for new keys, and recovers after expiration", () => {
+		const path = file();
+		const store = open(path);
+		const db = new DatabaseSync(path);
+		const now = Date.now();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		try {
+			db.prepare(
+				`
+				WITH RECURSIVE entries(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM entries WHERE i < 10000)
+				INSERT INTO limits(key, tokens, time, expiration) SELECT 'bucket-' || i, 0, ?, ? FROM entries
+			`,
+			).run(now, now + 60000);
+			const policy = { limit: 1, interval: 60000 };
+			expect(store.consume("bucket-1", policy)).toBe(now + 60000);
+			expect(() => store.consume("new-client", policy)).toThrow(
+				"capacity exhausted",
+			);
+			expect(store.consume("bucket-1", policy)).toBe(now + 60000);
+			clock.mockReturnValue(now + 60000);
+			expect(store.consume("new-client", policy)).toBe(true);
+			expect(db.prepare("SELECT count(*) AS count FROM limits").get()).toEqual({
+				count: 1,
+			});
+		} finally {
+			clock.mockRestore();
+			db.close();
+		}
+	});
 	test("shares atomic rate-limit budgets across connections and restarts", () => {
 		const path = file();
 		const first = open(path);

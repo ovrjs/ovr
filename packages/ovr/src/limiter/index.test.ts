@@ -17,7 +17,7 @@ function setup(options: Partial<Limiter.Options> = {}) {
 			return true;
 		},
 	);
-	const limiter = new Limiter({ consume, ...options });
+	const limiter = new Limiter({ consume, error: vi.fn(), ...options });
 	const hit = vi.fn();
 	const app = new App().use(
 		Route.get("/limited", limiter.middleware, (c) => {
@@ -101,6 +101,9 @@ describe("token buckets", () => {
 		{ interval: 0 },
 		{ interval: Infinity },
 		{ name: "" },
+		{ prefix: 0 },
+		{ prefix: 129 },
+		{ prefix: 48.5 },
 	])("rejects invalid policies: %j", (options) => {
 		expect(() => setup(options)).toThrow("Invalid limiter");
 	});
@@ -143,6 +146,23 @@ describe("trusted identities", () => {
 		expect((await state.fetch("::ffff:192.0.2.2")).status).toBe(200);
 	});
 
+	test.each([48, 53, 56, 128])("supports IPv6 /%i grouping", async (prefix) => {
+		const state = setup({ limit: 1, prefix });
+		expect((await state.fetch("2001:db8:1234:abcd::1")).status).toBe(200);
+		expect((await state.fetch("2001:0DB8:1234:ABCD::1")).status).toBe(429);
+		expect((await state.fetch("2001:db8:1234:abce::1")).status).toBe(
+			prefix === 128 ? 200 : 429,
+		);
+		expect((await state.fetch("2001:db8:1235:abcd::1")).status).toBe(200);
+	});
+
+	test("masks partial IPv6 groups at the exact prefix boundary", async () => {
+		const state = setup({ limit: 1, prefix: 53 });
+		expect((await state.fetch("2001:db8:1234:a800::1")).status).toBe(200);
+		expect((await state.fetch("2001:db8:1234:afff::2")).status).toBe(429);
+		expect((await state.fetch("2001:db8:1234:b000::1")).status).toBe(200);
+	});
+
 	test.each([
 		"invalid",
 		"192.0.2.1, 192.0.2.2",
@@ -150,6 +170,9 @@ describe("trusted identities", () => {
 		"2001:db8:::1",
 		"https://192.0.2.1",
 		"user@example.com",
+		"010.1.1.1",
+		"192.0.02.1",
+		"127.1",
 	])("rejects malformed peer metadata: %s", async (ip) => {
 		expect((await setup().fetch(ip)).status).toBe(503);
 	});
@@ -161,6 +184,71 @@ describe("trusted identities", () => {
 		);
 		expect((await state.fetch("192.0.2.2")).status).toBe(429);
 	});
+});
+
+test("different policies using the default namespace cannot share token balances", async () => {
+	const first = setup({ limit: 1 });
+	const second = setup({ limit: 2, consume: first.consume });
+	const third = setup({ limit: 1, interval: 120000, consume: first.consume });
+	expect((await first.fetch()).status).toBe(200);
+	expect((await first.fetch()).status).toBe(429);
+	expect((await second.fetch()).status).toBe(200);
+	expect((await second.fetch()).status).toBe(200);
+	expect((await second.fetch()).status).toBe(429);
+	expect((await third.fetch()).status).toBe(200);
+	expect(new Set(first.consume.mock.calls.map(([key]) => key)).size).toBe(3);
+});
+
+test("fractional retry deadlines round up, while numeric one still denies", async () => {
+	const state = setup();
+	state.consume.mockReturnValueOnce(Date.now() + 1234.5).mockReturnValueOnce(1);
+	const response = await state.fetch();
+	expect(response.status).toBe(429);
+	expect(response.headers.get("retry-after")).toBe("2");
+	const denied = await state.fetch();
+	expect(denied.status).toBe(429);
+	expect(denied.headers.get("retry-after")).toBe("1");
+	expect(state.hit).not.toHaveBeenCalled();
+});
+
+test("middleware reports failures without exposing them or admitting requests", async () => {
+	const error = vi.fn();
+	const failure = new Error("private storage details");
+	const state = setup({
+		consume: () => {
+			throw failure;
+		},
+		error,
+	});
+	const response = await state.fetch();
+	expect(response.status).toBe(503);
+	expect(await response.text()).not.toContain("private storage");
+	expect(error).toHaveBeenCalledWith(
+		failure,
+		expect.objectContaining({ ip: "192.0.2.1" }),
+	);
+	expect(state.hit).not.toHaveBeenCalled();
+	const log = vi.spyOn(console, "error").mockImplementation(() => {});
+	try {
+		const fallback = new App().use(
+			new Limiter({
+				consume: () => {
+					throw failure;
+				},
+			}).middleware,
+		);
+		expect(
+			(await fallback.fetch("https://example.com", { ip: "192.0.2.1" })).status,
+		).toBe(503);
+		expect(log).toHaveBeenCalledWith(failure);
+		error.mockRejectedValue(new Error("logger unavailable"));
+		expect((await state.fetch()).status).toBe(503);
+		expect(log).toHaveBeenCalledWith(
+			expect.objectContaining({ message: "logger unavailable" }),
+		);
+	} finally {
+		log.mockRestore();
+	}
 });
 
 test("separate workers call a shared atomic store with stable keys and policy", async () => {

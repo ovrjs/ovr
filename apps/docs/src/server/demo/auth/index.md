@@ -64,7 +64,7 @@ app.use(
 );
 ```
 
-Auth automatically applies independent token buckets to registration and login before body parsing or storage access. The defaults allow a burst of **5 registrations**, replenished at **5 per 10 minutes**, and **20 sign-ins**, replenished at **20 per minute**, per trusted client IP (IPv6 is grouped by `/64`, with mapped IPv4 addresses using their IPv4 budget). Options and verification have separate budgets, so the two requests in a normal ceremony do not spend the same budget twice. Logout bypasses these policies, including storage failures. The required `limits.consume` callback connects shared storage; ovr chooses the policy values, so no numeric configuration is required.
+Auth automatically applies independent token buckets to registration and login before body parsing or challenge storage. The defaults allow a burst of **5 registrations**, replenished at **5 per 10 minutes**, and **20 sign-ins**, replenished at **20 per minute**, per trusted client IP (IPv6 is grouped by `/64`, with mapped IPv4 addresses using their IPv4 budget). Options and verification have separate budgets, so the two requests in a normal ceremony do not spend the same budget twice. Logout bypasses these policies, including storage failures. The required `limits.consume` callback connects shared storage; ovr chooses the policy values, so no numeric configuration is required.
 
 Supply the trusted client IP once in your server entry point. A standard Fetch `Request` does not contain its socket peer. For a direct Deno HTTPS listener:
 
@@ -89,7 +89,7 @@ export default {
 
 That trust comes from Cloudflare's edge and routing policy. Same-zone Worker subrequests can reflect a caller-modified `x-real-ip`; cross-zone subrequests use a fixed address. If those callers are allowed, provide an authenticated identity policy instead. Cloudflare documents a rule using `cf.worker.upstream_zone` to block Worker subrequests. [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/), [blocking Worker subrequests](https://developers.cloudflare.com/waf/custom-rules/use-cases/block-worker-subrequests/).
 
-IPv6 `/64` grouping prevents a separate budget for each rotating interface identifier. It is a baseline policy: shared networks share a budget, and callers controlling multiple prefixes can still distribute their requests. [IPv6 temporary addresses (RFC 8981)](https://www.rfc-editor.org/rfc/rfc8981.html).
+IPv6 `/64` grouping prevents a separate budget for each rotating interface identifier. It does not contain an attacker who controls a larger allocation: a `/56` contains 256 separate `/64` networks and a `/48` contains 65,536. Just 50 login bursts can fill the demo's 1,000 outstanding challenges when attackers use fresh browser bindings. The defaults alone therefore do not protect shared challenge capacity against prefix sweeping. Broader and aggregate policies can limit this traffic, but they also combine legitimate users into shared budgets. IPv6 allocation sizes vary; neither `/64` nor `/48` is a universal client boundary. [IPv6 temporary addresses (RFC 8981)](https://www.rfc-editor.org/rfc/rfc8981.html), [IPv6 end-site assignments (RFC 6177)](https://www.rfc-editor.org/rfc/rfc6177).
 
 Rate-limit counters always live in application-supplied shared storage. There is no in-memory fallback or process-local counter cache. Every request consults the backend, and missing storage is rejected at startup. Configure the same shared atomic operation for all workers while retaining the built-in policy values:
 
@@ -97,7 +97,56 @@ Rate-limit counters always live in application-supplied shared storage. There is
 const auth = new Auth({ ...configuration, limits: { consume: consumeToken } });
 ```
 
-`consumeToken(key, { limit, interval })` must atomically replenish and consume one token, returning `true` on admission or an absolute retry time in milliseconds on denial. All workers must share storage and policy values; errors must throw. Stable keys include the auth origin, operation, request phase, and normalized client identity. The SQLite demo implements this operation in a transaction across connections to the same database file. That file must be persistent and shared; serverless deployments need a database reachable by every function instance. Cleanup and storage capacity belong to the shared backend. Advanced overrides can supply `limits.register` or `limits.login` as `Limiter` instances, including a custom authenticated key. [Reusable rate-limit middleware](/05-middleware#rate-limiting) can also protect ordinary routes.
+`consumeToken(key, { limit, interval })` must atomically replenish and consume one token, returning literal boolean `true` on admission or a positive absolute retry time in milliseconds on denial. Numeric `1` denies; fractional deadlines round up. All workers must share storage and policy values; errors must throw. Stable keys include the namespace, numeric policy, request phase, and normalized client identity. The built-in auth namespaces include the origin and operation. Different policies cannot corrupt each other's token balances; identical policies using the same name and scope intentionally share a quota. The SQLite demo implements this operation in a transaction across connections to the same database file. That file must be persistent and shared; serverless deployments need a database reachable by every function instance. Cleanup and storage capacity belong to the shared backend. Advanced overrides can supply `limits.register` or `limits.login` as one `Limiter` or a non-empty array checked in order. [Reusable rate-limit middleware](/05-middleware#rate-limiting) can also protect ordinary routes.
+
+For example, this deployment-specific stack adds a global ceiling and a broader IPv6 budget while retaining the original per-client policies:
+
+```ts
+import { Auth, Limiter } from "ovr";
+
+const global = new Limiter({
+	name: `auth:global:${configuration.origin}`,
+	limit: 100,
+	interval: 60000,
+	key: () => "all",
+	consume: consumeToken,
+});
+const network = new Limiter({
+	name: `auth:network:${configuration.origin}`,
+	limit: 40,
+	interval: 60000,
+	prefix: 48,
+	consume: consumeToken,
+});
+const auth = new Auth({
+	...configuration,
+	limits: {
+		consume: consumeToken,
+		register: [
+			global,
+			network,
+			new Limiter({
+				name: `auth:register:${configuration.origin}`,
+				limit: 5,
+				interval: 600000,
+				consume: consumeToken,
+			}),
+		],
+		login: [
+			global,
+			network,
+			new Limiter({
+				name: `auth:login:${configuration.origin}`,
+				limit: 20,
+				interval: 60000,
+				consume: consumeToken,
+			}),
+		],
+	},
+});
+```
+
+These aggregate numbers are examples, not additional defaults. Set them against your traffic and challenge storage capacity, accounting for the initial burst plus refill during the full ceremony lifetime. Using the same global and network instances for both operations shares their options budget across signup and sign-in, while verification has its own budget. All layers must admit; the first denial or error stops processing before body parsing or challenge writes. Earlier layers keep their consumed tokens if a later layer denies, so put cheap aggregate ceilings first to bound per-client record creation. Stacks are copied and validated at startup; logout skips them all. Global ceilings limit resource usage but can themselves be exhausted to deny legitimate traffic, so edge protections remain necessary.
 
 The persistence functions above are application code. The transaction shown uses the normal Drizzle API; ovr neither imports Drizzle nor chooses a database package for you. Registration fields determine the callback's data type and the available `Register.Field` names. `Register.Fields` renders all application fields. Omitting a form's children supplies fields, a button, and an accessible error status automatically. Plain HTML, field component customization, and normal form attributes remain available.
 
@@ -205,6 +254,8 @@ Rate limits and storage capacity serve different purposes. Automatic per-client 
 
 Generated auth endpoints reject a request whose origin differs from the configured HTTPS origin with HTTP 421, before rate limiting or protocol handling. `auth.session(c)`, `auth.forms(c)`, and the session mutation methods enforce this origin too. Unrelated health checks and canonical-host redirects can serve alternate hostnames normally. ovr does not infer trust from forwarded headers.
 
-`new Auth(configuration)` creates the service, and `new App({ auth })` mounts its generated routes. All request helpers belong to that instance: `auth.forms(c)`, `auth.session(c)`, `auth.login(c, user)`, `auth.logout(c)`, and `auth.revoke(c, token)`. Registration and login handlers establish sessions automatically; direct `login` is for an application-authorized user. Request-local caches are isolated by service and context. The protocol implementation is internal. The earlier `Auth.passkey()` factory and `c.auth` helpers have been removed.
+`new Auth(configuration)` creates the service, and `new App({ auth })` mounts its generated routes. All request helpers belong to that instance: `auth.forms(c)`, `auth.session(c)`, `auth.login(c, user)`, `auth.logout(c)`, and `auth.revoke(c, token)`. Registration and login handlers establish sessions automatically; direct `login` is for an application-authorized user whose ID is non-blank and at most 1,024 UTF-8 bytes. Request-local caches are isolated by service and context. Cookies are host-wide, so use one authentication system per hostname; separate instances are intended to serve different requests or workers with the same configuration, not independent sign-in systems on one host. The protocol implementation is internal. The earlier `Auth.passkey()` factory and `c.auth` helpers have been removed.
 
 The runnable demo uses Node 24's built-in SQLite driver in application code, with no additional package. The demo is enabled only in development and uses a fixed loopback identity in that local entry point. Public server adapters must supply the real trusted client IP. Its rate-limit buckets are shared through SQLite using the built-in policy values. Enable it in development using `AUTH_SECRET`, `AUTH_ORIGIN` (default `https://localhost:5173`), and optional `AUTH_DATABASE` (default `.auth.sqlite`). Serve through HTTPS. Its database persists across restarts, is excluded from Git, and holds users, credentials, challenges, and sessions. Cleanup runs on startup and at most once per minute during writes, including expired rate-limit buckets.
+
+The demo refuses new rate-limit keys at 10,000 live rows while continuing to enforce existing buckets. This is deliberate fail-closed behavior, not production availability protection: an attacker filling those rows denies admission to new identities until records expire. Do not replace it with eviction of depleted live buckets, because recreating one restores its full burst and enables quota bypass. A production backend needs capacity sized for its retention and admitted key-creation rate, expired or provably fully replenished bucket reclamation, aggregate admission ahead of high-cardinality keys, and capacity monitoring. An exhausted backend must still deny rather than grant fresh budgets. Behind a proxy, passing its address as the client identity also makes the entire site share one quota; verify the trusted identity integration before serving public traffic. The library cannot detect that misconfiguration at startup from a Fetch Request.

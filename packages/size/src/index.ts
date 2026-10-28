@@ -1,9 +1,9 @@
-export const bytes = 58635;
-export const kb = 58.64;
+export const bytes = 59601;
+export const kb = 59.6;
 
 export const App = { bytes: 25940, kb: 25.94 } as const;
 
-export const Auth = { bytes: 52555, kb: 52.56 } as const;
+export const Auth = { bytes: 53521, kb: 53.52 } as const;
 
 export const AuthIssue = { bytes: 138, kb: 0.14 } as const;
 
@@ -13,7 +13,7 @@ export const Form = { bytes: 18367, kb: 18.37 } as const;
 
 export const JSX = { bytes: 3623, kb: 3.62 } as const;
 
-export const Limiter = { bytes: 1946, kb: 1.95 } as const;
+export const Limiter = { bytes: 2320, kb: 2.32 } as const;
 
 export const Multipart = { bytes: 5656, kb: 5.66 } as const;
 

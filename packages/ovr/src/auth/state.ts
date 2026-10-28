@@ -1,5 +1,5 @@
 import type { Context as ContextType } from "../context/index.js";
-import { Time } from "../util/index.js";
+import { Codec, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { AuthIssue } from "./issue.js";
 import { OriginIssue } from "./origin.js";
@@ -80,6 +80,8 @@ export class State {
 
 	/** Replace the current session and issue a new signed, secure cookie. */
 	async login(id: string) {
+		if (typeof id !== "string" || !id.trim() || Codec.encode(id).length > 1024)
+			throw new TypeError("Auth user ID must contain 1 to 1024 UTF-8 bytes");
 		const previous = await this.session();
 		if (previous) await this.options.sessions.delete(previous.token);
 		const session = {
@@ -105,9 +107,30 @@ export class State {
 	/** Revoke a session by its opaque ID. */
 	async revoke(token: string) {
 		await this.options.sessions.delete(token);
-		if ((await this.session())?.token === token) {
-			this.#clear();
-			this.#session = Promise.resolve(null);
+		// A login earlier in this request may have replaced the incoming cookie's session.
+		if (this.#session) {
+			if ((await this.#session)?.token === token) {
+				this.#clear();
+				this.#session = Promise.resolve(null);
+			}
+			return;
+		}
+		const cookie = this.#c.cookie.get(State.#cookie);
+		if (cookie) {
+			try {
+				if (
+					(await Token.open(this.options.secret, "session", cookie)) === token
+				) {
+					this.#clear();
+					this.#session = Promise.resolve(null);
+					return;
+				}
+			} catch (error) {
+				if (!(error instanceof AuthIssue)) throw error;
+				this.#clear();
+				this.#session = Promise.resolve(null);
+				return;
+			}
 		}
 	}
 

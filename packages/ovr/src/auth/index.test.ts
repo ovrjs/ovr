@@ -633,6 +633,74 @@ describe("revocable sessions", () => {
 		expect(state.sessions.size).toBe(0);
 	});
 
+	test.each([false, true])(
+		"revokes the current session directly with cached=%s",
+		async (cached) => {
+			const state = setup();
+			const login = await state.post("/session", new FormData());
+			const session: Auth.Session = await login.json();
+			const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
+			const get = vi.spyOn(state.options.sessions, "get");
+			state.app.use(
+				Route.get("/direct-revoke", async (c) => {
+					if (cached) await state.auth.session(c);
+					get.mockRejectedValue(new Error("reads unavailable"));
+					await state.auth.revoke(c, session.token);
+					expect(await state.auth.session(c)).toBeNull();
+					c.text("revoked");
+				}),
+			);
+			const response = await state.app.fetch(origin + "/direct-revoke", {
+				headers: { cookie },
+			});
+			expect(response.status).toBe(200);
+			expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+			expect(get).toHaveBeenCalledTimes(cached ? 1 : 0);
+			expect(state.sessions.size).toBe(0);
+		},
+	);
+
+	test("revoking the incoming session after rotation preserves the new session", async () => {
+		const state = setup();
+		const login = await state.post("/session", new FormData());
+		const previous: Auth.Session = await login.json();
+		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
+		state.app.use(
+			Route.get("/rotate-revoke", async (c) => {
+				const session = await state.auth.login(c, "next-user");
+				await state.auth.revoke(c, previous.token);
+				expect(await state.auth.session(c)).toEqual(session);
+				c.json(session);
+			}),
+		);
+		const response = await state.app.fetch(origin + "/rotate-revoke", {
+			headers: { cookie },
+		});
+		expect(response.status).toBe(200);
+		expect(response.headers.getSetCookie().at(-1)).not.toContain("Max-Age=0");
+		expect(state.sessions.size).toBe(1);
+	});
+
+	test.each(["", " ", "x".repeat(1025), "é".repeat(513)])(
+		"rejects invalid session user IDs before persistence: %s",
+		async (id) => {
+			const state = setup();
+			const get = vi.spyOn(state.options.sessions, "get");
+			const set = vi.spyOn(state.options.sessions, "set");
+			state.app.use(
+				Route.get("/invalid-user", async (c) => {
+					await expect(state.auth.login(c, id)).rejects.toThrow("user ID");
+					c.text("rejected");
+				}),
+			);
+			expect((await state.app.fetch(origin + "/invalid-user")).status).toBe(
+				200,
+			);
+			expect(get).not.toHaveBeenCalled();
+			expect(set).not.toHaveBeenCalled();
+		},
+	);
+
 	test("issues a secure cookie, reads it, and invalidates copied cookies on logout", async () => {
 		const state = setup();
 		const response = await state.post("/session", new FormData());
@@ -1169,6 +1237,95 @@ test("auth requires shared rate-limit storage at startup", () => {
 				register: { fields: {}, name: () => "User", create: () => {} },
 			}),
 	).toThrow("limits.consume");
+});
+
+test("auth rejects empty limiter stacks at startup", () => {
+	const storage = setup();
+	for (const method of ["register", "login"]) {
+		expect(() =>
+			managed(storage, { limits: { consume: storage.consume, [method]: [] } }),
+		).toThrow("at least one Limiter");
+	}
+});
+
+test("layered policies stop prefix sweeping across instances and share an aggregate ceiling", async () => {
+	const storage = setup();
+	const global = new Limiter({
+		name: "aggregate",
+		limit: 3,
+		key: () => "all",
+		consume: storage.consume,
+	});
+	const network = new Limiter({
+		name: "network",
+		limit: 2,
+		prefix: 48,
+		consume: storage.consume,
+	});
+	const client = new Limiter({
+		name: "client",
+		limit: 1,
+		consume: storage.consume,
+	});
+	const stack = [global, network, client];
+	const limits = { consume: storage.consume, register: stack, login: stack };
+	const first = managed(storage, { limits });
+	const second = managed(storage, { limits });
+	stack.length = 0; // The configured services own snapshots, not the caller's mutable array.
+	const calls = vi.spyOn(client, "check");
+	const start = await first.start("login", "", (path, data, cookie) =>
+		first.post(path, data, cookie, "2001:db8:1:1::1"),
+	);
+	expect(
+		(
+			await second.start("register", "", (path, data, cookie) =>
+				second.post(path, data, cookie, "2001:db8:1:2::1"),
+			)
+		).response.status,
+	).toBe(200);
+	const denied = await first.post(
+		start.endpoint,
+		new FormData(),
+		"",
+		"2001:db8:1:3::1",
+	);
+	expect(denied.status).toBe(429);
+	expect(calls).toHaveBeenCalledTimes(2);
+	const other = await second.post(
+		start.endpoint,
+		new FormData(),
+		"",
+		"2001:db8:2:1::1",
+	);
+	expect(other.status).toBe(429); // Earlier layers retain consumed tokens when a later layer denies.
+	expect(storage.challenges.size).toBe(2);
+	expect(first.create).not.toHaveBeenCalled();
+	expect(second.create).not.toHaveBeenCalled();
+	expect((await first.post("/auth/logout", new FormData())).status).toBe(303);
+});
+
+test("a failing layer prevents challenge writes and preserves generic errors", async () => {
+	const storage = setup();
+	const earlier = new Limiter({ consume: storage.consume });
+	const failed = new Limiter({
+		consume: () => {
+			throw new Error("private backend failure");
+		},
+	});
+	const later = new Limiter({ consume: storage.consume });
+	const check = vi.spyOn(later, "check");
+	const state = managed(storage, {
+		limits: { consume: storage.consume, login: [earlier, failed, later] },
+	});
+	const response = await state.post(
+		"/_ovr/passkey/options/login",
+		new FormData(),
+	);
+	expect(response.status).toBe(503);
+	expect(await response.text()).not.toContain("private backend");
+	expect(state.error).toHaveBeenCalledOnce();
+	expect(check).not.toHaveBeenCalled();
+	expect(storage.challenges.size).toBe(0);
 });
 
 test("limiter errors cannot prevent logout", async () => {

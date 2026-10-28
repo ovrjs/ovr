@@ -138,7 +138,7 @@ Returning a value sets the `content-type` header to `html` unless it has already
 import { App, Limiter, Route } from "ovr";
 
 const app = new App();
-const search = new Limiter({ consume: consumeToken }); // Default policy: 60 per minute.
+const search = new Limiter({ name: "search", consume: consumeToken }); // Default policy: 60 per minute.
 
 app.use(
 	Route.get("/search", search.middleware, (c) => c.text("Search results")),
@@ -150,9 +150,11 @@ app.fetch(request, { ip });
 
 The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Missing/invalid identity or limiter storage failures return HTTP 503; exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`.
 
-`consume` is required. Optional settings are `limit`, `interval` (milliseconds), `name`, and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
+`consume` is required. Optional settings are `limit`, `interval` (milliseconds), `name`, `prefix`, `key`, and `error`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. `prefix` sets the IPv6 grouping from 1 to 128 bits, defaulting to 64, without changing IPv4. For example, use an additional `/48` policy to limit callers rotating through multiple `/64` networks. NAT64 and other translated addresses may share a prefix; choose a suitable prefix or custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
-Every request calls the shared atomic `consume(key, { limit, interval })` operation. It returns `true` on admission or an absolute retry time in milliseconds on denial; failures and malformed results fail closed. All workers must share a stable `name`, storage, and policy values. Missing storage is rejected at startup. There is no built-in memory store or process-local counter cache, so a fresh function instance does not receive a fresh budget. The backend owns bucket expiration and capacity limits.
+Every request calls the shared atomic `consume(key, { limit, interval })` operation. It returns the literal boolean `true` on admission or a positive absolute retry time in milliseconds on denial; numeric `1` means denial, not success. Fractional retry timestamps round up. Failures and malformed results fail closed. All workers must share a stable `name`, storage, and policy values. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. The default name is `requests`: identical policies with the same name, scope, and identity intentionally share a budget. Give independent route quotas distinct stable names. Changing a policy creates a fresh bucket; this release's key format also resets existing buckets once on deployment. Missing storage is rejected at startup. There is no built-in memory store or process-local counter cache, so a fresh function instance does not receive a fresh budget. The backend owns bucket expiration and capacity limits.
+
+Middleware failures are reported through `error(error, c)`, defaulting to `console.error`. A failing error callback is logged too, and the response remains a generic 503. Direct `check()` calls throw failures for their caller to handle; Auth reports them through its own `error` callback.
 
 The authentication SQLite demo includes a transactional backend for processes connected to the same persistent database file. Serverless deployments need shared database storage accessible from every instance. Network-level and distributed abuse protection still belong at your deployment edge.
 

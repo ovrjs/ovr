@@ -174,7 +174,7 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 		return this.#state(c).session();
 	}
 
-	/** Establish a session for an already-authorized user. Built-in passkey handlers do this automatically. */
+	/** Establish a session for an already-authorized user with a non-blank ID of at most 1024 UTF-8 bytes. Built-in passkey handlers do this automatically. */
 	login(c: State.Context, id: string) {
 		return this.#state(c).login(id);
 	}
