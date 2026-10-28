@@ -6,8 +6,18 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-function setup(options: Limiter.Options = {}) {
-	const limiter = new Limiter(options);
+function setup(options: Partial<Limiter.Options> = {}) {
+	// Test-only shared-store stand-in. The library always calls the supplied backend.
+	const counts = new Map<string, number>();
+	const consume = vi.fn(
+		(key: string, { limit, interval }: Limiter.Policy): true | number => {
+			const count = counts.get(key) ?? 0;
+			if (count >= limit) return Date.now() + interval;
+			counts.set(key, count + 1);
+			return true;
+		},
+	);
+	const limiter = new Limiter({ consume, ...options });
 	const hit = vi.fn();
 	const app = new App().use(
 		Route.get("/limited", limiter.middleware, (c) => {
@@ -18,21 +28,30 @@ function setup(options: Limiter.Options = {}) {
 	);
 	const fetch = (ip = "192.0.2.1", headers: HeadersInit = {}) =>
 		app.fetch("https://example.com/limited", { ip, headers });
-	return { app, limiter, fetch, hit };
+	return { app, limiter, fetch, hit, consume };
 }
 
 describe("token buckets", () => {
-	test("defaults to a burst of 60 and refills continuously without a window-boundary burst", async () => {
+	test("supplies the default policy and consults shared storage on every request", async () => {
 		const state = setup();
-		for (let i = 0; i < 60; i++) expect((await state.fetch()).status).toBe(200);
+		state.consume
+			.mockReturnValueOnce(true)
+			.mockReturnValueOnce(Date.now() + 17501)
+			.mockReturnValueOnce(true);
+		expect((await state.fetch()).status).toBe(200);
 		const denied = await state.fetch();
 		expect(denied.status).toBe(429);
-		expect(denied.headers.get("retry-after")).toBe("1");
-		await vi.advanceTimersByTimeAsync(999);
-		expect((await state.fetch()).status).toBe(429);
-		await vi.advanceTimersByTimeAsync(1);
+		expect(denied.headers.get("retry-after")).toBe("18");
 		expect((await state.fetch()).status).toBe(200);
-		expect((await state.fetch()).status).toBe(429);
+		expect(state.consume).toHaveBeenCalledTimes(3);
+		expect(state.consume.mock.calls.map((call) => call[0])).toEqual(
+			Array(3).fill(state.consume.mock.calls[0]?.[0]),
+		);
+		expect(state.consume.mock.calls[0]?.[1]).toEqual({
+			limit: 60,
+			interval: 60000,
+		});
+		expect(state.hit).toHaveBeenCalledTimes(2);
 	});
 
 	test("concurrent checks consume one budget", async () => {
@@ -55,7 +74,7 @@ describe("token buckets", () => {
 	});
 
 	test("scopes have independent budgets", async () => {
-		const limiter = new Limiter({
+		const { limiter } = setup({
 			limit: 1,
 			key: (c) => c.req.headers.get("key") ?? undefined,
 		});
@@ -76,25 +95,22 @@ describe("token buckets", () => {
 		expect(typeof result[2]).toBe("string");
 	});
 
-	test("capacity refusal preserves existing buckets, and expired buckets are reclaimed", async () => {
-		const state = setup({ limit: 1, interval: 1000, capacity: 1 });
-		expect((await state.fetch()).status).toBe(200);
-		expect((await state.fetch("192.0.2.2")).status).toBe(503);
-		expect((await state.fetch()).status).toBe(429);
-		await vi.advanceTimersByTimeAsync(1000);
-		expect((await state.fetch("192.0.2.2")).status).toBe(200);
-	});
-
 	test.each([
 		{ limit: 0 },
 		{ limit: NaN },
 		{ interval: 0 },
 		{ interval: Infinity },
-		{ capacity: -1 },
 		{ name: "" },
 	])("rejects invalid policies: %j", (options) => {
-		expect(() => new Limiter(options)).toThrow("Invalid limiter");
+		expect(() => setup(options)).toThrow("Invalid limiter");
 	});
+});
+
+test("missing shared storage fails at startup instead of allocating local counters", () => {
+	// @ts-expect-error A shared backend is required, including for the default policy.
+	expect(() => new Limiter()).toThrow("consume");
+	// @ts-expect-error A policy without storage is not a valid limiter configuration.
+	expect(() => new Limiter({ limit: 10 })).toThrow("consume");
 });
 
 describe("trusted identities", () => {

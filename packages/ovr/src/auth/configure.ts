@@ -31,10 +31,10 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 	readonly paths?: Partial<
 		Record<"register" | "login" | "logout" | "options" | "client", string>
 	>;
-	/** Optional overrides for the automatic signup and sign-in policies. */
-	readonly limits?: {
-		/** Shared atomic storage for the built-in policies, when serving from multiple workers. */
-		readonly consume?: Limiter.Options["consume"];
+	/** Shared rate-limit storage; ovr supplies the signup and sign-in policies. */
+	readonly limits: {
+		/** Atomically refill and consume a token across all workers and deployments sharing these policies. */
+		readonly consume: Limiter.Options["consume"];
 		readonly register?: Limiter;
 		readonly login?: Limiter;
 	};
@@ -53,6 +53,10 @@ export function configure<Shape extends Form.Shape>(
 	routes: readonly Route[];
 	forms: (c: Auth.Context, props?: { nonce?: string }) => Auth.Forms<Shape>;
 } {
+	if (typeof options.limits?.consume !== "function")
+		throw new TypeError(
+			"Auth requires shared rate-limit storage in limits.consume",
+		);
 	const limits = {
 		register:
 			options.limits?.register ??
@@ -60,7 +64,7 @@ export function configure<Shape extends Form.Shape>(
 				name: "auth:register:" + options.origin,
 				limit: 5,
 				interval: 600000,
-				...(options.limits?.consume ? { consume: options.limits.consume } : {}),
+				consume: options.limits.consume,
 			}),
 		login:
 			options.limits?.login ??
@@ -68,7 +72,7 @@ export function configure<Shape extends Form.Shape>(
 				name: "auth:login:" + options.origin,
 				limit: 20,
 				interval: 60000,
-				...(options.limits?.consume ? { consume: options.limits.consume } : {}),
+				consume: options.limits.consume,
 			}),
 	};
 	const paths = {

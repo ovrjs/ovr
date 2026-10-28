@@ -138,7 +138,7 @@ Returning a value sets the `content-type` header to `html` unless it has already
 import { App, Limiter, Route } from "ovr";
 
 const app = new App();
-const search = new Limiter(); // Burst of 60, replenished at 60 per minute.
+const search = new Limiter({ consume: consumeToken }); // Default policy: 60 per minute.
 
 app.use(
 	Route.get("/search", search.middleware, (c) => c.text("Search results")),
@@ -150,8 +150,10 @@ app.fetch(request, { ip });
 
 The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Missing/invalid identity or limiter storage failures return HTTP 503; exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`.
 
-Optional settings are `limit`, `interval` (milliseconds), `name`, `capacity`, `key`, and `consume`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
+`consume` is required. Optional settings are `limit`, `interval` (milliseconds), `name`, and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
-Memory is process-local and bounded to 10,000 active buckets by default. Expired entries are reclaimed; capacity refusal affects new buckets and preserves existing budgets. Multi-worker deployments must use a shared atomic `consume(key, { limit, interval })` operation, returning `true` on admission or an absolute retry time in milliseconds on denial. All workers must share a stable `name` and policy values. The authentication SQLite demo includes such a backend. Network-level and distributed abuse protection still belong at your deployment edge.
+Every request calls the shared atomic `consume(key, { limit, interval })` operation. It returns `true` on admission or an absolute retry time in milliseconds on denial; failures and malformed results fail closed. All workers must share a stable `name`, storage, and policy values. Missing storage is rejected at startup. There is no built-in memory store or process-local counter cache, so a fresh function instance does not receive a fresh budget. The backend owns bucket expiration and capacity limits.
+
+The authentication SQLite demo includes a transactional backend for processes connected to the same persistent database file. Serverless deployments need shared database storage accessible from every instance. Network-level and distributed abuse protection still belong at your deployment edge.
 
 Use `app.use(limiter.middleware)` to apply a limiter globally. That includes auth routes and logout too; prefer selected routes when you want those requests to remain independent of a general application quota. The auth service's own policies always bypass logout.

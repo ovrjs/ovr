@@ -12,22 +12,20 @@ export namespace Limiter {
 		readonly limit: number;
 		readonly interval: number;
 	}
-	/** Optional customization; the default is a process-local bucket of 60 requests per minute. */
+	/** Required shared storage, with a default policy of 60 requests per minute. */
 	export interface Options extends Partial<Policy> {
 		/** Stable namespace, shared by all instances using the same external store. */
 		readonly name?: string;
-		/** Maximum active identities in process memory; defaults to 10,000. */
-		readonly capacity?: number;
 		/** Override trusted-IP keying, for example with an authenticated user ID. Missing keys fail closed. */
 		readonly key?: (
 			c: Context,
 		) => string | undefined | Promise<string | undefined>;
 		/**
-		 * Optional shared storage. Atomically refill and consume a token for this key.
+		 * Shared storage. Atomically refill and consume a token for this key.
 		 * Return true when admitted, or an absolute retry time in milliseconds when denied.
 		 * Every instance must use the same policy and stable namespace. Failures must throw.
 		 */
-		readonly consume?: (
+		readonly consume: (
 			key: string,
 			policy: Policy,
 		) => true | number | Promise<true | number>;
@@ -40,20 +38,22 @@ export class LimitIssue extends Error {}
 /** Dependency-free token buckets, usable by authentication and ordinary route middleware. */
 export class Limiter {
 	readonly #options;
-	readonly #entries = new Map<string, { tokens: number; time: number }>();
-	#pruned = 0;
-
-	/** Create an independent policy. Memory is local to this instance unless consume is supplied. */
-	constructor(options: Limiter.Options = {}) {
+	/** Create a policy backed by the application's shared atomic storage operation. */
+	constructor(options: Limiter.Options) {
+		if (typeof options?.consume !== "function")
+			throw new TypeError(
+				"Limiter requires shared rate-limit storage in consume",
+			);
 		this.#options = {
 			limit: 60,
 			interval: 60000,
-			capacity: 10000,
 			name: "requests",
 			...options,
 		};
-		for (const name of ["limit", "interval", "capacity"] as const) {
-			const value = this.#options[name];
+		for (const [name, value] of Object.entries({
+			limit: this.#options.limit,
+			interval: this.#options.interval,
+		})) {
 			if (
 				!Number.isSafeInteger(value) ||
 				value < 1 ||
@@ -76,46 +76,12 @@ export class Limiter {
 			);
 		const key = JSON.stringify([this.#options.name, scope, identity]);
 		const { limit, interval } = this.#options;
-		if (this.#options.consume) {
-			const retry = await this.#options.consume(key, { limit, interval });
-			if (retry === true) return true;
-			if (!Number.isSafeInteger(retry) || retry <= 0)
-				throw new LimitIssue("Invalid shared limiter result");
-			const now = Date.now();
-			return new Date(Math.min(now + 3600000, Math.max(now + 1000, retry)));
-		}
+		const retry = await this.#options.consume(key, { limit, interval });
+		if (retry === true) return true;
+		if (!Number.isSafeInteger(retry) || retry <= 0)
+			throw new LimitIssue("Invalid shared limiter result");
 		const now = Date.now();
-		if (now - this.#pruned >= Math.min(interval, 60000)) {
-			for (const [key, value] of this.#entries)
-				if (now - value.time >= interval) this.#entries.delete(key);
-			this.#pruned = now;
-		}
-		const previous = this.#entries.get(key);
-		if (!previous && this.#entries.size >= this.#options.capacity)
-			throw new LimitIssue(
-				"Rate limiter capacity exhausted; use shared storage or increase capacity",
-			);
-		const tokens = previous
-			? Math.min(
-					limit,
-					previous.tokens +
-						(Math.max(0, now - previous.time) * limit) / interval,
-				)
-			: limit;
-		if (tokens < 1)
-			return new Date(
-				now +
-					Math.min(
-						3600000,
-						Math.max(1000, Math.ceil(((1 - tokens) * interval) / limit)),
-					),
-			);
-		// No await between reading and consuming a process-local token.
-		this.#entries.set(key, {
-			tokens: tokens - 1,
-			time: previous ? Math.max(now, previous.time) : now,
-		});
-		return true;
+		return new Date(Math.min(now + 3600000, Math.max(now + 1000, retry)));
 	}
 
 	/** Mount globally with app.use(), or on selected routes. Missing identity/storage failures return 503. */

@@ -14,6 +14,7 @@ const auth = new Auth({
 	name: "My app",
 	page: "/auth",
 	redirect: "/account",
+	limits: { consume: consumeToken }, // Atomic shared database operation.
 
 	challenges: {
 		set: (id, value) => saveChallenge(id, value),
@@ -63,7 +64,7 @@ app.use(
 );
 ```
 
-Auth automatically applies independent token buckets to registration and login before body parsing or storage access. The defaults allow a burst of **5 registrations**, replenished at **5 per 10 minutes**, and **20 sign-ins**, replenished at **20 per minute**, per trusted client IP (IPv6 is grouped by `/64`, with mapped IPv4 addresses using their IPv4 budget). Options and verification have separate budgets, so the two requests in a normal ceremony do not spend the same budget twice. Logout bypasses these policies, including storage failures. No rate-limit callback or numeric configuration is required.
+Auth automatically applies independent token buckets to registration and login before body parsing or storage access. The defaults allow a burst of **5 registrations**, replenished at **5 per 10 minutes**, and **20 sign-ins**, replenished at **20 per minute**, per trusted client IP (IPv6 is grouped by `/64`, with mapped IPv4 addresses using their IPv4 budget). Options and verification have separate budgets, so the two requests in a normal ceremony do not spend the same budget twice. Logout bypasses these policies, including storage failures. The required `limits.consume` callback connects shared storage; ovr chooses the policy values, so no numeric configuration is required.
 
 Supply the trusted client IP once in your server entry point. A standard Fetch `Request` does not contain its socket peer. For a direct Deno HTTPS listener:
 
@@ -90,13 +91,13 @@ That trust comes from Cloudflare's edge and routing policy. Same-zone Worker sub
 
 IPv6 `/64` grouping prevents a separate budget for each rotating interface identifier. It is a baseline policy: shared networks share a budget, and callers controlling multiple prefixes can still distribute their requests. [IPv6 temporary addresses (RFC 8981)](https://www.rfc-editor.org/rfc/rfc8981.html).
 
-The default limiter keeps bounded process-local memory. Multiple workers do not automatically share counters, and restarts reset them. For a multi-worker deployment, supply the shared atomic storage operation while retaining the built-in policy values:
+Rate-limit counters always live in application-supplied shared storage. There is no in-memory fallback or process-local counter cache. Every request consults the backend, and missing storage is rejected at startup. Configure the same shared atomic operation for all workers while retaining the built-in policy values:
 
 ```ts
 const auth = new Auth({ ...configuration, limits: { consume: consumeToken } });
 ```
 
-`consumeToken(key, { limit, interval })` must atomically replenish and consume one token, returning `true` on admission or an absolute retry time in milliseconds on denial. All workers must share storage and policy values; errors must throw. Stable keys include the auth origin, operation, request phase, and normalized client identity. The SQLite demo implements this operation in a transaction. Cleanup and storage capacity belong to that shared backend. Advanced overrides can supply `limits.register` or `limits.login` as `Limiter` instances, including a custom authenticated key. [Reusable rate-limit middleware](/05-middleware#rate-limiting) can also protect ordinary routes.
+`consumeToken(key, { limit, interval })` must atomically replenish and consume one token, returning `true` on admission or an absolute retry time in milliseconds on denial. All workers must share storage and policy values; errors must throw. Stable keys include the auth origin, operation, request phase, and normalized client identity. The SQLite demo implements this operation in a transaction across connections to the same database file. That file must be persistent and shared; serverless deployments need a database reachable by every function instance. Cleanup and storage capacity belong to the shared backend. Advanced overrides can supply `limits.register` or `limits.login` as `Limiter` instances, including a custom authenticated key. [Reusable rate-limit middleware](/05-middleware#rate-limiting) can also protect ordinary routes.
 
 The persistence functions above are application code. The transaction shown uses the normal Drizzle API; ovr neither imports Drizzle nor chooses a database package for you. Registration fields determine the callback's data type and the available `Register.Field` names. `Register.Fields` renders all application fields. Omitting a form's children supplies fields, a button, and an accessible error status automatically. Plain HTML, field component customization, and normal form attributes remain available.
 
@@ -200,7 +201,7 @@ Session lifetime defaults to seven days (`duration` in milliseconds) without sli
 
 The browser prompt defaults to 60 seconds (`timeout` in milliseconds); the server accepts the ceremony for that timeout **plus one minute** to allow response verification. Options are fetched on submit, and each ceremony is browser-, operation-, pathname-, and origin-bound and atomically consumed on the first verification attempt. Signed form bootstrap tokens expire after an hour. `credential`, `ceremony`, and `bootstrap` are reserved field names.
 
-Rate limits and storage capacity serve different purposes. Automatic per-client policies protect registration/login traffic before body parsing and writes. Apply network overload protection at your deployment edge too. Authentication form bodies are limited to 128 KiB. Each default in-memory limiter holds at most 10,000 active scoped client buckets and reclaims expired entries; if full, new identities fail closed while existing buckets keep their policy. This does not make distributed attacks harmless. Distributed clients or clients controlling multiple IPv6 prefixes can still saturate shared challenge capacity, even with shared limiter storage. The SQLite example's capacity caps bound storage but are not sufficient abuse protection. Challenges remain database-backed; signed ceremony tokens with a replay ledger are a separate possible design change.
+Rate limits and storage capacity serve different purposes. Automatic per-client policies protect registration/login traffic before body parsing and writes. Apply network overload protection at your deployment edge too. Authentication form bodies are limited to 128 KiB. The shared backend must bound its storage and reclaim expired buckets. Shared counters do not make distributed attacks harmless. Distributed clients or clients controlling multiple IPv6 prefixes can still saturate shared challenge capacity, even with shared limiter storage. The SQLite example's capacity caps bound storage but are not sufficient abuse protection. Challenges remain database-backed; signed ceremony tokens with a replay ledger are a separate possible design change.
 
 Generated auth endpoints reject a request whose origin differs from the configured HTTPS origin with HTTP 421, before rate limiting or protocol handling. `auth.session(c)`, `auth.forms(c)`, and the session mutation methods enforce this origin too. Unrelated health checks and canonical-host redirects can serve alternate hostnames normally. ovr does not infer trust from forwarded headers.
 

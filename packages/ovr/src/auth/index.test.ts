@@ -166,6 +166,14 @@ function setup(extra: Partial<Auth.Options> = {}) {
 	const challenges = new Map<string, Auth.Challenge>();
 	const sessions = new Map<string, Auth.Session>();
 	const records = new Map<string, Auth.Credential>();
+	// Test-only stand-in for a shared atomic backend; never part of the framework.
+	const counts = new Map<string, number>();
+	const consume: Limiter.Options["consume"] = (key, { limit, interval }) => {
+		const count = counts.get(key) ?? 0;
+		if (count >= limit) return Date.now() + interval;
+		counts.set(key, count + 1);
+		return true;
+	};
 	const credentials: Auth.Credentials = {
 		find: (id) => records.get(id),
 		update: (credential, previous) => {
@@ -200,6 +208,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 	};
 	const auth = new Auth({
 		...options,
+		limits: { consume },
 		credentials,
 		register: { fields: {}, name: () => "User", create: () => {} },
 	});
@@ -309,6 +318,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 	return {
 		app,
 		auth,
+		consume,
 		challenges,
 		sessions,
 		records,
@@ -836,6 +846,7 @@ function managed(
 	const error = vi.fn();
 	const service = new Auth({
 		...storage.options,
+		limits: { consume: storage.consume },
 		credentials: storage.credentials,
 		page: "/auth",
 		redirect: "/account",
@@ -923,8 +934,10 @@ function managed(
 }
 
 function policy() {
-	const limiter = new Limiter();
+	const consume: Limiter.Options["consume"] = () => true;
+	const limiter = new Limiter({ consume });
 	return {
+		consume,
 		register: limiter,
 		login: limiter,
 		check: vi.spyOn(limiter, "check"),
@@ -1143,6 +1156,19 @@ test("automatic policies ignore cookie rotation, isolate clients, and leave logo
 	} finally {
 		time.mockRestore();
 	}
+});
+
+test("auth requires shared rate-limit storage at startup", () => {
+	const storage = setup();
+	expect(
+		() =>
+			// @ts-expect-error A shared backend is required; the framework has no implicit counters.
+			new Auth({
+				...storage.options,
+				credentials: storage.credentials,
+				register: { fields: {}, name: () => "User", create: () => {} },
+			}),
+	).toThrow("limits.consume");
 });
 
 test("limiter errors cannot prevent logout", async () => {
