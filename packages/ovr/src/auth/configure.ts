@@ -29,7 +29,7 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 	readonly paths?: Partial<
 		Record<"register" | "login" | "logout" | "options" | "client", string>
 	>;
-	/** Admit both ceremony requests, or deny with false (60 seconds) or an absolute retry Date. Logout bypasses this policy. */
+	/** Admit both ceremony requests, or deny with false (60 seconds) or an absolute retry Date. Retry hints are capped at one hour; logout bypasses this policy. */
 	readonly allow: (
 		c: Pick<Context, "req" | "url" | "cookie">,
 		phase: "options" | "verify",
@@ -129,17 +129,19 @@ export function configure<Shape extends Form.Shape>(
 					if (admission !== true) {
 						if (admission !== false && !(admission instanceof Date))
 							throw new TypeError("Invalid auth admission result");
-						const retry =
-							admission instanceof Date
-								? admission.getTime()
-								: Date.now() + 60000;
-						if (!Number.isSafeInteger(retry))
+						const now = Date.now();
+						const deadline =
+							admission instanceof Date ? admission.getTime() : now + 60000;
+						if (!Number.isSafeInteger(deadline))
 							throw new TypeError("Invalid auth retry deadline");
-						if (!prompt)
-							return back(c, method, Math.max(Date.now() + 1000, retry));
+						const retry = Math.min(
+							now + 3600000,
+							Math.max(now + 1000, deadline),
+						);
+						if (!prompt) return back(c, method, retry);
 						c.res.headers.set(
 							"retry-after",
-							String(Math.max(1, Math.ceil((retry - Date.now()) / 1000))),
+							String(Math.ceil((retry - now) / 1000)),
 						);
 						return c.text(
 							"Too many authentication requests. Try again later.",

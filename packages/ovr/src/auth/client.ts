@@ -97,13 +97,14 @@ export function listen(
 				cache: "no-store",
 			});
 			if (res.status === 429) {
+				const now = Date.now();
 				const header = res.headers.get("retry-after") ?? "60";
 				const deadline = /^\d+$/.test(header)
-					? Date.now() + Number(header) * 1000
+					? now + Number(header) * 1000
 					: Date.parse(header);
-				retry = Number.isFinite(deadline)
-					? Math.max(Date.now() + 1000, deadline)
-					: Date.now() + 60000;
+				retry = Number.isNaN(deadline)
+					? now + 60000
+					: Math.min(now + 3600000, Math.max(now + 1000, deadline));
 				throw new Error(
 					`Too many requests. Try again in ${Math.ceil((retry - Date.now()) / 1000)} seconds.`,
 				);

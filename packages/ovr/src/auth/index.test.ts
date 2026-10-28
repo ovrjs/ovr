@@ -1302,9 +1302,15 @@ test("a successful ceremony makes two separately admitted requests", async () =>
 	]);
 });
 
-test.each([false, 17000, -1000, NaN])(
-	"admission result %s controls the retry deadline without leaking errors",
-	async (value) => {
+test.each([
+	{ value: false, retry: "60" },
+	{ value: 17000, retry: "17" },
+	{ value: -1000, retry: "1" },
+	{ value: 86400000, retry: "3600" },
+	{ value: NaN, retry: null },
+])(
+	"admission result $value controls the retry deadline without leaking errors",
+	async ({ value, retry }) => {
 		const now = Date.now();
 		const time = vi.spyOn(Date, "now").mockReturnValue(now);
 		try {
@@ -1316,18 +1322,40 @@ test.each([false, 17000, -1000, NaN])(
 				"/_ovr/passkey/options/login",
 				new FormData(),
 			);
-			expect(response.status).toBe(Number.isNaN(value) ? 400 : 429);
-			expect(response.headers.get("retry-after")).toBe(
-				Number.isNaN(value)
-					? null
-					: typeof value === "number"
-						? String(Math.max(1, value / 1000))
-						: "60",
-			);
-			if (Number.isNaN(value)) {
+			expect(response.status).toBe(retry === null ? 400 : 429);
+			expect(response.headers.get("retry-after")).toBe(retry);
+			if (retry === null) {
 				expect(await response.text()).toBe("Authentication failed. Try again.");
 				expect(state.error).toHaveBeenCalledOnce();
 			}
+		} finally {
+			time.mockRestore();
+		}
+	},
+);
+
+test.each(["register", "login"])(
+	"caps final %s retry hints without overriding the admission policy",
+	async (method) => {
+		const now = Date.now();
+		const time = vi.spyOn(Date, "now").mockReturnValue(now);
+		try {
+			const allow = vi.fn(() => new Date(now + 86400000));
+			const state = managed(setup(), { allow });
+			const response = await state.post(`/auth/${method}`, new FormData());
+			expect(response.status).toBe(303);
+			const location = new URL(response.headers.get("location")!);
+			expect(location.searchParams.get("_retry")).toBe(String(now + 3600000));
+			time.mockReturnValue(now + 3600000);
+			const denied = await state.post(
+				`/_ovr/passkey/options/${method}`,
+				new FormData(),
+			);
+			expect(denied.status).toBe(429);
+			expect(denied.headers.get("retry-after")).toBe("3600");
+			expect(allow).toHaveBeenCalledTimes(2);
+			expect(state.create).not.toHaveBeenCalled();
+			expect(state.storage.challenges.size).toBe(0);
 		} finally {
 			time.mockRestore();
 		}

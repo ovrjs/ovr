@@ -472,6 +472,56 @@ test.each(["seconds", "date"])(
 	},
 );
 
+test.each(["seconds", "date", "overflow"])(
+	"caps an excessive Retry-After %s at an hour and permits a fresh request afterwards",
+	async (format) => {
+		const state = setup();
+		const now = Date.now();
+		state.fetcher.mockResolvedValueOnce(
+			new Response("Too many requests", {
+				status: 429,
+				headers: {
+					"retry-after":
+						format === "date"
+							? new Date(now + 86400000).toUTCString()
+							: format === "overflow"
+								? "9".repeat(400)
+								: "86400",
+				},
+			}),
+		);
+		state.init("first", "bootstrap", "/options", "register");
+		await state.first.fire();
+		expect(state.status[0]?.textContent).toContain("3600 seconds");
+		await vi.advanceTimersByTimeAsync(3599999);
+		await state.first.fire();
+		expect(state.fetcher).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(1);
+		await state.first.fire();
+		expect(state.fetcher).toHaveBeenCalledTimes(2);
+		expect(state.create).toHaveBeenCalledOnce();
+	},
+);
+
+test.each([undefined, "junk"])(
+	"uses a bounded fallback for a missing or invalid Retry-After header: %s",
+	async (header) => {
+		const state = setup();
+		state.fetcher.mockResolvedValueOnce(
+			new Response("Too many requests", {
+				status: 429,
+				headers: header ? { "retry-after": header } : {},
+			}),
+		);
+		state.init("first", "bootstrap", "/options", "register");
+		await state.first.fire();
+		expect(state.status[0]?.textContent).toContain("60 seconds");
+		await vi.advanceTimersByTimeAsync(60000);
+		await state.first.fire();
+		expect(state.fetcher).toHaveBeenCalledTimes(2);
+	},
+);
+
 test("marks invalid application fields without echoing server messages or requiring a reload", async () => {
 	const state = setup();
 	const email = new Input();

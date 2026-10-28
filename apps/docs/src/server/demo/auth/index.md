@@ -64,7 +64,7 @@ app.use(
 );
 ```
 
-The persistence functions and `limits` above are application code. `allow(c, phase)` is required for registration/login POSTs. **One successful ceremony makes two admitted requests**: `phase === "options"` before the browser prompt, then `phase === "verify"` on the final form POST. Budget for both, or use separate budgets per phase; do not count both requests as separate failed login attempts. Return `true` to admit, `false` to deny for 60 seconds, or a `Date` specifying an absolute retry deadline. The callback may be asynchronous. A denied options request returns HTTP 429 with `Retry-After`; a denied final submit redirects to the auth page with a retry message. Neither reaches body parsing, challenge writes, or verification.
+The persistence functions and `limits` above are application code. `allow(c, phase)` is required for registration/login POSTs. **One successful ceremony makes two admitted requests**: `phase === "options"` before the browser prompt, then `phase === "verify"` on the final form POST. Budget for both, or use separate budgets per phase; do not count both requests as separate failed login attempts. Return `true` to admit, `false` to deny for 60 seconds, or a `Date` specifying an absolute retry deadline. Retry hints are bounded to one second through one hour on the server and in the browser. This only limits the advertised wait: the callback runs again on every retry and can continue denying access. The callback may be asynchronous. A denied options request returns HTTP 429 with `Retry-After`; a denied final submit redirects to the auth page with a retry message. Neither reaches body parsing, challenge writes, or verification.
 
 Use your platform's trusted peer identity or a shared limiter behind an edge that supplies verified client identity. ovr's standard `Request` cannot tell which client-IP header is trustworthy, and an unauthenticated cookie or `Origin` header is not an abuse-control identity. If your edge already enforces the policy, an explicit `allow: () => true` acknowledges that external protection. There is no cookie-keyed process bucket or shared framework request quota that an attacker can exhaust to deny other users. Logout bypasses this admission callback, including when it throws or its backing service is unavailable.
 
@@ -88,7 +88,9 @@ Deno.serve({ cert, key }, (request, info) => {
 });
 ```
 
-Here `cert` and `key` are your TLS PEM strings and `limits` is your application's shared limiter, returning `boolean | Date` or a promise of that result. `app.fetch(request)` preserves the request identity; cloning it or passing additional fetch options would lose this association. Behind a reverse proxy, the socket peer identifies that proxy, so configure the proxy to overwrite client identity and accept connections only from that proxy before trusting its forwarded identity. [Deno HTTP server API](https://docs.deno.com/api/deno/http-server/).
+Here `cert` and `key` are your TLS PEM strings and `limits` is your application's shared limiter, returning `boolean | Date` or a promise of that result. Configure that limiter to canonicalize addresses and group IPv6 clients by `/64` prefix, rather than giving every raw address its own budget: hosts can rotate interface identifiers within a prefix. This `/64` grouping is a baseline policy, not protection against clients that control multiple prefixes; tune budgets for shared networks and your deployment. [IPv6 temporary addresses (RFC 8981)](https://www.rfc-editor.org/rfc/rfc8981.html).
+
+`app.fetch(request)` preserves the request identity; cloning it or passing additional fetch options would lose this association. Behind a reverse proxy, the socket peer identifies that proxy, so configure the proxy to overwrite client identity and accept connections only from that proxy before trusting its forwarded identity. [Deno HTTP server API](https://docs.deno.com/api/deno/http-server/).
 
 For a Cloudflare Worker exposed through its Internet-facing edge, with Worker-to-Worker subrequests blocked by your edge policy, the corresponding entry point can use the same `peers` map and callback:
 
@@ -107,6 +109,8 @@ That trust comes from Cloudflare's edge and routing policy, not the header name.
 The persistence functions above are application code. The transaction shown uses the normal Drizzle API; ovr neither imports Drizzle nor chooses a database package for you. Registration fields determine the callback's data type and the available `Register.Field` names. `Register.Fields` renders all application fields. Omitting a form's children supplies fields, a button, and an accessible error status automatically. Plain HTML, field component customization, and normal form attributes remain available.
 
 Call `auth.forms(c)` **inside the handler before returning JSX** so the secure browser binding cookie reaches the response. ovr prepares complete POST schemas when configuring the service; submitting to another instance does not require that instance to have rendered the form.
+
+Resolve `c.auth` and await session reads in route handlers or middleware before returning streamed JSX, then pass the resolved data to components. A first auth access inside an async component runs during streaming, when response status and headers may already be committed. A wrong origin still prevents auth access, but the resulting stream error cannot reliably become an HTTP 421 response; cookies and redirects must also be set before streaming starts.
 
 For a protected page:
 

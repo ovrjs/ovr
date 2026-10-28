@@ -270,6 +270,7 @@ export class Context<
 		})());
 	}
 
+	/** Access in middleware or a route handler before returning streamed JSX, while auth failures can still set the response status and cookies. */
 	get auth() {
 		if (!this.#options.auth) throw new Error("Set App.Options.auth to enable");
 
