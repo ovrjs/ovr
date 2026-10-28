@@ -14,13 +14,13 @@ const store =
 	import.meta.env.DEV && process.env.AUTH_SECRET
 		? new Store(process.env.AUTH_DATABASE)
 		: undefined;
-const app = new o.App(
+const authentication =
 	store && process.env.AUTH_SECRET
-		? { auth: store.options(process.env.AUTH_SECRET, process.env.AUTH_ORIGIN) }
-		: {},
-);
+		? auth.configure(store, process.env.AUTH_SECRET, process.env.AUTH_ORIGIN)
+		: undefined;
+const app = new o.App(authentication ? { auth: authentication } : {});
 
-if (store) app.use(auth.routes(store));
+if (store && authentication) app.use(auth.routes(store, authentication));
 
 app.use(redirect, notFound, home, docs, demo, seo);
 

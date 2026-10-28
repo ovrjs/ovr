@@ -1,17 +1,21 @@
 import type { Context as ContextType } from "../context/index.js";
-import { jsx } from "../jsx/index.js";
-import { Render } from "../render/index.js";
+import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form, Schema } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
-import { listen } from "./client.js";
+import { source } from "./client-source.js";
 import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 import { AuthIssue } from "./issue.js";
+import { Token } from "./token.js";
 
 export namespace Passkey {
+	/** Composable authentication form with an accessible error component. */
+	export type Component<Pattern extends string> = Route.Form<Pattern> & {
+		Error: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+	};
 	/** Request capabilities needed by authentication helpers. */
 	export type Context = Pick<ContextType, "cookie" | "url" | "res" | "form"> & {
 		data: () => Promise<unknown>;
@@ -32,20 +36,29 @@ export namespace Passkey {
 		readonly user?: string;
 		/** Credential IDs already associated with this user. */
 		readonly exclude?: string[];
+		/** Human-readable account name shown in the provider's account chooser. */
+		readonly name?: string;
+		/** Friendly label shown by the provider. */
+		readonly displayName?: string;
+		/** Fresh options URL; supplied by the configured handlers. */
+		readonly endpoint?: string;
+		/** External module URL; supplied by the configured handlers. */
+		readonly client?: string;
+		/** CSP nonce for strict nonce policies. */
+		readonly nonce?: string;
 	}
 }
 
 /** ES256 passkeys with single-use, browser-bound ceremonies. */
 export class Passkey {
-	static readonly #ttl = Time.minute;
 	static readonly #routes = new WeakSet<object>();
 	static readonly #fields = new Form({
 		credential: Field.hidden().json(Schema.unknown()),
-		challenge: Field.hidden(),
+		ceremony: Field.hidden(),
 	});
 	static readonly #payload = Schema.object({
 		credential: Schema.unknown(),
-		challenge: Schema.string(),
+		ceremony: Schema.string(),
 	});
 	static readonly #bootstrap = Schema.object({
 		method: Schema.union([Schema.literal("register"), Schema.literal("login")]),
@@ -55,6 +68,8 @@ export class Passkey {
 		expiration: Schema.number().int(),
 		user: Schema.string().optional(),
 		exclude: Schema.array(Schema.string()).optional(),
+		name: Schema.string().optional(),
+		displayName: Schema.string().optional(),
 	});
 	static readonly #credential = Schema.object({
 		type: Schema.literal("public-key"),
@@ -91,11 +106,15 @@ export class Passkey {
 		/** Create a form component; call in the route handler before returning JSX. */
 		form: <Pattern extends string>(
 			route: Passkey.Post<Pattern>,
-			{ user = crypto.randomUUID(), exclude = [] }: Passkey.Options = {},
+			{
+				user = crypto.randomUUID(),
+				exclude = [],
+				...options
+			}: Passkey.Options = {},
 		) => {
 			if (!Codec.encode(user).length || Codec.encode(user).length > 64)
 				throw new TypeError("Passkey user must contain 1–64 UTF-8 bytes");
-			return this.#form(route, "register", { user, exclude });
+			return this.#form(route, "register", { user, exclude, ...options });
 		},
 		/** Verify registration; persist the credential with a unique ID constraint. */
 		verify: () => this.#register(),
@@ -104,156 +123,222 @@ export class Passkey {
 	/** Username-free login form creation and response verification. */
 	readonly login = {
 		/** Create a form component; call in the route handler before returning JSX. */
-		form: <Pattern extends string>(route: Passkey.Post<Pattern>) =>
-			this.#form(route, "login"),
+		form: <Pattern extends string>(
+			route: Passkey.Post<Pattern>,
+			options: Passkey.Options = {},
+		) => this.#form(route, "login", options),
 		/** Verify an assertion and atomically persist its counter and backup state. */
 		verify: (credentials: Auth.Credentials) => this.#login(credentials),
 	};
+
+	/** Complete a passkey POST schema at startup, before mounting it in an App. */
+	static prepare<T extends Pick<Passkey.Post<string>, "extend" | "names">>(
+		route: T,
+	) {
+		if (!Passkey.#routes.has(route)) {
+			if (
+				route.names?.some((v) =>
+					["credential", "ceremony", "bootstrap"].includes(v),
+				)
+			)
+				throw new TypeError(
+					"Passkey forms reserve credential, ceremony, and bootstrap fields",
+				);
+			if (route.extend) Object.assign(route, route.extend(Passkey.#fields));
+			Passkey.#routes.add(route);
+		}
+		return route;
+	}
 
 	#form<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
 		method: "register" | "login",
 		options: Passkey.Options = {},
-	): Route.Form<Pattern> {
+	): Passkey.Component<Pattern> {
 		this.#origin();
-		if (route.extend && !Passkey.#routes.has(route)) {
-			if (route.names?.some((v) => v === "credential" || v === "challenge"))
-				throw new TypeError(
-					"Passkey forms reserve credential and challenge fields",
-				);
-			Object.assign(route, route.extend(Passkey.#fields));
-			Passkey.#routes.add(route);
-		}
+		if (!Passkey.#routes.has(route))
+			throw new TypeError(
+				"Prepare passkey routes at startup with Passkey.prepare()",
+			);
 		const browser = this.#auth.browser(true);
 		this.#c.res.headers.set("cache-control", "no-store");
-		return (props) => {
-			const id = `passkey-${crypto.randomUUID()}`;
-			return route.Form({
+		const Error = (props: JSX.IntrinsicElements["p"]): JSX.Element =>
+			jsx("p", {
+				role: "status",
+				"aria-live": "polite",
 				...props,
-				children: [
-					props.children ?? [
-						route.Fields?.(),
-						jsx("button", {
-							children: method === "register" ? "Register" : "Log in",
+				"data-passkey-error": true,
+			});
+		const Form: Route.Form<Pattern> & { Error: typeof Error } = Object.assign(
+			(props: Parameters<Route.Form<Pattern>>[0]) => {
+				const id = `passkey-${crypto.randomUUID()}`;
+				return route.Form({
+					...props,
+					children: [
+						props.children ?? [
+							route.Fields?.(),
+							jsx("button", {
+								children: method === "register" ? "Register" : "Log in",
+							}),
+						],
+						// A supplied Error component takes precedence over this accessible fallback.
+						Form.Error({ "data-passkey-fallback": true }),
+						async () =>
+							jsx("script", {
+								id,
+								type: "module",
+								src: options.client ?? Passkey.client.pathname(),
+								nonce: options.nonce,
+								"data-ovr-passkey": method,
+								"data-endpoint": options.endpoint ?? Passkey.options.pathname(),
+								"data-bootstrap": await Token.seal(
+									this.#auth.options.secret,
+									"passkey",
+									JSON.stringify({
+										method,
+										action: route.pathname(props.params),
+										origin: this.#auth.options.origin,
+										browser,
+										expiration: Date.now() + Time.hour,
+										user: options.user,
+										exclude: options.exclude,
+										name: options.name,
+										displayName: options.displayName,
+									}),
+								),
+							}),
+						jsx("noscript", {
+							children: "JavaScript is required for authentication.",
 						}),
 					],
-					jsx("p", { role: "status", "aria-live": "polite" }),
-					jsx("script", {
-						id,
-						type: "module",
-						children: async () =>
-							Render.html(
-								`(${listen})(${[
-									id,
-									await this.#auth.sign(
-										`passkey:${JSON.stringify({ method, action: route.pathname(props.params), origin: this.#auth.options.origin, browser, expiration: Date.now() + Time.hour, ...options })}`,
-									),
-									Passkey.options.url(),
-									method,
-								]
-									.map((v) =>
-										JSON.stringify(v).replace(
-											/[<>&\u2028\u2029]/g,
-											(c) =>
-												`\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
-										),
-									)
-									.join()})`,
-							),
-					}),
-					jsx("noscript", {
-						children: "JavaScript is required for authentication.",
-					}),
-				],
-			});
-		};
+				});
+			},
+			{ Error },
+		);
+		return Form;
 	}
+
+	/** Dependency-free browser module, served as a normal same-origin JavaScript resource. */
+	static readonly client = Route.get("/_ovr/passkey/client.js", (c) => {
+		c.res.headers.set("content-type", "text/javascript; charset=utf-8");
+		c.res.headers.set("x-content-type-options", "nosniff");
+		c.res.headers.set("cache-control", "no-cache");
+		c.res.body = source;
+	});
 
 	#origin() {
 		if (this.#c.url.origin !== this.#auth.options.origin)
 			throw new AuthIssue("origin");
 	}
 
-	/** Fresh options endpoint, mounted by App when authentication is configured. */
+	/** Validate a signed form and issue one fresh ceremony. */
+	static async issue(
+		c: Pick<ContextType, "auth" | "url" | "res" | "text" | "json">,
+		token: string,
+		label?: () => Auth.Result<{ name: string; displayName?: string }>,
+		expected?: { method: "register" | "login"; action: string },
+	) {
+		const payload = await Token.open(c.auth.options.secret, "passkey", token);
+		const result = Schema.string().json(Passkey.#bootstrap).parse(payload);
+		if (result.issues) throw result;
+		const bootstrap = result.data;
+		if (
+			c.url.origin !== c.auth.options.origin ||
+			bootstrap.origin !== c.auth.options.origin
+		)
+			throw new AuthIssue("origin");
+		if (!c.auth.browser() || bootstrap.browser !== c.auth.browser())
+			throw new AuthIssue("browser");
+		if (bootstrap.expiration <= Date.now())
+			throw new AuthIssue("bootstrap (expired)");
+		if (
+			expected &&
+			(bootstrap.method !== expected.method ||
+				bootstrap.action !== expected.action)
+		)
+			throw new AuthIssue("bootstrap binding");
+		if (
+			bootstrap.method === "register" &&
+			(!bootstrap.user || Codec.encode(bootstrap.user).length > 64)
+		)
+			throw new AuthIssue("user");
+		const rp = new URL(c.auth.options.origin).hostname;
+		const account =
+			bootstrap.method === "register" ? await label?.() : undefined;
+		const name = account?.name ?? bootstrap.name ?? c.auth.options.name ?? rp;
+		const displayName = account?.displayName ?? bootstrap.displayName ?? name;
+		if (
+			!name.trim() ||
+			!displayName.trim() ||
+			name.length > 256 ||
+			displayName.length > 256
+		)
+			throw new AuthIssue("account label");
+		const ceremony = crypto.randomUUID();
+		const challenge = Codec.Base64Url.encode(
+			crypto.getRandomValues(new Uint8Array(32)),
+		);
+		if (
+			(await c.auth.options.challenges.set(ceremony, {
+				challenge,
+				browser: bootstrap.browser,
+				method: bootstrap.method,
+				action: bootstrap.action,
+				origin: bootstrap.origin,
+				expiration: Date.now() + c.auth.options.timeout + Time.minute,
+				...(bootstrap.user ? { user: bootstrap.user } : {}),
+			})) === false
+		) {
+			c.res.headers.set("retry-after", "60");
+			c.text("Too many authentication requests. Try again later.", 429);
+			return;
+		}
+		c.res.headers.set("cache-control", "no-store");
+		if (bootstrap.method === "register") {
+			c.json({
+				ceremony,
+				options: {
+					challenge,
+					rp: { id: rp, name: c.auth.options.name ?? rp },
+					user: {
+						id: Codec.Base64Url.encode(Codec.encode(bootstrap.user!)),
+						name,
+						displayName,
+					},
+					pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+					excludeCredentials: (bootstrap.exclude ?? []).map((id) => ({
+						type: "public-key",
+						id,
+					})),
+					authenticatorSelection: {
+						residentKey: "required",
+						requireResidentKey: true,
+						userVerification: "required",
+					},
+					timeout: c.auth.options.timeout,
+					attestation: "none",
+				} satisfies PublicKeyCredentialCreationOptionsJSON,
+			});
+		} else
+			c.json({
+				ceremony,
+				options: {
+					challenge,
+					rpId: rp,
+					timeout: c.auth.options.timeout,
+					userVerification: "required",
+				} satisfies PublicKeyCredentialRequestOptionsJSON,
+			});
+	}
+
+	/** Fresh options endpoint for explicitly composed protocol components. */
 	static readonly options = Route.post(
 		"/_ovr/passkey/options",
 		{ bootstrap: Field.text() },
 		async (c) => {
 			const input = await c.data();
 			if (input.issues) throw input;
-			const payload = await c.auth.verify(input.data.bootstrap);
-			if (!payload.startsWith("passkey:")) throw new AuthIssue("bootstrap");
-			const result = Schema.string()
-				.json(Passkey.#bootstrap)
-				.parse(payload.slice(8));
-			if (result.issues) throw result;
-			const bootstrap = result.data;
-			if (
-				c.url.origin !== c.auth.options.origin ||
-				bootstrap.origin !== c.auth.options.origin
-			)
-				throw new AuthIssue("origin");
-			if (!c.auth.browser() || bootstrap.browser !== c.auth.browser())
-				throw new AuthIssue("browser");
-			if (bootstrap.expiration <= Date.now())
-				throw new AuthIssue("bootstrap (expired)");
-			if (
-				bootstrap.method === "register" &&
-				(!bootstrap.user || Codec.encode(bootstrap.user).length > 64)
-			)
-				throw new AuthIssue("user");
-
-			const id = crypto.randomUUID();
-			const challenge = Codec.Base64Url.encode(
-				crypto.getRandomValues(new Uint8Array(32)),
-			);
-			await c.auth.options.challenges.set(id, {
-				challenge,
-				browser: bootstrap.browser,
-				method: bootstrap.method,
-				action: bootstrap.action,
-				origin: bootstrap.origin,
-				expiration: Date.now() + Passkey.#ttl,
-				...(bootstrap.user ? { user: bootstrap.user } : {}),
-			});
-			const rp = new URL(c.auth.options.origin).hostname;
-			c.res.headers.set("cache-control", "no-store");
-			if (bootstrap.method === "register") {
-				c.json({
-					challenge: id,
-					options: {
-						challenge,
-						rp: { id: rp, name: c.auth.options.name ?? rp },
-						user: {
-							id: Codec.Base64Url.encode(Codec.encode(bootstrap.user!)),
-							name: bootstrap.user!,
-							displayName: bootstrap.user!,
-						},
-						pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-						excludeCredentials: (bootstrap.exclude ?? []).map((id) => ({
-							type: "public-key",
-							id,
-						})),
-						authenticatorSelection: {
-							residentKey: "required",
-							requireResidentKey: true,
-							userVerification: "required",
-						},
-						timeout: Passkey.#ttl,
-						attestation: "none",
-					} satisfies PublicKeyCredentialCreationOptionsJSON,
-				});
-			} else {
-				c.json({
-					challenge: id,
-					options: {
-						challenge,
-						rpId: rp,
-						timeout: Passkey.#ttl,
-						userVerification: "required",
-					} satisfies PublicKeyCredentialRequestOptionsJSON,
-				});
-			}
+			await Passkey.issue(c, input.data.bootstrap);
 		},
 	);
 
@@ -299,7 +384,7 @@ export class Passkey {
 					);
 		if (result.issues) throw result;
 		const state = await this.#auth.options.challenges.take(
-			result.data.challenge,
+			result.data.ceremony,
 		);
 		if (!state || state.expiration <= Date.now())
 			throw new AuthIssue("challenge (expired or consumed)");

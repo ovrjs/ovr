@@ -2,10 +2,36 @@ import type { Store } from "./store";
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Field, Form, type JSX, type Middleware, Render, Route } from "ovr";
+import { Auth, Field, type JSX, type Middleware, Render, Route } from "ovr";
 
-/** Build demo routes using one persistent authentication database. */
-export function routes(store: Store) {
+/** Application callbacks can call any existing database or ORM. SQLite belongs only to this demo. */
+export function configure(
+	store: Store,
+	secret: string,
+	origin = "https://localhost:5173",
+) {
+	return Auth.passkey({
+		secret,
+		origin,
+		name: "ovr demo",
+		page: "/demo/auth",
+		redirect: "/demo/auth/admin",
+		challenges: store.challenges,
+		sessions: store.sessions,
+		credentials: store.credentials,
+		register: {
+			fields: { email: Field.email({ label: "Email" }) },
+			name: (data) => data.email,
+			create: (data, credential) => store.register(credential, data.email),
+		},
+	});
+}
+
+/** Build the demo UI; ovr supplies the protocol and session handlers. */
+export function routes(
+	store: Store,
+	authentication: ReturnType<typeof configure>,
+) {
 	/** Auth utility that loads both session and user for protected routes. */
 	const guard = (
 		handler: (
@@ -36,16 +62,13 @@ export function routes(store: Store) {
 		};
 	};
 
-	const User = new Form({ email: Field.email({ label: "Email" }) });
-
 	/** Landing page for register/login passkey flows. */
 	const auth = Route.get("/demo/auth", async (c) => {
 		const Layout = createLayout(c);
 		const session = await c.auth.session();
 		const user = session ? store.user(session.id) : null;
 
-		const Register = c.auth.passkey.register.form(register);
-		const Login = c.auth.passkey.login.form(login);
+		const { Register, Login } = authentication.forms(c);
 
 		return (
 			<Layout head={<Meta {...content.frontmatter} />}>
@@ -55,7 +78,11 @@ export function routes(store: Store) {
 
 				<div class="mt-24 flex justify-center">
 					<div>
-						<Register />
+						<Register>
+							<Register.Field name="email" />
+							<Register.Error class="text-red-700" />
+							<button>Create account</button>
+						</Register>
 
 						<hr />
 
@@ -75,17 +102,12 @@ export function routes(store: Store) {
 		);
 	});
 
-	/** Logout handler clears the auth session cookie. */
-	const logout = Route.post(async (c) => {
-		await c.auth.logout();
-		c.redirect(auth, 303);
-	});
-
 	/** Protected dashboard route for demo session/credential output. */
 	const admin = Route.get(
 		"/demo/auth/admin",
 		guard((c, auth) => {
 			const userCredentials = store.list(auth.user.id);
+			const { Logout } = authentication.forms(c);
 
 			const Layout = createLayout(c);
 
@@ -97,7 +119,13 @@ export function routes(store: Store) {
 
 					<h2>Session</h2>
 					<pre>
-						<code>{JSON.stringify(auth.session, null, 4)}</code>
+						<code>
+							{JSON.stringify(
+								{ id: auth.session.id, expiration: auth.session.expiration },
+								null,
+								4,
+							)}
+						</code>
 					</pre>
 
 					<h2>Registered credentials</h2>
@@ -107,54 +135,13 @@ export function routes(store: Store) {
 						))}
 					</ul>
 
-					<logout.Form>
+					<Logout>
 						<button>Logout</button>
-					</logout.Form>
+					</Logout>
 				</Layout>
 			);
 		}),
 	);
 
-	const register = Route.post(User, async (c) => {
-		const result = await c.data();
-
-		if (result.issues) return c.redirect(result.url, 303);
-
-		const credential = await c.auth.passkey.register.verify();
-
-		try {
-			store.register(credential, result.data.email);
-		} catch (error) {
-			if (
-				error instanceof Error &&
-				"errcode" in error &&
-				typeof error.errcode === "number" &&
-				error.errcode % 256 === 19
-			) {
-				return c.text("This account or passkey is already registered.", 409);
-			}
-			throw error;
-		}
-
-		await c.auth.login(credential.user);
-
-		c.redirect(admin, 303);
-	});
-
-	const login = Route.post(async (c) => {
-		const credential = await c.auth.passkey.login.verify(store.credentials);
-		const user = store.user(credential.user);
-
-		if (!user) {
-			await c.auth.logout();
-			c.redirect(auth, 303);
-			return;
-		}
-
-		await c.auth.login(user.id);
-
-		c.redirect(admin, 303);
-	});
-
-	return { auth, admin, register, login, logout };
+	return { auth, admin };
 }

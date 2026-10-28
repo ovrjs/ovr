@@ -1,4 +1,4 @@
-/** Self-contained browser runtime serialized into one passkey form. */
+/** Attach the passkey protocol to one form. Served as a normal browser module. */
 export function listen(
 	id: string,
 	bootstrap: string,
@@ -7,9 +7,16 @@ export function listen(
 ) {
 	const script = document.getElementById(id);
 	const form = script?.closest("form");
-	const status = script?.previousElementSibling;
+	const status =
+		form?.querySelector("[data-passkey-error]:not([data-passkey-fallback])") ??
+		script?.previousElementSibling;
 	if (!(form instanceof HTMLFormElement) || !(status instanceof HTMLElement))
 		return;
+	if (
+		status !== script?.previousElementSibling &&
+		script?.previousElementSibling instanceof HTMLElement
+	)
+		script.previousElementSibling.hidden = true;
 
 	const hidden = (name: string) => {
 		const field = form.elements.namedItem(name);
@@ -21,7 +28,7 @@ export function listen(
 		return input;
 	};
 	const credential = hidden("credential");
-	const challenge = hidden("challenge");
+	const ceremony = hidden("ceremony");
 	const decode = (value: string) =>
 		Uint8Array.from(
 			atob(
@@ -48,7 +55,9 @@ export function listen(
 		try {
 			if (!window.PublicKeyCredential || !navigator.credentials)
 				throw new Error("Passkeys are unavailable in this browser.");
-			const data = new FormData();
+			const data = new FormData(form);
+			data.delete("credential");
+			data.delete("ceremony");
 			data.set("bootstrap", bootstrap);
 			const res = await fetch(endpoint, {
 				method: "POST",
@@ -64,51 +73,44 @@ export function listen(
 			let result: Credential | null;
 			if (method === "register") {
 				const json: {
-					challenge: string;
+					ceremony: string;
 					options: PublicKeyCredentialCreationOptionsJSON;
 				} = await res.json();
-				challenge.value = json.challenge;
+				ceremony.value = json.ceremony;
 				const {
 					challenge: nonce,
 					user,
 					excludeCredentials,
-					rp,
-					pubKeyCredParams,
+					...options
 				} = json.options;
 				result = await navigator.credentials.create({
-					publicKey: {
-						rp,
-						pubKeyCredParams,
-						attestation: "none",
-						timeout: 60000,
-						authenticatorSelection: {
-							residentKey: "required",
-							requireResidentKey: true,
-							userVerification: "required",
-						},
+					publicKey: PublicKeyCredential.parseCreationOptionsFromJSON?.(
+						json.options,
+					) ?? {
+						...options,
 						challenge: decode(nonce),
 						user: { ...user, id: decode(user.id) },
 						excludeCredentials: (excludeCredentials ?? []).map((v) => ({
-							type: "public-key",
+							...v,
 							id: decode(v.id),
 						})),
 					},
 				});
 			} else {
 				const json: {
-					challenge: string;
+					ceremony: string;
 					options: PublicKeyCredentialRequestOptionsJSON;
 				} = await res.json();
-				challenge.value = json.challenge;
-				const { challenge: nonce, allowCredentials, rpId } = json.options;
+				ceremony.value = json.ceremony;
+				const { challenge: nonce, allowCredentials, ...options } = json.options;
 				result = await navigator.credentials.get({
-					publicKey: {
-						...(rpId ? { rpId } : {}),
-						timeout: 60000,
-						userVerification: "required",
+					publicKey: PublicKeyCredential.parseRequestOptionsFromJSON?.(
+						json.options,
+					) ?? {
+						...options,
 						challenge: decode(nonce),
 						allowCredentials: (allowCredentials ?? []).map((v) => ({
-							type: "public-key",
+							...v,
 							id: decode(v.id),
 						})),
 					},
@@ -147,7 +149,7 @@ export function listen(
 			);
 		} catch (error) {
 			credential.value = "";
-			challenge.value = "";
+			ceremony.value = "";
 			status.textContent =
 				error instanceof DOMException && error.name === "NotAllowedError"
 					? "Passkey request canceled. Try again."
@@ -159,5 +161,31 @@ export function listen(
 			submitting = false;
 			form.removeAttribute("aria-busy");
 		}
+	});
+}
+
+// Modules execute once per document. Observe streamed HTML and subsequent fragment navigation too.
+const attached = new WeakSet<HTMLScriptElement>();
+const scan = () => {
+	for (const script of document.querySelectorAll<HTMLScriptElement>(
+		"script[data-ovr-passkey]",
+	)) {
+		if (attached.has(script)) continue;
+		attached.add(script);
+		const method = script.dataset.ovrPasskey;
+		if (method === "register" || method === "login")
+			listen(
+				script.id,
+				script.dataset.bootstrap ?? "",
+				script.dataset.endpoint ?? "",
+				method,
+			);
+	}
+};
+if (typeof document !== "undefined") {
+	scan();
+	new MutationObserver(scan).observe(document.documentElement, {
+		childList: true,
+		subtree: true,
 	});
 }

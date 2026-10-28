@@ -1,7 +1,9 @@
-export const bytes = 43956;
-export const kb = 43.96;
+export const bytes = 51703;
+export const kb = 51.7;
 
-export const App = { bytes: 43857, kb: 43.86 } as const;
+export const App = { bytes: 51594, kb: 51.59 } as const;
+
+export const Auth = { bytes: 45880, kb: 45.88 } as const;
 
 export const AuthIssue = { bytes: 138, kb: 0.14 } as const;
 
@@ -21,6 +23,7 @@ export const Schema = { bytes: 18373, kb: 18.37 } as const;
 
 export const sizes = {
 	App,
+	Auth,
 	AuthIssue,
 	Field,
 	Form,

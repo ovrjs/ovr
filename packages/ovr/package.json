@@ -39,8 +39,8 @@
 	],
 	"scripts": {
 		"check": "tsc",
-		"dev": "tsc --watch -p tsconfig.build.json",
-		"build": "tsc -p tsconfig.build.json && cp ../../LICENSE.md dist"
+		"dev": "node scripts/client.js --watch",
+		"build": "node scripts/client.js && tsc -p tsconfig.build.json && cp ../../LICENSE.md dist"
 	},
 	"dependencies": {
 		"@standard-schema/spec": "^1.1.0"

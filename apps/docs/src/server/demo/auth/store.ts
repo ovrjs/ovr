@@ -41,6 +41,7 @@ export class Store {
 		),
 	});
 	readonly #db: DatabaseSync;
+	#pruned = 0;
 
 	/** Open a persistent database, creating the demo schema if necessary. */
 	constructor(path = ".auth.sqlite") {
@@ -85,12 +86,27 @@ export class Store {
 	/** Atomic single-use challenge storage. */
 	readonly challenges: Auth.Challenges = {
 		set: (id, value) => {
-			this.prune();
-			this.#db
-				.prepare(
-					"INSERT INTO challenges (id, payload, expiration) VALUES (?, ?, ?)",
-				)
-				.run(id, JSON.stringify(value), value.expiration);
+			if (Date.now() - this.#pruned >= 60000) this.prune();
+			// One statement bounds shared outstanding storage, including concurrent instances.
+			return (
+				this.#db
+					.prepare(
+						`
+				INSERT INTO challenges (id, payload, expiration)
+				SELECT ?, ?, ? WHERE
+				(SELECT count(*) FROM challenges WHERE expiration > ?) < 1000 AND
+				(SELECT count(*) FROM challenges WHERE expiration > ? AND json_extract(payload, '$.browser') = ?) < 10
+			`,
+					)
+					.run(
+						id,
+						JSON.stringify(value),
+						value.expiration,
+						Date.now(),
+						Date.now(),
+						value.browser,
+					).changes === 1
+			);
 		},
 		take: (id) => {
 			// One statement consumes the record across every connection to this database.
@@ -108,7 +124,7 @@ export class Store {
 	readonly sessions: Auth.Sessions = {
 		set: (token, value) => {
 			if (token !== value.token) throw new TypeError("Session token mismatch");
-			this.prune();
+			if (Date.now() - this.#pruned >= 60000) this.prune();
 			this.#db
 				.prepare(
 					"INSERT INTO sessions (token, id, expiration) VALUES (?, ?, ?)",
@@ -166,17 +182,6 @@ export class Store {
 		},
 	};
 
-	/** Authentication configuration using this database for all transient auth state. */
-	options(secret: string, origin = "https://localhost:5173"): Auth.Options {
-		return {
-			secret,
-			origin,
-			name: "ovr demo",
-			challenges: this.challenges,
-			sessions: this.sessions,
-		};
-	}
-
 	/** Read an account. */
 	user(id: string) {
 		return Store.#parse(
@@ -221,6 +226,7 @@ export class Store {
 
 	/** Remove expired sessions and unconsumed challenges; called on startup and writes. */
 	prune(now = Date.now()) {
+		this.#pruned = now;
 		this.#db.prepare("DELETE FROM sessions WHERE expiration <= ?").run(now);
 		this.#db.prepare("DELETE FROM challenges WHERE expiration <= ?").run(now);
 	}

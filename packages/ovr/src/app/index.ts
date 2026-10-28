@@ -71,7 +71,12 @@ export class App {
 	constructor(options?: App.Options) {
 		this.#options = { csrf: true, trailingSlash: "never" as const, ...options };
 
-		if (this.#options.auth) this.use(Passkey.options);
+		if (this.#options.auth) {
+			Auth.validate(this.#options.auth);
+			this.use(
+				...(this.#options.auth.routes ?? [Passkey.options, Passkey.client]),
+			);
+		}
 
 		if (this.#options.csrf) this.#global.push(App.#csrf);
 

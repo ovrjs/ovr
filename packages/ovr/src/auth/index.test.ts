@@ -3,7 +3,7 @@ import { jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Field } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
-import type { Auth } from "./index.js";
+import { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
 import { describe, expect, test, vi } from "vitest";
 
@@ -211,6 +211,8 @@ function setup(extra: Partial<Auth.Options> = {}) {
 	const login = Route.post("/login", async (c) =>
 		c.json(await c.auth.passkey.login.verify(credentials)),
 	);
+	Passkey.prepare(register);
+	Passkey.prepare(login);
 	app.use(
 		register,
 		login,
@@ -237,24 +239,27 @@ function setup(extra: Partial<Auth.Options> = {}) {
 			headers: { cookie },
 		});
 		const html = await page.text();
-		const match = html.match(/\}\)\(([^]*?)\)<\/script>/);
-		if (!match) throw new Error("Missing passkey script");
-		const args: string[] = JSON.parse(`[${match[1]}]`);
+		const match = html.match(/data-bootstrap="([^"]+)"/);
+		if (!match) throw new Error("Missing passkey bootstrap");
+		const bootstrap = match[1]!
+			.replaceAll("&quot;", '"')
+			.replaceAll("&lt;", "<")
+			.replaceAll("&amp;", "&");
 		cookie ||= page.headers
 			.getSetCookie()
 			.map((v) => v.split(";")[0])
 			.join("; ");
 		const data = new FormData();
-		data.set("bootstrap", args[1]!);
+		data.set("bootstrap", bootstrap);
 		const response = await post(Passkey.options.pathname(), data, cookie);
 		const json: {
-			challenge: string;
+			ceremony: string;
 			options: PublicKeyCredentialCreationOptionsJSON;
 		} = await response.json();
-		return { ...json, cookie, html, bootstrap: args[1]!, page, response };
+		return { ...json, cookie, html, bootstrap: bootstrap, page, response };
 	};
 	const submit = (
-		state: { challenge: string; cookie: string },
+		state: { ceremony: string; cookie: string },
 		credential: unknown,
 		path = "/register",
 		cookie = state.cookie,
@@ -262,7 +267,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		const data = new FormData();
 		data.set("email", "user@example.com");
 		data.set("credential", JSON.stringify(credential));
-		data.set("challenge", state.challenge);
+		data.set("ceremony", state.ceremony);
 		// Schema-free login expects only the reserved passkey fields.
 		if (path !== "/register") data.delete("email");
 		return post(path, data, cookie);
@@ -395,8 +400,8 @@ describe("passkey ceremonies", () => {
 	test("consumes expired challenges and rejects the wrong route or ceremony", async () => {
 		const state = setup();
 		const start = await state.start("register");
-		state.challenges.set(start.challenge, {
-			...state.challenges.get(start.challenge)!,
+		state.challenges.set(start.ceremony, {
+			...state.challenges.get(start.ceremony)!,
 			expiration: Date.now() - 1,
 		});
 		await expect(state.submit(start, {})).rejects.toThrow("expired");
@@ -604,12 +609,8 @@ describe("revocable sessions", () => {
 		});
 		expect(await response.json()).toBeNull();
 		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
-		await expect(
-			setup({ secret: "weak" }).app.fetch(origin + "/session"),
-		).rejects.toThrow("32 bytes");
-		await expect(
-			setup({ origin: "http://example.com" }).app.fetch(origin + "/session"),
-		).rejects.toThrow("HTTPS");
+		expect(() => setup({ secret: "weak" })).toThrow("32 bytes");
+		expect(() => setup({ origin: "http://example.com" })).toThrow("HTTPS");
 	});
 });
 
@@ -621,6 +622,7 @@ describe("form contracts", () => {
 			{ email: Field.email() },
 			(c) => c.text(c.params.account),
 		);
+		Passkey.prepare(route);
 		state.app.use(
 			route,
 			Route.get("/typed", (c) => {
@@ -644,7 +646,8 @@ describe("form contracts", () => {
 		expect(html).toContain("/accounts/42/passkeys?");
 		expect(html).not.toContain("</script><script>alert");
 		expect(html.match(/<script/g)).toHaveLength(1);
-		expect(html).toContain("\\u003c/script\\u003e");
+		expect(html).toContain("&lt;/script>");
+		expect(html).toContain('src="/_ovr/passkey/client.js"');
 	});
 
 	test("rejects reserved schema fields rather than silently replacing them", async () => {
@@ -659,16 +662,14 @@ describe("form contracts", () => {
 				c.auth.passkey.register.form(route);
 			}),
 		);
-		await expect(state.app.fetch(origin + "/conflict")).rejects.toThrow(
-			"reserve",
-		);
+		expect(() => Passkey.prepare(route)).toThrow("reserve");
 	});
 
 	test("binds stored challenges to their exact pathname", async () => {
 		const state = setup();
 		const start = await state.start("register");
-		state.challenges.set(start.challenge, {
-			...state.challenges.get(start.challenge)!,
+		state.challenges.set(start.ceremony, {
+			...state.challenges.get(start.ceremony)!,
 			action: "/register/other",
 		});
 		await expect(state.submit(start, {})).rejects.toThrow("binding");
@@ -726,4 +727,358 @@ describe("cryptographic input validation", () => {
 			"revocation unavailable",
 		);
 	});
+});
+
+function managed(
+	storage = setup(),
+	extra: Partial<
+		import("./configure.js").Configuration<{
+			email: ReturnType<typeof Field.email>;
+		}>
+	> = {},
+) {
+	const create = vi.fn(
+		(data: { email: string }, credential: Auth.Credential) => {
+			if (storage.records.has(credential.id))
+				throw new Error("duplicate credential");
+			expect(data).toEqual({ email: "user@example.com" });
+			storage.records.set(credential.id, credential);
+		},
+	);
+	const error = vi.fn();
+	const service = Auth.passkey({
+		...storage.options,
+		credentials: storage.credentials,
+		page: "/auth",
+		redirect: "/account",
+		error,
+		register: {
+			fields: { email: Field.email() },
+			name: (data) => data.email,
+			create,
+		},
+		...extra,
+	});
+	const app = new App({ auth: service });
+	app.use(
+		Route.get("/auth", (c) => {
+			const { Register, Login } = service.forms(c, { nonce: "csp-nonce" });
+			if (false) {
+				// @ts-expect-error Application field names remain exact.
+				Register.Field({ name: "missing" });
+			}
+			return [
+				jsx(Register, {
+					class: "registration",
+					children: [
+						jsx(Register.Field, { name: "email" }),
+						jsx(Register.Error, { class: "error" }),
+						jsx("button", { children: "Join" }),
+					],
+				}),
+				jsx(Login, {}),
+			];
+		}),
+		Route.get("/whoami", async (c) => c.json(await c.auth.session())),
+	);
+	const post = (path: string, data: FormData, cookie = "") =>
+		app.fetch(origin + path, {
+			method: "POST",
+			headers: { origin, cookie },
+			body: data,
+		});
+	const start = async (
+		method: "register" | "login",
+		cookie = "",
+		target = post,
+	) => {
+		const page = await app.fetch(origin + "/auth", { headers: { cookie } });
+		const html = await page.text();
+		const script = [...html.matchAll(/<script[^>]+>/g)]
+			.map((v) => v[0])
+			.find((v) => v.includes(`data-ovr-passkey="${method}"`))!;
+		const bootstrap = script
+			.match(/data-bootstrap="([^"]+)"/)![1]!
+			.replaceAll("&quot;", '"')
+			.replaceAll("&lt;", "<")
+			.replaceAll("&amp;", "&");
+		const endpoint = script.match(/data-endpoint="([^"]+)"/)![1]!;
+		cookie ||= page.headers
+			.getSetCookie()
+			.map((v) => v.split(";")[0])
+			.join("; ");
+		const data = new FormData();
+		data.set("bootstrap", bootstrap);
+		if (method === "register") data.set("email", "user@example.com");
+		const response = await target(endpoint, data, cookie);
+		const json: {
+			ceremony: string;
+			options: PublicKeyCredentialCreationOptionsJSON;
+		} = await response.json();
+		return { ...json, cookie, html, bootstrap, endpoint, page, response };
+	};
+	const submit = (
+		start: { ceremony: string; cookie: string },
+		credential: unknown,
+		path = "/auth/register",
+	) => {
+		const data = new FormData();
+		data.set("credential", JSON.stringify(credential));
+		data.set("ceremony", start.ceremony);
+		if (path.includes("register")) data.set("email", "user@example.com");
+		return post(path, data, start.cookie);
+	};
+	return { app, service, storage, create, error, post, start, submit };
+}
+
+describe("configured passkey callbacks", () => {
+	test("registers on a cold instance and handles sessions, login, rotation, and logout automatically", async () => {
+		const warm = managed();
+		const cold = managed(warm.storage);
+		const keys = await pair();
+		// The instance issuing and accepting the ceremony has never rendered either form.
+		const start = await warm.start("register", "", cold.post);
+		expect(start.options.user.name).toBe("user@example.com");
+		expect(start.options.user.id).not.toBe(
+			Codec.Base64Url.encode(Codec.encode("user@example.com")),
+		);
+		const registered = await cold.submit(
+			start,
+			await registration(start.options.challenge, keys),
+		);
+		expect(registered.status).toBe(303);
+		expect(registered.headers.get("location")).toBe("/account");
+		expect(cold.create).toHaveBeenCalledOnce();
+		expect(warm.create).not.toHaveBeenCalled();
+		const cookie =
+			start.cookie +
+			"; " +
+			registered.headers.getSetCookie().at(-1)!.split(";")[0];
+		const session: Auth.Session = await (
+			await warm.app.fetch(origin + "/whoami", { headers: { cookie } })
+		).json();
+		expect(session.id).toBe(warm.storage.records.get(id)?.user);
+		const login = await warm.start("login", cookie, cold.post);
+		const logged = await cold.submit(
+			login,
+			await assertion(login.options.challenge, keys, { handle: session.id }),
+			"/auth/login",
+		);
+		expect(logged.status).toBe(303);
+		expect(warm.storage.sessions.size).toBe(1);
+		expect(warm.storage.sessions.has(session.token)).toBe(false);
+		const current = logged.headers.getSetCookie().at(-1)!.split(";")[0]!;
+		const logout = await cold.post("/auth/logout", new FormData(), current);
+		expect(logout.headers.get("location")).toBe("/auth");
+		expect(warm.storage.sessions.size).toBe(0);
+	});
+
+	test("renders customizable fields and errors with external nonce-bearing scripts", async () => {
+		const state = managed();
+		const start = await state.start("register");
+		expect(start.html).toContain('class="registration"');
+		expect(start.html).toContain('class="error"');
+		expect(start.html).toContain('nonce="csp-nonce"');
+		expect(start.html).toContain('src="/_ovr/passkey/client.js"');
+		expect(start.html).not.toContain("addEventListener");
+		const module = await state.app.fetch(origin + "/_ovr/passkey/client.js");
+		expect(module.headers.get("content-type")).toContain("text/javascript");
+		expect(await module.text()).toContain("export function listen");
+	});
+
+	test("gives verification a minute beyond the configured browser timeout", async () => {
+		const state = managed(setup({ timeout: 90000 }));
+		const start = await state.start("register");
+		expect(start.options.timeout).toBe(90000);
+		const expiration = state.storage.challenges.get(start.ceremony)!.expiration;
+		expect(expiration - Date.now()).toBeGreaterThan(149000);
+		const keys = await pair();
+		vi.spyOn(Date, "now").mockReturnValue(expiration - 1);
+		try {
+			expect(
+				(
+					await state.submit(
+						start,
+						await registration(start.options.challenge, keys),
+					)
+				).status,
+			).toBe(303);
+			expect(state.create).toHaveBeenCalledOnce();
+		} finally {
+			vi.restoreAllMocks();
+		}
+	});
+
+	test("does not issue a session when account persistence fails and keeps details out of HTTP responses", async () => {
+		const state = managed();
+		state.create.mockImplementationOnce(() => {
+			throw new Error("private database details");
+		});
+		const start = await state.start("register");
+		const result = await state.submit(
+			start,
+			await registration(start.options.challenge, await pair()),
+		);
+		expect(result.headers.get("location")).toBe(
+			origin + "/auth?_auth=register",
+		);
+		expect(result.headers.getSetCookie()).toHaveLength(0);
+		expect(state.storage.sessions.size).toBe(0);
+		expect(state.error).toHaveBeenCalledWith(
+			expect.objectContaining({ message: "private database details" }),
+			expect.anything(),
+		);
+		const page = await state.app.fetch(result.headers.get("location")!);
+		const html = await page.text();
+		expect(html).toContain("Authentication failed. Try again.");
+		expect(html).not.toContain("private database");
+	});
+
+	test("validates registration fields before prompting and supports distributed request limits", async () => {
+		const allow = vi.fn(() => true);
+		const state = managed(setup(), { allow });
+		const start = await state.start("register");
+		const set = vi.spyOn(state.storage.options.challenges, "set");
+		const invalid = new FormData();
+		invalid.set("bootstrap", start.bootstrap);
+		invalid.set("email", "invalid");
+		const response = await state.post(start.endpoint, invalid, start.cookie);
+		expect(response.status).toBe(400);
+		expect(await response.text()).toBe("Authentication failed. Try again.");
+		expect(set).not.toHaveBeenCalled();
+		allow.mockReturnValue(false);
+		const denied = await state.post(start.endpoint, invalid, start.cookie);
+		expect(denied.status).toBe(429);
+		expect(denied.headers.get("retry-after")).toBe("60");
+		expect(set).not.toHaveBeenCalled();
+	});
+
+	test("enforces default limits and respects a shared challenge capacity refusal", async () => {
+		const state = managed();
+		const start = await state.start("register");
+		const data = new FormData();
+		data.set("bootstrap", start.bootstrap);
+		data.set("email", "user@example.com");
+		for (let i = 1; i < 20; i++)
+			expect(
+				(await state.post(start.endpoint, data, start.cookie)).status,
+			).toBe(200);
+		expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
+			429,
+		);
+		const other = managed();
+		vi.spyOn(other.storage.options.challenges, "set").mockReturnValue(false);
+		const page = await other.app.fetch(origin + "/auth");
+		const html = await page.text();
+		const bootstrap = html
+			.match(/data-bootstrap="([^"]+)"/)![1]!
+			.replaceAll("&quot;", '"');
+		data.set("bootstrap", bootstrap);
+		expect(
+			(
+				await other.post(
+					start.endpoint,
+					data,
+					page.headers.getSetCookie()[0]!.split(";")[0],
+				)
+			).status,
+		).toBe(429);
+	});
+
+	test("supports custom endpoints and rejects invalid paths at startup", async () => {
+		const state = managed(setup(), {
+			paths: {
+				register: "/join/register",
+				login: "/join/login",
+				logout: "/join/logout",
+				options: "/join/options",
+				client: "/join/client.js",
+			},
+		});
+		const start = await state.start("register");
+		expect(start.endpoint).toBe("/join/options/register");
+		expect(start.html).toContain('action="/join/register"');
+		expect(start.html).toContain('src="/join/client.js"');
+		expect(
+			(
+				await state.submit(
+					start,
+					await registration(start.options.challenge, await pair()),
+					"/join/register",
+				)
+			).status,
+		).toBe(303);
+		expect(() =>
+			managed(setup(), { paths: { register: "https://evil.example" } }),
+		).toThrow("local paths");
+		expect(() =>
+			managed(setup(), { paths: { register: "/auth/login" } }),
+		).toThrow("distinct");
+		expect(() => managed(setup(), { timeout: 0 })).toThrow("timeout");
+	});
+});
+
+test("async shared limiting cannot bypass local limits with concurrent requests", async () => {
+	const state = managed(setup(), {
+		allow: async () => {
+			await Promise.resolve();
+			return true;
+		},
+	});
+	const start = await state.start("register");
+	const data = new FormData();
+	data.set("bootstrap", start.bootstrap);
+	data.set("email", "user@example.com");
+	const requests = await Promise.all(
+		Array.from({ length: 25 }, () =>
+			state.post(start.endpoint, data, start.cookie),
+		),
+	);
+	expect(requests.filter((response) => response.status === 200)).toHaveLength(
+		19,
+	);
+	expect(requests.filter((response) => response.status === 429)).toHaveLength(
+		6,
+	);
+});
+
+test("configured logout reports storage failure without claiming success", async () => {
+	const state = managed();
+	const start = await state.start("register");
+	const registered = await state.submit(
+		start,
+		await registration(start.options.challenge, await pair()),
+	);
+	const cookie = registered.headers.getSetCookie().at(-1)!.split(";")[0]!;
+	vi.spyOn(state.storage.options.sessions, "delete").mockRejectedValueOnce(
+		new Error("private revocation failure"),
+	);
+	const result = await state.post("/auth/logout", new FormData(), cookie);
+	expect(result.status).toBe(503);
+	expect(await result.text()).toBe("Could not log out. Try again.");
+	expect(result.headers.getSetCookie()).toHaveLength(0);
+	expect(state.storage.sessions.size).toBe(1);
+});
+
+test("configured options reject substituted operations and oversized bodies before storage", async () => {
+	const state = managed();
+	const start = await state.start("register");
+	const set = vi.spyOn(state.storage.options.challenges, "set");
+	const data = new FormData();
+	data.set("bootstrap", start.bootstrap);
+	const switched = await state.post(
+		"/_ovr/passkey/options/login",
+		data,
+		start.cookie,
+	);
+	expect(switched.status).toBe(400);
+	expect(state.error).toHaveBeenCalledWith(
+		expect.objectContaining({ message: "Invalid bootstrap binding" }),
+		expect.anything(),
+	);
+	data.set("email", "user@example.com");
+	data.set("bootstrap", "x".repeat(129 * 1024));
+	const oversized = await state.post(start.endpoint, data, start.cookie);
+	expect(oversized.status).toBe(400);
+	expect(set).not.toHaveBeenCalled();
 });

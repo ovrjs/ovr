@@ -155,3 +155,14 @@ describe("SQLite authentication persistence", () => {
 		expect(store.credentials.find(credential.id)).toEqual(credential);
 	});
 });
+
+test("bounds outstanding challenges across connections and reclaims consumed capacity", () => {
+	const path = file();
+	const first = open(path);
+	const second = open(path);
+	for (let i = 0; i < 10; i++)
+		expect(first.challenges.set(`challenge-${i}`, challenge())).toBe(true);
+	expect(second.challenges.set("overflow", challenge())).toBe(false);
+	second.challenges.take("challenge-0");
+	expect(first.challenges.set("replacement", challenge())).toBe(true);
+});
