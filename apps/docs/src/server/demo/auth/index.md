@@ -3,16 +3,15 @@ title: Authentication
 description: Passkey forms, built-in handlers, and persistence callbacks for any database.
 ---
 
-`Auth.passkey()` supplies registration, username-free login, logout, verification, and revocable sessions. Your application supplies typed callbacks using its own database or ORM. ovr adds no database driver, ORM integration, or runtime dependency. The current implementation supports discoverable **ES256 / P-256** passkeys with required user verification and `none` attestation.
+`new Auth(...)` supplies registration, username-free login, logout, verification, and revocable sessions. Your application supplies typed callbacks using its own database or ORM. ovr adds no database driver, ORM integration, or runtime dependency. The current implementation supports discoverable **ES256 / P-256** passkeys with required user verification and `none` attestation.
 
 ```tsx
 import { App, Auth, Field, Route } from "ovr";
 
-const auth = Auth.passkey({
+const auth = new Auth({
 	secret, // At least 32 random bytes; keep it stable across restarts.
 	origin: "https://example.com",
 	name: "My app",
-	allow: (c, phase) => limits.allow(c.req, phase), // Your deployment's trusted admission policy.
 	page: "/auth",
 	redirect: "/account",
 
@@ -64,60 +63,53 @@ app.use(
 );
 ```
 
-The persistence functions and `limits` above are application code. `allow(c, phase)` is required for registration/login POSTs. **One successful ceremony makes two admitted requests**: `phase === "options"` before the browser prompt, then `phase === "verify"` on the final form POST. Budget for both, or use separate budgets per phase; do not count both requests as separate failed login attempts. Return `true` to admit, `false` to deny for 60 seconds, or a `Date` specifying an absolute retry deadline. Retry hints are bounded to one second through one hour on the server and in the browser. This only limits the advertised wait: the callback runs again on every retry and can continue denying access. The callback may be asynchronous. A denied options request returns HTTP 429 with `Retry-After`; a denied final submit redirects to the auth page with a retry message. Neither reaches body parsing, challenge writes, or verification.
+Auth automatically applies independent token buckets to registration and login before body parsing or storage access. The defaults allow a burst of **5 registrations**, replenished at **5 per 10 minutes**, and **20 sign-ins**, replenished at **20 per minute**, per trusted client IP (IPv6 is grouped by `/64`, with mapped IPv4 addresses using their IPv4 budget). Options and verification have separate budgets, so the two requests in a normal ceremony do not spend the same budget twice. Logout bypasses these policies, including storage failures. No rate-limit callback or numeric configuration is required.
 
-Use your platform's trusted peer identity or a shared limiter behind an edge that supplies verified client identity. ovr's standard `Request` cannot tell which client-IP header is trustworthy, and an unauthenticated cookie or `Origin` header is not an abuse-control identity. If your edge already enforces the policy, an explicit `allow: () => true` acknowledges that external protection. There is no cookie-keyed process bucket or shared framework request quota that an attacker can exhaust to deny other users. Logout bypasses this admission callback, including when it throws or its backing service is unavailable.
-
-Keep runtime-specific connection information in your entry point. For example, a direct Deno HTTPS listener can associate the original request with the socket peer, without trusting forwarded headers:
+Supply the trusted client IP once in your server entry point. A standard Fetch `Request` does not contain its socket peer. For a direct Deno HTTPS listener:
 
 ```ts
-const peers = new WeakMap<Request, string>();
-const auth = Auth.passkey({
-	...options, // Persistence and registration configuration from above.
-	allow: ({ req }, phase) => {
-		const peer = peers.get(req);
-		return peer ? limits.allow(peer, phase) : false;
-	},
-});
-const app = new App({ auth });
-// Mount your application routes here.
-
-Deno.serve({ cert, key }, (request, info) => {
-	peers.set(request, info.remoteAddr.hostname);
-	return app.fetch(request);
-});
+Deno.serve({ cert, key }, (request, info) =>
+	app.fetch(request, { ip: info.remoteAddr.hostname }),
+);
 ```
 
-Here `cert` and `key` are your TLS PEM strings and `limits` is your application's shared limiter, returning `boolean | Date` or a promise of that result. Configure that limiter to canonicalize addresses and group IPv6 clients by `/64` prefix, rather than giving every raw address its own budget: hosts can rotate interface identifiers within a prefix. This `/64` grouping is a baseline policy, not protection against clients that control multiple prefixes; tune budgets for shared networks and your deployment. [IPv6 temporary addresses (RFC 8981)](https://www.rfc-editor.org/rfc/rfc8981.html).
+Here `cert` and `key` are your TLS PEM strings. `app.fetch(request, { ip })` preserves the original request while exposing the trusted IP as `c.ip`. Do not copy an arbitrary `X-Forwarded-For` header into this option. Behind a reverse proxy the socket peer identifies that proxy: accept connections only from your proxy and configure it to overwrite the client identity before using its verified header. Missing or invalid peer metadata fails closed with HTTP 503 on auth options requests, and a generic failure redirect on final submits. Session reads and logout do not require an IP. [Deno HTTP server API](https://docs.deno.com/api/deno/http-server/).
 
-`app.fetch(request)` preserves the request identity; cloning it or passing additional fetch options would lose this association. Behind a reverse proxy, the socket peer identifies that proxy, so configure the proxy to overwrite client identity and accept connections only from that proxy before trusting its forwarded identity. [Deno HTTP server API](https://docs.deno.com/api/deno/http-server/).
-
-For a Cloudflare Worker exposed through its Internet-facing edge, with Worker-to-Worker subrequests blocked by your edge policy, the corresponding entry point can use the same `peers` map and callback:
+For a Cloudflare Worker exposed through its Internet-facing edge, with Worker-to-Worker subrequests blocked by your edge policy:
 
 ```ts
 export default {
 	fetch(request: Request) {
-		const peer = request.headers.get("CF-Connecting-IP");
-		if (peer) peers.set(request, peer);
-		return app.fetch(request);
+		const ip = request.headers.get("CF-Connecting-IP");
+		return app.fetch(request, ip ? { ip } : {});
 	},
 };
 ```
 
-That trust comes from Cloudflare's edge and routing policy, not the header name. In same-zone Worker subrequests, `CF-Connecting-IP` can reflect an `x-real-ip` value modified by the calling Worker; cross-zone Worker subrequests use a fixed address. If those requests are allowed, use an authenticated caller identity and an appropriate shared quota instead of this example. Cloudflare documents an edge rule using `cf.worker.upstream_zone` to block Worker subrequests. Do not copy this header lookup into a directly reachable origin server. [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/), [blocking Worker subrequests](https://developers.cloudflare.com/waf/custom-rules/use-cases/block-worker-subrequests/).
+That trust comes from Cloudflare's edge and routing policy. Same-zone Worker subrequests can reflect a caller-modified `x-real-ip`; cross-zone subrequests use a fixed address. If those callers are allowed, provide an authenticated identity policy instead. Cloudflare documents a rule using `cf.worker.upstream_zone` to block Worker subrequests. [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/), [blocking Worker subrequests](https://developers.cloudflare.com/waf/custom-rules/use-cases/block-worker-subrequests/).
+
+IPv6 `/64` grouping prevents a separate budget for each rotating interface identifier. It is a baseline policy: shared networks share a budget, and callers controlling multiple prefixes can still distribute their requests. [IPv6 temporary addresses (RFC 8981)](https://www.rfc-editor.org/rfc/rfc8981.html).
+
+The default limiter keeps bounded process-local memory. Multiple workers do not automatically share counters, and restarts reset them. For a multi-worker deployment, supply the shared atomic storage operation while retaining the built-in policy values:
+
+```ts
+const auth = new Auth({ ...configuration, limits: { consume: consumeToken } });
+```
+
+`consumeToken(key, { limit, interval })` must atomically replenish and consume one token, returning `true` on admission or an absolute retry time in milliseconds on denial. All workers must share storage and policy values; errors must throw. Stable keys include the auth origin, operation, request phase, and normalized client identity. The SQLite demo implements this operation in a transaction. Cleanup and storage capacity belong to that shared backend. Advanced overrides can supply `limits.register` or `limits.login` as `Limiter` instances, including a custom authenticated key. [Reusable rate-limit middleware](/05-middleware#rate-limiting) can also protect ordinary routes.
 
 The persistence functions above are application code. The transaction shown uses the normal Drizzle API; ovr neither imports Drizzle nor chooses a database package for you. Registration fields determine the callback's data type and the available `Register.Field` names. `Register.Fields` renders all application fields. Omitting a form's children supplies fields, a button, and an accessible error status automatically. Plain HTML, field component customization, and normal form attributes remain available.
 
 Call `auth.forms(c)` **inside the handler before returning JSX** so the secure browser binding cookie reaches the response. ovr prepares complete POST schemas when configuring the service; submitting to another instance does not require that instance to have rendered the form.
 
-Resolve `c.auth` and await session reads in route handlers or middleware before returning streamed JSX, then pass the resolved data to components. A first auth access inside an async component runs during streaming, when response status and headers may already be committed. A wrong origin still prevents auth access, but the resulting stream error cannot reliably become an HTTP 421 response; cookies and redirects must also be set before streaming starts.
+Call `auth.session(c)` and await session reads in route handlers or middleware before returning streamed JSX, then pass the resolved data to components. A first auth access inside an async component runs during streaming, when response status and headers may already be committed. A wrong origin still prevents auth access, but the resulting stream error cannot reliably become an HTTP 421 response; cookies and redirects must also be set before streaming starts.
 
 For a protected page:
 
 ```tsx
 app.use(
 	Route.get("/account", async (c) => {
-		const session = await c.auth.session();
+		const session = await auth.session(c);
 		if (!session) return c.redirect("/auth", 303);
 
 		const { Logout } = auth.forms(c);
@@ -204,14 +196,14 @@ Default paths are `POST /auth/register`, `/auth/login`, `/auth/logout`, and `/_o
 
 The browser runtime is a regular external JavaScript module. Policies allowing same-origin scripts work without inline JavaScript; nonce-based policies can use `auth.forms(c, { nonce })`. It handles streamed forms, cancellation, native validation, submitters, older browser option conversion, and newer native WebAuthn JSON parsers. A successful native submission stays locked while navigation is pending; a canceled or invalid final submission unlocks for retry. If navigation never completes, a recovery timer unlocks the form and clears stale protocol fields after the configured prompt timeout plus one minute (two minutes by default, capped at five minutes). It does not automatically retry or extend the server's ceremony lifetime. Forms restored from the back/forward cache reset their locks, timers, and stale ceremony fields. The browser module uses ETag revalidation, so an unchanged asset returns HTTP 304. JavaScript and HTTPS are required.
 
-Session lifetime defaults to seven days (`duration` in milliseconds) without sliding refresh. `await c.auth.logout()` revokes the current session; `await c.auth.revoke(token)` revokes another selected session. Account-wide revocation can delete sessions by user ID in your own database. Each request reads shared session storage, so revocation applies across instances without a stale session cache. Authentication responses use `Cache-Control: no-store`.
+Session lifetime defaults to seven days (`duration` in milliseconds) without sliding refresh. `await auth.logout(c)` revokes the current session; `await auth.revoke(c, token)` revokes another selected session. Account-wide revocation can delete sessions by user ID in your own database. Each request reads shared session storage, so revocation applies across instances without a stale session cache. Authentication responses use `Cache-Control: no-store`.
 
 The browser prompt defaults to 60 seconds (`timeout` in milliseconds); the server accepts the ceremony for that timeout **plus one minute** to allow response verification. Options are fetched on submit, and each ceremony is browser-, operation-, pathname-, and origin-bound and atomically consumed on the first verification attempt. Signed form bootstrap tokens expire after an hour. `credential`, `ceremony`, and `bootstrap` are reserved field names.
 
-Admission and capacity limits serve different purposes. Your required `allow(c, phase)` policy protects public registration/login traffic before body parsing and database writes; it must isolate abusive clients rather than put every user behind a single small global quota. Apply general network overload protection at your deployment edge, with logout handled separately. Authentication form bodies are limited to 128 KiB. The SQLite example's outstanding-challenge caps bound storage; they are not sufficient abuse protection. Distributed clients or clients rotating IPv6 addresses can pass a per-IP limiter and still saturate shared challenge capacity. A browser cookie does not establish an abuse-control identity. Choose storage capacity for your workload and enforce the trusted admission policy in public deployments. Challenges remain database-backed; signed ceremony tokens with a replay ledger are a separate possible design change.
+Rate limits and storage capacity serve different purposes. Automatic per-client policies protect registration/login traffic before body parsing and writes. Apply network overload protection at your deployment edge too. Authentication form bodies are limited to 128 KiB. Each default in-memory limiter holds at most 10,000 active scoped client buckets and reclaims expired entries; if full, new identities fail closed while existing buckets keep their policy. This does not make distributed attacks harmless. Distributed clients or clients controlling multiple IPv6 prefixes can still saturate shared challenge capacity, even with shared limiter storage. The SQLite example's capacity caps bound storage but are not sufficient abuse protection. Challenges remain database-backed; signed ceremony tokens with a replay ledger are a separate possible design change.
 
-Generated auth endpoints reject a request whose origin differs from the configured HTTPS origin with HTTP 421, before admission or protocol handling. Accessing `c.auth`, including through `auth.forms(c)`, also enforces this origin before reading sessions or changing auth state. Unrelated routes that do not access auth can serve health checks, canonical-host redirects, and alternate hostnames normally. ovr does not infer trust from arbitrary forwarded headers.
+Generated auth endpoints reject a request whose origin differs from the configured HTTPS origin with HTTP 421, before rate limiting or protocol handling. `auth.session(c)`, `auth.forms(c)`, and the session mutation methods enforce this origin too. Unrelated health checks and canonical-host redirects can serve alternate hostnames normally. ovr does not infer trust from forwarded headers.
 
-`Auth.passkey()` and `auth.forms(c)` are the supported passkey entry points. The protocol implementation is internal; there is no exported `Passkey` class or `c.auth.passkey` member. `c.auth` supplies the session, login, logout, and revocation helpers described above. Passing raw `Auth.Options` to `App` enables those helpers without mounting passkey endpoints.
+`new Auth(configuration)` creates the service, and `new App({ auth })` mounts its generated routes. All request helpers belong to that instance: `auth.forms(c)`, `auth.session(c)`, `auth.login(c, user)`, `auth.logout(c)`, and `auth.revoke(c, token)`. Registration and login handlers establish sessions automatically; direct `login` is for an application-authorized user. Request-local caches are isolated by service and context. The protocol implementation is internal. The earlier `Auth.passkey()` factory and `c.auth` helpers have been removed.
 
-The runnable demo uses Node 24's built-in SQLite driver in application code, with no additional package. Its permissive admission callback explicitly checks development mode and denies traffic otherwise; it is not an example public deployment limiter. Enable it in development using `AUTH_SECRET`, `AUTH_ORIGIN` (default `https://localhost:5173`), and optional `AUTH_DATABASE` (default `.auth.sqlite`). Serve through HTTPS. Its database persists across restarts, is excluded from Git, and holds users, credentials, challenges, and sessions. Cleanup runs on startup and at most once per minute during writes.
+The runnable demo uses Node 24's built-in SQLite driver in application code, with no additional package. The demo is enabled only in development and uses a fixed loopback identity in that local entry point. Public server adapters must supply the real trusted client IP. Its rate-limit buckets are shared through SQLite using the built-in policy values. Enable it in development using `AUTH_SECRET`, `AUTH_ORIGIN` (default `https://localhost:5173`), and optional `AUTH_DATABASE` (default `.auth.sqlite`). Serve through HTTPS. Its database persists across restarts, is excluded from Git, and holds users, credentials, challenges, and sessions. Cleanup runs on startup and at most once per minute during writes, including expired rate-limit buckets.

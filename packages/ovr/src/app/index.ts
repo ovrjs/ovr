@@ -1,4 +1,4 @@
-import { Auth } from "../auth/index.js";
+import type { Auth } from "../auth/index.js";
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
@@ -7,6 +7,11 @@ import { Trie } from "../trie/index.js";
 import { Header, Method, type Util } from "../util/index.js";
 
 export namespace App {
+	/** Fetch options plus server-supplied connection metadata. */
+	export interface Fetch extends RequestInit {
+		/** Trusted socket peer or verified edge client IP. Never copy an arbitrary forwarded header. */
+		readonly ip?: string;
+	}
 	export namespace Options {
 		/** Trailing slash preference */
 		export type TrailingSlash = "always" | "never" | "ignore";
@@ -46,8 +51,8 @@ export namespace App {
 		 */
 		readonly form?: Multipart.Options;
 
-		/** Authentication options */
-		readonly auth?: Auth.Options;
+		/** Configured authentication service; its routes mount automatically. */
+		readonly auth?: Pick<Auth, "origin" | "routes">;
 	};
 }
 
@@ -72,7 +77,6 @@ export class App {
 
 		const auth = this.#options.auth;
 		if (auth) {
-			Auth.validate(auth);
 			// Only generated auth endpoints reject alternate hosts before their handlers run.
 			if (auth.routes) {
 				const routes = new Set(auth.routes);
@@ -128,15 +132,14 @@ export class App {
 	 * @param options [Options](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch#options) to apply to the request
 	 * @returns Promise that resolves to the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) to the request
 	 */
-	readonly fetch = async (
-		resource: RequestInfo | URL,
-		options?: RequestInit,
-	) => {
+	readonly fetch = async (resource: RequestInfo | URL, options?: App.Fetch) => {
+		const { ip, ...init } = options ?? {};
 		const c = new Context(
-			resource instanceof Request && !options
+			resource instanceof Request && !Object.keys(init).length
 				? resource
-				: new Request(resource, options),
+				: new Request(resource, init),
 			this.#options,
+			ip,
 		);
 
 		return Context.compose(

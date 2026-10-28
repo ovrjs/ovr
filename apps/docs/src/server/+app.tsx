@@ -48,7 +48,9 @@ if (import.meta.env.DEV) {
 }
 
 export default {
-	fetch: app.fetch,
+	// The auth demo is local-development-only. Production entry points must supply their actual trusted peer IP.
+	fetch: (request: Request) =>
+		app.fetch(request, import.meta.env.DEV ? { ip: "127.0.0.1" } : {}),
 	prerender: () => {
 		const docPrerender = content.slugs().map((slug) => "/" + slug);
 

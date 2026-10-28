@@ -10,7 +10,7 @@ export function configure(
 	secret: string,
 	origin = "https://localhost:5173",
 ) {
-	return Auth.passkey({
+	return new Auth({
 		secret,
 		origin,
 		name: "ovr demo",
@@ -19,8 +19,7 @@ export function configure(
 		challenges: store.challenges,
 		sessions: store.sessions,
 		credentials: store.credentials,
-		// This UI is enabled only in development. Public deployments must supply a trusted limiter.
-		allow: () => import.meta.env.DEV,
+		limits: { consume: store.consume },
 		register: {
 			fields: { email: Field.email({ label: "Email" }) },
 			name: (data) => data.email,
@@ -38,14 +37,11 @@ export function routes(
 	const guard = (
 		handler: (
 			c: Middleware.Context,
-			auth: {
-				session: Middleware.Context.Auth.Session;
-				user: { id: string; email: string };
-			},
+			auth: { session: Auth.Session; user: { id: string; email: string } },
 		) => JSX.Element,
 	): Middleware => {
 		return async (c) => {
-			const session = await c.auth.session();
+			const session = await authentication.session(c);
 
 			if (!session) {
 				c.redirect(auth, 303);
@@ -55,7 +51,7 @@ export function routes(
 			const user = store.user(session.id);
 
 			if (!user) {
-				await c.auth.logout();
+				await authentication.logout(c);
 				c.redirect(auth, 303);
 				return;
 			}
@@ -67,7 +63,7 @@ export function routes(
 	/** Landing page for register/login passkey flows. */
 	const auth = Route.get("/demo/auth", async (c) => {
 		const Layout = createLayout(c);
-		const session = await c.auth.session();
+		const session = await authentication.session(c);
 		const user = session ? store.user(session.id) : null;
 
 		const { Register, Login } = authentication.forms(c);

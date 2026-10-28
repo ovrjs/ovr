@@ -1,0 +1,122 @@
+import type { Context as ContextType } from "../context/index.js";
+import { Time } from "../util/index.js";
+import type { Auth } from "./index.js";
+import { AuthIssue } from "./issue.js";
+import { OriginIssue } from "./origin.js";
+import { Token } from "./token.js";
+
+export namespace State {
+	/** Internal capabilities needed for request-local authentication state. */
+	export type Context = Pick<ContextType, "url" | "cookie" | "res">;
+}
+
+/** Internal authentication state for exactly one service and request. */
+export class State {
+	static readonly #cookie = "__Host-auth-session";
+	static readonly #binding = "__Host-auth-browser";
+	readonly #c: State.Context;
+	#browser: string | undefined;
+	#session: Promise<Auth.Session | null> | undefined;
+
+	/** Normalized authentication configuration. */
+	readonly options;
+
+	/** Create authentication helpers for the current request. */
+	constructor(c: State.Context, options: Auth.Options) {
+		if (c.url.origin !== options.origin)
+			throw new OriginIssue("Authentication requires its configured origin");
+		this.#c = c;
+		this.options = { duration: Time.week, timeout: Time.minute, ...options };
+	}
+
+	/** Read a browser binding; create it only while preparing a form in the handler. */
+	browser(create = false) {
+		this.#browser ??= this.#c.cookie.get(State.#binding);
+		if (!this.#browser && create) {
+			this.#browser = crypto.randomUUID();
+			this.#c.cookie.set(State.#binding, this.#browser, {
+				secure: true,
+				httpOnly: true,
+				sameSite: "Lax",
+			});
+		}
+		return this.#browser;
+	}
+
+	#clear() {
+		this.#c.res.headers.set("cache-control", "no-store");
+		this.#c.cookie.set(State.#cookie, "", {
+			secure: true,
+			httpOnly: true,
+			sameSite: "Lax",
+			maxAge: 0,
+		});
+	}
+
+	async #read() {
+		this.#c.res.headers.set("cache-control", "no-store");
+		const cookie = this.#c.cookie.get(State.#cookie);
+		if (!cookie) return null;
+		let token: string;
+		try {
+			token = await Token.open(this.options.secret, "session", cookie);
+		} catch (e) {
+			if (!(e instanceof AuthIssue)) throw e;
+			this.#clear();
+			return null;
+		}
+		// Storage failures must propagate, rather than appear to be successful logouts.
+		const session = await this.options.sessions.get(token);
+		if (session && session.token === token && session.expiration > Date.now())
+			return session;
+		this.#clear();
+		return null;
+	}
+
+	/** Read a non-expired, non-revoked session; does not extend its lifetime. */
+	session() {
+		return (this.#session ??= this.#read());
+	}
+
+	/** Replace the current session and issue a new signed, secure cookie. */
+	async login(id: string) {
+		const previous = await this.session();
+		if (previous) await this.options.sessions.delete(previous.token);
+		const session = {
+			id,
+			token: crypto.randomUUID(),
+			expiration: Date.now() + this.options.duration,
+		};
+		await this.options.sessions.set(session.token, session);
+		this.#c.cookie.set(
+			State.#cookie,
+			await Token.seal(this.options.secret, "session", session.token),
+			{
+				secure: true,
+				httpOnly: true,
+				sameSite: "Lax",
+				maxAge: Math.floor(this.options.duration / Time.second),
+			},
+		);
+		this.#session = Promise.resolve(session);
+		return session;
+	}
+
+	/** Revoke a session by its opaque ID. */
+	async revoke(token: string) {
+		await this.options.sessions.delete(token);
+		if ((await this.session())?.token === token) {
+			this.#clear();
+			this.#session = Promise.resolve(null);
+		}
+	}
+
+	/** Revoke the current session and expire its cookie. Always await this method. */
+	async logout() {
+		const session = await this.session();
+		if (session) await this.options.sessions.delete(session.token);
+		this.#clear();
+		this.#session = Promise.resolve(null);
+		return null;
+	}
+}

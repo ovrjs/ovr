@@ -87,6 +87,8 @@ app.use(home); // uses all exports
 
 ## Fetch
 
+Server adapters can pass a trusted client IP as connection metadata with `app.fetch(request, { ip })`. It becomes `c.ip` for rate limiting. This option is supplied by your server, not a request header. A standard `Request` cannot identify its socket peer; forwarded headers require explicit trust in the edge that overwrites them. Passing only this metadata preserves the original `Request` object. Normal `RequestInit` options such as `method` and `headers` remain available in the same argument.
+
 Use the `fetch` method to create a `Response`, this is the `Request` handler for your application.
 
 ```ts

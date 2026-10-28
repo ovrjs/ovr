@@ -62,6 +62,7 @@ For each request, ovr creates a `Context` object _(abbreviated as `c` in these d
 ```ts
 Route.get("/api/:id", (c) => {
 	c.req; // original `Request`
+	c.ip; // trusted client IP supplied by your server, or undefined
 	c.url; // parsed web `URL`
 	c.params; // type-safe route parameters { id: "123" }
 	c.route; // matched `Route`
@@ -128,3 +129,29 @@ Any value that is returned from middleware will be passed into [`Render.stream`]
 Returning a value sets the `content-type` header to `html` unless it has already been set. Markup content types such as `html`, `xml`, and `svg` will be escaped during the render while other content types will not.
 
 > Middleware's flexible return type makes it easy to stream other types of content than HTML. Simply set the `content-type` header before returning. Check out the demos for [SSE](/demo/sse) or [XML](/demo/seo) for examples.
+
+## Rate limiting
+
+`Limiter` is reusable middleware. Authentication uses its own built-in policies automatically; ordinary routes opt in:
+
+```ts
+import { App, Limiter, Route } from "ovr";
+
+const app = new App();
+const search = new Limiter(); // Burst of 60, replenished at 60 per minute.
+
+app.use(
+	Route.get("/search", search.middleware, (c) => c.text("Search results")),
+);
+
+// Your server supplies the trusted socket peer or verified edge client IP:
+app.fetch(request, { ip });
+```
+
+The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Missing/invalid identity or limiter storage failures return HTTP 503; exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`.
+
+Optional settings are `limit`, `interval` (milliseconds), `name`, `capacity`, `key`, and `consume`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
+
+Memory is process-local and bounded to 10,000 active buckets by default. Expired entries are reclaimed; capacity refusal affects new buckets and preserves existing budgets. Multi-worker deployments must use a shared atomic `consume(key, { limit, interval })` operation, returning `true` on admission or an absolute retry time in milliseconds on denial. All workers must share a stable `name` and policy values. The authentication SQLite demo includes such a backend. Network-level and distributed abuse protection still belong at your deployment edge.
+
+Use `app.use(limiter.middleware)` to apply a limiter globally. That includes auth routes and logout too; prefer selected routes when you want those requests to remain independent of a general application quota. The auth service's own policies always bypass logout.

@@ -1,5 +1,4 @@
 import type { App } from "../app/index.js";
-import { Auth } from "../auth/index.js";
 import { OriginIssue } from "../auth/origin.js";
 import { Cookie } from "../cookie/index.js";
 import type { Middleware } from "../middleware/index.js";
@@ -73,6 +72,8 @@ export class Context<
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Request)
 	 */
 	readonly req: Request;
+	/** Trusted client IP supplied by the server through App.fetch; never inferred from request headers. */
+	readonly ip: string | undefined;
 
 	/**
 	 * Parsed `URL` created from `req.url`.
@@ -96,9 +97,6 @@ export class Context<
 	/** Forwarded app options */
 	readonly #options: App.Options;
 
-	/** Cached auth instance */
-	#auth?: Auth;
-
 	/** Cached result from `data()` to avoid re-reading request bodies. */
 	#parsed?: Promise<Context.Result<Shape>>;
 
@@ -107,8 +105,9 @@ export class Context<
 	 *
 	 * @param req Request
 	 */
-	constructor(req: Request, options: App.Options) {
+	constructor(req: Request, options: App.Options, ip?: string) {
 		this.req = req;
+		this.ip = ip;
 		this.url = new URL(req.url);
 		this.#options = options;
 	}
@@ -268,13 +267,6 @@ export class Context<
 
 			return result as Context.Result<Shape>;
 		})());
-	}
-
-	/** Access in middleware or a route handler before returning streamed JSX, while auth failures can still set the response status and cookies. */
-	get auth() {
-		if (!this.#options.auth) throw new Error("Set App.Options.auth to enable");
-
-		return (this.#auth ??= new Auth(this, this.#options.auth));
 	}
 
 	/**

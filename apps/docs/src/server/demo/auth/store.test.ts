@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Auth } from "ovr";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 const stores = new Set<Store>();
 const folders: string[] = [];
@@ -50,6 +50,25 @@ afterEach(() => {
 });
 
 describe("SQLite authentication persistence", () => {
+	test("shares atomic rate-limit budgets across connections and restarts", () => {
+		const path = file();
+		const first = open(path);
+		const second = open(path);
+		const now = Date.now();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		try {
+			const policy = { limit: 2, interval: 60000 };
+			expect(first.consume("client", policy)).toBe(true);
+			expect(second.consume("client", policy)).toBe(true);
+			expect(open(path).consume("client", policy)).toBe(now + 30000);
+			expect(second.consume("other", policy)).toBe(true);
+			clock.mockReturnValue(now + 30000);
+			expect(first.consume("client", policy)).toBe(true);
+			expect(second.consume("client", policy)).toBe(now + 60000);
+		} finally {
+			clock.mockRestore();
+		}
+	});
 	test("preserves users, passkeys, sessions, and pending challenges after reopening", () => {
 		const path = file();
 		const first = open(path);

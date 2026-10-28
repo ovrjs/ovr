@@ -77,6 +77,22 @@ test("passes Request directly unless options are provided", async () => {
 	);
 });
 
+test("server connection metadata preserves the original Request and is not inferred from headers", async () => {
+	const req = new Request("https://example.com/", {
+		headers: { "x-forwarded-for": "192.0.2.99" },
+	});
+	const app = new App().use(
+		Route.get("/", (c) => {
+			expect(c.req).toBe(req);
+			c.json({ ip: c.ip ?? null });
+		}),
+	);
+	expect(await (await app.fetch(req, { ip: "192.0.2.1" })).json()).toEqual({
+		ip: "192.0.2.1",
+	});
+	expect(await (await app.fetch(req)).json()).toEqual({ ip: null });
+});
+
 test("HEAD /", async () => {
 	const res = await appFetch("/", Method.head);
 

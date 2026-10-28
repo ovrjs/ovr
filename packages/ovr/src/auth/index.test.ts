@@ -1,10 +1,12 @@
 import { App } from "../app/index.js";
 import { jsx } from "../jsx/index.js";
+import { Limiter } from "../limiter/index.js";
 import { Route } from "../route/index.js";
 import { Field } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
 import { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
+import { State } from "./state.js";
 import { describe, expect, test, vi } from "vitest";
 
 const origin = "https://example.com";
@@ -196,13 +198,18 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		},
 		...extra,
 	};
-	const app = new App({ auth: options });
-	// Internal protocol tests compose their own routes; applications use Auth.passkey().
+	const auth = new Auth({
+		...options,
+		credentials,
+		register: { fields: {}, name: () => "User", create: () => {} },
+	});
+	const app = new App();
+	// Internal protocol tests compose their own routes; applications use new Auth().
 	app.use(
 		Route.post(endpoint, { bootstrap: Field.text() }, async (c) => {
 			const input = await c.data({ payload: 128 * 1024 });
 			if (input.issues) throw input;
-			await Passkey.issue(c, input.data.bootstrap);
+			await Passkey.issue(c, new State(c, options), input.data.bootstrap);
 		}),
 		Passkey.client,
 	);
@@ -212,14 +219,19 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		async (c) => {
 			const input = await c.data();
 			if (input.issues) throw input;
-			const credential = await new Passkey(c, c.auth).register.verify();
+			const credential = await new Passkey(
+				c,
+				new State(c, options),
+			).register.verify();
 			if (records.has(credential.id)) throw new Error("Duplicate credential");
 			records.set(credential.id, credential);
 			c.json(credential);
 		},
 	);
 	const login = Route.post("/login", async (c) =>
-		c.json(await new Passkey(c, c.auth).login.verify(credentials)),
+		c.json(
+			await new Passkey(c, new State(c, options)).login.verify(credentials),
+		),
 	);
 	Passkey.prepare(register);
 	Passkey.prepare(login);
@@ -228,23 +240,30 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		login,
 		Route.get("/register-page", (c) =>
 			jsx(
-				new Passkey(c, c.auth).register.form(register, { user, endpoint }),
+				new Passkey(c, new State(c, options)).register.form(register, {
+					user,
+					endpoint,
+				}),
 				{},
 			),
 		),
 		Route.get("/login-page", (c) =>
-			jsx(new Passkey(c, c.auth).login.form(login, { endpoint }), {}),
+			jsx(
+				new Passkey(c, new State(c, options)).login.form(login, { endpoint }),
+				{},
+			),
 		),
-		Route.get("/session", async (c) => c.json(await c.auth.session())),
-		Route.post("/session", async (c) => c.json(await c.auth.login(user))),
-		Route.post("/logout", async (c) => c.json(await c.auth.logout())),
+		Route.get("/session", async (c) => c.json(await auth.session(c))),
+		Route.post("/session", async (c) => c.json(await auth.login(c, user))),
+		Route.post("/logout", async (c) => c.json(await auth.logout(c))),
 		Route.post("/revoke/:token", async (c) => {
-			await c.auth.revoke(c.params.token);
+			await auth.revoke(c, c.params.token);
 			c.text("revoked");
 		}),
 	);
-	const post = (path: string, data: FormData, cookie = "") =>
+	const post = (path: string, data: FormData, cookie = "", ip = "192.0.2.1") =>
 		app.fetch(origin + path, {
+			ip,
 			method: "POST",
 			headers: { origin, cookie },
 			body: data,
@@ -289,6 +308,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 	};
 	return {
 		app,
+		auth,
 		challenges,
 		sessions,
 		records,
@@ -550,6 +570,59 @@ describe("passkey ceremonies", () => {
 });
 
 describe("revocable sessions", () => {
+	test("one Auth service isolates concurrent requests and caches only within each request", async () => {
+		const state = setup();
+		const [first, second] = await Promise.all([
+			state.post("/session", new FormData()),
+			state.post("/session", new FormData()),
+		]);
+		const sessions: Auth.Session[] = await Promise.all([
+			first.json(),
+			second.json(),
+		]);
+		expect(sessions[0]?.token).not.toBe(sessions[1]?.token);
+		expect(state.sessions.size).toBe(2);
+		const cookies = [first, second].map(
+			(response) => response.headers.getSetCookie().at(-1)!.split(";")[0]!,
+		);
+		const get = vi.spyOn(state.options.sessions, "get");
+		state.app.use(
+			Route.get("/cached", async (c) => {
+				const first = state.auth.session(c);
+				expect(state.auth.session(c)).toBe(first);
+				c.json(await first);
+			}),
+		);
+		const responses = await Promise.all(
+			cookies.map((cookie) =>
+				state.app.fetch(origin + "/cached", { headers: { cookie } }),
+			),
+		);
+		expect(
+			await Promise.all(responses.map((response) => response.json())),
+		).toEqual(sessions);
+		expect(get).toHaveBeenCalledTimes(2);
+	});
+
+	test("logout and revoke update the same request's cached session and cookie", async () => {
+		const state = setup();
+		const login = await state.post("/session", new FormData());
+		const session: Auth.Session = await login.json();
+		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
+		state.app.use(
+			Route.get("/revoke-current", async (c) => {
+				await state.auth.revoke(c, session.token);
+				expect(await state.auth.session(c)).toBeNull();
+				c.text("revoked");
+			}),
+		);
+		const response = await state.app.fetch(origin + "/revoke-current", {
+			headers: { cookie },
+		});
+		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+		expect(state.sessions.size).toBe(0);
+	});
+
 	test("issues a secure cookie, reads it, and invalidates copied cookies on logout", async () => {
 		const state = setup();
 		const response = await state.post("/session", new FormData());
@@ -635,7 +708,10 @@ describe("form contracts", () => {
 		state.app.use(
 			route,
 			Route.get("/typed", (c) => {
-				const Register = new Passkey(c, c.auth).register.form(route, {
+				const Register = new Passkey(
+					c,
+					new State(c, state.options),
+				).register.form(route, {
 					endpoint,
 					user: "user</script><script>alert(1)</script>",
 				});
@@ -669,7 +745,9 @@ describe("form contracts", () => {
 		);
 		state.app.use(
 			Route.get("/conflict", (c) => {
-				new Passkey(c, c.auth).register.form(route, { endpoint });
+				new Passkey(c, new State(c, state.options)).register.form(route, {
+					endpoint,
+				});
 			}),
 		);
 		expect(() => Passkey.prepare(route)).toThrow("reserve");
@@ -756,10 +834,9 @@ function managed(
 		},
 	);
 	const error = vi.fn();
-	const service = Auth.passkey({
+	const service = new Auth({
 		...storage.options,
 		credentials: storage.credentials,
-		allow: () => true,
 		page: "/auth",
 		redirect: "/account",
 		error,
@@ -777,8 +854,8 @@ function managed(
 			if (false) {
 				// @ts-expect-error Application field names remain exact.
 				Register.Field({ name: "missing" });
-				// @ts-expect-error Protocol internals are not part of the public request API.
-				c.auth.passkey;
+				// @ts-expect-error Authentication methods live on the configured service.
+				c.auth;
 			}
 			return [
 				jsx(Register, {
@@ -792,10 +869,11 @@ function managed(
 				jsx(Login, {}),
 			];
 		}),
-		Route.get("/whoami", async (c) => c.json(await c.auth.session())),
+		Route.get("/whoami", async (c) => c.json(await service.session(c))),
 	);
-	const post = (path: string, data: FormData, cookie = "") =>
+	const post = (path: string, data: FormData, cookie = "", ip = "192.0.2.1") =>
 		app.fetch(origin + path, {
+			ip,
 			method: "POST",
 			headers: { origin, cookie },
 			body: data,
@@ -842,6 +920,15 @@ function managed(
 		return post(path, data, start.cookie);
 	};
 	return { app, service, storage, create, error, post, start, submit };
+}
+
+function policy() {
+	const limiter = new Limiter();
+	return {
+		register: limiter,
+		login: limiter,
+		check: vi.spyOn(limiter, "check"),
+	};
 }
 
 describe("configured passkey callbacks", () => {
@@ -948,8 +1035,9 @@ describe("configured passkey callbacks", () => {
 	});
 
 	test("validates registration fields before prompting and supports distributed request limits", async () => {
-		const allow = vi.fn(() => true);
-		const state = managed(setup(), { allow });
+		const limits = policy();
+		const check = limits.check;
+		const state = managed(setup(), { limits });
 		const start = await state.start("register");
 		const set = vi.spyOn(state.storage.options.challenges, "set");
 		const invalid = new FormData();
@@ -959,7 +1047,7 @@ describe("configured passkey callbacks", () => {
 		expect(response.status).toBe(422);
 		expect(await response.json()).toEqual({ fields: ["email"] });
 		expect(set).not.toHaveBeenCalled();
-		allow.mockReturnValue(false);
+		check.mockResolvedValue(new Date(Date.now() + 60000));
 		const denied = await state.post(start.endpoint, invalid, start.cookie);
 		expect(denied.status).toBe(429);
 		expect(denied.headers.get("retry-after")).toBe("60");
@@ -1021,68 +1109,69 @@ describe("configured passkey callbacks", () => {
 	});
 });
 
-test("junk traffic cannot exhaust a shared framework quota or deny another user login and logout", async () => {
-	const allow = vi.fn(async () => true);
-	const state = managed(setup(), { allow });
-	for (let i = 0; i < 1000; i++) {
+test("automatic policies ignore cookie rotation, isolate clients, and leave logout available", async () => {
+	const state = managed();
+	const time = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+	try {
+		for (let i = 0; i < 40; i++) {
+			const data = new FormData();
+			data.set("bootstrap", "invalid");
+			const response = await state.post(
+				"/_ovr/passkey/options/login",
+				data,
+				`__Host-auth-browser=rotation-${i}`,
+			);
+			expect(response.status).toBe(i < 20 ? 400 : 429);
+		}
 		const data = new FormData();
 		data.set("bootstrap", "invalid");
 		expect(
-			(
-				await state.post(
-					"/_ovr/passkey/options/login",
-					data,
-					`__Host-auth-browser=attacker-${i}`,
-				)
-			).status,
+			(await state.post("/_ovr/passkey/options/login", data, "", "192.0.2.2"))
+				.status,
 		).toBe(400);
+		const start = await state.start("register");
+		const registered = await state.submit(
+			start,
+			await registration(start.options.challenge, await pair()),
+		);
+		expect(registered.status).toBe(303);
+		const cookie = registered.headers.getSetCookie().at(-1)!.split(";")[0]!;
+		expect(
+			(await state.post("/auth/logout", new FormData(), cookie)).status,
+		).toBe(303);
+		expect(state.storage.sessions.size).toBe(0);
+	} finally {
+		time.mockRestore();
 	}
-	const start = await state.start("register");
-	const keys = await pair();
-	const registered = await state.submit(
-		start,
-		await registration(start.options.challenge, keys),
-	);
-	expect(registered.status).toBe(303);
-	const cookie = registered.headers.getSetCookie().at(-1)!.split(";")[0]!;
-	allow.mockResolvedValue(false);
-	allow.mockClear();
-	expect(
-		(await state.post("/auth/logout", new FormData(), cookie)).status,
-	).toBe(303);
-	expect(allow).not.toHaveBeenCalled();
-	expect(state.storage.sessions.size).toBe(0);
 });
 
-test("admission errors cannot prevent logout and unconfigured admission fails at startup", async () => {
+test("limiter errors cannot prevent logout", async () => {
+	const limits = policy();
+	limits.check.mockRejectedValue(new Error("limiter unavailable"));
+	const state = managed(setup(), { limits });
+	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
+	expect(limits.check).not.toHaveBeenCalled();
+});
+
+test("auth fails closed without trusted peer information and ignores spoofed IP headers", async () => {
 	const state = managed();
-	const { allow, ...options } = state.service;
-	void allow;
-	// @ts-expect-error A deployment policy must be explicit, even when the trusted edge already limits traffic.
-	expect(() => Auth.passkey(options)).toThrow("allow callback");
-	const blocked = managed(setup(), {
-		allow: async () => {
-			throw new Error("limiter unavailable");
+	const set = vi.spyOn(state.storage.options.challenges, "set");
+	const response = await state.app.fetch(
+		origin + "/_ovr/passkey/options/login",
+		{
+			method: "POST",
+			headers: {
+				origin,
+				"x-forwarded-for": "192.0.2.1",
+				"cf-connecting-ip": "192.0.2.1",
+			},
+			body: new FormData(),
 		},
-	});
-	expect((await blocked.post("/auth/logout", new FormData())).status).toBe(303);
-});
-
-test("raw auth options no longer mount an unguarded options endpoint", async () => {
-	const storage = setup();
-	const app = new App({ auth: storage.options });
-	app.use((c, next) => (c.route ? next() : c.text("Not Found", 404)));
-	const data = new FormData();
-	data.set("bootstrap", "invalid");
-	expect(
-		(
-			await app.fetch(origin + "/_ovr/passkey/options", {
-				method: "POST",
-				headers: { origin },
-				body: data,
-			})
-		).status,
-	).toBe(404);
+	);
+	expect(response.status).toBe(503);
+	expect(await response.text()).not.toContain("trusted client IP");
+	expect(set).not.toHaveBeenCalled();
+	expect(state.error).toHaveBeenCalledOnce();
 });
 
 test("host mismatches return a controlled status before session reads or callbacks", async () => {
@@ -1115,8 +1204,9 @@ test("alternate hosts can serve health checks and redirects without using authen
 });
 
 test("every generated auth endpoint rejects an alternate host before admission or storage", async () => {
-	const allow = vi.fn(() => true);
-	const state = managed(setup(), { allow });
+	const limits = policy();
+	const check = limits.check;
+	const state = managed(setup(), { limits });
 	const set = vi.spyOn(state.storage.options.challenges, "set");
 	for (const path of [
 		"/auth/register",
@@ -1142,15 +1232,17 @@ test("every generated auth endpoint rejects an alternate host before admission o
 			).status,
 		).toBe(421);
 	}
-	expect(allow).not.toHaveBeenCalled();
+	expect(check).not.toHaveBeenCalled();
 	expect(set).not.toHaveBeenCalled();
 	expect(state.create).not.toHaveBeenCalled();
 });
 
-test("raw auth options also reject alternate hosts when a handler accesses c.auth", async () => {
+test("auth helpers enforce their origin even without App auth integration", async () => {
 	const state = setup();
-	const app = new App({ auth: state.options });
-	app.use(Route.get("/private", async (c) => c.json(await c.auth.session())));
+	const app = new App();
+	app.use(
+		Route.get("/private", async (c) => c.json(await state.auth.session(c))),
+	);
 	const response = await app.fetch("https://wrong.example/private");
 	expect(response.status).toBe(421);
 	expect(await response.text()).toBe("Misdirected Request");
@@ -1258,10 +1350,11 @@ test.each(["register", "login"] as const)(
 	"a denied final %s submit redirects to a recoverable form before verification",
 	async (method) => {
 		const retry = new Date(Date.now() + 45000);
-		const allow = vi.fn((_c: unknown, phase: "options" | "verify") =>
+		const limits = policy();
+		const check = limits.check.mockImplementation(async (_c, phase) =>
 			phase === "options" ? true : retry,
 		);
-		const state = managed(setup(), { allow });
+		const state = managed(setup(), { limits });
 		const start = await state.start(method);
 		const take = vi.spyOn(state.storage.options.challenges, "take");
 		const response = await state.submit(start, {}, `/auth/${method}`);
@@ -1277,7 +1370,7 @@ test.each(["register", "login"] as const)(
 		expect(await page.text()).toMatch(
 			/Too many authentication requests\. Try again in \d+ seconds\./,
 		);
-		expect(allow.mock.calls.map((call) => call[1])).toEqual([
+		expect(check.mock.calls.map((call) => call[1])).toEqual([
 			"options",
 			"verify",
 		]);
@@ -1288,22 +1381,22 @@ test.each(["register", "login"] as const)(
 );
 
 test("a successful ceremony makes two separately admitted requests", async () => {
-	const allow = vi.fn((_c: unknown, _phase: "options" | "verify") => true);
-	const state = managed(setup(), { allow });
+	const limits = policy();
+	const check = limits.check;
+	const state = managed(setup(), { limits });
 	const start = await state.start("register");
 	const response = await state.submit(
 		start,
 		await registration(start.options.challenge, await pair()),
 	);
 	expect(response.headers.get("location")).toBe("/account");
-	expect(allow.mock.calls.map((call) => call[1])).toEqual([
+	expect(check.mock.calls.map((call) => call[1])).toEqual([
 		"options",
 		"verify",
 	]);
 });
 
 test.each([
-	{ value: false, retry: "60" },
 	{ value: 17000, retry: "17" },
 	{ value: -1000, retry: "1" },
 	{ value: 86400000, retry: "3600" },
@@ -1314,10 +1407,9 @@ test.each([
 		const now = Date.now();
 		const time = vi.spyOn(Date, "now").mockReturnValue(now);
 		try {
-			const state = managed(setup(), {
-				allow: () =>
-					typeof value === "number" ? new Date(now + value) : value,
-			});
+			const limits = policy();
+			limits.check.mockResolvedValue(new Date(now + value));
+			const state = managed(setup(), { limits });
 			const response = await state.post(
 				"/_ovr/passkey/options/login",
 				new FormData(),
@@ -1340,8 +1432,9 @@ test.each(["register", "login"])(
 		const now = Date.now();
 		const time = vi.spyOn(Date, "now").mockReturnValue(now);
 		try {
-			const allow = vi.fn(() => new Date(now + 86400000));
-			const state = managed(setup(), { allow });
+			const limits = policy();
+			const check = limits.check.mockResolvedValue(new Date(now + 86400000));
+			const state = managed(setup(), { limits });
 			const response = await state.post(`/auth/${method}`, new FormData());
 			expect(response.status).toBe(303);
 			const location = new URL(response.headers.get("location")!);
@@ -1353,7 +1446,7 @@ test.each(["register", "login"])(
 			);
 			expect(denied.status).toBe(429);
 			expect(denied.headers.get("retry-after")).toBe("3600");
-			expect(allow).toHaveBeenCalledTimes(2);
+			expect(check).toHaveBeenCalledTimes(2);
 			expect(state.create).not.toHaveBeenCalled();
 			expect(state.storage.challenges.size).toBe(0);
 		} finally {
@@ -1383,24 +1476,47 @@ test("browser assets revalidate with an ETag instead of downloading unchanged co
 	).toBe(200);
 });
 
-test("a trusted per-request admission decision isolates denied clients without allocating challenges", async () => {
-	// Real deployment adapters supply trusted peer information separately from client-controlled headers.
-	const denied = new WeakSet<Request>();
-	const state = managed(setup(), { allow: (c) => !denied.has(c.req) });
-	const set = vi.spyOn(state.storage.options.challenges, "set");
-	for (let i = 0; i < 100; i++) {
-		const data = new FormData();
-		data.set("bootstrap", "invalid");
-		const request = new Request(origin + "/_ovr/passkey/options/login", {
-			method: "POST",
-			headers: { origin, cookie: `__Host-auth-browser=rotation-${i}` },
-			body: data,
-		});
-		denied.add(request);
-		expect((await state.app.fetch(request)).status).toBe(429);
+test("signup options and verification have independent default budgets", async () => {
+	const state = managed();
+	const time = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+	try {
+		const start = await state.start("register");
+		for (let i = 0; i < 5; i++) {
+			const data = new FormData();
+			data.set("bootstrap", "invalid");
+			data.set("email", "user@example.com");
+			expect((await state.post(start.endpoint, data)).status).toBe(
+				i < 4 ? 400 : 429,
+			);
+		}
+		const response = await state.submit(
+			start,
+			await registration(start.options.challenge, await pair()),
+		);
+		expect(response.headers.get("location")).toBe("/account");
+		expect(state.create).toHaveBeenCalledOnce();
+	} finally {
+		time.mockRestore();
 	}
-	expect(set).not.toHaveBeenCalled();
-	const allowed = await state.start("register");
-	expect(allowed.response.status).toBe(200);
-	expect(set).toHaveBeenCalledOnce();
+});
+
+test("a shared backend retains the built-in auth policies across service instances", async () => {
+	const entries = new Set<string>();
+	const consume = vi.fn(async (key: string, _policy: Limiter.Policy) => {
+		if (entries.has(key)) return Date.now() + 60000;
+		entries.add(key);
+		return true;
+	});
+	const first = managed(setup(), { limits: { consume } });
+	const second = managed(first.storage, { limits: { consume } });
+	const start = await first.start("register");
+	expect((await second.post(start.endpoint, new FormData())).status).toBe(429);
+	expect(consume.mock.calls[0]?.[1]).toEqual({ limit: 5, interval: 600000 });
+	expect(consume.mock.calls[0]?.[0]).toBe(consume.mock.calls[1]?.[0]);
+	const response = await second.submit(
+		start,
+		await registration(start.options.challenge, await pair()),
+	);
+	expect(response.headers.get("location")).toBe("/account");
+	expect(consume.mock.calls[2]?.[0]).not.toBe(consume.mock.calls[0]?.[0]);
 });

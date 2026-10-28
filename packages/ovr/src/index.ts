@@ -1,6 +1,7 @@
 export { App } from "./app/index.js";
 export { Auth } from "./auth/index.js";
 export { AuthIssue } from "./auth/issue.js";
+export { Limiter } from "./limiter/index.js";
 export { JSX } from "./jsx/index.js";
 export type { Middleware } from "./middleware/index.js";
 export { Multipart } from "./multipart/index.js";

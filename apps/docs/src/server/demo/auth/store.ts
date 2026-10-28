@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { type Auth, Schema } from "ovr";
+import { type Auth, type Limiter, Schema } from "ovr";
 
 /** SQLite persistence for the authentication demo. */
 export class Store {
@@ -23,6 +23,10 @@ export class Store {
 		id: Schema.string(),
 		token: Schema.string(),
 		expiration: Schema.number().int(),
+	});
+	static readonly #limit = Schema.object({
+		tokens: Schema.number(),
+		time: Schema.number().int(),
 	});
 	static readonly #challenge = Schema.object({
 		payload: Schema.string().json(
@@ -72,6 +76,10 @@ export class Store {
 				id TEXT PRIMARY KEY, payload TEXT NOT NULL, expiration INTEGER NOT NULL
 			) STRICT;
 			CREATE INDEX IF NOT EXISTS challenges_expiration ON challenges(expiration);
+			CREATE TABLE IF NOT EXISTS limits (
+				key TEXT PRIMARY KEY, tokens REAL NOT NULL, time INTEGER NOT NULL, expiration INTEGER NOT NULL
+			) STRICT;
+			CREATE INDEX IF NOT EXISTS limits_expiration ON limits(expiration);
 		`);
 		this.prune();
 	}
@@ -82,6 +90,63 @@ export class Store {
 		if (result.issues) throw result;
 		return result.data;
 	}
+
+	/** Share ovr's token-bucket policies across processes using one atomic transaction. */
+	readonly consume = (
+		key: string,
+		{ limit, interval }: Limiter.Policy,
+	): true | number => {
+		const now = Date.now();
+		if (now - this.#pruned >= 60000) this.prune(now);
+		this.#db.exec("BEGIN IMMEDIATE");
+		try {
+			const previous = Store.#parse(
+				Store.#limit,
+				this.#db
+					.prepare(
+						"SELECT tokens, time FROM limits WHERE key = ? AND expiration > ?",
+					)
+					.get(key, now),
+			);
+			if (
+				!previous &&
+				this.#db
+					.prepare(
+						"SELECT 1 FROM limits WHERE expiration > ? LIMIT 1 OFFSET 9999",
+					)
+					.get(now)
+			)
+				throw new Error("Rate limit storage capacity exhausted");
+			const tokens = previous
+				? Math.min(
+						limit,
+						previous.tokens +
+							(Math.max(0, now - previous.time) * limit) / interval,
+					)
+				: limit;
+			if (tokens < 1) {
+				this.#db.exec("COMMIT");
+				return (
+					now + Math.max(1000, Math.ceil(((1 - tokens) * interval) / limit))
+				);
+			}
+			this.#db
+				.prepare(
+					"INSERT INTO limits (key, tokens, time, expiration) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET tokens = excluded.tokens, time = excluded.time, expiration = excluded.expiration",
+				)
+				.run(
+					key,
+					tokens - 1,
+					previous ? Math.max(now, previous.time) : now,
+					now + interval,
+				);
+			this.#db.exec("COMMIT");
+			return true;
+		} catch (error) {
+			this.#db.exec("ROLLBACK");
+			throw error;
+		}
+	};
 
 	/** Atomic single-use challenge storage. */
 	readonly challenges: Auth.Challenges = {
@@ -229,6 +294,7 @@ export class Store {
 		this.#pruned = now;
 		this.#db.prepare("DELETE FROM sessions WHERE expiration <= ?").run(now);
 		this.#db.prepare("DELETE FROM challenges WHERE expiration <= ?").run(now);
+		this.#db.prepare("DELETE FROM limits WHERE expiration <= ?").run(now);
 	}
 
 	/** Close the database connection. */

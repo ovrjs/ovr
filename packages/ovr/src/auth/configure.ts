@@ -1,11 +1,13 @@
 import type { Context } from "../context/index.js";
 import { jsx } from "../jsx/index.js";
+import { LimitIssue, Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form } from "../schema/index.js";
 import { Size } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
+import type { State } from "./state.js";
 
 /** Complete passkey configuration. Callbacks may use any database or ORM. */
 export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
@@ -29,26 +31,46 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 	readonly paths?: Partial<
 		Record<"register" | "login" | "logout" | "options" | "client", string>
 	>;
-	/** Admit both ceremony requests, or deny with false (60 seconds) or an absolute retry Date. Retry hints are capped at one hour; logout bypasses this policy. */
-	readonly allow: (
-		c: Pick<Context, "req" | "url" | "cookie">,
-		phase: "options" | "verify",
-	) => Auth.Result<boolean | Date>;
+	/** Optional overrides for the automatic signup and sign-in policies. */
+	readonly limits?: {
+		/** Shared atomic storage for the built-in policies, when serving from multiple workers. */
+		readonly consume?: Limiter.Options["consume"];
+		readonly register?: Limiter;
+		readonly login?: Limiter;
+	};
 	/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
 	readonly error?: (
 		error: unknown,
-		c: Pick<Context, "req" | "url" | "cookie">,
+		c: Pick<Context, "req" | "url" | "cookie" | "ip">,
 	) => Auth.Result<void>;
 }
 
 /** Construct startup-complete handlers and request-scoped UI components. */
 export function configure<Shape extends Form.Shape>(
 	options: Configuration<Shape>,
-): Auth.Passkeys<Shape> {
-	if (typeof options.allow !== "function")
-		throw new TypeError(
-			"Auth.passkey requires an allow callback backed by your deployment admission policy",
-		);
+	state: (c: State.Context) => State,
+): {
+	routes: readonly Route[];
+	forms: (c: Auth.Context, props?: { nonce?: string }) => Auth.Forms<Shape>;
+} {
+	const limits = {
+		register:
+			options.limits?.register ??
+			new Limiter({
+				name: "auth:register:" + options.origin,
+				limit: 5,
+				interval: 600000,
+				...(options.limits?.consume ? { consume: options.limits.consume } : {}),
+			}),
+		login:
+			options.limits?.login ??
+			new Limiter({
+				name: "auth:login:" + options.origin,
+				limit: 20,
+				interval: 60000,
+				...(options.limits?.consume ? { consume: options.limits.consume } : {}),
+			}),
+	};
 	const paths = {
 		register: "/auth/register",
 		login: "/auth/login",
@@ -113,7 +135,10 @@ export function configure<Shape extends Form.Shape>(
 	const guard =
 		(method: "register" | "login" | "logout", prompt = false) =>
 		async (
-			c: Pick<Context, "req" | "url" | "cookie" | "res" | "text" | "redirect">,
+			c: Pick<
+				Context,
+				"req" | "url" | "cookie" | "res" | "text" | "redirect" | "ip"
+			>,
 			next: Middleware.Next,
 		) => {
 			c.res.headers.set("cache-control", "no-store");
@@ -122,16 +147,18 @@ export function configure<Shape extends Form.Shape>(
 					return c.text("Authentication failed.", 400);
 				// Network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header.
 				if (method !== "logout") {
-					const admission = await options.allow(
-						c,
-						prompt ? "options" : "verify",
-					);
+					const admission = await limits[method]
+						.check(c, prompt ? "options" : "verify")
+						.catch((cause: unknown) => {
+							throw new LimitIssue("Authentication rate limit unavailable", {
+								cause,
+							});
+						});
 					if (admission !== true) {
-						if (admission !== false && !(admission instanceof Date))
+						if (!(admission instanceof Date))
 							throw new TypeError("Invalid auth admission result");
 						const now = Date.now();
-						const deadline =
-							admission instanceof Date ? admission.getTime() : now + 60000;
+						const deadline = admission.getTime();
 						if (!Number.isSafeInteger(deadline))
 							throw new TypeError("Invalid auth retry deadline");
 						const retry = Math.min(
@@ -159,7 +186,11 @@ export function configure<Shape extends Form.Shape>(
 					}
 				} else console.error(error);
 				if (method === "logout") c.text("Could not log out. Try again.", 503);
-				else if (prompt) c.text("Authentication failed. Try again.", 400);
+				else if (prompt)
+					c.text(
+						"Authentication failed. Try again.",
+						error instanceof LimitIssue ? 503 : 400,
+					);
 				else back(c, method);
 			}
 		};
@@ -171,10 +202,10 @@ export function configure<Shape extends Form.Shape>(
 			async (c) => {
 				const input = await c.data({ payload: 128 * Size.kb });
 				if (!input || input.issues) throw input;
-				const credential = await new Passkey(c, c.auth).register.verify();
+				const credential = await new Passkey(c, state(c)).register.verify();
 				// Pass only application fields, never protocol fields, into the persistence callback.
 				await options.register.create(values(input.data), credential);
-				await c.auth.login(credential.user);
+				await state(c).login(credential.user);
 				c.redirect(redirect, 303);
 			},
 		),
@@ -183,15 +214,15 @@ export function configure<Shape extends Form.Shape>(
 		Route.post(paths.login, {}, guard("login"), async (c) => {
 			// Parse with a bounded body even on the schema-free protocol route.
 			await c.data({ payload: 128 * Size.kb });
-			const credential = await new Passkey(c, c.auth).login.verify(
+			const credential = await new Passkey(c, state(c)).login.verify(
 				options.credentials,
 			);
-			await c.auth.login(credential.user);
+			await state(c).login(credential.user);
 			c.redirect(redirect, 303);
 		}),
 	);
 	const logout = Route.post(paths.logout, guard("logout"), async (c) => {
-		await c.auth.logout();
+		await state(c).logout();
 		c.redirect(page, 303);
 	});
 	const registration = Route.post(
@@ -213,6 +244,7 @@ export function configure<Shape extends Form.Shape>(
 			const data = input.data as Form.Parse.Data<Shape> & { bootstrap: string };
 			await Passkey.issue(
 				c,
+				state(c),
 				data.bootstrap,
 				async () => ({ name: await options.register.name(values(data)) }),
 				{ method: "register", action: paths.register },
@@ -226,7 +258,7 @@ export function configure<Shape extends Form.Shape>(
 		async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });
 			if (!input || input.issues) throw input;
-			await Passkey.issue(c, input.data.bootstrap, undefined, {
+			await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
 				method: "login",
 				action: paths.login,
 			});
@@ -235,11 +267,10 @@ export function configure<Shape extends Form.Shape>(
 	const client = Route.get(paths.client, ...Passkey.client.middleware);
 
 	return {
-		...options,
 		routes: [register, login, logout, registration, assertion, client],
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */
 		forms(c: Auth.Context, props: { nonce?: string } = {}) {
-			const passkey = new Passkey(c, c.auth);
+			const passkey = new Passkey(c, state(c));
 			const Register = passkey.register.form(register, {
 				...props,
 				endpoint: registration.pathname(),

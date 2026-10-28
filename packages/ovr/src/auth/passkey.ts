@@ -9,6 +9,7 @@ import { etag, source } from "./client-source.js";
 import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 import { AuthIssue } from "./issue.js";
+import type { State } from "./state.js";
 import { Token } from "./token.js";
 
 export namespace Passkey {
@@ -91,11 +92,11 @@ export class Passkey {
 		}),
 	});
 	readonly #c: Passkey.Context;
-	readonly #auth: Auth;
+	readonly #auth: State;
 	readonly #rp: string;
 
 	/** Create request-scoped passkey helpers. */
-	constructor(c: Passkey.Context, auth: Auth) {
+	constructor(c: Passkey.Context, auth: State) {
 		this.#c = c;
 		this.#auth = auth;
 		this.#rp = new URL(auth.options.origin).hostname;
@@ -244,21 +245,22 @@ export class Passkey {
 
 	/** Validate a signed form and issue one fresh ceremony. */
 	static async issue(
-		c: Pick<ContextType, "auth" | "url" | "res" | "text" | "json">,
+		c: Pick<ContextType, "url" | "res" | "text" | "json">,
+		auth: State,
 		token: string,
 		label?: () => Auth.Result<{ name: string; displayName?: string }>,
 		expected?: { method: "register" | "login"; action: string },
 	) {
-		const payload = await Token.open(c.auth.options.secret, "passkey", token);
+		const payload = await Token.open(auth.options.secret, "passkey", token);
 		const result = Schema.string().json(Passkey.#bootstrap).parse(payload);
 		if (result.issues) throw result;
 		const bootstrap = result.data;
 		if (
-			c.url.origin !== c.auth.options.origin ||
-			bootstrap.origin !== c.auth.options.origin
+			c.url.origin !== auth.options.origin ||
+			bootstrap.origin !== auth.options.origin
 		)
 			throw new AuthIssue("origin");
-		if (!c.auth.browser() || bootstrap.browser !== c.auth.browser())
+		if (!auth.browser() || bootstrap.browser !== auth.browser())
 			throw new AuthIssue("browser");
 		if (bootstrap.expiration <= Date.now())
 			throw new AuthIssue("bootstrap (expired)");
@@ -273,10 +275,10 @@ export class Passkey {
 			(!bootstrap.user || Codec.encode(bootstrap.user).length > 64)
 		)
 			throw new AuthIssue("user");
-		const rp = new URL(c.auth.options.origin).hostname;
+		const rp = new URL(auth.options.origin).hostname;
 		const account =
 			bootstrap.method === "register" ? await label?.() : undefined;
-		const name = account?.name ?? bootstrap.name ?? c.auth.options.name ?? rp;
+		const name = account?.name ?? bootstrap.name ?? auth.options.name ?? rp;
 		const displayName = account?.displayName ?? bootstrap.displayName ?? name;
 		if (
 			!name.trim() ||
@@ -290,13 +292,13 @@ export class Passkey {
 			crypto.getRandomValues(new Uint8Array(32)),
 		);
 		if (
-			(await c.auth.options.challenges.set(ceremony, {
+			(await auth.options.challenges.set(ceremony, {
 				challenge,
 				browser: bootstrap.browser,
 				method: bootstrap.method,
 				action: bootstrap.action,
 				origin: bootstrap.origin,
-				expiration: Date.now() + c.auth.options.timeout + Time.minute,
+				expiration: Date.now() + auth.options.timeout + Time.minute,
 				...(bootstrap.user ? { user: bootstrap.user } : {}),
 			})) === false
 		) {
@@ -310,7 +312,7 @@ export class Passkey {
 				ceremony,
 				options: {
 					challenge,
-					rp: { id: rp, name: c.auth.options.name ?? rp },
+					rp: { id: rp, name: auth.options.name ?? rp },
 					user: {
 						id: Codec.Base64Url.encode(Codec.encode(bootstrap.user!)),
 						name,
@@ -326,7 +328,7 @@ export class Passkey {
 						requireResidentKey: true,
 						userVerification: "required",
 					},
-					timeout: c.auth.options.timeout,
+					timeout: auth.options.timeout,
 					attestation: "none",
 				} satisfies PublicKeyCredentialCreationOptionsJSON,
 			});
@@ -336,7 +338,7 @@ export class Passkey {
 				options: {
 					challenge,
 					rpId: rp,
-					timeout: c.auth.options.timeout,
+					timeout: auth.options.timeout,
 					userVerification: "required",
 				} satisfies PublicKeyCredentialRequestOptionsJSON,
 			});
