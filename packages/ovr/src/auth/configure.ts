@@ -35,9 +35,13 @@ export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
 	readonly limits: {
 		/** Atomically refill and consume a token across all workers and deployments sharing these policies. */
 		readonly consume: Limiter.Options["consume"];
-		/** Replace the registration policy with one limiter or a non-empty stack, checked in order. */
+		/** Optional generous request ceiling before client key creation. Counts requests denied by later policies too. */
+		readonly guard?: Limiter;
+		/** Additional shared policies checked after the client policy, preserving the built-in defaults. */
+		readonly extra?: readonly Limiter[];
+		/** Replace the built-in registration client policy. Use extra to add shared policies without removing it. */
 		readonly register?: Limiter | readonly Limiter[];
-		/** Replace the login policy with one limiter or a non-empty stack, checked in order. */
+		/** Replace the built-in login client policy. Use extra to add shared policies without removing it. */
 		readonly login?: Limiter | readonly Limiter[];
 	};
 	/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
@@ -59,6 +63,19 @@ export function configure<Shape extends Form.Shape>(
 		throw new TypeError(
 			"Auth requires shared rate-limit storage in limits.consume",
 		);
+	if (
+		options.limits.guard !== undefined &&
+		!(options.limits.guard instanceof Limiter)
+	)
+		throw new TypeError("Auth limits.guard must be a Limiter");
+	if (
+		options.limits.extra !== undefined &&
+		(!Array.isArray(options.limits.extra) ||
+			[...options.limits.extra].some(
+				(limiter) => !(limiter instanceof Limiter),
+			))
+	)
+		throw new TypeError("Auth limits.extra must be an array of Limiters");
 	// Snapshot stacks at startup so later array mutations cannot disable admission.
 	const limits = Object.fromEntries(
 		Object.entries({
@@ -87,7 +104,14 @@ export function configure<Shape extends Form.Shape>(
 				throw new TypeError(
 					"Auth limiter stacks must contain at least one Limiter",
 				);
-			return [method, stack];
+			return [
+				method,
+				[
+					...(options.limits.guard ? [options.limits.guard] : []),
+					...stack,
+					...(options.limits.extra ?? []),
+				],
+			];
 		}),
 	);
 	const paths = {

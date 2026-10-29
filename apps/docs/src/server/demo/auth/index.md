@@ -97,13 +97,20 @@ Rate-limit counters always live in application-supplied shared storage. There is
 const auth = new Auth({ ...configuration, limits: { consume: consumeToken } });
 ```
 
-`consumeToken(key, { limit, interval })` must atomically replenish and consume one token, returning literal boolean `true` on admission or a positive absolute retry time in milliseconds on denial. Numeric `1` denies; fractional deadlines round up. All workers must share storage and policy values; errors must throw. Stable keys include the namespace, numeric policy, request phase, and normalized client identity. The built-in auth namespaces include the origin and operation. Different policies cannot corrupt each other's token balances; identical policies using the same name and scope intentionally share a quota. The SQLite demo implements this operation in a transaction across connections to the same database file. That file must be persistent and shared; serverless deployments need a database reachable by every function instance. Cleanup and storage capacity belong to the shared backend. Advanced overrides can supply `limits.register` or `limits.login` as one `Limiter` or a non-empty array checked in order. [Reusable rate-limit middleware](/05-middleware#rate-limiting) can also protect ordinary routes.
+`consumeToken(key, { limit, interval })` must atomically replenish and consume one token, returning literal boolean `true` on admission or a positive absolute retry time in milliseconds on denial. Numeric `1` denies; fractional deadlines round up. All workers must share storage and policy values; errors must throw. Stable keys include the namespace, numeric policy, request phase, and normalized client identity. The built-in auth namespaces include the origin and operation. Different policies cannot corrupt each other's token balances; identical policies using the same name and scope intentionally share a quota. The SQLite demo implements this operation in a transaction across connections to the same database file. That file must be persistent and shared; serverless deployments need a database reachable by every function instance. Cleanup and storage capacity belong to the shared backend. Add shared policies through `limits.extra`; these run after the built-in per-client policy and preserve its defaults. [Reusable rate-limit middleware](/05-middleware#rate-limiting) can also protect ordinary routes.
 
-For example, this deployment-specific stack adds a global ceiling and a broader IPv6 budget while retaining the original per-client policies:
+For example, this deployment-specific configuration applies a generous creation guard, the default per-client policy, then tighter network and global ceilings:
 
 ```ts
 import { Auth, Limiter } from "ovr";
 
+const creation = new Limiter({
+	name: `auth:creation:${configuration.origin}`,
+	limit: 1000,
+	interval: 60000,
+	key: () => "all",
+	consume: consumeToken,
+});
 const global = new Limiter({
 	name: `auth:global:${configuration.origin}`,
 	limit: 100,
@@ -120,33 +127,15 @@ const network = new Limiter({
 });
 const auth = new Auth({
 	...configuration,
-	limits: {
-		consume: consumeToken,
-		register: [
-			global,
-			network,
-			new Limiter({
-				name: `auth:register:${configuration.origin}`,
-				limit: 5,
-				interval: 600000,
-				consume: consumeToken,
-			}),
-		],
-		login: [
-			global,
-			network,
-			new Limiter({
-				name: `auth:login:${configuration.origin}`,
-				limit: 20,
-				interval: 60000,
-				consume: consumeToken,
-			}),
-		],
-	},
+	limits: { consume: consumeToken, guard: creation, extra: [network, global] },
 });
 ```
 
-These aggregate numbers are examples, not additional defaults. Set them against your traffic and challenge storage capacity, accounting for the initial burst plus refill during the full ceremony lifetime. Using the same global and network instances for both operations shares their options budget across signup and sign-in, while verification has its own budget. All layers must admit; the first denial or error stops processing before body parsing or challenge writes. Earlier layers keep their consumed tokens if a later layer denies, so put cheap aggregate ceilings first to bound per-client record creation. Stacks are copied and validated at startup; logout skips them all. Global ceilings limit resource usage but can themselves be exhausted to deny legitimate traffic, so edge protections remain necessary.
+These aggregate numbers are examples, not additional defaults. Set them against your traffic and challenge storage capacity, accounting for the initial burst plus refill during the full ceremony lifetime. `guard` runs first to bound the rate of requests reaching client bucket creation. `extra` runs after the client policy, in array order, so traffic already blocked by its client quota never consumes the tighter network or global budgets. Extras are shared across registration and login; options and verification still have separate scopes. All layers must admit; the first denial or error stops processing before body parsing or challenge writes. Retry hints reflect only that denying layer, so a later attempt may encounter a different exhausted layer. Stacks are copied and validated at startup; logout skips them all.
+
+This is sequential admission, not an atomic transaction spanning all layers. Earlier layers keep their consumed tokens when a later layer denies. A tight global ceiling placed before a client policy lets one already-blocked client drain everyone else's budget; do not use that order for shared application quotas. The optional, deliberately more generous `guard` counts those rejected attempts too and can itself be exhausted by one high-volume source. It trades admission availability for bounded record creation; omit it if your backend and edge handle that capacity concern, and apply network overload protections either way. A `/48` blocked by the first extra layer does not consume the subsequent global budget. Distributed clients and shared networks can still exhaust aggregate ceilings.
+
+Advanced overrides can replace the client policy through `limits.register` or `limits.login`, each accepting one `Limiter` or a non-empty array checked in order. These overrides remove that operation's built-in per-client protection; they do not append to it. Use `extra` for additional policies, and preserve a client policy when deliberately overriding. IPv4 grouping remains per-address; use a custom key or edge policy if your deployment also needs broader IPv4 network limits.
 
 The persistence functions above are application code. The transaction shown uses the normal Drizzle API; ovr neither imports Drizzle nor chooses a database package for you. Registration fields determine the callback's data type and the available `Register.Field` names. `Register.Fields` renders all application fields. Omitting a form's children supplies fields, a button, and an accessible error status automatically. Plain HTML, field component customization, and normal form attributes remain available.
 
@@ -258,4 +247,4 @@ Generated auth endpoints reject a request whose origin differs from the configur
 
 The runnable demo uses Node 24's built-in SQLite driver in application code, with no additional package. The demo is enabled only in development and uses a fixed loopback identity in that local entry point. Public server adapters must supply the real trusted client IP. Its rate-limit buckets are shared through SQLite using the built-in policy values. Enable it in development using `AUTH_SECRET`, `AUTH_ORIGIN` (default `https://localhost:5173`), and optional `AUTH_DATABASE` (default `.auth.sqlite`). Serve through HTTPS. Its database persists across restarts, is excluded from Git, and holds users, credentials, challenges, and sessions. Cleanup runs on startup and at most once per minute during writes, including expired rate-limit buckets.
 
-The demo refuses new rate-limit keys at 10,000 live rows while continuing to enforce existing buckets. This is deliberate fail-closed behavior, not production availability protection: an attacker filling those rows denies admission to new identities until records expire. Do not replace it with eviction of depleted live buckets, because recreating one restores its full burst and enables quota bypass. A production backend needs capacity sized for its retention and admitted key-creation rate, expired or provably fully replenished bucket reclamation, aggregate admission ahead of high-cardinality keys, and capacity monitoring. An exhausted backend must still deny rather than grant fresh budgets. Behind a proxy, passing its address as the client identity also makes the entire site share one quota; verify the trusted identity integration before serving public traffic. The library cannot detect that misconfiguration at startup from a Fetch Request.
+The demo refuses new rate-limit keys at 10,000 live rows while continuing to enforce existing buckets. This is deliberate fail-closed behavior, not production availability protection: an attacker filling those rows denies admission to new identities until records expire. Do not replace it with eviction of depleted live buckets, because recreating one restores its full burst and enables quota bypass. A production backend needs capacity sized for its retention and admitted key-creation rate, expired or provably fully replenished bucket reclamation, and capacity monitoring. An optional generous creation guard can bound requests before high-cardinality keys, with the shared lockout tradeoff described above. A single request may create more than one policy bucket; include every layer, both operations, both phases, and each retention interval in capacity planning. An exhausted backend must still deny rather than grant fresh budgets. Behind a proxy, passing its address as the client identity also makes the entire site share one quota; verify the trusted identity integration before serving public traffic. The library cannot detect that misconfiguration at startup from a Fetch Request.

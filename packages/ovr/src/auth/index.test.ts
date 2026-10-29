@@ -1248,6 +1248,185 @@ test("auth rejects empty limiter stacks at startup", () => {
 	}
 });
 
+test.each([
+	{ method: "register", limit: 5, first: "192.0.2.1", other: "192.0.2.2" },
+	{ method: "login", limit: 20, first: "192.0.2.1", other: "192.0.2.2" },
+	{
+		method: "register",
+		limit: 5,
+		first: "2001:db8:1:1::1",
+		other: "2001:db8:1:2::1",
+	},
+	{
+		method: "login",
+		limit: 20,
+		first: "2001:db8:1:1::1",
+		other: "2001:db8:1:2::1",
+	},
+])(
+	"blocked $method traffic from $first cannot drain extra shared budgets",
+	async ({ method, limit, first, other }) => {
+		const storage = setup();
+		const network = new Limiter({
+			name: "network",
+			prefix: 48,
+			limit: 40,
+			consume: storage.consume,
+		});
+		const global = new Limiter({
+			name: "aggregate",
+			key: () => "all",
+			limit: 100,
+			consume: storage.consume,
+		});
+		const shared = [network, global];
+		const checks = shared.map((limiter) => vi.spyOn(limiter, "check"));
+		const limits = {
+			consume: storage.consume,
+			guard: new Limiter({
+				name: "creation",
+				key: () => "all",
+				limit: 1000,
+				consume: storage.consume,
+			}),
+			extra: shared,
+		};
+		const warm = managed(storage, { limits });
+		const cold = managed(storage, { limits });
+		shared.length = 0; // Extra policies are snapshotted too.
+		const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+		try {
+			for (const phase of ["options", "verify"]) {
+				const path =
+					phase === "options"
+						? `/_ovr/passkey/options/${method}`
+						: `/auth/${method}`;
+				const data = new FormData();
+				data.set("bootstrap", "invalid");
+				data.set("email", "user@example.com");
+				for (let i = 0; i < 120; i++) {
+					const response = await (i % 2 ? warm : cold).post(
+						path,
+						data,
+						"",
+						first,
+					);
+					expect(response.status).toBe(
+						phase === "verify" ? 303 : i < limit ? 400 : 429,
+					);
+					if (phase === "verify")
+						expect(
+							new URL(response.headers.get("location")!).searchParams.has(
+								"_retry",
+							),
+						).toBe(i >= limit);
+				}
+				const response = await cold.post(path, data, "", other);
+				expect(response.status).toBe(phase === "options" ? 400 : 303);
+				if (phase === "verify")
+					expect(
+						new URL(response.headers.get("location")!).searchParams.has(
+							"_retry",
+						),
+					).toBe(false);
+				for (const check of checks)
+					expect(
+						check.mock.calls.filter(([, scope]) => scope === phase),
+					).toHaveLength(limit + 1);
+			}
+			expect(storage.challenges.size).toBe(0);
+			expect(warm.create).not.toHaveBeenCalled();
+			expect(cold.create).not.toHaveBeenCalled();
+		} finally {
+			clock.mockRestore();
+		}
+	},
+);
+
+test("a generous guard bounds client-record creation before the default and extra policies", async () => {
+	const storage = setup();
+	const consume = vi.fn(storage.consume);
+	const guard = new Limiter({
+		name: "creation",
+		key: () => "all",
+		limit: 3,
+		consume,
+	});
+	const aggregate = new Limiter({
+		name: "aggregate",
+		key: () => "all",
+		limit: 2,
+		consume,
+	});
+	const check = vi.spyOn(aggregate, "check");
+	const state = managed(storage, {
+		limits: { consume, guard, extra: [aggregate] },
+	});
+	for (let i = 0; i < 10; i++) {
+		const response = await state.post(
+			"/_ovr/passkey/options/login",
+			new FormData(),
+			"",
+			`192.0.2.${i + 1}`,
+		);
+		expect(response.status).toBe(i < 2 ? 400 : 429);
+	}
+	expect(
+		consume.mock.calls.filter(([, policy]) => policy.limit === 20),
+	).toHaveLength(3);
+	expect(check).toHaveBeenCalledTimes(3);
+	expect(storage.challenges.size).toBe(0);
+	const hits = consume.mock.calls.length;
+	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
+	expect(consume).toHaveBeenCalledTimes(hits);
+});
+
+test("a failed creation guard stops backend access and extra checks but leaves logout available", async () => {
+	const storage = setup();
+	const consume = vi.fn(storage.consume);
+	const guard = new Limiter({
+		consume: () => {
+			throw new Error("private creation guard failure");
+		},
+	});
+	const extra = new Limiter({ consume });
+	const check = vi.spyOn(extra, "check");
+	const state = managed(storage, {
+		limits: { consume, guard, extra: [extra] },
+	});
+	const response = await state.post(
+		"/_ovr/passkey/options/login",
+		new FormData(),
+	);
+	expect(response.status).toBe(503);
+	expect(await response.text()).not.toContain("private creation");
+	expect(state.error).toHaveBeenCalledOnce();
+	expect(consume).not.toHaveBeenCalled();
+	expect(check).not.toHaveBeenCalled();
+	expect(storage.challenges.size).toBe(0);
+	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
+});
+
+test("optional guard and extra policies are validated at startup", () => {
+	const storage = setup();
+	expect(() =>
+		// @ts-expect-error Runtime configuration must also reject non-Limiter guards.
+		managed(storage, { limits: { consume: storage.consume, guard: {} } }),
+	).toThrow("limits.guard");
+	expect(() =>
+		// @ts-expect-error Runtime configuration must also reject non-Limiter extra entries.
+		managed(storage, { limits: { consume: storage.consume, extra: [{}] } }),
+	).toThrow("limits.extra");
+	expect(() =>
+		managed(storage, { limits: { consume: storage.consume, extra: [] } }),
+	).not.toThrow();
+	expect(() =>
+		managed(storage, {
+			limits: { consume: storage.consume, extra: Array<Limiter>(1) },
+		}),
+	).toThrow("limits.extra");
+});
+
 test("layered policies stop prefix sweeping across instances and share an aggregate ceiling", async () => {
 	const storage = setup();
 	const global = new Limiter({
@@ -1262,17 +1441,12 @@ test("layered policies stop prefix sweeping across instances and share an aggreg
 		prefix: 48,
 		consume: storage.consume,
 	});
-	const client = new Limiter({
-		name: "client",
-		limit: 1,
-		consume: storage.consume,
-	});
-	const stack = [global, network, client];
-	const limits = { consume: storage.consume, register: stack, login: stack };
+	const stack = [network, global];
+	const limits = { consume: storage.consume, extra: stack };
 	const first = managed(storage, { limits });
 	const second = managed(storage, { limits });
 	stack.length = 0; // The configured services own snapshots, not the caller's mutable array.
-	const calls = vi.spyOn(client, "check");
+	const calls = vi.spyOn(global, "check");
 	const start = await first.start("login", "", (path, data, cookie) =>
 		first.post(path, data, cookie, "2001:db8:1:1::1"),
 	);
@@ -1291,14 +1465,16 @@ test("layered policies stop prefix sweeping across instances and share an aggreg
 	);
 	expect(denied.status).toBe(429);
 	expect(calls).toHaveBeenCalledTimes(2);
-	const other = await second.post(
-		start.endpoint,
-		new FormData(),
-		"",
-		"2001:db8:2:1::1",
+	const other = await second.start("login", "", (path, data, cookie) =>
+		second.post(path, data, cookie, "2001:db8:2:1::1"),
 	);
-	expect(other.status).toBe(429); // Earlier layers retain consumed tokens when a later layer denies.
-	expect(storage.challenges.size).toBe(2);
+	expect(other.response.status).toBe(200); // A denied /48 never consumes the later global budget.
+	expect(
+		(await first.post(start.endpoint, new FormData(), "", "2001:db8:3:1::1"))
+			.status,
+	).toBe(429);
+	expect(calls).toHaveBeenCalledTimes(4);
+	expect(storage.challenges.size).toBe(3);
 	expect(first.create).not.toHaveBeenCalled();
 	expect(second.create).not.toHaveBeenCalled();
 	expect((await first.post("/auth/logout", new FormData())).status).toBe(303);
