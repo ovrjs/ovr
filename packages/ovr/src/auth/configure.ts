@@ -13,10 +13,7 @@ import type { State } from "./state.js";
 export function configure<Shape extends Form.Shape>(
 	options: Auth.Options<Shape>,
 	state: (c: State.Context) => State,
-): {
-	routes: readonly Route[];
-	forms: (c: Auth.Context, props?: { nonce?: string }) => Auth.Forms<Shape>;
-} {
+) {
 	if (typeof options.limits?.consume !== "function")
 		throw new TypeError(
 			"Auth requires shared rate-limit storage in limits.consume",
@@ -38,7 +35,7 @@ export function configure<Shape extends Form.Shape>(
 	const limits = Object.fromEntries(
 		Object.entries({
 			register:
-				options.limits?.register ??
+				options.limits.register ??
 				new Limiter({
 					name: "auth:register:" + options.origin,
 					limit: 5,
@@ -46,7 +43,7 @@ export function configure<Shape extends Form.Shape>(
 					consume: options.limits.consume,
 				}),
 			login:
-				options.limits?.login ??
+				options.limits.login ??
 				new Limiter({
 					name: "auth:login:" + options.origin,
 					limit: 20,
@@ -131,10 +128,7 @@ export function configure<Shape extends Form.Shape>(
 	const guard =
 		(method: "register" | "login" | "logout", prompt = false) =>
 		async (
-			c: Pick<
-				Context,
-				"req" | "url" | "cookie" | "res" | "text" | "redirect" | "ip"
-			>,
+			c: Limiter.Context & Pick<Context, "text" | "redirect">,
 			next: Middleware.Next,
 		) => {
 			c.res.headers.set("cache-control", "no-store");
@@ -176,13 +170,12 @@ export function configure<Shape extends Form.Shape>(
 				}
 				await next();
 			} catch (error) {
-				if (options.error) {
-					try {
-						await options.error(error, c);
-					} catch (failure) {
-						console.error(failure);
-					}
-				} else console.error(error);
+				try {
+					if (options.error) await options.error(error, c);
+					else console.error(error);
+				} catch (failure) {
+					console.error(failure);
+				}
 				if (method === "logout") c.text("Could not log out. Try again.", 503);
 				else if (prompt)
 					c.text(
@@ -200,7 +193,7 @@ export function configure<Shape extends Form.Shape>(
 			async (c) => {
 				const input = await c.data({ payload: 128 * Size.kb });
 				if (!input || input.issues) throw input;
-				const credential = await new Passkey(c, state(c)).register.verify();
+				const credential = await new Passkey(c, state(c)).register();
 				// Pass only application fields, never protocol fields, into the persistence callback.
 				await options.register.create(values(input.data), credential);
 				await state(c).login(credential.user);
@@ -210,9 +203,9 @@ export function configure<Shape extends Form.Shape>(
 	);
 	const login = Passkey.prepare(
 		Route.post(paths.login, {}, guard("login"), async (c) => {
-			// Parse with a bounded body even on the schema-free protocol route.
+			// Bound the body before verification.
 			await c.data({ payload: 128 * Size.kb });
-			const credential = await new Passkey(c, state(c)).login.verify(
+			const credential = await new Passkey(c, state(c)).login(
 				options.credentials,
 			);
 			await state(c).login(credential.user);
@@ -235,8 +228,7 @@ export function configure<Shape extends Form.Shape>(
 					input.issues.some((issue) => issue.path[0] === name),
 				);
 				if (!invalid.length) throw input;
-				c.json({ fields: invalid }, 422);
-				return;
+				return c.json({ fields: invalid }, 422);
 			}
 			// The reserved bootstrap field is added to the validated application shape above.
 			const data = input.data as Form.Parse.Data<Shape> & { bootstrap: string };
@@ -262,18 +254,16 @@ export function configure<Shape extends Form.Shape>(
 			});
 		},
 	);
-	const client = Passkey.client;
-
 	return {
-		routes: [register, login, logout, registration, assertion, client],
+		routes: [register, login, logout, registration, assertion, Passkey.client],
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */
-		forms(c: Auth.Context, props: { nonce?: string } = {}) {
+		forms(c: Auth.Context, props: { nonce?: string } = {}): Auth.Forms<Shape> {
 			const passkey = new Passkey(c, state(c));
-			const Register = passkey.register.form(register, {
+			const Register = passkey.form(register, "register", {
 				...props,
 				endpoint: registration.pathname(),
 			});
-			const Login = passkey.login.form(login, {
+			const Login = passkey.form(login, "login", {
 				...props,
 				endpoint: assertion.pathname(),
 			});
@@ -284,11 +274,8 @@ export function configure<Shape extends Form.Shape>(
 					? Math.min(3600, Math.max(0, Math.ceil((retry - Date.now()) / 1000)))
 					: undefined;
 			const error =
-				(
-					method: string,
-					component: typeof Register.Error,
-				): typeof Register.Error =>
-				(props) =>
+				(method: string, component: typeof Register.Error) =>
+				(props: Parameters<typeof Register.Error>[0]) =>
 					component({
 						...props,
 						children:
@@ -309,9 +296,7 @@ export function configure<Shape extends Form.Shape>(
 					Fields: fields.Fields,
 				}),
 				Login,
-				Logout: (
-					props: Parameters<typeof logout.Form>[0],
-				): import("../jsx/index.js").JSX.Element =>
+				Logout: (props: Parameters<typeof logout.Form>[0]) =>
 					jsx(logout.Form, {
 						...props,
 						children: props.children ?? jsx("button", { children: "Log out" }),

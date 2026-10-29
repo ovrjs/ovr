@@ -78,18 +78,15 @@ export class App {
 		const auth = this.#options.auth;
 		if (auth) {
 			// Only generated auth endpoints reject alternate hosts before their handlers run.
-			if (auth.routes) {
-				const routes = new Set(auth.routes);
-				this.#global.push((c, next) => {
-					if (c.route && routes.has(c.route) && c.url.origin !== auth.origin) {
-						c.res.headers.set("cache-control", "no-store");
-						c.text("Misdirected Request", 421);
-						return;
-					}
-					return next();
-				});
-			}
-			if (auth.routes) this.use(...auth.routes);
+			const routes = new Set(auth.routes);
+			this.#global.push((c, next) => {
+				if (c.route && routes.has(c.route) && c.url.origin !== auth.origin) {
+					c.res.headers.set("cache-control", "no-store");
+					return c.text("Misdirected Request", 421);
+				}
+				return next();
+			});
+			this.use(...auth.routes);
 		}
 
 		if (this.#options.csrf) this.#global.push(App.#csrf);
@@ -132,8 +129,10 @@ export class App {
 	 * @param options [Options](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch#options) to apply to the request
 	 * @returns Promise that resolves to the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) to the request
 	 */
-	readonly fetch = async (resource: RequestInfo | URL, options?: App.Fetch) => {
-		const { ip, ...init } = options ?? {};
+	readonly fetch = async (
+		resource: RequestInfo | URL,
+		{ ip, ...init }: App.Fetch = {},
+	) => {
 		const c = new Context(
 			resource instanceof Request && !Object.keys(init).length
 				? resource

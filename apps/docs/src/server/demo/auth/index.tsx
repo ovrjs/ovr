@@ -2,7 +2,7 @@ import type { Store } from "./store";
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Auth, Field, type JSX, type Middleware, Render, Route } from "ovr";
+import { Auth, Field, Render, Route } from "ovr";
 
 /** Application callbacks can call any existing database or ORM. SQLite belongs only to this demo. */
 export function configure(
@@ -28,44 +28,14 @@ export function configure(
 }
 
 /** Build the demo UI; ovr supplies the protocol and session handlers. */
-export function routes(
-	store: Store,
-	authentication: ReturnType<typeof configure>,
-) {
-	/** Auth utility that loads both session and user for protected routes. */
-	const guard = (
-		handler: (
-			c: Middleware.Context,
-			auth: { session: Auth.Session; user: { id: string; email: string } },
-		) => JSX.Element,
-	): Middleware => {
-		return async (c) => {
-			const session = await authentication.session(c);
-
-			if (!session) {
-				c.redirect(auth, 303);
-				return;
-			}
-
-			const user = store.user(session.id);
-
-			if (!user) {
-				await authentication.logout(c);
-				c.redirect(auth, 303);
-				return;
-			}
-
-			return handler(c, { session, user });
-		};
-	};
-
+export function routes(store: Store, service: ReturnType<typeof configure>) {
 	/** Landing page for register/login passkey flows. */
 	const auth = Route.get("/demo/auth", async (c) => {
 		const Layout = createLayout(c);
-		const session = await authentication.session(c);
+		const session = await service.session(c);
 		const user = session ? store.user(session.id) : null;
 
-		const { Register, Login } = authentication.forms(c);
+		const { Register, Login } = service.forms(c);
 
 		return (
 			<Layout head={<Meta {...content.frontmatter} />}>
@@ -100,45 +70,47 @@ export function routes(
 	});
 
 	/** Protected dashboard route for demo session/credential output. */
-	const admin = Route.get(
-		"/demo/auth/admin",
-		guard((c, auth) => {
-			const userCredentials = store.list(auth.user.id);
-			const { Logout } = authentication.forms(c);
+	const admin = Route.get("/demo/auth/admin", async (c) => {
+		const session = await service.session(c);
+		if (!session) return c.redirect(auth, 303);
+		const user = store.user(session.id);
+		if (!user) {
+			await service.logout(c);
+			return c.redirect(auth, 303);
+		}
+		const { Logout } = service.forms(c);
+		const Layout = createLayout(c);
 
-			const Layout = createLayout(c);
+		return (
+			<Layout head={<Meta {...content.frontmatter} />}>
+				<h1>Admin</h1>
 
-			return (
-				<Layout head={<Meta {...content.frontmatter} />}>
-					<h1>Admin</h1>
+				<p>Hello, {user.email}</p>
 
-					<p>Hello, {auth.user.email}</p>
+				<h2>Session</h2>
+				<pre>
+					<code>
+						{JSON.stringify(
+							{ id: session.id, expiration: session.expiration },
+							null,
+							4,
+						)}
+					</code>
+				</pre>
 
-					<h2>Session</h2>
-					<pre>
-						<code>
-							{JSON.stringify(
-								{ id: auth.session.id, expiration: auth.session.expiration },
-								null,
-								4,
-							)}
-						</code>
-					</pre>
+				<h2>Registered credentials</h2>
+				<ul>
+					{store.list(user.id).map((v) => (
+						<li key={v.id}>{v.id}</li>
+					))}
+				</ul>
 
-					<h2>Registered credentials</h2>
-					<ul>
-						{userCredentials.map((v) => (
-							<li key={v.id}>{v.id}</li>
-						))}
-					</ul>
-
-					<Logout>
-						<button>Logout</button>
-					</Logout>
-				</Layout>
-			);
-		}),
-	);
+				<Logout>
+					<button>Logout</button>
+				</Logout>
+			</Layout>
+		);
+	});
 
 	return { auth, admin };
 }

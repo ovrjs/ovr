@@ -121,22 +121,15 @@ export class State {
 			return;
 		}
 		const cookie = this.#c.cookie.get(State.#cookie);
-		if (cookie) {
-			try {
-				if (
-					(await Token.open(this.options.secret, "session", cookie)) === token
-				) {
-					this.#clear();
-					this.#session = Promise.resolve(null);
-					return;
-				}
-			} catch (error) {
-				if (!(error instanceof AuthIssue)) throw error;
-				this.#clear();
-				this.#session = Promise.resolve(null);
+		if (!cookie) return;
+		try {
+			if ((await Token.open(this.options.secret, "session", cookie)) !== token)
 				return;
-			}
+		} catch (error) {
+			if (!(error instanceof AuthIssue)) throw error;
 		}
+		this.#clear();
+		this.#session = Promise.resolve(null);
 	}
 
 	/** Revoke the current session and expire its cookie. Always await this method. */

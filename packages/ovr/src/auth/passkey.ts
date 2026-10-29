@@ -17,10 +17,6 @@ export namespace Passkey {
 	export type Component<Pattern extends string> = Route.Form<Pattern> & {
 		Error: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 	};
-	/** Request capabilities needed by authentication helpers. */
-	export type Context = Pick<ContextType, "cookie" | "url" | "res" | "form"> & {
-		data: (options?: { payload: number }) => Promise<unknown>;
-	};
 	/** POST route contract retaining typed pathname parameters. */
 	export interface Post<Pattern extends string> extends Omit<
 		Route.Post,
@@ -78,38 +74,14 @@ export class Passkey {
 			userHandle: Schema.union([Schema.string(), Schema.literal(null)]),
 		}),
 	});
-	readonly #c: Passkey.Context;
+	readonly #c: Auth.Context;
 	readonly #auth: State;
-	readonly #rp: string;
 
 	/** Create request-scoped passkey helpers. */
-	constructor(c: Passkey.Context, auth: State) {
+	constructor(c: Auth.Context, auth: State) {
 		this.#c = c;
 		this.#auth = auth;
-		this.#rp = new URL(auth.options.origin).hostname;
 	}
-
-	/** Registration form creation and response verification. */
-	readonly register = {
-		/** Create a form component; call in the route handler before returning JSX. */
-		form: <Pattern extends string>(
-			route: Passkey.Post<Pattern>,
-			options: Passkey.Options,
-		) => this.#form(route, "register", options),
-		/** Verify registration; persist the credential with a unique ID constraint. */
-		verify: () => this.#register(),
-	};
-
-	/** Username-free login form creation and response verification. */
-	readonly login = {
-		/** Create a form component; call in the route handler before returning JSX. */
-		form: <Pattern extends string>(
-			route: Passkey.Post<Pattern>,
-			options: Passkey.Options,
-		) => this.#form(route, "login", options),
-		/** Verify an assertion and atomically persist its counter and backup state. */
-		verify: (credentials: Auth.Credentials) => this.#login(credentials),
-	};
 
 	/** Complete a passkey POST schema at startup, before mounting it in an App. */
 	static prepare<T extends Pick<Passkey.Post<string>, "extend" | "names">>(
@@ -130,11 +102,12 @@ export class Passkey {
 		return route;
 	}
 
-	#form<Pattern extends string>(
+	/** Create a form in the handler before returning JSX. */
+	form<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
 		method: "register" | "login",
 		options: Passkey.Options,
-	): Passkey.Component<Pattern> {
+	) {
 		this.#origin();
 		if (!Passkey.#routes.has(route))
 			throw new TypeError(
@@ -143,17 +116,9 @@ export class Passkey {
 		const browser = this.#auth.browser(true);
 		const user = method === "register" ? crypto.randomUUID() : undefined;
 		this.#c.res.headers.set("cache-control", "no-store");
-		const Error = (props: JSX.IntrinsicElements["p"]): JSX.Element =>
-			jsx("p", {
-				role: "status",
-				"aria-live": "polite",
-				...props,
-				"data-passkey-error": true,
-			});
-		const Form: Route.Form<Pattern> & { Error: typeof Error } = Object.assign(
-			(props: Parameters<Route.Form<Pattern>>[0]) => {
-				const id = `passkey-${crypto.randomUUID()}`;
-				return route.Form({
+		const Form: Passkey.Component<Pattern> = Object.assign(
+			(props: Parameters<Route.Form<Pattern>>[0]) =>
+				route.Form({
 					...props,
 					children: [
 						props.children ?? [
@@ -166,7 +131,7 @@ export class Passkey {
 						Form.Error({ "data-passkey-fallback": true }),
 						async () =>
 							jsx("script", {
-								id,
+								id: `passkey-${crypto.randomUUID()}`,
 								type: "module",
 								src: Passkey.client.pathname(),
 								nonce: options.nonce,
@@ -189,9 +154,16 @@ export class Passkey {
 							children: "JavaScript is required for authentication.",
 						}),
 					],
-				});
+				}),
+			{
+				Error: (props: JSX.IntrinsicElements["p"]) =>
+					jsx("p", {
+						role: "status",
+						"aria-live": "polite",
+						...props,
+						"data-passkey-error": true,
+					}),
 			},
-			{ Error },
 		);
 		return Form;
 	}
@@ -232,8 +204,9 @@ export class Passkey {
 		label: (() => Auth.Result<string>) | undefined,
 		expected: { method: "register" | "login"; action: string },
 	) {
-		const payload = await Token.open(auth.options.secret, "passkey", token);
-		const result = Schema.string().json(Passkey.#bootstrap).parse(payload);
+		const result = Schema.string()
+			.json(Passkey.#bootstrap)
+			.parse(await Token.open(auth.options.secret, "passkey", token));
 		if (result.issues) throw result;
 		const bootstrap = result.data;
 		if (
@@ -369,7 +342,7 @@ export class Passkey {
 		return { state, credential: result.data.credential };
 	}
 
-	async #client(value: string, state: Auth.Challenge) {
+	#client(value: string, state: Auth.Challenge) {
 		const result = Schema.string()
 			.json(
 				Schema.object({
@@ -389,7 +362,9 @@ export class Passkey {
 		if (
 			!Passkey.#equal(
 				data.rpIdHash,
-				await Passkey.#hash(Codec.encode(this.#rp)),
+				await Passkey.#hash(
+					Codec.encode(new URL(this.#auth.options.origin).hostname),
+				),
 			)
 		)
 			throw new AuthIssue("RP ID");
@@ -405,11 +380,12 @@ export class Passkey {
 		return result === 0;
 	}
 
-	async #register() {
+	/** Verify registration before persisting a new credential. */
+	async register() {
 		const { state, credential } = await this.#consume("register");
 		const result = Passkey.#registration.parse(credential);
 		if (result.issues) throw result;
-		await this.#client(result.data.response.clientDataJSON, state);
+		this.#client(result.data.response.clientDataJSON, state);
 		const data = AuthData.parse(
 			new CBOR(
 				Passkey.#decode(result.data.response.attestationObject),
@@ -437,11 +413,12 @@ export class Passkey {
 		};
 	}
 
-	async #login(credentials: Auth.Credentials) {
+	/** Verify login and atomically update the credential. */
+	async login(credentials: Auth.Credentials) {
 		const { state, credential } = await this.#consume("login");
 		const result = Passkey.#assertion.parse(credential);
 		if (result.issues) throw result;
-		await this.#client(result.data.response.clientDataJSON, state);
+		this.#client(result.data.response.clientDataJSON, state);
 		if (
 			!Passkey.#equal(
 				Passkey.#decode(result.data.id),
@@ -478,15 +455,11 @@ export class Passkey {
 		const signed = new Uint8Array(bytes.length + hash.length);
 		signed.set(bytes);
 		signed.set(hash, bytes.length);
-		const key = await Passkey.#key(Passkey.#decode(stored.publicKey));
-		const signature = DER.unwrap(
-			Passkey.#decode(result.data.response.signature),
-		);
 		if (
 			!(await crypto.subtle.verify(
 				{ name: "ECDSA", hash: "SHA-256" },
-				key,
-				signature,
+				await Passkey.#key(Passkey.#decode(stored.publicKey)),
+				DER.unwrap(Passkey.#decode(result.data.response.signature)),
 				signed,
 			))
 		)

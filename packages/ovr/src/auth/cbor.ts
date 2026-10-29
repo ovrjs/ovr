@@ -3,10 +3,11 @@ import { AuthIssue } from "./issue.js";
 
 /** COSE (CBOR Object Signing and Encryption) key format utilities */
 export class COSE {
-	/** DER SPKI algorithm identifier for P-256 ECDSA */
-	static readonly #algorithmId = new Uint8Array([
-		0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06,
-		0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
+	/** Fixed SPKI header for an uncompressed P-256 point. */
+	static readonly #prefix = new Uint8Array([
+		0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02,
+		0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03,
+		0x42, 0x00, 0x04,
 	]);
 
 	/**
@@ -20,12 +21,8 @@ export class COSE {
 	 * @throws AuthIssue if key type, curve, or coordinates are invalid
 	 */
 	static toSPKI(cose: Map<number, number | Uint8Array>) {
-		const kty = cose.get(1); // COSE label 1 = kty
-		if (kty !== 2) throw new AuthIssue("COSE type");
-
-		const crv = cose.get(-1); // COSE label -1 = crv
-		if (crv !== 1) throw new AuthIssue("COSE curve");
-
+		if (cose.get(1) !== 2) throw new AuthIssue("COSE type");
+		if (cose.get(-1) !== 1) throw new AuthIssue("COSE curve");
 		if (cose.get(3) !== -7) throw new AuthIssue("COSE algorithm");
 
 		const x = cose.get(-2); // COSE label -2 = x coordinate
@@ -36,30 +33,10 @@ export class COSE {
 			!(y instanceof Uint8Array) ||
 			x.length !== 32 ||
 			y.length !== 32
-		) {
+		)
 			throw new AuthIssue("COSE coordinates");
-		}
 
-		const uncompressed = new Uint8Array(65); // 0x04 || X(32) || Y(32)
-		uncompressed[0] = 0x04; // uncompressed EC point prefix
-		uncompressed.set(x, 1); // X coordinate offset
-		uncompressed.set(y, 33); // Y coordinate offset
-
-		const bitString = new Uint8Array(3 + uncompressed.length);
-		bitString[0] = 0x03; // DER BIT STRING tag
-		bitString[1] = uncompressed.length + 1;
-		bitString[2] = 0x00; // BIT STRING unused-bits count
-		bitString.set(uncompressed, 3);
-
-		const spki = new Uint8Array(
-			2 + COSE.#algorithmId.length + bitString.length,
-		);
-		spki[0] = 0x30; // DER SEQUENCE tag
-		spki[1] = COSE.#algorithmId.length + bitString.length;
-		spki.set(COSE.#algorithmId, 2);
-		spki.set(bitString, 2 + COSE.#algorithmId.length);
-
-		return spki;
+		return new Uint8Array([...COSE.#prefix, ...x, ...y]);
 	}
 }
 
@@ -75,7 +52,7 @@ export class CBOR {
 	readonly #data: Uint8Array;
 
 	/** Current read position in data */
-	#offset: number;
+	#offset = 0;
 
 	/**
 	 * Create a new CBOR instance
@@ -85,7 +62,6 @@ export class CBOR {
 	constructor(data: Uint8Array) {
 		if (data.length > 65536) throw new AuthIssue("CBOR size");
 		this.#data = data;
-		this.#offset = 0;
 	}
 
 	/**

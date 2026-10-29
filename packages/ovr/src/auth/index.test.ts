@@ -245,19 +245,14 @@ function setup(extra: Partial<State.Options> = {}) {
 		async (c) => {
 			const input = await c.data();
 			if (input.issues) throw input;
-			const credential = await new Passkey(
-				c,
-				new State(c, options),
-			).register.verify();
+			const credential = await new Passkey(c, new State(c, options)).register();
 			if (records.has(credential.id)) throw new Error("Duplicate credential");
 			records.set(credential.id, credential);
 			c.json(credential);
 		},
 	);
 	const login = Route.post("/login", {}, async (c) =>
-		c.json(
-			await new Passkey(c, new State(c, options)).login.verify(credentials),
-		),
+		c.json(await new Passkey(c, new State(c, options)).login(credentials)),
 	);
 	Passkey.prepare(register);
 	Passkey.prepare(login);
@@ -266,7 +261,7 @@ function setup(extra: Partial<State.Options> = {}) {
 		login,
 		Route.get("/register-page", (c) =>
 			jsx(
-				new Passkey(c, new State(c, options)).register.form(register, {
+				new Passkey(c, new State(c, options)).form(register, "register", {
 					endpoint,
 				}),
 				{},
@@ -274,7 +269,7 @@ function setup(extra: Partial<State.Options> = {}) {
 		),
 		Route.get("/login-page", (c) =>
 			jsx(
-				new Passkey(c, new State(c, options)).login.form(login, {
+				new Passkey(c, new State(c, options)).form(login, "login", {
 					endpoint: `${endpoint}/login`,
 				}),
 				{},
@@ -831,13 +826,11 @@ describe("form contracts", () => {
 		state.app.use(
 			route,
 			Route.get("/typed", (c) => {
-				const Register = new Passkey(
-					c,
-					new State(c, state.options),
-				).register.form(route, {
-					endpoint,
-					nonce: "nonce</script><script>alert(1)</script>",
-				});
+				const Register = new Passkey(c, new State(c, state.options)).form(
+					route,
+					"register",
+					{ endpoint, nonce: "nonce</script><script>alert(1)</script>" },
+				);
 				if (false) {
 					// @ts-expect-error Route parameters remain required by the returned component.
 					Register({});
@@ -868,7 +861,7 @@ describe("form contracts", () => {
 		);
 		state.app.use(
 			Route.get("/conflict", (c) => {
-				new Passkey(c, new State(c, state.options)).register.form(route, {
+				new Passkey(c, new State(c, state.options)).form(route, "register", {
 					endpoint,
 				});
 			}),

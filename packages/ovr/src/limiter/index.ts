@@ -87,14 +87,10 @@ export class Limiter {
 			);
 		const { limit, interval } = this.#options;
 		// Different policies cannot interpret the same stored token balance differently.
-		const key = JSON.stringify([
-			this.#options.name,
-			limit,
-			interval,
-			scope,
-			identity,
-		]);
-		const retry = await this.#options.consume(key, { limit, interval });
+		const retry = await this.#options.consume(
+			JSON.stringify([this.#options.name, limit, interval, scope, identity]),
+			{ limit, interval },
+		);
 		if (retry === true) return true;
 		if (
 			!Number.isFinite(retry) ||
@@ -114,13 +110,12 @@ export class Limiter {
 		try {
 			result = await this.check(c);
 		} catch (error) {
-			if (this.#options.error) {
-				try {
-					await this.#options.error(error, c);
-				} catch (failure) {
-					console.error(failure);
-				}
-			} else console.error(error);
+			try {
+				if (this.#options.error) await this.#options.error(error, c);
+				else console.error(error);
+			} catch (failure) {
+				console.error(failure);
+			}
 			c.res.headers.set("cache-control", "no-store");
 			c.text("Service temporarily unavailable. Try again later.", 503);
 			return;
