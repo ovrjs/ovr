@@ -1293,6 +1293,7 @@ test.each([
 		};
 		const warm = managed(storage, { limits });
 		const cold = managed(storage, { limits });
+		const guard = vi.spyOn(limits.guard, "check");
 		shared.length = 0; // Extra policies are snapshotted too.
 		const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
 		try {
@@ -1333,6 +1334,9 @@ test.each([
 					expect(
 						check.mock.calls.filter(([, scope]) => scope === phase),
 					).toHaveLength(limit + 1);
+				expect(
+					guard.mock.calls.filter(([, scope]) => scope === phase),
+				).toHaveLength(121); // Client-denied attempts still reach the guard, but skip extras.
 			}
 			expect(storage.challenges.size).toBe(0);
 			expect(warm.create).not.toHaveBeenCalled();
