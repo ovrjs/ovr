@@ -1,5 +1,5 @@
 import { CBOR } from "./cbor.js";
-import { AuthIssue } from "./issue.js";
+import { Issue } from "./issue.js";
 
 export namespace AuthData {
 	/** Parsed authenticator data and credential state. */
@@ -21,12 +21,12 @@ export namespace AuthData {
 export class AuthData {
 	/** Parse the fixed header, optional attested credential, and optional extensions. */
 	static parse(data: Uint8Array) {
-		if (data.length < 37) throw new AuthIssue("credential");
+		if (data.length < 37) throw new Issue("credential");
 		const flags = data[32]!;
 		let end = 37;
 		let attestedCredentialData: AuthData.AttestedCredentialData | null = null;
 		if (flags & 64) {
-			if (data.length < 55) throw new AuthIssue("credential");
+			if (data.length < 55) throw new Issue("credential");
 			const length = new DataView(
 				data.buffer,
 				data.byteOffset + 53,
@@ -34,7 +34,7 @@ export class AuthData {
 			).getUint16(0);
 			end = 55 + length;
 			if (!length || length > 1023 || end >= data.length)
-				throw new AuthIssue("credential");
+				throw new Issue("credential");
 			const cbor = new CBOR(data.subarray(end));
 			attestedCredentialData = {
 				aaguid: data.subarray(37, 53),
@@ -48,7 +48,7 @@ export class AuthData {
 			cbor.decodeExtensions();
 			end += cbor.offset;
 		}
-		if (end !== data.length) throw new AuthIssue("authenticator data length");
+		if (end !== data.length) throw new Issue("authenticator data length");
 		return {
 			rpIdHash: data.subarray(0, 32),
 			flags,

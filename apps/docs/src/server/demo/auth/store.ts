@@ -21,7 +21,7 @@ export class Store {
 	});
 	static readonly #session = Schema.object({
 		id: Schema.string(),
-		token: Schema.string(),
+		user: Schema.string(),
 		expiration: Schema.number().int(),
 	});
 	static readonly #limit = Schema.object({
@@ -67,8 +67,8 @@ export class Store {
 			) STRICT;
 			CREATE INDEX IF NOT EXISTS credentials_user ON credentials(user);
 			CREATE TABLE IF NOT EXISTS sessions (
-				token TEXT PRIMARY KEY,
-				id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				id TEXT PRIMARY KEY,
+				user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 				expiration INTEGER NOT NULL
 			) STRICT;
 			CREATE INDEX IF NOT EXISTS sessions_expiration ON sessions(expiration);
@@ -81,6 +81,24 @@ export class Store {
 			) STRICT;
 			CREATE INDEX IF NOT EXISTS limits_expiration ON limits(expiration);
 		`);
+		// Preserve sessions in databases created by the earlier demo.
+		const legacy = this.#db.prepare(
+			"SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'token'",
+		);
+		if (legacy.get()) {
+			this.#db.exec("BEGIN IMMEDIATE");
+			try {
+				if (legacy.get())
+					this.#db.exec(`
+						ALTER TABLE sessions RENAME COLUMN id TO user;
+						ALTER TABLE sessions RENAME COLUMN token TO id;
+					`);
+				this.#db.exec("COMMIT");
+			} catch (error) {
+				this.#db.exec("ROLLBACK");
+				throw error;
+			}
+		}
 		this.prune();
 	}
 
@@ -188,32 +206,30 @@ export class Store {
 
 	/** Persistent sessions; deleted and expired sessions cannot authenticate. */
 	readonly sessions: Auth.Sessions = {
-		set: (token, value) => {
-			if (token !== value.token) throw new TypeError("Session token mismatch");
+		set: (id, value) => {
+			if (id !== value.id) throw new TypeError("Session ID mismatch");
 			if (Date.now() - this.#pruned >= 60000) this.prune();
 			this.#db
-				.prepare(
-					"INSERT INTO sessions (token, id, expiration) VALUES (?, ?, ?)",
-				)
-				.run(token, value.id, value.expiration);
+				.prepare("INSERT INTO sessions (id, user, expiration) VALUES (?, ?, ?)")
+				.run(id, value.user, value.expiration);
 		},
-		get: (token) =>
+		get: (id) =>
 			Store.#parse(
 				Store.#session,
 				this.#db
 					.prepare(
-						"SELECT token, id, expiration FROM sessions WHERE token = ? AND expiration > ?",
+						"SELECT id, user, expiration FROM sessions WHERE id = ? AND expiration > ?",
 					)
-					.get(token, Date.now()),
+					.get(id, Date.now()),
 			),
-		delete: (token) => {
-			this.#db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+		delete: (id) => {
+			this.#db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
 		},
 	};
 
 	/** Credential lookup and compare-and-swap updates, without recreating deleted records. */
 	readonly credentials: Auth.Credentials = {
-		find: (id) =>
+		get: (id) =>
 			Store.#parse(
 				Store.#credential,
 				this.#db.prepare("SELECT * FROM credentials WHERE id = ?").get(id),

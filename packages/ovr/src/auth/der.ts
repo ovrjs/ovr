@@ -1,4 +1,4 @@
-import { AuthIssue } from "./issue.js";
+import { Issue } from "./issue.js";
 
 /** Strict DER decoding for WebAuthn ES256 signatures. */
 export class DER {
@@ -10,26 +10,26 @@ export class DER {
 			der[0] !== 0x30 ||
 			der[1] !== der.length - 2
 		)
-			throw new AuthIssue("DER signature");
+			throw new Issue("DER signature");
 		const raw = new Uint8Array(64);
 		let offset = 2;
 		for (let i = 0; i < 2; i++) {
-			if (der[offset++] !== 2) throw new AuthIssue("DER integer");
+			if (der[offset++] !== 2) throw new Issue("DER integer");
 			const length = der[offset++];
 			if (!length || length > 33 || offset + length > der.length)
-				throw new AuthIssue("DER integer length");
+				throw new Issue("DER integer length");
 			let value = der.subarray(offset, offset + length);
 			offset += length;
-			if (value[0]! & 128) throw new AuthIssue("DER negative integer");
+			if (value[0]! & 128) throw new Issue("DER negative integer");
 			if (value[0] === 0 && value.length > 1) {
-				if (!(value[1]! & 128)) throw new AuthIssue("DER integer padding");
+				if (!(value[1]! & 128)) throw new Issue("DER integer padding");
 				value = value.subarray(1);
 			}
 			if (value.length > 32 || value.every((v) => v === 0))
-				throw new AuthIssue("DER integer");
+				throw new Issue("DER integer");
 			raw.set(value, (i + 1) * 32 - value.length);
 		}
-		if (offset !== der.length) throw new AuthIssue("DER signature length");
+		if (offset !== der.length) throw new Issue("DER signature length");
 		return raw;
 	}
 }

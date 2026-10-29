@@ -7,7 +7,7 @@ import { Codec, Time } from "../util/index.js";
 import { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
 import { State } from "./state.js";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
 const origin = "https://example.com";
 const endpoint = "/_ovr/passkey/options";
@@ -185,7 +185,7 @@ function setup(extra: Partial<State.Options> = {}) {
 		return true;
 	};
 	const credentials: Auth.Credentials = {
-		find: (id) => records.get(id),
+		get: (id) => records.get(id),
 		update: (credential, previous) => {
 			if (records.get(credential.id) !== previous) return false;
 			records.set(credential.id, credential);
@@ -278,8 +278,8 @@ function setup(extra: Partial<State.Options> = {}) {
 		Route.get("/session", async (c) => c.json(await auth.session(c))),
 		Route.post("/session", async (c) => c.json(await auth.login(c, user))),
 		Route.post("/logout", async (c) => c.json(await auth.logout(c))),
-		Route.post("/revoke/:token", async (c) => {
-			await auth.revoke(c, c.params.token);
+		Route.post("/revoke/:id", async (c) => {
+			await auth.revoke(c, c.params.id);
 			c.text("revoked");
 		}),
 	);
@@ -630,7 +630,13 @@ describe("revocable sessions", () => {
 			first.json(),
 			second.json(),
 		]);
-		expect(sessions[0]?.token).not.toBe(sessions[1]?.token);
+		expect(sessions[0]?.id).not.toBe(sessions[1]?.id);
+		expect(sessions.map((session) => session.user)).toEqual([user, user]);
+		for (const session of sessions) {
+			expect(session.id).not.toBe(user);
+			expect(state.sessions.get(session.id)).toEqual(session);
+			expect(session).not.toHaveProperty("token");
+		}
 		expect(state.sessions.size).toBe(2);
 		const cookies = [first, second].map(
 			(response) => response.headers.getSetCookie().at(-1)!.split(";")[0]!,
@@ -661,7 +667,7 @@ describe("revocable sessions", () => {
 		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		state.app.use(
 			Route.get("/revoke-current", async (c) => {
-				await state.auth.revoke(c, session.token);
+				await state.auth.revoke(c, session.id);
 				expect(await state.auth.session(c)).toBeNull();
 				c.text("revoked");
 			}),
@@ -671,6 +677,21 @@ describe("revocable sessions", () => {
 		});
 		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
 		expect(state.sessions.size).toBe(0);
+	});
+
+	test("rejects a stored session whose ID differs from the signed cookie", async () => {
+		const state = setup();
+		const login = await state.post("/session", new FormData());
+		const session: Auth.Session = await login.json();
+		const get = vi
+			.spyOn(state.options.sessions, "get")
+			.mockReturnValueOnce({ ...session, id: session.user });
+		const response = await state.app.fetch(origin + "/session", {
+			headers: { cookie: login.headers.getSetCookie().at(-1)!.split(";")[0]! },
+		});
+		expect(get).toHaveBeenCalledWith(session.id);
+		expect(await response.json()).toBeNull();
+		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
 	});
 
 	test.each([false, true])(
@@ -685,7 +706,7 @@ describe("revocable sessions", () => {
 				Route.get("/direct-revoke", async (c) => {
 					if (cached) await state.auth.session(c);
 					get.mockRejectedValue(new Error("reads unavailable"));
-					await state.auth.revoke(c, session.token);
+					await state.auth.revoke(c, session.id);
 					expect(await state.auth.session(c)).toBeNull();
 					c.text("revoked");
 				}),
@@ -708,7 +729,7 @@ describe("revocable sessions", () => {
 		state.app.use(
 			Route.get("/rotate-revoke", async (c) => {
 				const session = await state.auth.login(c, "next-user");
-				await state.auth.revoke(c, previous.token);
+				await state.auth.revoke(c, previous.id);
 				expect(await state.auth.session(c)).toEqual(session);
 				c.json(session);
 			}),
@@ -775,7 +796,7 @@ describe("revocable sessions", () => {
 				await state.app.fetch(origin + "/session", { headers: { cookie } })
 			).json(),
 		).toBeNull();
-		await state.post(`/revoke/${session.token}`, new FormData());
+		await state.post(`/revoke/${session.id}`, new FormData());
 		expect(state.sessions.size).toBe(0);
 	});
 
@@ -815,6 +836,25 @@ describe("revocable sessions", () => {
 });
 
 describe("form contracts", () => {
+	test("exports namespaced auth issues and public context and persistence types", async () => {
+		const api = await import("../index.js");
+		expect(api.Auth.Issue).toBe(Auth.Issue);
+		expect(api).not.toHaveProperty("AuthIssue");
+		expectTypeOf<Auth.Issue>().toExtend<Error>();
+		expectTypeOf<keyof Auth.Session>().toEqualTypeOf<
+			"id" | "user" | "expiration"
+		>();
+		expectTypeOf<keyof Auth.Credentials>().toEqualTypeOf<"get" | "update">();
+		expectTypeOf<Parameters<Auth["session"]>[0]>().toEqualTypeOf<
+			Pick<Auth.Context, "url" | "cookie" | "res">
+		>();
+		if (false) {
+			// @ts-expect-error The promise helper is internal.
+			const result: Auth.Result<string> = "";
+			void result;
+		}
+	});
+
 	test("retains typed route parameters and safely serializes script arguments", async () => {
 		const state = setup();
 		const route = Route.post(
@@ -1072,16 +1112,16 @@ describe("configured passkey callbacks", () => {
 		const session: Auth.Session = await (
 			await warm.app.fetch(origin + "/whoami", { headers: { cookie } })
 		).json();
-		expect(session.id).toBe(warm.storage.records.get(id)?.user);
+		expect(session.user).toBe(warm.storage.records.get(id)?.user);
 		const login = await warm.start("login", cookie, cold.post);
 		const logged = await cold.submit(
 			login,
-			await assertion(login.options.challenge, keys, { handle: session.id }),
+			await assertion(login.options.challenge, keys, { handle: session.user }),
 			"/auth/login",
 		);
 		expect(logged.status).toBe(303);
 		expect(warm.storage.sessions.size).toBe(1);
-		expect(warm.storage.sessions.has(session.token)).toBe(false);
+		expect(warm.storage.sessions.has(session.id)).toBe(false);
 		const current = logged.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const logout = await cold.post("/auth/logout", new FormData(), current);
 		expect(logout.headers.get("location")).toBe("/auth");
@@ -1682,6 +1722,7 @@ test("configured options reject substituted operations and oversized bodies befo
 		start.cookie,
 	);
 	expect(switched.status).toBe(400);
+	expect(state.error.mock.calls[0]?.[0]).toBeInstanceOf(Auth.Issue);
 	expect(state.error).toHaveBeenCalledWith(
 		expect.objectContaining({ message: "Invalid bootstrap binding" }),
 		expect.anything(),

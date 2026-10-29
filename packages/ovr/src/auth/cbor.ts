@@ -1,5 +1,5 @@
 import { Codec } from "../util/index.js";
-import { AuthIssue } from "./issue.js";
+import { Issue } from "./issue.js";
 
 /** COSE (CBOR Object Signing and Encryption) key format utilities */
 export class COSE {
@@ -18,12 +18,12 @@ export class COSE {
 	 *
 	 * @param cose - COSE key map with type, curve, and coordinates
 	 * @returns SPKI encoded public key as bytes
-	 * @throws AuthIssue if key type, curve, or coordinates are invalid
+	 * @throws Issue if key type, curve, or coordinates are invalid
 	 */
 	static toSPKI(cose: Map<number, number | Uint8Array>) {
-		if (cose.get(1) !== 2) throw new AuthIssue("COSE type");
-		if (cose.get(-1) !== 1) throw new AuthIssue("COSE curve");
-		if (cose.get(3) !== -7) throw new AuthIssue("COSE algorithm");
+		if (cose.get(1) !== 2) throw new Issue("COSE type");
+		if (cose.get(-1) !== 1) throw new Issue("COSE curve");
+		if (cose.get(3) !== -7) throw new Issue("COSE algorithm");
 
 		const x = cose.get(-2); // COSE label -2 = x coordinate
 		const y = cose.get(-3); // COSE label -3 = y coordinate
@@ -34,7 +34,7 @@ export class COSE {
 			x.length !== 32 ||
 			y.length !== 32
 		)
-			throw new AuthIssue("COSE coordinates");
+			throw new Issue("COSE coordinates");
 
 		return new Uint8Array([...COSE.#prefix, ...x, ...y]);
 	}
@@ -60,7 +60,7 @@ export class CBOR {
 	 * @param data WebAuthn data
 	 */
 	constructor(data: Uint8Array) {
-		if (data.length > 65536) throw new AuthIssue("CBOR size");
+		if (data.length > 65536) throw new Issue("CBOR size");
 		this.#data = data;
 	}
 
@@ -70,7 +70,7 @@ export class CBOR {
 	 * Only supports fmt === "none", other formats may throw earlier depending on CBOR contents
 	 *
 	 * @returns Authenticator data bytes
-	 * @throws AuthIssue if CBOR structure is invalid
+	 * @throws Issue if CBOR structure is invalid
 	 */
 	decodeAttestation() {
 		const value = this.#parseNext();
@@ -90,31 +90,31 @@ export class CBOR {
 			}
 		}
 
-		throw new AuthIssue("credential");
+		throw new Issue("credential");
 	}
 
 	/**
 	 * Decode COSE key from CBOR format.
 	 *
 	 * @returns COSE key map with numeric labels
-	 * @throws AuthIssue if CBOR structure is invalid
+	 * @throws Issue if CBOR structure is invalid
 	 */
 	decodeCOSEKey() {
 		const value = this.#parseNext();
 
 		if (!(value instanceof Map)) {
-			throw new AuthIssue("CBOR map");
+			throw new Issue("CBOR map");
 		}
 
 		const result = new Map<number, number | Uint8Array>();
 
 		for (const [k, v] of value) {
 			if (typeof k !== "number") {
-				throw new AuthIssue("COSE labels");
+				throw new Issue("COSE labels");
 			}
 
 			if (typeof v !== "number" && !(v instanceof Uint8Array)) {
-				throw new AuthIssue("COSE value");
+				throw new Issue("COSE value");
 			}
 
 			result.set(k, v);
@@ -135,7 +135,7 @@ export class CBOR {
 			!(value instanceof Map) ||
 			[...value.keys()].some((key) => typeof key !== "string")
 		)
-			throw new AuthIssue("CBOR extensions");
+			throw new Issue("CBOR extensions");
 		return value;
 	}
 
@@ -149,7 +149,7 @@ export class CBOR {
 		const end = this.#offset + n;
 
 		if (end > this.#data.length) {
-			throw new AuthIssue("CBOR stream");
+			throw new Issue("CBOR stream");
 		}
 
 		return this.#data.subarray(this.#offset, (this.#offset = end));
@@ -160,11 +160,11 @@ export class CBOR {
 	 *
 	 * @param bytes - Number of bytes to read (1, 2, or 4)
 	 * @returns Decoded unsigned integer
-	 * @throws AuthIssue if stream or integer size is invalid
+	 * @throws Issue if stream or integer size is invalid
 	 */
 	#readUint(bytes: number) {
 		if (this.#offset + bytes > this.#data.length) {
-			throw new AuthIssue("CBOR stream");
+			throw new Issue("CBOR stream");
 		}
 
 		const view = new DataView(
@@ -183,7 +183,7 @@ export class CBOR {
 			case 4:
 				return view.getUint32(0, false);
 			default:
-				throw new AuthIssue("CBOR int");
+				throw new Issue("CBOR int");
 		}
 	}
 
@@ -191,12 +191,12 @@ export class CBOR {
 	 * Parse next CBOR value from stream.
 	 *
 	 * @returns Decoded value (primitives, Uint8Array, or Map)
-	 * @throws AuthIssue if stream is malformed
+	 * @throws Issue if stream is malformed
 	 */
 	#parseNext(depth = 0): CBOR.Value {
-		if (depth > 8) throw new AuthIssue("CBOR depth");
+		if (depth > 8) throw new Issue("CBOR depth");
 		if (this.#offset >= this.#data.length) {
-			throw new AuthIssue("CBOR stream");
+			throw new Issue("CBOR stream");
 		}
 
 		const initial = this.#data[this.#offset++]!;
@@ -217,7 +217,7 @@ export class CBOR {
 		} else if (minor === 26) {
 			length = this.#readUint(4);
 		} else {
-			throw new AuthIssue("CBOR length");
+			throw new Issue("CBOR length");
 		}
 
 		if (major === 0) return length;
@@ -227,11 +227,11 @@ export class CBOR {
 			try {
 				return Codec.decode(this.#read(length));
 			} catch {
-				throw new AuthIssue("CBOR text");
+				throw new Issue("CBOR text");
 			}
 		}
 		if ((major === 4 || major === 5) && length > 128)
-			throw new AuthIssue("CBOR entries");
+			throw new Issue("CBOR entries");
 		if (major === 4)
 			return Array.from({ length }, () => this.#parseNext(depth + 1));
 		if (major === 5) {
@@ -241,16 +241,16 @@ export class CBOR {
 				const k = this.#parseNext(depth + 1);
 
 				if (typeof k !== "number" && typeof k !== "string") {
-					throw new AuthIssue("CBOR key");
+					throw new Issue("CBOR key");
 				}
 
-				if (map.has(k)) throw new AuthIssue("CBOR duplicate key");
+				if (map.has(k)) throw new Issue("CBOR duplicate key");
 				map.set(k, this.#parseNext(depth + 1));
 			}
 
 			return map;
 		}
 
-		throw new AuthIssue(`CBOR type ${major}`);
+		throw new Issue(`CBOR type ${major}`);
 	}
 }

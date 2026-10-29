@@ -1,7 +1,6 @@
-import type { Context as ContextType } from "../context/index.js";
 import { Codec, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
-import { AuthIssue } from "./issue.js";
+import { Issue } from "./issue.js";
 import { OriginIssue } from "./origin.js";
 import { Token } from "./token.js";
 
@@ -12,7 +11,7 @@ export namespace State {
 		"secret" | "origin" | "challenges" | "sessions" | "duration"
 	>;
 	/** Internal capabilities needed for request-local authentication state. */
-	export type Context = Pick<ContextType, "url" | "cookie" | "res">;
+	export type Context = Pick<Auth.Context, "url" | "cookie" | "res">;
 }
 
 /** Internal authentication state for exactly one service and request. */
@@ -62,17 +61,17 @@ export class State {
 		this.#c.res.headers.set("cache-control", "no-store");
 		const cookie = this.#c.cookie.get(State.#cookie);
 		if (!cookie) return null;
-		let token: string;
+		let id: string;
 		try {
-			token = await Token.open(this.options.secret, "session", cookie);
+			id = await Token.open(this.options.secret, "session", cookie);
 		} catch (e) {
-			if (!(e instanceof AuthIssue)) throw e;
+			if (!(e instanceof Issue)) throw e;
 			this.#clear();
 			return null;
 		}
 		// Storage failures must propagate, rather than appear to be successful logouts.
-		const session = await this.options.sessions.get(token);
-		if (session && session.token === token && session.expiration > Date.now())
+		const session = await this.options.sessions.get(id);
+		if (session && session.id === id && session.expiration > Date.now())
 			return session;
 		this.#clear();
 		return null;
@@ -84,20 +83,24 @@ export class State {
 	}
 
 	/** Replace the current session and issue a new signed, secure cookie. */
-	async login(id: string) {
-		if (typeof id !== "string" || !id.trim() || Codec.encode(id).length > 1024)
+	async login(user: string) {
+		if (
+			typeof user !== "string" ||
+			!user.trim() ||
+			Codec.encode(user).length > 1024
+		)
 			throw new TypeError("Auth user ID must contain 1 to 1024 UTF-8 bytes");
 		const previous = await this.session();
-		if (previous) await this.options.sessions.delete(previous.token);
+		if (previous) await this.options.sessions.delete(previous.id);
 		const session = {
-			id,
-			token: crypto.randomUUID(),
+			id: crypto.randomUUID(),
+			user,
 			expiration: Date.now() + this.options.duration,
 		};
-		await this.options.sessions.set(session.token, session);
+		await this.options.sessions.set(session.id, session);
 		this.#c.cookie.set(
 			State.#cookie,
-			await Token.seal(this.options.secret, "session", session.token),
+			await Token.seal(this.options.secret, "session", session.id),
 			{
 				secure: true,
 				httpOnly: true,
@@ -110,11 +113,11 @@ export class State {
 	}
 
 	/** Revoke a session by its opaque ID. */
-	async revoke(token: string) {
-		await this.options.sessions.delete(token);
+	async revoke(id: string) {
+		await this.options.sessions.delete(id);
 		// A login earlier in this request may have replaced the incoming cookie's session.
 		if (this.#session) {
-			if ((await this.#session)?.token === token) {
+			if ((await this.#session)?.id === id) {
 				this.#clear();
 				this.#session = Promise.resolve(null);
 			}
@@ -123,10 +126,10 @@ export class State {
 		const cookie = this.#c.cookie.get(State.#cookie);
 		if (!cookie) return;
 		try {
-			if ((await Token.open(this.options.secret, "session", cookie)) !== token)
+			if ((await Token.open(this.options.secret, "session", cookie)) !== id)
 				return;
 		} catch (error) {
-			if (!(error instanceof AuthIssue)) throw error;
+			if (!(error instanceof Issue)) throw error;
 		}
 		this.#clear();
 		this.#session = Promise.resolve(null);
@@ -135,7 +138,7 @@ export class State {
 	/** Revoke the current session and expire its cookie. Always await this method. */
 	async logout() {
 		const session = await this.session();
-		if (session) await this.options.sessions.delete(session.token);
+		if (session) await this.options.sessions.delete(session.id);
 		this.#clear();
 		this.#session = Promise.resolve(null);
 		return null;

@@ -33,7 +33,7 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 	const auth = Route.get("/demo/auth", async (c) => {
 		const Layout = createLayout(c);
 		const session = await service.session(c);
-		const user = session ? store.user(session.id) : null;
+		const user = session ? store.user(session.user) : null;
 
 		const { Register, Login } = service.forms(c);
 
@@ -73,7 +73,7 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 	const admin = Route.get("/demo/auth/admin", async (c) => {
 		const session = await service.session(c);
 		if (!session) return c.redirect(auth, 303);
-		const user = store.user(session.id);
+		const user = store.user(session.user);
 		if (!user) {
 			await service.logout(c);
 			return c.redirect(auth, 303);
@@ -91,7 +91,7 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 				<pre>
 					<code>
 						{JSON.stringify(
-							{ id: session.id, expiration: session.expiration },
+							{ user: session.user, expiration: session.expiration },
 							null,
 							4,
 						)}

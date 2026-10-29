@@ -5,9 +5,15 @@ import type { Route } from "../route/index.js";
 import type { Form } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
 import { configure } from "./configure.js";
+import { Issue } from "./issue.js";
 import { State } from "./state.js";
 
+type Result<T> = T | Promise<T>;
+
 export namespace Auth {
+	/** Authentication validation issue. */
+	export type Issue = InstanceType<typeof Auth.Issue>;
+
 	/** Request capabilities required while preparing the built-in UI. */
 	export type Context = Pick<ContextType, "url" | "cookie" | "res" | "form"> & {
 		data: (options?: { payload: number }) => Promise<unknown>;
@@ -24,9 +30,6 @@ export namespace Auth {
 		};
 		Logout: Route.Form<string>;
 	}
-
-	/** A synchronous or asynchronous storage result. */
-	export type Result<T> = T | Promise<T>;
 
 	/** Server-side state for one WebAuthn ceremony. */
 	export interface Challenge {
@@ -49,10 +52,10 @@ export namespace Auth {
 
 	/** A revocable session with a fixed lifetime. */
 	export interface Session {
-		/** User ID. */
-		readonly id: string;
 		/** Opaque session ID, usable with `auth.revoke()`. */
-		readonly token: string;
+		readonly id: string;
+		/** User ID. */
+		readonly user: string;
 		/** Absolute expiration time in milliseconds. */
 		readonly expiration: number;
 	}
@@ -60,11 +63,11 @@ export namespace Auth {
 	/** Session storage shared by all application instances. */
 	export interface Sessions {
 		/** Store a new session until its expiration. */
-		set(token: string, session: Session): Result<void>;
+		set(id: string, session: Session): Result<void>;
 		/** Return a session, or nothing if it has expired or been revoked. */
-		get(token: string): Result<Session | null | undefined>;
+		get(id: string): Result<Session | null | undefined>;
 		/** Revoke a session. */
-		delete(token: string): Result<void>;
+		delete(id: string): Result<void>;
 	}
 
 	/** Database-backed authentication configuration; all instances must share persistence. */
@@ -86,12 +89,12 @@ export namespace Auth {
 			/** Application fields, validated before prompting and again before saving. */
 			readonly fields: Shape;
 			/** Human-readable account label, independent of the opaque user handle. */
-			readonly name: (data: Form.Parse.Data<Shape>) => Auth.Result<string>;
+			readonly name: (data: Form.Parse.Data<Shape>) => Result<string>;
 			/** Atomically insert a new user and credential, enforcing unique user and credential IDs. Never upsert an existing user. */
 			readonly create: (
 				data: Form.Parse.Data<Shape>,
 				credential: Auth.Credential,
-			) => Auth.Result<void>;
+			) => Result<void>;
 		};
 		/** Authentication page, also used for generic failure redirects. Defaults to /auth. */
 		readonly page?: string;
@@ -116,7 +119,7 @@ export namespace Auth {
 		readonly error?: (
 			error: unknown,
 			c: Pick<ContextType, "req" | "url" | "cookie" | "ip">,
-		) => Auth.Result<void>;
+		) => Result<void>;
 	}
 
 	/** Stored ES256 passkey, including state updated after each login. */
@@ -134,7 +137,7 @@ export namespace Auth {
 
 	/** Application-owned credential lookup and persistence. */
 	export interface Credentials {
-		find(id: string): Result<Credential | null | undefined>;
+		get(id: string): Result<Credential | null | undefined>;
 		/**
 		 * Atomically save `credential` only if the record still matches `previous`.
 		 * Return true when the snapshot matches, even when the values are unchanged.
@@ -147,6 +150,9 @@ export namespace Auth {
 
 /** Complete passkey authentication with application-owned persistence. */
 export class Auth<Shape extends Form.Shape = Form.Shape> {
+	/** Validation issue shared by authentication and passkey verification. */
+	static readonly Issue = Issue;
+
 	readonly #options;
 	readonly #states = new WeakMap<object, State>();
 
@@ -195,22 +201,22 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	}
 
 	/** Read a session in the handler before returning streamed JSX. Does not extend its lifetime. */
-	session(c: State.Context) {
+	session(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
 		return this.#state(c).session();
 	}
 
 	/** Establish a session for an already-authorized user with a non-blank ID of at most 1024 UTF-8 bytes. Built-in passkey handlers do this automatically. */
-	login(c: State.Context, id: string) {
-		return this.#state(c).login(id);
+	login(c: Pick<Auth.Context, "url" | "cookie" | "res">, user: string) {
+		return this.#state(c).login(user);
 	}
 
 	/** Revoke the current session and expire its cookie. Always await this method. */
-	logout(c: State.Context) {
+	logout(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
 		return this.#state(c).logout();
 	}
 
 	/** Revoke a selected session, also clearing this request's cookie when it matches. */
-	revoke(c: State.Context, token: string) {
-		return this.#state(c).revoke(token);
+	revoke(c: Pick<Auth.Context, "url" | "cookie" | "res">, id: string) {
+		return this.#state(c).revoke(id);
 	}
 }

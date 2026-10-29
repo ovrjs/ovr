@@ -3,7 +3,7 @@
  *
  * Used for non-schema auth/passkey validation failures.
  */
-export class AuthIssue extends Error {
+export class Issue extends Error {
 	/**
 	 * @param expected Expected auth value/state
 	 * @returns Normalized issue message
@@ -18,7 +18,7 @@ export class AuthIssue extends Error {
 	 * @param expected Expected auth value/state
 	 */
 	constructor(expected: string) {
-		super(AuthIssue.m(expected));
+		super(Issue.m(expected));
 
 		this.name = "Auth.Issue";
 	}

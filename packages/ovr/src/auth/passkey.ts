@@ -8,7 +8,7 @@ import { CBOR, COSE } from "./cbor.js";
 import { etag, source } from "./client-source.js";
 import { DER } from "./der.js";
 import type { Auth } from "./index.js";
-import { AuthIssue } from "./issue.js";
+import { Issue } from "./issue.js";
 import type { State } from "./state.js";
 import { Token } from "./token.js";
 
@@ -193,7 +193,7 @@ export class Passkey {
 
 	#origin() {
 		if (this.#c.url.origin !== this.#auth.options.origin)
-			throw new AuthIssue("origin");
+			throw new Issue("origin");
 	}
 
 	/** Validate a signed form and issue one fresh ceremony. */
@@ -201,7 +201,7 @@ export class Passkey {
 		c: Pick<ContextType, "url" | "res" | "text" | "json">,
 		auth: State,
 		token: string,
-		label: (() => Auth.Result<string>) | undefined,
+		label: (() => string | Promise<string>) | undefined,
 		expected: { method: "register" | "login"; action: string },
 	) {
 		const result = Schema.string()
@@ -213,21 +213,21 @@ export class Passkey {
 			c.url.origin !== auth.options.origin ||
 			bootstrap.origin !== auth.options.origin
 		)
-			throw new AuthIssue("origin");
+			throw new Issue("origin");
 		if (!auth.browser() || bootstrap.browser !== auth.browser())
-			throw new AuthIssue("browser");
+			throw new Issue("browser");
 		if (bootstrap.expiration <= Date.now())
-			throw new AuthIssue("bootstrap (expired)");
+			throw new Issue("bootstrap (expired)");
 		if (
 			bootstrap.method !== expected.method ||
 			bootstrap.action !== expected.action
 		)
-			throw new AuthIssue("bootstrap binding");
+			throw new Issue("bootstrap binding");
 		if (
 			bootstrap.method === "register" &&
 			(!bootstrap.user || Codec.encode(bootstrap.user).length > 64)
 		)
-			throw new AuthIssue("user");
+			throw new Issue("user");
 		const rp = new URL(auth.options.origin).hostname;
 		const name =
 			bootstrap.method === "register" ? ((await label?.()) ?? "") : "";
@@ -235,7 +235,7 @@ export class Passkey {
 			bootstrap.method === "register" &&
 			(typeof name !== "string" || !name.trim() || name.length > 256)
 		)
-			throw new AuthIssue("account label");
+			throw new Issue("account label");
 		const ceremony = crypto.randomUUID();
 		const challenge = Codec.Base64Url.encode(
 			crypto.getRandomValues(new Uint8Array(32)),
@@ -291,10 +291,9 @@ export class Passkey {
 
 	static #decode(value: string) {
 		if (!/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1)
-			throw new AuthIssue("base64url");
+			throw new Issue("base64url");
 		const bytes = Codec.Base64Url.decode(value);
-		if (Codec.Base64Url.encode(bytes) !== value)
-			throw new AuthIssue("base64url");
+		if (Codec.Base64Url.encode(bytes) !== value) throw new Issue("base64url");
 		return bytes;
 	}
 
@@ -312,7 +311,7 @@ export class Passkey {
 				["verify"],
 			);
 		} catch (e) {
-			if (e instanceof DOMException) throw new AuthIssue("public key");
+			if (e instanceof DOMException) throw new Issue("public key");
 			throw e;
 		}
 	}
@@ -330,15 +329,15 @@ export class Passkey {
 			result.data.ceremony,
 		);
 		if (!state || state.expiration <= Date.now())
-			throw new AuthIssue("challenge (expired or consumed)");
+			throw new Issue("challenge (expired or consumed)");
 		if (!this.#auth.browser() || state.browser !== this.#auth.browser())
-			throw new AuthIssue("browser");
+			throw new Issue("browser");
 		if (
 			state.origin !== this.#auth.options.origin ||
 			state.method !== method ||
 			state.action !== this.#c.url.pathname
 		)
-			throw new AuthIssue("challenge binding");
+			throw new Issue("challenge binding");
 		return { state, credential: result.data.credential };
 	}
 
@@ -367,10 +366,9 @@ export class Passkey {
 				),
 			)
 		)
-			throw new AuthIssue("RP ID");
-		if (!(data.flags & 1) || !(data.flags & 4)) throw new AuthIssue("user");
-		if (data.flags & 16 && !(data.flags & 8))
-			throw new AuthIssue("backup flags");
+			throw new Issue("RP ID");
+		if (!(data.flags & 1) || !(data.flags & 4)) throw new Issue("user");
+		if (data.flags & 16 && !(data.flags & 8)) throw new Issue("backup flags");
 	}
 
 	static #equal(a: Uint8Array, b: Uint8Array) {
@@ -393,13 +391,13 @@ export class Passkey {
 		);
 		await this.#data(data);
 		if (!data.attestedCredentialData || !state.user)
-			throw new AuthIssue("credential data");
+			throw new Issue("credential data");
 		const id = data.attestedCredentialData.credentialId;
 		if (
 			!Passkey.#equal(Passkey.#decode(result.data.id), id) ||
 			!Passkey.#equal(Passkey.#decode(result.data.rawId), id)
 		)
-			throw new AuthIssue("credential ID");
+			throw new Issue("credential ID");
 		const key = COSE.toSPKI(data.attestedCredentialData.publicKey);
 		// Web Crypto validates that the P-256 point is on the curve before it is stored.
 		await Passkey.#key(key);
@@ -425,10 +423,9 @@ export class Passkey {
 				Passkey.#decode(result.data.rawId),
 			)
 		)
-			throw new AuthIssue("credential ID");
-		const stored = await credentials.find(result.data.id);
-		if (!stored || stored.id !== result.data.id)
-			throw new AuthIssue("credential");
+			throw new Issue("credential ID");
+		const stored = await credentials.get(result.data.id);
+		if (!stored || stored.id !== result.data.id) throw new Issue("credential");
 		if (
 			!result.data.response.userHandle ||
 			!Passkey.#equal(
@@ -436,19 +433,19 @@ export class Passkey {
 				Codec.encode(stored.user),
 			)
 		)
-			throw new AuthIssue("user handle");
+			throw new Issue("user handle");
 		const bytes = Passkey.#decode(result.data.response.authenticatorData);
 		const data = AuthData.parse(bytes);
 		await this.#data(data);
-		if (data.attestedCredentialData) throw new AuthIssue("assertion flags");
+		if (data.attestedCredentialData) throw new Issue("assertion flags");
 		if (Boolean(data.flags & 8) !== stored.eligible)
-			throw new AuthIssue("backup eligibility");
+			throw new Issue("backup eligibility");
 		if (
 			!Number.isSafeInteger(stored.counter) ||
 			stored.counter < 0 ||
 			((stored.counter || data.counter) && data.counter <= stored.counter)
 		)
-			throw new AuthIssue("signature counter");
+			throw new Issue("signature counter");
 		const hash = await Passkey.#hash(
 			Passkey.#decode(result.data.response.clientDataJSON),
 		);
@@ -463,14 +460,14 @@ export class Passkey {
 				signed,
 			))
 		)
-			throw new AuthIssue("signature");
+			throw new Issue("signature");
 		const updated = {
 			...stored,
 			counter: data.counter,
 			backedUp: Boolean(data.flags & 16),
 		};
 		if (!(await credentials.update(updated, stored)))
-			throw new AuthIssue("credential changed");
+			throw new Issue("credential changed");
 		return updated;
 	}
 }

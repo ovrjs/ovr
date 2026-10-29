@@ -25,8 +25,8 @@ const challenge = (): Auth.Challenge => ({
 	expiration: Date.now() + 60000,
 });
 const session = (): Auth.Session => ({
-	id: credential.user,
-	token: "session-1",
+	id: "session-1",
+	user: credential.user,
 	expiration: Date.now() + 60000,
 });
 
@@ -51,6 +51,40 @@ afterEach(() => {
 });
 
 describe("SQLite authentication persistence", () => {
+	test("preserves existing demo sessions when renaming their ID and user columns", () => {
+		const path = file();
+		const db = new DatabaseSync(path);
+		try {
+			db.exec(`
+				PRAGMA foreign_keys = ON;
+				CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL) STRICT;
+				CREATE TABLE sessions (
+					token TEXT PRIMARY KEY,
+					id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+					expiration INTEGER NOT NULL
+				) STRICT;
+			`);
+			db.prepare("INSERT INTO users VALUES (?, ?)").run(
+				credential.user,
+				"user@example.com",
+			);
+			const value = session();
+			db.prepare("INSERT INTO sessions VALUES (?, ?, ?)").run(
+				value.id,
+				value.user,
+				value.expiration,
+			);
+			const store = open(path);
+			expect(store.sessions.get(value.id)).toEqual(value);
+			expect(open(path).sessions.get(value.id)).toEqual(value);
+			expect(store.user(value.user)?.email).toBe("user@example.com");
+			db.prepare("DELETE FROM users WHERE id = ?").run(value.user);
+			expect(store.sessions.get(value.id)).toBeUndefined();
+		} finally {
+			db.close();
+		}
+	});
+
 	test("capacity preserves live budgets, fails closed for new keys, and recovers after expiration", () => {
 		const path = file();
 		const store = open(path);
@@ -112,10 +146,10 @@ describe("SQLite authentication persistence", () => {
 			id: credential.user,
 			email: "user@example.com",
 		});
-		expect(second.credentials.find(credential.id)).toEqual(credential);
+		expect(second.credentials.get(credential.id)).toEqual(credential);
 		expect(second.sessions.get("session-1")).toMatchObject({
-			id: credential.user,
-			token: "session-1",
+			id: "session-1",
+			user: credential.user,
 		});
 		expect(second.challenges.take("challenge-1")).toMatchObject({
 			challenge: "nonce",
@@ -162,7 +196,7 @@ describe("SQLite authentication persistence", () => {
 		expect(
 			first.credentials.update({ ...credential, counter: 2 }, credential),
 		).toBe(false);
-		expect(first.credentials.find(credential.id)).toEqual(next);
+		expect(first.credentials.get(credential.id)).toEqual(next);
 		expect(
 			first.credentials.update({ ...next, publicKey: "replacement" }, next),
 		).toBe(false);
@@ -193,15 +227,13 @@ describe("SQLite authentication persistence", () => {
 		const email = "'); DROP TABLE users; --";
 		store.register(credential, email);
 		expect(store.user(credential.user)?.email).toBe(email);
-		expect(() => store.sessions.set("wrong-token", session())).toThrow(
-			"mismatch",
-		);
+		expect(() => store.sessions.set("wrong-id", session())).toThrow("mismatch");
 		store.sessions.set("session-1", session());
 		store.challenges.set("challenge-1", challenge());
 		store.prune(Date.now() + 120000);
 		expect(store.sessions.get("session-1")).toBeUndefined();
 		expect(store.challenges.take("challenge-1")).toBeUndefined();
-		expect(store.credentials.find(credential.id)).toEqual(credential);
+		expect(store.credentials.get(credential.id)).toEqual(credential);
 	});
 });
 

@@ -1,5 +1,5 @@
 import { Codec } from "../util/index.js";
-import { AuthIssue } from "./issue.js";
+import { Issue } from "./issue.js";
 
 /** Internal integrity protection with explicit authentication purposes. */
 export class Token {
@@ -52,6 +52,6 @@ export class Token {
 				// Malformed signatures are authentication failures.
 			}
 		}
-		throw new AuthIssue("token");
+		throw new Issue("token");
 	}
 }
