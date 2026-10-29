@@ -6,6 +6,11 @@ import { OriginIssue } from "./origin.js";
 import { Token } from "./token.js";
 
 export namespace State {
+	/** Session persistence and signing configuration used by internal request state. */
+	export type Options = Pick<
+		Auth.Options,
+		"secret" | "origin" | "challenges" | "sessions" | "duration"
+	>;
 	/** Internal capabilities needed for request-local authentication state. */
 	export type Context = Pick<ContextType, "url" | "cookie" | "res">;
 }
@@ -22,11 +27,11 @@ export class State {
 	readonly options;
 
 	/** Create authentication helpers for the current request. */
-	constructor(c: State.Context, options: Auth.Options) {
+	constructor(c: State.Context, options: State.Options) {
 		if (c.url.origin !== options.origin)
 			throw new OriginIssue("Authentication requires its configured origin");
 		this.#c = c;
-		this.options = { duration: Time.week, timeout: Time.minute, ...options };
+		this.options = { duration: Time.week, ...options };
 	}
 
 	/** Read a browser binding; create it only while preparing a form in the handler. */

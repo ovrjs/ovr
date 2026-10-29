@@ -9,51 +9,9 @@ import type { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
 import type { State } from "./state.js";
 
-/** Complete passkey configuration. Callbacks may use any database or ORM. */
-export interface Configuration<Shape extends Form.Shape> extends Auth.Options {
-	readonly credentials: Auth.Credentials;
-	readonly register: {
-		/** Application fields, validated before prompting and again before saving. */
-		readonly fields: Shape;
-		/** Human-readable account label, independent of the opaque user handle. */
-		readonly name: (data: Form.Parse.Data<Shape>) => Auth.Result<string>;
-		/** Atomically insert a new user and credential, enforcing unique user and credential IDs. Never upsert an existing user. */
-		readonly create: (
-			data: Form.Parse.Data<Shape>,
-			credential: Auth.Credential,
-		) => Auth.Result<void>;
-	};
-	/** Authentication page, also used for generic failure redirects. Defaults to /auth. */
-	readonly page?: string;
-	/** Destination after registration or login. Defaults to /. */
-	readonly redirect?: string;
-	/** Override the default endpoint paths. Paths must be distinct literal local paths. */
-	readonly paths?: Partial<
-		Record<"register" | "login" | "logout" | "options" | "client", string>
-	>;
-	/** Shared rate-limit storage; ovr supplies the signup and sign-in policies. */
-	readonly limits: {
-		/** Atomically refill and consume a token across all workers and deployments sharing these policies. */
-		readonly consume: Limiter.Options["consume"];
-		/** Optional generous request ceiling before client key creation. Counts requests denied by later policies too. */
-		readonly guard?: Limiter;
-		/** Additional shared policies checked after the client policy, preserving the built-in defaults. */
-		readonly extra?: readonly Limiter[];
-		/** Replace the built-in registration client policy. Use extra to add shared policies without removing it. */
-		readonly register?: Limiter | readonly Limiter[];
-		/** Replace the built-in login client policy. Use extra to add shared policies without removing it. */
-		readonly login?: Limiter | readonly Limiter[];
-	};
-	/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
-	readonly error?: (
-		error: unknown,
-		c: Pick<Context, "req" | "url" | "cookie" | "ip">,
-	) => Auth.Result<void>;
-}
-
 /** Construct startup-complete handlers and request-scoped UI components. */
 export function configure<Shape extends Form.Shape>(
-	options: Configuration<Shape>,
+	options: Auth.Options<Shape>,
 	state: (c: State.Context) => State,
 ): {
 	routes: readonly Route[];
@@ -96,31 +54,26 @@ export function configure<Shape extends Form.Shape>(
 					consume: options.limits.consume,
 				}),
 		}).map(([method, value]) => {
-			const stack = value instanceof Limiter ? [value] : [...value];
-			if (
-				!stack.length ||
-				stack.some((limiter) => !(limiter instanceof Limiter))
-			)
+			if (!(value instanceof Limiter))
 				throw new TypeError(
-					"Auth limiter stacks must contain at least one Limiter",
+					"Auth client policies must be a Limiter; use limits.extra for additional layers",
 				);
 			return [
 				method,
 				[
 					...(options.limits.guard ? [options.limits.guard] : []),
-					...stack,
+					value,
 					...(options.limits.extra ?? []),
 				],
 			];
 		}),
 	);
 	const paths = {
-		register: "/auth/register",
-		login: "/auth/login",
-		logout: "/auth/logout",
+		register: options.paths?.register ?? "/auth/register",
+		login: options.paths?.login ?? "/auth/login",
+		logout: options.paths?.logout ?? "/auth/logout",
 		options: "/_ovr/passkey/options",
 		client: "/_ovr/passkey/client.js",
-		...options.paths,
 	};
 	const page = options.page ?? "/auth";
 	const redirect = options.redirect ?? "/";
@@ -291,7 +244,7 @@ export function configure<Shape extends Form.Shape>(
 				c,
 				state(c),
 				data.bootstrap,
-				async () => ({ name: await options.register.name(values(data)) }),
+				() => options.register.name(values(data)),
 				{ method: "register", action: paths.register },
 			);
 		},
@@ -309,7 +262,7 @@ export function configure<Shape extends Form.Shape>(
 			});
 		},
 	);
-	const client = Route.get(paths.client, ...Passkey.client.middleware);
+	const client = Passkey.client;
 
 	return {
 		routes: [register, login, logout, registration, assertion, client],
@@ -319,12 +272,10 @@ export function configure<Shape extends Form.Shape>(
 			const Register = passkey.register.form(register, {
 				...props,
 				endpoint: registration.pathname(),
-				client: paths.client,
 			});
 			const Login = passkey.login.form(login, {
 				...props,
 				endpoint: assertion.pathname(),
-				client: paths.client,
 			});
 			const failure = c.url.searchParams.get("_auth");
 			const retry = Number(c.url.searchParams.get("_retry"));

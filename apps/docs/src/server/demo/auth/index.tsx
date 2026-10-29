@@ -13,7 +13,6 @@ export function configure(
 	return new Auth({
 		secret,
 		origin,
-		name: "ovr demo",
 		page: "/demo/auth",
 		redirect: "/demo/auth/admin",
 		challenges: store.challenges,

@@ -102,6 +102,8 @@ async function registration(
 		id,
 		rawId: id,
 		type: "public-key",
+		authenticatorAttachment: "platform",
+		clientExtensionResults: { credProps: { rk: true } },
 		response: {
 			clientDataJSON: Codec.Base64Url.encode(
 				Codec.encode(
@@ -114,6 +116,12 @@ async function registration(
 				),
 			),
 			attestationObject: Codec.Base64Url.encode(attestation),
+			authenticatorData: Codec.Base64Url.encode(data),
+			transports: ["internal", "hybrid"],
+			publicKeyAlgorithm: -7,
+			publicKey: Codec.Base64Url.encode(
+				new Uint8Array(await crypto.subtle.exportKey("spki", keys.publicKey)),
+			),
 		},
 	};
 }
@@ -152,6 +160,8 @@ async function assertion(
 		id,
 		rawId: id,
 		type: "public-key",
+		authenticatorAttachment: "platform",
+		clientExtensionResults: {},
 		response: {
 			clientDataJSON: json,
 			authenticatorData: Codec.Base64Url.encode(data),
@@ -162,7 +172,7 @@ async function assertion(
 	};
 }
 
-function setup(extra: Partial<Auth.Options> = {}) {
+function setup(extra: Partial<State.Options> = {}) {
 	const challenges = new Map<string, Auth.Challenge>();
 	const sessions = new Map<string, Auth.Session>();
 	const records = new Map<string, Auth.Credential>();
@@ -204,24 +214,31 @@ function setup(extra: Partial<Auth.Options> = {}) {
 				sessions.delete(id);
 			},
 		},
-		...extra,
-	};
-	const auth = new Auth({
-		...options,
 		limits: { consume },
 		credentials,
 		register: { fields: {}, name: () => "User", create: () => {} },
-	});
+		...extra,
+	};
+	const auth = new Auth(options);
 	const app = new App();
 	// Internal protocol tests compose their own routes; applications use new Auth().
-	app.use(
-		Route.post(endpoint, { bootstrap: Field.text() }, async (c) => {
-			const input = await c.data({ payload: 128 * 1024 });
-			if (input.issues) throw input;
-			await Passkey.issue(c, new State(c, options), input.data.bootstrap);
-		}),
-		Passkey.client,
-	);
+	const issue = (method: "register" | "login") =>
+		Route.post(
+			method === "register" ? endpoint : `${endpoint}/login`,
+			{ bootstrap: Field.text() },
+			async (c) => {
+				const input = await c.data({ payload: 128 * 1024 });
+				if (input.issues) throw input;
+				await Passkey.issue(
+					c,
+					new State(c, options),
+					input.data.bootstrap,
+					() => "User",
+					{ method, action: `/${method}` },
+				);
+			},
+		);
+	app.use(issue("register"), issue("login"), Passkey.client);
 	const register = Route.post(
 		"/register",
 		{ email: Field.email() },
@@ -237,7 +254,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 			c.json(credential);
 		},
 	);
-	const login = Route.post("/login", async (c) =>
+	const login = Route.post("/login", {}, async (c) =>
 		c.json(
 			await new Passkey(c, new State(c, options)).login.verify(credentials),
 		),
@@ -250,7 +267,6 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		Route.get("/register-page", (c) =>
 			jsx(
 				new Passkey(c, new State(c, options)).register.form(register, {
-					user,
 					endpoint,
 				}),
 				{},
@@ -258,7 +274,9 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		),
 		Route.get("/login-page", (c) =>
 			jsx(
-				new Passkey(c, new State(c, options)).login.form(login, { endpoint }),
+				new Passkey(c, new State(c, options)).login.form(login, {
+					endpoint: `${endpoint}/login`,
+				}),
 				{},
 			),
 		),
@@ -294,7 +312,11 @@ function setup(extra: Partial<Auth.Options> = {}) {
 			.join("; ");
 		const data = new FormData();
 		data.set("bootstrap", bootstrap);
-		const response = await post(endpoint, data, cookie);
+		const response = await post(
+			method === "register" ? endpoint : `${endpoint}/login`,
+			data,
+			cookie,
+		);
 		const json: {
 			ceremony: string;
 			options: PublicKeyCredentialCreationOptionsJSON;
@@ -311,7 +333,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 		data.set("email", "user@example.com");
 		data.set("credential", JSON.stringify(credential));
 		data.set("ceremony", state.ceremony);
-		// Schema-free login expects only the reserved passkey fields.
+		// Login accepts only the reserved passkey fields.
 		if (path !== "/register") data.delete("email");
 		return post(path, data, cookie);
 	};
@@ -331,7 +353,7 @@ function setup(extra: Partial<Auth.Options> = {}) {
 }
 
 async function enrolled(
-	extra: Partial<Auth.Options> = {},
+	extra: Partial<State.Options> = {},
 	flags = 0x45,
 	counter = 0,
 ) {
@@ -343,7 +365,12 @@ async function enrolled(
 		await registration(start.options.challenge, keys, { flags, counter }),
 	);
 	expect(response.status).toBe(200);
-	return { ...state, keys, cookie: start.cookie };
+	return {
+		...state,
+		keys,
+		cookie: start.cookie,
+		user: state.records.get(id)!.user,
+	};
 }
 
 describe("passkey ceremonies", () => {
@@ -352,12 +379,15 @@ describe("passkey ceremonies", () => {
 		const login = await state.start("login", state.cookie);
 		const response = await state.submit(
 			login,
-			await assertion(login.options.challenge, state.keys, { counter: 1 }),
+			await assertion(login.options.challenge, state.keys, {
+				counter: 1,
+				handle: state.user,
+			}),
 			"/login",
 		);
 		expect(await response.json()).toMatchObject({
 			id,
-			user,
+			user: state.user,
 			counter: 1,
 			eligible: false,
 		});
@@ -387,7 +417,9 @@ describe("passkey ceremonies", () => {
 	test("rejects a replay, including simultaneous submissions", async () => {
 		const state = await enrolled();
 		const login = await state.start("login", state.cookie);
-		const credential = await assertion(login.options.challenge, state.keys);
+		const credential = await assertion(login.options.challenge, state.keys, {
+			handle: state.user,
+		});
 		const results = await Promise.allSettled([
 			state.submit(login, credential, "/login"),
 			state.submit(login, credential, "/login"),
@@ -522,7 +554,9 @@ describe("passkey ceremonies", () => {
 		await expect(
 			state.submit(
 				login,
-				await assertion(login.options.challenge, await pair()),
+				await assertion(login.options.challenge, await pair(), {
+					handle: state.user,
+				}),
 				"/login",
 			),
 		).rejects.toThrow("signature");
@@ -536,7 +570,10 @@ describe("passkey ceremonies", () => {
 			await expect(
 				state.submit(
 					login,
-					await assertion(login.options.challenge, state.keys, { counter }),
+					await assertion(login.options.challenge, state.keys, {
+						counter,
+						handle: state.user,
+					}),
 					"/login",
 				),
 			).rejects.toThrow("counter");
@@ -548,7 +585,10 @@ describe("passkey ceremonies", () => {
 		const login = await state.start("login", state.cookie);
 		await state.submit(
 			login,
-			await assertion(login.options.challenge, state.keys, { flags: 0x1d }),
+			await assertion(login.options.challenge, state.keys, {
+				flags: 0x1d,
+				handle: state.user,
+			}),
 			"/login",
 		);
 		expect(state.records.get(id)?.backedUp).toBe(true);
@@ -556,7 +596,9 @@ describe("passkey ceremonies", () => {
 		await expect(
 			state.submit(
 				changed,
-				await assertion(changed.options.challenge, state.keys),
+				await assertion(changed.options.challenge, state.keys, {
+					handle: state.user,
+				}),
 				"/login",
 			),
 		).rejects.toThrow("eligibility");
@@ -565,7 +607,10 @@ describe("passkey ceremonies", () => {
 		await expect(
 			state.submit(
 				stale,
-				await assertion(stale.options.challenge, state.keys, { flags: 0x1d }),
+				await assertion(stale.options.challenge, state.keys, {
+					flags: 0x1d,
+					handle: state.user,
+				}),
 				"/login",
 			),
 		).rejects.toThrow("changed");
@@ -791,7 +836,7 @@ describe("form contracts", () => {
 					new State(c, state.options),
 				).register.form(route, {
 					endpoint,
-					user: "user</script><script>alert(1)</script>",
+					nonce: "nonce</script><script>alert(1)</script>",
 				});
 				if (false) {
 					// @ts-expect-error Route parameters remain required by the returned component.
@@ -897,11 +942,7 @@ describe("cryptographic input validation", () => {
 
 function managed(
 	storage = setup(),
-	extra: Partial<
-		import("./configure.js").Configuration<{
-			email: ReturnType<typeof Field.email>;
-		}>
-	> = {},
+	extra: Partial<Auth.Options<{ email: ReturnType<typeof Field.email> }>> = {},
 ) {
 	const create = vi.fn(
 		(data: { email: string }, credential: Auth.Credential) => {
@@ -1023,10 +1064,10 @@ describe("configured passkey callbacks", () => {
 		expect(start.options.user.id).not.toBe(
 			Codec.Base64Url.encode(Codec.encode("user@example.com")),
 		);
-		const registered = await cold.submit(
-			start,
-			await registration(start.options.challenge, keys),
-		);
+		const credential = await registration(start.options.challenge, keys);
+		// Derive the key from attestation, ignoring the native JSON convenience field.
+		credential.response.publicKey = Codec.Base64Url.encode(Uint8Array.of(0));
+		const registered = await cold.submit(start, credential);
 		expect(registered.status).toBe(303);
 		expect(registered.headers.get("location")).toBe("/account");
 		expect(cold.create).toHaveBeenCalledOnce();
@@ -1067,12 +1108,17 @@ describe("configured passkey callbacks", () => {
 		expect(await module.text()).toContain("export function listen");
 	});
 
-	test("gives verification a minute beyond the configured browser timeout", async () => {
-		const state = managed(setup({ timeout: 90000 }));
+	test("uses a fixed one-minute browser hint and two-minute ceremony lifetime", async () => {
+		const state = managed();
 		const start = await state.start("register");
-		expect(start.options.timeout).toBe(90000);
+		expect(start.options.timeout).toBe(60000);
+		expect(start.options.rp).toEqual({
+			id: "example.com",
+			name: "example.com",
+		});
+		expect(start.options.excludeCredentials).toBeUndefined();
 		const expiration = state.storage.challenges.get(start.ceremony)!.expiration;
-		expect(expiration - Date.now()).toBeGreaterThan(149000);
+		expect(expiration - Date.now()).toBeGreaterThan(119000);
 		const keys = await pair();
 		vi.spyOn(Date, "now").mockReturnValue(expiration - 1);
 		try {
@@ -1163,14 +1209,12 @@ describe("configured passkey callbacks", () => {
 				register: "/join/register",
 				login: "/join/login",
 				logout: "/join/logout",
-				options: "/join/options",
-				client: "/join/client.js",
 			},
 		});
 		const start = await state.start("register");
-		expect(start.endpoint).toBe("/join/options/register");
+		expect(start.endpoint).toBe("/_ovr/passkey/options/register");
 		expect(start.html).toContain('action="/join/register"');
-		expect(start.html).toContain('src="/join/client.js"');
+		expect(start.html).toContain('src="/_ovr/passkey/client.js"');
 		expect(
 			(
 				await state.submit(
@@ -1186,7 +1230,6 @@ describe("configured passkey callbacks", () => {
 		expect(() =>
 			managed(setup(), { paths: { register: "/auth/login" } }),
 		).toThrow("distinct");
-		expect(() => managed(setup(), { timeout: 0 })).toThrow("timeout");
 	});
 });
 
@@ -1230,21 +1273,22 @@ test("auth requires shared rate-limit storage at startup", () => {
 	const storage = setup();
 	expect(
 		() =>
-			// @ts-expect-error A shared backend is required; the framework has no implicit counters.
 			new Auth({
 				...storage.options,
+				// @ts-expect-error A shared backend is required; the framework has no implicit counters.
+				limits: undefined,
 				credentials: storage.credentials,
 				register: { fields: {}, name: () => "User", create: () => {} },
 			}),
 	).toThrow("limits.consume");
 });
 
-test("auth rejects empty limiter stacks at startup", () => {
+test("auth rejects client limiter arrays at startup", () => {
 	const storage = setup();
 	for (const method of ["register", "login"]) {
 		expect(() =>
 			managed(storage, { limits: { consume: storage.consume, [method]: [] } }),
-		).toThrow("at least one Limiter");
+		).toThrow("client policies");
 	}
 });
 
@@ -1495,7 +1539,11 @@ test("a failing layer prevents challenge writes and preserves generic errors", a
 	const later = new Limiter({ consume: storage.consume });
 	const check = vi.spyOn(later, "check");
 	const state = managed(storage, {
-		limits: { consume: storage.consume, login: [earlier, failed, later] },
+		limits: {
+			consume: storage.consume,
+			login: earlier,
+			extra: [failed, later],
+		},
 	});
 	const response = await state.post(
 		"/_ovr/passkey/options/login",
@@ -1661,7 +1709,9 @@ test("a zero-counter credential requires a matched snapshot even when its values
 	const rejected = await state.start("login");
 	const failure = await state.submit(
 		rejected,
-		await assertion(rejected.options.challenge, storage.keys),
+		await assertion(rejected.options.challenge, storage.keys, {
+			handle: storage.user,
+		}),
 		"/auth/login",
 	);
 	expect(failure.headers.get("location")).toBe(origin + "/auth?_auth=login");
@@ -1669,7 +1719,9 @@ test("a zero-counter credential requires a matched snapshot even when its values
 	const accepted = await state.start("login");
 	const success = await state.submit(
 		accepted,
-		await assertion(accepted.options.challenge, storage.keys),
+		await assertion(accepted.options.challenge, storage.keys, {
+			handle: storage.user,
+		}),
 		"/auth/login",
 	);
 	expect(success.headers.get("location")).toBe("/account");

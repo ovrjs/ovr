@@ -10,7 +10,7 @@ export default defineConfig({
 	build: { minify: true },
 	plugins: [
 		tailwindcss(),
-		domco({ adapter: adapter() }),
+		domco({ adapter: adapter({ config: { runtime: "nodejs26.x" } }) }),
 		md({ ...options, FrontmatterSchema }),
 		imagetools(),
 	],

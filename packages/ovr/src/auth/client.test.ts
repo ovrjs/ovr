@@ -82,6 +82,32 @@ class Credential {
 	rawId = Uint8Array.of(1).buffer;
 	type = "public-key";
 	readonly response: Attestation | Assertion;
+	toJSON() {
+		return {
+			id: this.id,
+			rawId: "AQ",
+			type: this.type,
+			authenticatorAttachment: "platform",
+			clientExtensionResults: {},
+			response:
+				this.response instanceof Attestation
+					? {
+							clientDataJSON: "AQ",
+							attestationObject: "Ag",
+							authenticatorData: "Aw",
+							publicKey: "BA",
+							publicKeyAlgorithm: -7,
+							transports: ["internal"],
+						}
+					: {
+							clientDataJSON: "AQ",
+							authenticatorData: "Ag",
+							signature: "Aw",
+							userHandle: "BA",
+						},
+		};
+	}
+
 	constructor(response: Attestation | Assertion) {
 		this.response = response;
 	}
@@ -108,10 +134,23 @@ function setup() {
 	);
 	const create = vi.fn(async () => new Credential(new Attestation()));
 	const get = vi.fn(async () => new Credential(new Assertion()));
+	const creation = vi.fn((_options: unknown) => ({
+		challenge: Uint8Array.of(42).buffer,
+	}));
+	const request = vi.fn((_options: unknown) => ({
+		challenge: Uint8Array.of(43).buffer,
+	}));
+
 	vi.stubGlobal("HTMLFormElement", Form);
 	vi.stubGlobal("HTMLElement", Element);
 	vi.stubGlobal("HTMLInputElement", Input);
-	vi.stubGlobal("PublicKeyCredential", Credential);
+	vi.stubGlobal(
+		"PublicKeyCredential",
+		Object.assign(Credential, {
+			parseCreationOptionsFromJSON: creation,
+			parseRequestOptionsFromJSON: request,
+		}),
+	);
 	vi.stubGlobal("AuthenticatorAttestationResponse", Attestation);
 	vi.stubGlobal("AuthenticatorAssertionResponse", Assertion);
 	const pages = new Map<string, (event: { persisted: boolean }) => void>();
@@ -143,7 +182,18 @@ function setup() {
 	const init: typeof listen = new Function(
 		`${source.slice(0, source.indexOf("// Modules execute")).replace("export function", "function")}\nreturn listen;`,
 	)();
-	return { first, second, status, fetcher, create, get, init, pages };
+	return {
+		first,
+		second,
+		status,
+		fetcher,
+		create,
+		get,
+		init,
+		pages,
+		creation,
+		request,
+	};
 }
 
 beforeEach(() => vi.useFakeTimers());
@@ -225,7 +275,7 @@ describe("passkey browser runtime", () => {
 	});
 });
 
-test("browser fallbacks preserve server policy and application fields", async () => {
+test("passes complete server policy to native parsing and preserves application fields", async () => {
 	const state = setup();
 	const email = new Input();
 	email.name = "email";
@@ -259,48 +309,59 @@ test("browser fallbacks preserve server policy and application fields", async ()
 	expect(body.get("email")).toBe("user@example.com");
 	expect(body.has("credential")).toBe(false);
 	expect(body.has("ceremony")).toBe(false);
-	expect(state.create).toHaveBeenCalledWith({
-		publicKey: expect.objectContaining({
+	expect(state.creation).toHaveBeenCalledWith(
+		expect.objectContaining({
 			timeout: 12345,
-			challenge: Uint8Array.of(1).buffer,
+			rp: { id: "example.com", name: "Example" },
+			attestation: "none",
+			authenticatorSelection: {
+				residentKey: "required",
+				userVerification: "required",
+			},
 			excludeCredentials: [
-				{
-					type: "public-key",
-					id: Uint8Array.of(2).buffer,
-					transports: ["internal"],
-				},
+				{ type: "public-key", id: "Ag", transports: ["internal"] },
 			],
 		}),
+	);
+	expect(state.create).toHaveBeenCalledWith({
+		publicKey: { challenge: Uint8Array.of(42).buffer },
 	});
+	expect(JSON.parse(state.first.fields.get("credential")!.value)).toMatchObject(
+		{
+			clientExtensionResults: {},
+			authenticatorAttachment: "platform",
+			response: { publicKeyAlgorithm: -7, transports: ["internal"] },
+		},
+	);
 });
 
-test("uses native JSON option parsers when the browser supplies them", async () => {
+test("requires native JSON parsing and serialization for registration and login", async () => {
 	const state = setup();
-	const creation = vi.fn(() => ({ challenge: Uint8Array.of(42).buffer }));
-	const request = vi.fn(() => ({ challenge: Uint8Array.of(43).buffer }));
-	vi.stubGlobal(
-		"PublicKeyCredential",
-		Object.assign(Credential, {
-			parseCreationOptionsFromJSON: creation,
-			parseRequestOptionsFromJSON: request,
-		}),
-	);
+	const serialize = vi.spyOn(Credential.prototype, "toJSON");
 	try {
 		state.init("first", "bootstrap", "/options", "register");
 		await state.first.fire();
 		state.init("second", "bootstrap", "/options", "login");
 		await state.second.fire();
-		expect(creation).toHaveBeenCalledOnce();
-		expect(request).toHaveBeenCalledOnce();
+		expect(state.creation).toHaveBeenCalledOnce();
+		expect(state.request).toHaveBeenCalledOnce();
+		expect(serialize).toHaveBeenCalledTimes(2);
 		expect(state.create).toHaveBeenCalledWith({
 			publicKey: { challenge: Uint8Array.of(42).buffer },
 		});
 		expect(state.get).toHaveBeenCalledWith({
 			publicKey: { challenge: Uint8Array.of(43).buffer },
 		});
+		expect(
+			JSON.parse(state.second.fields.get("credential")!.value).response,
+		).toEqual({
+			clientDataJSON: "AQ",
+			authenticatorData: "Ag",
+			signature: "Aw",
+			userHandle: "BA",
+		});
 	} finally {
-		Reflect.deleteProperty(Credential, "parseCreationOptionsFromJSON");
-		Reflect.deleteProperty(Credential, "parseRequestOptionsFromJSON");
+		serialize.mockRestore();
 	}
 });
 
@@ -383,30 +444,6 @@ test.each(["register", "login"] as const)(
 		expect(state.fetcher).toHaveBeenCalledTimes(2);
 	},
 );
-
-test("bounds recovery by the configured timeout plus a minute, at most five minutes", async () => {
-	const state = setup();
-	state.fetcher.mockResolvedValueOnce(
-		Response.json({
-			ceremony: "id",
-			options: { challenge: "AQ", timeout: 1000, rpId: "example.com" },
-		}),
-	);
-	state.init("first", "bootstrap", "/options", "login");
-	await state.first.fire();
-	await vi.advanceTimersByTimeAsync(61000);
-	expect(state.first.fields.get("ceremony")?.value).toBe("");
-	state.fetcher.mockResolvedValueOnce(
-		Response.json({
-			ceremony: "id",
-			options: { challenge: "AQ", timeout: 3600000, rpId: "example.com" },
-		}),
-	);
-	await state.first.fire();
-	await vi.advanceTimersByTimeAsync(300000);
-	expect(state.first.fields.get("ceremony")?.value).toBe("");
-	expect(state.first.attributes.has("aria-busy")).toBe(false);
-});
 
 test("back navigation cancels the previous recovery timer before a fresh ceremony", async () => {
 	const state = setup();

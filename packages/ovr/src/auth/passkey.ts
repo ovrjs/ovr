@@ -31,20 +31,10 @@ export namespace Passkey {
 		url: Route<Pattern>["url"];
 		pathname(params?: Record<string, string>): string;
 	}
-	/** Registration form configuration. */
+	/** Internal form configuration. */
 	export interface Options {
-		/** Opaque user handle, at most 64 UTF-8 bytes; defaults to a UUID. Never use an email. */
-		readonly user?: string;
-		/** Credential IDs already associated with this user. */
-		readonly exclude?: string[];
-		/** Human-readable account name shown in the provider's account chooser. */
-		readonly name?: string;
-		/** Friendly label shown by the provider. */
-		readonly displayName?: string;
 		/** Fresh options URL; supplied by the configured handlers. */
 		readonly endpoint: string;
-		/** External module URL; supplied by the configured handlers. */
-		readonly client?: string;
 		/** CSP nonce for strict nonce policies. */
 		readonly nonce?: string;
 	}
@@ -68,9 +58,6 @@ export class Passkey {
 		browser: Schema.string(),
 		expiration: Schema.number().int(),
 		user: Schema.string().optional(),
-		exclude: Schema.array(Schema.string()).optional(),
-		name: Schema.string().optional(),
-		displayName: Schema.string().optional(),
 	});
 	static readonly #credential = Schema.object({
 		type: Schema.literal("public-key"),
@@ -107,12 +94,8 @@ export class Passkey {
 		/** Create a form component; call in the route handler before returning JSX. */
 		form: <Pattern extends string>(
 			route: Passkey.Post<Pattern>,
-			{ user = crypto.randomUUID(), exclude = [], ...options }: Passkey.Options,
-		) => {
-			if (!Codec.encode(user).length || Codec.encode(user).length > 64)
-				throw new TypeError("Passkey user must contain 1–64 UTF-8 bytes");
-			return this.#form(route, "register", { user, exclude, ...options });
-		},
+			options: Passkey.Options,
+		) => this.#form(route, "register", options),
 		/** Verify registration; persist the credential with a unique ID constraint. */
 		verify: () => this.#register(),
 	};
@@ -158,6 +141,7 @@ export class Passkey {
 				"Prepare passkey routes at startup with Passkey.prepare()",
 			);
 		const browser = this.#auth.browser(true);
+		const user = method === "register" ? crypto.randomUUID() : undefined;
 		this.#c.res.headers.set("cache-control", "no-store");
 		const Error = (props: JSX.IntrinsicElements["p"]): JSX.Element =>
 			jsx("p", {
@@ -184,7 +168,7 @@ export class Passkey {
 							jsx("script", {
 								id,
 								type: "module",
-								src: options.client ?? Passkey.client.pathname(),
+								src: Passkey.client.pathname(),
 								nonce: options.nonce,
 								"data-ovr-passkey": method,
 								"data-endpoint": options.endpoint,
@@ -197,10 +181,7 @@ export class Passkey {
 										origin: this.#auth.options.origin,
 										browser,
 										expiration: Date.now() + Time.hour,
-										user: options.user,
-										exclude: options.exclude,
-										name: options.name,
-										displayName: options.displayName,
+										user,
 									}),
 								),
 							}),
@@ -248,8 +229,8 @@ export class Passkey {
 		c: Pick<ContextType, "url" | "res" | "text" | "json">,
 		auth: State,
 		token: string,
-		label?: () => Auth.Result<{ name: string; displayName?: string }>,
-		expected?: { method: "register" | "login"; action: string },
+		label: (() => Auth.Result<string>) | undefined,
+		expected: { method: "register" | "login"; action: string },
 	) {
 		const payload = await Token.open(auth.options.secret, "passkey", token);
 		const result = Schema.string().json(Passkey.#bootstrap).parse(payload);
@@ -265,9 +246,8 @@ export class Passkey {
 		if (bootstrap.expiration <= Date.now())
 			throw new AuthIssue("bootstrap (expired)");
 		if (
-			expected &&
-			(bootstrap.method !== expected.method ||
-				bootstrap.action !== expected.action)
+			bootstrap.method !== expected.method ||
+			bootstrap.action !== expected.action
 		)
 			throw new AuthIssue("bootstrap binding");
 		if (
@@ -276,15 +256,11 @@ export class Passkey {
 		)
 			throw new AuthIssue("user");
 		const rp = new URL(auth.options.origin).hostname;
-		const account =
-			bootstrap.method === "register" ? await label?.() : undefined;
-		const name = account?.name ?? bootstrap.name ?? auth.options.name ?? rp;
-		const displayName = account?.displayName ?? bootstrap.displayName ?? name;
+		const name =
+			bootstrap.method === "register" ? ((await label?.()) ?? "") : "";
 		if (
-			!name.trim() ||
-			!displayName.trim() ||
-			name.length > 256 ||
-			displayName.length > 256
+			bootstrap.method === "register" &&
+			(typeof name !== "string" || !name.trim() || name.length > 256)
 		)
 			throw new AuthIssue("account label");
 		const ceremony = crypto.randomUUID();
@@ -298,7 +274,7 @@ export class Passkey {
 				method: bootstrap.method,
 				action: bootstrap.action,
 				origin: bootstrap.origin,
-				expiration: Date.now() + auth.options.timeout + Time.minute,
+				expiration: Date.now() + 2 * Time.minute,
 				...(bootstrap.user ? { user: bootstrap.user } : {}),
 			})) === false
 		) {
@@ -312,23 +288,19 @@ export class Passkey {
 				ceremony,
 				options: {
 					challenge,
-					rp: { id: rp, name: auth.options.name ?? rp },
+					rp: { id: rp, name: rp },
 					user: {
 						id: Codec.Base64Url.encode(Codec.encode(bootstrap.user!)),
 						name,
-						displayName,
+						displayName: name,
 					},
 					pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-					excludeCredentials: (bootstrap.exclude ?? []).map((id) => ({
-						type: "public-key",
-						id,
-					})),
 					authenticatorSelection: {
 						residentKey: "required",
 						requireResidentKey: true,
 						userVerification: "required",
 					},
-					timeout: auth.options.timeout,
+					timeout: Time.minute,
 					attestation: "none",
 				} satisfies PublicKeyCredentialCreationOptionsJSON,
 			});
@@ -338,7 +310,7 @@ export class Passkey {
 				options: {
 					challenge,
 					rpId: rp,
-					timeout: auth.options.timeout,
+					timeout: Time.minute,
 					userVerification: "required",
 				} satisfies PublicKeyCredentialRequestOptionsJSON,
 			});
@@ -375,20 +347,11 @@ export class Passkey {
 	async #consume(method: "register" | "login") {
 		this.#origin();
 		const parsed = await this.#c.data({ payload: 128 * Size.kb });
-		// Schema routes cache their parsed body; routes without a schema use the raw form.
-		const result =
-			parsed == null
-				? await Passkey.#fields.parse(
-						this.#c.form({
-							payload: 128 * Size.kb,
-							parts: Passkey.#fields.parts,
-						}),
-					)
-				: Passkey.#payload.parse(
-						parsed && typeof parsed === "object" && "data" in parsed
-							? parsed.data
-							: undefined,
-					);
+		const result = Passkey.#payload.parse(
+			parsed && typeof parsed === "object" && "data" in parsed
+				? parsed.data
+				: undefined,
+		);
 		if (result.issues) throw result;
 		const state = await this.#auth.options.challenges.take(
 			result.data.ceremony,

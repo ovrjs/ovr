@@ -219,7 +219,7 @@ export class Codec {
 		 * @returns Base64 string
 		 */
 		static encode(bytes: Uint8Array) {
-			return btoa(String.fromCharCode(...bytes));
+			return bytes.toBase64();
 		}
 
 		/**
@@ -229,7 +229,7 @@ export class Codec {
 		 * @returns Decoded bytes
 		 */
 		static decode(s: string) {
-			return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+			return Uint8Array.fromBase64(s);
 		}
 	};
 
@@ -241,9 +241,7 @@ export class Codec {
 		 * @returns Base64Url string
 		 */
 		static encode(bytes: Uint8Array) {
-			return btoa(String.fromCharCode(...bytes))
-				.replace(/[+/]/g, (c) => (c === "+" ? "-" : "_"))
-				.replace(/=+$/, "");
+			return bytes.toBase64({ alphabet: "base64url", omitPadding: true });
 		}
 
 		/**
@@ -253,9 +251,7 @@ export class Codec {
 		 * @returns Decoded bytes
 		 */
 		static decode(s: string) {
-			const b64 = s.replace(/[-_]/g, (c) => (c === "-" ? "+" : "/"));
-
-			return Codec.Base64.decode(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+			return Uint8Array.fromBase64(s, { alphabet: "base64url" });
 		}
 	};
 }

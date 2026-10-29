@@ -36,7 +36,7 @@ Or you can use a comment if you are using ovr in conjunction with another framew
 
 ## Compatibility
 
-ovr uses entirely standard JavaScript APIs, so it can run anywhere.
+ovr targets Node.js 26 or newer and current browsers. Other Fetch-compatible runtimes must provide the modern standard APIs it uses, including `Uint8Array.fromBase64()` and `Uint8Array.prototype.toBase64()`. Hosting must support that runtime baseline; Vercel's [published Node.js runtime list](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions) currently stops at Node 24, so Node 26 deployment there has not been verified.
 
 The ovr `App` server can be used in any Fetch API compatible runtime via [`App.fetch`](/03-app#fetch). Here are a few ways to create a Fetch based HTTP server in various JavaScript runtimes.
 

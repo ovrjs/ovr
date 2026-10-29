@@ -29,25 +29,11 @@ export function listen(
 	};
 	const credential = hidden("credential");
 	const ceremony = hidden("ceremony");
-	const decode = (value: string) =>
-		Uint8Array.from(
-			atob(
-				value.replace(/-/g, "+").replace(/_/g, "/") +
-					"=".repeat((4 - (value.length % 4)) % 4),
-			),
-			(c) => c.charCodeAt(0),
-		).buffer;
-	const encode = (value: ArrayBuffer) =>
-		btoa(String.fromCharCode(...new Uint8Array(value)))
-			.replace(/\+/g, "-")
-			.replace(/\//g, "_")
-			.replace(/=+$/, "");
 	let loading = false;
 	let submitting = false;
 	let finalizing = false;
 	let submitted: SubmitEvent | undefined;
 	let retry = 0;
-	let lifetime = 120000;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const reset = () => {
 		clearTimeout(timer);
@@ -135,26 +121,11 @@ export function listen(
 					options: PublicKeyCredentialCreationOptionsJSON;
 				} = await res.json();
 				ceremony.value = json.ceremony;
-				// Bound UI recovery even when a deployment configures an unusually long prompt.
-				lifetime = Math.min((json.options.timeout ?? 60000) + 60000, 300000);
-				const {
-					challenge: nonce,
-					user,
-					excludeCredentials,
-					...options
-				} = json.options;
+
 				result = await navigator.credentials.create({
-					publicKey: PublicKeyCredential.parseCreationOptionsFromJSON?.(
+					publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(
 						json.options,
-					) ?? {
-						...options,
-						challenge: decode(nonce),
-						user: { ...user, id: decode(user.id) },
-						excludeCredentials: (excludeCredentials ?? []).map((v) => ({
-							...v,
-							id: decode(v.id),
-						})),
-					},
+					),
 				});
 			} else {
 				const json: {
@@ -162,47 +133,16 @@ export function listen(
 					options: PublicKeyCredentialRequestOptionsJSON;
 				} = await res.json();
 				ceremony.value = json.ceremony;
-				// Bound UI recovery even when a deployment configures an unusually long prompt.
-				lifetime = Math.min((json.options.timeout ?? 60000) + 60000, 300000);
-				const { challenge: nonce, allowCredentials, ...options } = json.options;
+
 				result = await navigator.credentials.get({
-					publicKey: PublicKeyCredential.parseRequestOptionsFromJSON?.(
+					publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(
 						json.options,
-					) ?? {
-						...options,
-						challenge: decode(nonce),
-						allowCredentials: (allowCredentials ?? []).map((v) => ({
-							...v,
-							id: decode(v.id),
-						})),
-					},
+					),
 				});
 			}
 			if (!(result instanceof PublicKeyCredential))
 				throw new Error("No passkey was returned. Try again.");
-			const response = result.response;
-			// Explicit serialization also works in browsers without PublicKeyCredential.toJSON().
-			credential.value = JSON.stringify({
-				id: result.id,
-				rawId: encode(result.rawId),
-				type: result.type,
-				response:
-					response instanceof AuthenticatorAttestationResponse
-						? {
-								clientDataJSON: encode(response.clientDataJSON),
-								attestationObject: encode(response.attestationObject),
-							}
-						: response instanceof AuthenticatorAssertionResponse
-							? {
-									clientDataJSON: encode(response.clientDataJSON),
-									authenticatorData: encode(response.authenticatorData),
-									signature: encode(response.signature),
-									userHandle: response.userHandle
-										? encode(response.userHandle)
-										: null,
-								}
-							: null,
-			});
+			credential.value = JSON.stringify(result);
 			submitting = true;
 			finalizing = true;
 			submitted = undefined;
@@ -224,7 +164,7 @@ export function listen(
 						method === "register"
 							? "If registration already completed, sign in; otherwise try again."
 							: "If sign-in did not finish, try again.";
-				}, lifetime);
+				}, 120000);
 		} catch (error) {
 			reset();
 			status.textContent =

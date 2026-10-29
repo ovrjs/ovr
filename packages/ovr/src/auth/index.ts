@@ -1,12 +1,10 @@
 import type { Context as ContextType } from "../context/index.js";
 import type { JSX } from "../jsx/index.js";
+import type { Limiter } from "../limiter/index.js";
 import type { Route } from "../route/index.js";
 import type { Form } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
-import {
-	type Configuration as ConfigurationType,
-	configure,
-} from "./configure.js";
+import { configure } from "./configure.js";
 import { State } from "./state.js";
 
 export namespace Auth {
@@ -14,9 +12,6 @@ export namespace Auth {
 	export type Context = Pick<ContextType, "url" | "cookie" | "res" | "form"> & {
 		data: (options?: { payload: number }) => Promise<unknown>;
 	};
-	/** Complete ORM-independent passkey configuration. */
-	export type Configuration<Shape extends Form.Shape> =
-		ConfigurationType<Shape>;
 	/** Request-scoped UI pieces with application field names preserved. */
 	export interface Forms<Shape extends Form.Shape> {
 		Register: Route.Form<string> & {
@@ -73,7 +68,7 @@ export namespace Auth {
 	}
 
 	/** Database-backed authentication configuration; all instances must share persistence. */
-	export interface Options {
+	export interface Options<Shape extends Form.Shape = Form.Shape> {
 		/** Random signing secret with at least 32 UTF-8 bytes. */
 		readonly secret: string;
 		/** Trusted HTTPS origin, for example `https://example.com`. */
@@ -82,12 +77,46 @@ export namespace Auth {
 		readonly challenges: Challenges;
 		/** Required persistence for revocable sessions. */
 		readonly sessions: Sessions;
-		/** Display name shown by passkey providers; defaults to the origin hostname. */
-		readonly name?: string;
 		/** Session lifetime in milliseconds; defaults to one week, without sliding refresh. */
 		readonly duration?: number;
-		/** Browser prompt timeout; server verification allows an additional minute. Defaults to 60 seconds. */
-		readonly timeout?: number;
+		/** Credential lookup and atomic updates using the application's persistence. */
+		readonly credentials: Auth.Credentials;
+		/** Registration fields, provider labels, and atomic account creation. */
+		readonly register: {
+			/** Application fields, validated before prompting and again before saving. */
+			readonly fields: Shape;
+			/** Human-readable account label, independent of the opaque user handle. */
+			readonly name: (data: Form.Parse.Data<Shape>) => Auth.Result<string>;
+			/** Atomically insert a new user and credential, enforcing unique user and credential IDs. Never upsert an existing user. */
+			readonly create: (
+				data: Form.Parse.Data<Shape>,
+				credential: Auth.Credential,
+			) => Auth.Result<void>;
+		};
+		/** Authentication page, also used for generic failure redirects. Defaults to /auth. */
+		readonly page?: string;
+		/** Destination after registration or login. Defaults to /. */
+		readonly redirect?: string;
+		/** Override the default endpoint paths. Paths must be distinct literal local paths. */
+		readonly paths?: Partial<Record<"register" | "login" | "logout", string>>;
+		/** Shared rate-limit storage; ovr supplies the signup and sign-in policies. */
+		readonly limits: {
+			/** Atomically refill and consume a token across all workers and deployments sharing these policies. */
+			readonly consume: Limiter.Options["consume"];
+			/** Optional generous request ceiling before client key creation. Counts requests denied by later policies too. */
+			readonly guard?: Limiter;
+			/** Additional shared policies checked after the client policy, preserving the built-in defaults. */
+			readonly extra?: readonly Limiter[];
+			/** Replace the built-in registration client policy. Use extra to add shared policies without removing it. */
+			readonly register?: Limiter;
+			/** Replace the built-in login client policy. Use extra to add shared policies without removing it. */
+			readonly login?: Limiter;
+		};
+		/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
+		readonly error?: (
+			error: unknown,
+			c: Pick<ContextType, "req" | "url" | "cookie" | "ip">,
+		) => Auth.Result<void>;
 	}
 
 	/** Stored ES256 passkey, including state updated after each login. */
@@ -130,25 +159,21 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	) => Auth.Forms<Shape>;
 
 	/** Configure passkeys, session helpers, and automatic authentication rate limits. */
-	constructor(options: Auth.Configuration<Shape>) {
+	constructor(options: Auth.Options<Shape>) {
 		const origin = new URL(options.origin);
 		if (origin.protocol !== "https:" || origin.origin !== options.origin)
 			throw new TypeError("Auth origin must be an HTTPS origin without a path");
 		if (Codec.encode(options.secret).length < 32)
 			throw new TypeError("Auth secret must contain at least 32 bytes");
-		for (const [name, value] of Object.entries({
-			duration: options.duration ?? Time.week,
-			timeout: options.timeout ?? Time.minute,
-		})) {
-			if (
-				!Number.isSafeInteger(value) ||
-				value < Time.second ||
-				value > 365 * Time.day
-			)
-				throw new TypeError(
-					`Auth ${name} must be a positive lifetime in milliseconds`,
-				);
-		}
+		if (
+			options.duration !== undefined &&
+			(!Number.isSafeInteger(options.duration) ||
+				options.duration < Time.second ||
+				options.duration > 365 * Time.day)
+		)
+			throw new TypeError(
+				"Auth duration must be a positive lifetime in milliseconds",
+			);
 		this.#options = { ...options };
 		const service = configure(this.#options, (c) => this.#state(c));
 		this.routes = service.routes;
