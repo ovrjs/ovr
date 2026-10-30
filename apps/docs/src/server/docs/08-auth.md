@@ -10,20 +10,25 @@ description: Passkey authentication with customizable forms and your own databas
 Create one `Auth` instance and pass it to `App`. This mounts the authentication endpoints automatically.
 
 ```ts
+import * as db from "./db";
 import { App, Auth, Field } from "ovr";
 
 const auth = new Auth({
 	secret,
 	origin: "https://example.com",
 	redirect: "/account",
-	challenges: { set: saveChallenge, take: takeChallenge },
-	sessions: { set: saveSession, get: getSession, delete: deleteSession },
-	credentials: { get: getCredential, update: updateCredential },
-	limits: { consume: consumeToken },
+	challenges: { set: db.saveChallenge, take: db.takeChallenge },
+	sessions: {
+		set: db.saveSession,
+		get: db.getSession,
+		delete: db.deleteSession,
+	},
+	credentials: { get: db.getCredential, update: db.updateCredential },
+	limits: { consume: db.consumeToken },
 	register: {
 		fields: { email: Field.email({ label: "Email" }) },
 		name: ({ email }) => email,
-		create: createUser,
+		create: db.createUser,
 	},
 });
 
@@ -32,7 +37,7 @@ const app = new App({ auth });
 
 `secret` is a server-side random secret containing at least 32 bytes. Keep it stable across deployments. `origin` is your exact HTTPS origin, without a path or trailing slash.
 
-The named storage functions in this example are application code. Implement them using the [storage contracts](#storage) below; no adapter class or database integration package is required.
+`./db` is your application's database module. Implement its functions using the [storage contracts](#storage) below; no adapter class or database integration package is required.
 
 ## Forms
 
@@ -152,7 +157,7 @@ ovr supplies the per-client policies. You supply the shared atomic storage opera
 
 The default identity is the trusted client IP, with IPv6 grouped by `/64`. A ceremony makes two requests: options and verification have separate budgets. Admission happens before body parsing and challenge writes. Logout bypasses these policies, including limiter failures.
 
-`consumeToken(key, { limit, interval })` must atomically refill the token bucket and consume one token. Return literal `true` on admission or a positive absolute retry timestamp in milliseconds on denial. Every worker must share the same storage and policy. There is no in-memory fallback. See [Limiter](/05-middleware#rate-limiting) for backend keys, middleware, and custom identities.
+`db.consumeToken(key, { limit, interval })` must atomically refill the token bucket and consume one token. Return literal `true` on admission or a positive absolute retry timestamp in milliseconds on denial. Every worker must share the same storage and policy. There is no in-memory fallback. See [Limiter](/05-middleware#rate-limiting) for backend keys, middleware, and custom identities.
 
 Your server must supply the real client IP:
 
@@ -167,19 +172,20 @@ A Fetch `Request` does not expose the socket peer. Use your server's connection 
 **Public deployments need aggregate admission ceilings to protect shared challenge capacity.** Per-client limits alone do not contain distributed callers or clients rotating through larger IPv6 allocations. Add shared policies with `limits.extra`, or enforce equivalent limits at the edge.
 
 ```ts
+import * as db from "./db";
 import { Auth, Limiter } from "ovr";
 
 new Auth({
 	...options,
 	limits: {
-		consume: consumeToken,
+		consume: db.consumeToken,
 		extra: [
 			new Limiter({
 				name: `auth:all:${options.origin}`,
 				limit: 100,
 				interval: 60000,
 				key: () => "all",
-				consume: consumeToken,
+				consume: db.consumeToken,
 			}),
 		],
 	},
