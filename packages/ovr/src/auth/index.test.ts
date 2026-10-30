@@ -620,6 +620,30 @@ describe("passkey ceremonies", () => {
 });
 
 describe("revocable sessions", () => {
+	test("uses the default session lifetime when duration is explicitly undefined", async () => {
+		// @ts-expect-error JavaScript callers can explicitly pass undefined.
+		const state = setup({ duration: undefined });
+		const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+		try {
+			const response = await state.post("/session", new FormData());
+			const session: Auth.Session = await response.json();
+			const cookie = response.headers.getSetCookie().at(-1)!;
+			expect(state.sessions.get(session.id)?.expiration).toBe(
+				Date.now() + Time.week,
+			);
+			expect(cookie).toContain(`Max-Age=${Time.week / Time.second}`);
+			expect(
+				await (
+					await state.app.fetch(origin + "/session", {
+						headers: { cookie: cookie.split(";")[0]! },
+					})
+				).json(),
+			).toEqual(session);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
 	test("one Auth service isolates concurrent requests and caches only within each request", async () => {
 		const state = setup();
 		const [first, second] = await Promise.all([

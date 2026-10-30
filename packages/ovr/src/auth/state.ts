@@ -30,7 +30,7 @@ export class State {
 		if (c.url.origin !== options.origin)
 			throw new OriginIssue("Authentication requires its configured origin");
 		this.#c = c;
-		this.options = { duration: Time.week, ...options };
+		this.options = { ...options, duration: options.duration ?? Time.week };
 	}
 
 	/** Read a browser binding; create it only while preparing a form in the handler. */
