@@ -4,7 +4,7 @@ import { LimitIssue, Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form } from "../schema/index.js";
-import { Size } from "../util/index.js";
+import { Header, Size } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
 import type { State } from "./state.js";
@@ -31,6 +31,7 @@ export function configure<Shape extends Form.Shape>(
 			))
 	)
 		throw new TypeError("Auth limits.extra must be an array of Limiters");
+	const ceiling = options.limits.guard ? [options.limits.guard] : [];
 	// Snapshot stacks at startup so later array mutations cannot disable admission.
 	const limits = Object.fromEntries(
 		Object.entries({
@@ -55,22 +56,15 @@ export function configure<Shape extends Form.Shape>(
 				throw new TypeError(
 					"Auth client policies must be a Limiter; use limits.extra for additional layers",
 				);
-			return [
-				method,
-				[
-					...(options.limits.guard ? [options.limits.guard] : []),
-					value,
-					...(options.limits.extra ?? []),
-				],
-			];
+			return [method, [value, ...(options.limits.extra ?? [])]];
 		}),
 	);
 	const paths = {
 		register: options.paths?.register ?? "/auth/register",
 		login: options.paths?.login ?? "/auth/login",
 		logout: options.paths?.logout ?? "/auth/logout",
-		options: "/_ovr/passkey/options",
-		client: "/_ovr/passkey/client.js",
+		options: "/_passkey/options",
+		client: "/_passkey/client.js",
 	};
 	const page = options.page ?? "/auth";
 	const redirect = options.redirect ?? "/";
@@ -125,6 +119,42 @@ export function configure<Shape extends Form.Shape>(
 		c.redirect(target, 303);
 	};
 
+	const admit = async (
+		c: Limiter.Context & Pick<Context, "text" | "redirect">,
+		method: "register" | "login",
+		prompt: boolean,
+		policies: readonly Limiter[],
+	) => {
+		for (const limiter of policies) {
+			const admission = await limiter
+				.check(c, prompt ? "options" : "verify")
+				.catch((cause: unknown) => {
+					throw new LimitIssue("Authentication rate limit unavailable", {
+						cause,
+					});
+				});
+			if (admission !== true) {
+				if (!(admission instanceof Date))
+					throw new TypeError("Invalid auth admission result");
+				const now = Date.now();
+				const deadline = admission.getTime();
+				if (!Number.isSafeInteger(deadline))
+					throw new TypeError("Invalid auth retry deadline");
+				const retry = Math.min(now + 3600000, Math.max(now + 1000, deadline));
+				if (!prompt) {
+					back(c, method, retry);
+					return false;
+				}
+				c.res.headers.set(
+					"retry-after",
+					String(Math.ceil((retry - now) / 1000)),
+				);
+				c.text("Too many authentication requests. Try again later.", 429);
+				return false;
+			}
+		}
+		return true;
+	};
 	const guard =
 		(method: "register" | "login" | "logout", prompt = false) =>
 		async (
@@ -135,38 +165,22 @@ export function configure<Shape extends Form.Shape>(
 			try {
 				if (c.url.origin !== options.origin)
 					return c.text("Authentication failed.", 400);
+				if (
+					c.req.headers.get(Header.name.fetch) !== "same-origin" &&
+					c.req.headers.get(Header.name.origin) !== options.origin
+				) {
+					if (method === "logout" || prompt)
+						return c.text("Authentication failed.", 403);
+					return back(c, method);
+				}
 				// Network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header.
 				if (method !== "logout") {
-					for (const limiter of limits[method]!) {
-						const admission = await limiter
-							.check(c, prompt ? "options" : "verify")
-							.catch((cause: unknown) => {
-								throw new LimitIssue("Authentication rate limit unavailable", {
-									cause,
-								});
-							});
-						if (admission !== true) {
-							if (!(admission instanceof Date))
-								throw new TypeError("Invalid auth admission result");
-							const now = Date.now();
-							const deadline = admission.getTime();
-							if (!Number.isSafeInteger(deadline))
-								throw new TypeError("Invalid auth retry deadline");
-							const retry = Math.min(
-								now + 3600000,
-								Math.max(now + 1000, deadline),
-							);
-							if (!prompt) return back(c, method, retry);
-							c.res.headers.set(
-								"retry-after",
-								String(Math.ceil((retry - now) / 1000)),
-							);
-							return c.text(
-								"Too many authentication requests. Try again later.",
-								429,
-							);
-						}
-					}
+					if (!(await admit(c, method, prompt, ceiling))) return;
+					if (
+						!(prompt && method === "register") &&
+						!(await admit(c, method, prompt, limits[method]!))
+					)
+						return;
 				}
 				await next();
 			} catch (error) {
@@ -193,9 +207,12 @@ export function configure<Shape extends Form.Shape>(
 			async (c) => {
 				const input = await c.data({ payload: 128 * Size.kb });
 				if (!input || input.issues) throw input;
-				const credential = await new Passkey(c, state(c)).register();
+				const data = values(input.data);
+				const credential = await new Passkey(c, state(c)).register(
+					await Passkey.fields(data),
+				);
 				// Pass only application fields, never protocol fields, into the persistence callback.
-				await options.register.create(values(input.data), credential);
+				await options.register.create(data, credential);
 				await state(c).login(credential.user);
 				c.redirect(redirect, 303);
 			},
@@ -230,6 +247,7 @@ export function configure<Shape extends Form.Shape>(
 				if (!invalid.length) throw input;
 				return c.json({ fields: invalid }, 422);
 			}
+			if (!(await admit(c, "register", true, limits.register!))) return;
 			// The reserved bootstrap field is added to the validated application shape above.
 			const data = input.data as Form.Parse.Data<Shape> & { bootstrap: string };
 			await Passkey.issue(
@@ -237,7 +255,11 @@ export function configure<Shape extends Form.Shape>(
 				state(c),
 				data.bootstrap,
 				() => options.register.name(values(data)),
-				{ method: "register", action: paths.register },
+				{
+					method: "register",
+					action: paths.register,
+					fields: await Passkey.fields(values(data)),
+				},
 			);
 		},
 	);

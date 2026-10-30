@@ -111,6 +111,8 @@ export function listen(
 				form.reportValidity();
 				throw new Error("Check your registration details and try again.");
 			}
+			if (res.status === 410)
+				throw new Error("This page has expired. Reload and try again.");
 			if (!res.ok)
 				throw new Error("Could not start the passkey request. Try again.");
 
@@ -186,10 +188,10 @@ export function listen(
 const attached = new WeakMap<HTMLScriptElement, () => void>();
 const scan = () => {
 	for (const script of document.querySelectorAll<HTMLScriptElement>(
-		"script[data-ovr-passkey]",
+		"script[data-passkey]",
 	)) {
 		if (attached.has(script)) continue;
-		const method = script.dataset.ovrPasskey;
+		const method = script.dataset.passkey;
 		if (method === "register" || method === "login") {
 			const reset = listen(
 				script.id,
@@ -205,7 +207,7 @@ if (typeof document !== "undefined") {
 	window.addEventListener("pageshow", (e) => {
 		if (e.persisted)
 			for (const script of document.querySelectorAll<HTMLScriptElement>(
-				"script[data-ovr-passkey]",
+				"script[data-passkey]",
 			))
 				attached.get(script)?.();
 	});

@@ -129,16 +129,21 @@ export class App {
 	 * @param options [Options](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch#options) to apply to the request
 	 * @returns Promise that resolves to the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) to the request
 	 */
-	readonly fetch = async (
-		resource: RequestInfo | URL,
-		{ ip, ...init }: App.Fetch = {},
-	) => {
+	readonly fetch = async (resource: RequestInfo | URL, options?: App.Fetch) => {
+		let init: RequestInit | undefined;
+		if (options)
+			for (const key in options) {
+				if (key === "ip") continue;
+				const { ip, ...rest } = options;
+				init = rest;
+				break;
+			}
 		const c = new Context(
-			resource instanceof Request && !Object.keys(init).length
+			resource instanceof Request && !init
 				? resource
 				: new Request(resource, init),
 			this.#options,
-			ip,
+			options?.ip,
 		);
 
 		return Context.compose(

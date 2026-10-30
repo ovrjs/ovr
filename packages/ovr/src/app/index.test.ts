@@ -72,6 +72,10 @@ test("passes Request directly unless options are provided", async () => {
 	);
 
 	expect(await (await reuse.fetch(req)).text()).toBe("request");
+	expect(await (await reuse.fetch(req, { ip: "192.0.2.1" })).text()).toBe(
+		"request",
+	);
+	expect(await (await reuse.fetch(req, {})).text()).toBe("request");
 	expect(await (await reuse.fetch(req, { method: Method.post })).text()).toBe(
 		Method.post,
 	);

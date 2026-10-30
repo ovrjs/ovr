@@ -371,7 +371,7 @@ test("auto-initializes later streamed forms without attaching duplicate handlers
 		{
 			id: "first",
 			dataset: {
-				ovrPasskey: "register",
+				passkey: "register",
 				bootstrap: "first",
 				endpoint: "/options",
 			},
@@ -396,7 +396,7 @@ test("auto-initializes later streamed forms without attaching duplicate handlers
 	const previous = state.first.handler;
 	scripts.push({
 		id: "second",
-		dataset: { ovrPasskey: "login", bootstrap: "second", endpoint: "/options" },
+		dataset: { passkey: "login", bootstrap: "second", endpoint: "/options" },
 	});
 	scan!();
 	expect(state.first.handler).toBe(previous);
@@ -588,4 +588,19 @@ test("marks invalid application fields without echoing server messages or requir
 	expect(email.validation).toBe("");
 	await state.first.fire();
 	expect(state.create).toHaveBeenCalledOnce();
+});
+
+test("expired form bootstraps ask for a reload without opening the authenticator", async () => {
+	const state = setup();
+	state.fetcher.mockResolvedValueOnce(
+		new Response("Authentication failed.", { status: 410 }),
+	);
+	state.init("first", "bootstrap", "/options", "register");
+	await state.first.fire();
+	expect(state.status[0]?.textContent).toBe(
+		"This page has expired. Reload and try again.",
+	);
+	expect(state.create).not.toHaveBeenCalled();
+	expect(state.first.submissions).toHaveLength(0);
+	expect(state.first.attributes.has("aria-busy")).toBe(false);
 });

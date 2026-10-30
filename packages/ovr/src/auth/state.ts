@@ -130,6 +130,7 @@ export class State {
 				return;
 		} catch (error) {
 			if (!(error instanceof Issue)) throw error;
+			return;
 		}
 		this.#clear();
 		this.#session = Promise.resolve(null);

@@ -1960,7 +1960,7 @@ class FieldSchema<
 		const issueId = issue && `${props.name}-issue`;
 		const hidden = this.type === "hidden";
 		const { label = props.name, ...control } = {
-			id: props.name,
+			id: hidden ? undefined : props.name,
 			autofocus: issue && state?.issues?.[0] === issue,
 			"aria-invalid": issue && "true",
 			"aria-describedby": issueId,

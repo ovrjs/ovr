@@ -10,7 +10,7 @@ import { State } from "./state.js";
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
 const origin = "https://example.com";
-const endpoint = "/_ovr/passkey/options";
+const endpoint = "/_passkey/options";
 const user = "user-1";
 const id = Codec.Base64Url.encode(Uint8Array.of(1, 2, 3, 4));
 const bytes = (...parts: Uint8Array[]) => {
@@ -443,21 +443,21 @@ describe("passkey ceremonies", () => {
 	test("rejects bootstrap tampering, expiry, and use by another browser", async () => {
 		const state = setup();
 		const start = await state.start("register");
-		for (const [bootstrap, cookie] of [
-			[start.bootstrap + "x", start.cookie],
-			[start.bootstrap, "__Host-auth-browser=other"],
-		]) {
+		const tampered = new FormData();
+		tampered.set("bootstrap", start.bootstrap + "x");
+		await expect(
+			state.post(endpoint, tampered, start.cookie),
+		).rejects.toThrow();
+		for (const cookie of ["", "__Host-auth-browser=other"]) {
 			const data = new FormData();
-			data.set("bootstrap", bootstrap!);
-			await expect(state.post(endpoint, data, cookie)).rejects.toThrow();
+			data.set("bootstrap", start.bootstrap);
+			expect((await state.post(endpoint, data, cookie)).status).toBe(410);
 		}
 		vi.spyOn(Date, "now").mockReturnValue(Date.now() + Time.hour + 1);
 		try {
 			const data = new FormData();
 			data.set("bootstrap", start.bootstrap);
-			await expect(state.post(endpoint, data, start.cookie)).rejects.toThrow(
-				"expired",
-			);
+			expect((await state.post(endpoint, data, start.cookie)).status).toBe(410);
 		} finally {
 			vi.restoreAllMocks();
 		}
@@ -913,7 +913,7 @@ describe("form contracts", () => {
 		expect(html).not.toContain("</script><script>alert");
 		expect(html.match(/<script/g)).toHaveLength(1);
 		expect(html).toContain("&lt;/script>");
-		expect(html).toContain('src="/_ovr/passkey/client.js"');
+		expect(html).toContain('src="/_passkey/client.js"');
 	});
 
 	test("rejects reserved schema fields rather than silently replacing them", async () => {
@@ -1064,7 +1064,7 @@ function managed(
 		const html = await page.text();
 		const script = [...html.matchAll(/<script[^>]+>/g)]
 			.map((v) => v[0])
-			.find((v) => v.includes(`data-ovr-passkey="${method}"`))!;
+			.find((v) => v.includes(`data-passkey="${method}"`))!;
 		const bootstrap = script
 			.match(/data-bootstrap="([^"]+)"/)![1]!
 			.replaceAll("&quot;", '"')
@@ -1158,9 +1158,9 @@ describe("configured passkey callbacks", () => {
 		expect(start.html).toContain('class="registration"');
 		expect(start.html).toContain('class="error"');
 		expect(start.html).toContain('nonce="csp-nonce"');
-		expect(start.html).toContain('src="/_ovr/passkey/client.js"');
+		expect(start.html).toContain('src="/_passkey/client.js"');
 		expect(start.html).not.toContain("addEventListener");
-		const module = await state.app.fetch(origin + "/_ovr/passkey/client.js");
+		const module = await state.app.fetch(origin + "/_passkey/client.js");
 		expect(module.headers.get("content-type")).toContain("text/javascript");
 		expect(await module.text()).toContain("export function listen");
 	});
@@ -1231,7 +1231,9 @@ describe("configured passkey callbacks", () => {
 		expect(response.status).toBe(422);
 		expect(await response.json()).toEqual({ fields: ["email"] });
 		expect(set).not.toHaveBeenCalled();
+		expect(check).toHaveBeenCalledOnce();
 		check.mockResolvedValue(new Date(Date.now() + 60000));
+		invalid.set("email", "user@example.com");
 		const denied = await state.post(start.endpoint, invalid, start.cookie);
 		expect(denied.status).toBe(429);
 		expect(denied.headers.get("retry-after")).toBe("60");
@@ -1252,7 +1254,7 @@ describe("configured passkey callbacks", () => {
 		expect(
 			(
 				await state.post(
-					"/_ovr/passkey/options/register",
+					"/_passkey/options/register",
 					data,
 					page.headers.getSetCookie()[0]!.split(";")[0],
 				)
@@ -1269,9 +1271,9 @@ describe("configured passkey callbacks", () => {
 			},
 		});
 		const start = await state.start("register");
-		expect(start.endpoint).toBe("/_ovr/passkey/options/register");
+		expect(start.endpoint).toBe("/_passkey/options/register");
 		expect(start.html).toContain('action="/join/register"');
-		expect(start.html).toContain('src="/_ovr/passkey/client.js"');
+		expect(start.html).toContain('src="/_passkey/client.js"');
 		expect(
 			(
 				await state.submit(
@@ -1298,7 +1300,7 @@ test("automatic policies ignore cookie rotation, isolate clients, and leave logo
 			const data = new FormData();
 			data.set("bootstrap", "invalid");
 			const response = await state.post(
-				"/_ovr/passkey/options/login",
+				"/_passkey/options/login",
 				data,
 				`__Host-auth-browser=rotation-${i}`,
 			);
@@ -1307,7 +1309,7 @@ test("automatic policies ignore cookie rotation, isolate clients, and leave logo
 		const data = new FormData();
 		data.set("bootstrap", "invalid");
 		expect(
-			(await state.post("/_ovr/passkey/options/login", data, "", "192.0.2.2"))
+			(await state.post("/_passkey/options/login", data, "", "192.0.2.2"))
 				.status,
 		).toBe(400);
 		const start = await state.start("register");
@@ -1401,7 +1403,7 @@ test.each([
 			for (const phase of ["options", "verify"]) {
 				const path =
 					phase === "options"
-						? `/_ovr/passkey/options/${method}`
+						? `/_passkey/options/${method}`
 						: `/auth/${method}`;
 				const data = new FormData();
 				data.set("bootstrap", "invalid");
@@ -1469,7 +1471,7 @@ test("a generous guard bounds client-record creation before the default and extr
 	});
 	for (let i = 0; i < 10; i++) {
 		const response = await state.post(
-			"/_ovr/passkey/options/login",
+			"/_passkey/options/login",
 			new FormData(),
 			"",
 			`192.0.2.${i + 1}`,
@@ -1499,10 +1501,7 @@ test("a failed creation guard stops backend access and extra checks but leaves l
 	const state = managed(storage, {
 		limits: { consume, guard, extra: [extra] },
 	});
-	const response = await state.post(
-		"/_ovr/passkey/options/login",
-		new FormData(),
-	);
+	const response = await state.post("/_passkey/options/login", new FormData());
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private creation");
 	expect(state.error).toHaveBeenCalledOnce();
@@ -1602,10 +1601,7 @@ test("a failing layer prevents challenge writes and preserves generic errors", a
 			extra: [failed, later],
 		},
 	});
-	const response = await state.post(
-		"/_ovr/passkey/options/login",
-		new FormData(),
-	);
+	const response = await state.post("/_passkey/options/login", new FormData());
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private backend");
 	expect(state.error).toHaveBeenCalledOnce();
@@ -1624,18 +1620,15 @@ test("limiter errors cannot prevent logout", async () => {
 test("auth fails closed without trusted peer information and ignores spoofed IP headers", async () => {
 	const state = managed();
 	const set = vi.spyOn(state.storage.options.challenges, "set");
-	const response = await state.app.fetch(
-		origin + "/_ovr/passkey/options/login",
-		{
-			method: "POST",
-			headers: {
-				origin,
-				"x-forwarded-for": "192.0.2.1",
-				"cf-connecting-ip": "192.0.2.1",
-			},
-			body: new FormData(),
+	const response = await state.app.fetch(origin + "/_passkey/options/login", {
+		method: "POST",
+		headers: {
+			origin,
+			"x-forwarded-for": "192.0.2.1",
+			"cf-connecting-ip": "192.0.2.1",
 		},
-	);
+		body: new FormData(),
+	});
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("trusted client IP");
 	expect(set).not.toHaveBeenCalled();
@@ -1680,8 +1673,8 @@ test("every generated auth endpoint rejects an alternate host before admission o
 		"/auth/register",
 		"/auth/login",
 		"/auth/logout",
-		"/_ovr/passkey/options/register",
-		"/_ovr/passkey/options/login",
+		"/_passkey/options/register",
+		"/_passkey/options/login",
 	]) {
 		const response = await state.app.fetch("https://wrong.example" + path, {
 			method: "POST",
@@ -1694,7 +1687,7 @@ test("every generated auth endpoint rejects an alternate host before admission o
 	for (const method of ["GET", "HEAD"]) {
 		expect(
 			(
-				await state.app.fetch("https://wrong.example/_ovr/passkey/client.js", {
+				await state.app.fetch("https://wrong.example/_passkey/client.js", {
 					method,
 				})
 			).status,
@@ -1741,7 +1734,7 @@ test("configured options reject substituted operations and oversized bodies befo
 	const data = new FormData();
 	data.set("bootstrap", start.bootstrap);
 	const switched = await state.post(
-		"/_ovr/passkey/options/login",
+		"/_passkey/options/login",
 		data,
 		start.cookie,
 	);
@@ -1884,7 +1877,7 @@ test.each([
 			limits.check.mockResolvedValue(new Date(now + value));
 			const state = managed(setup(), { limits });
 			const response = await state.post(
-				"/_ovr/passkey/options/login",
+				"/_passkey/options/login",
 				new FormData(),
 			);
 			expect(response.status).toBe(retry === null ? 400 : 429);
@@ -1913,10 +1906,10 @@ test.each(["register", "login"])(
 			const location = new URL(response.headers.get("location")!);
 			expect(location.searchParams.get("_retry")).toBe(String(now + 3600000));
 			time.mockReturnValue(now + 3600000);
-			const denied = await state.post(
-				`/_ovr/passkey/options/${method}`,
-				new FormData(),
-			);
+			const data = new FormData();
+			data.set("email", "user@example.com");
+			data.set("bootstrap", "invalid");
+			const denied = await state.post(`/_passkey/options/${method}`, data);
 			expect(denied.status).toBe(429);
 			expect(denied.headers.get("retry-after")).toBe("3600");
 			expect(check).toHaveBeenCalledTimes(2);
@@ -1930,11 +1923,11 @@ test.each(["register", "login"])(
 
 test("browser assets revalidate with an ETag instead of downloading unchanged code", async () => {
 	const state = managed();
-	const first = await state.app.fetch(origin + "/_ovr/passkey/client.js");
+	const first = await state.app.fetch(origin + "/_passkey/client.js");
 	const etag = first.headers.get("etag")!;
 	expect(etag).toMatch(/^W\/"[a-f0-9]{64}"$/);
 	for (const value of [etag, etag.slice(2), `"other", ${etag}`, "*"]) {
-		const cached = await state.app.fetch(origin + "/_ovr/passkey/client.js", {
+		const cached = await state.app.fetch(origin + "/_passkey/client.js", {
 			headers: { "if-none-match": value },
 		});
 		expect(cached.status).toBe(304);
@@ -1942,7 +1935,7 @@ test("browser assets revalidate with an ETag instead of downloading unchanged co
 	}
 	expect(
 		(
-			await state.app.fetch(origin + "/_ovr/passkey/client.js", {
+			await state.app.fetch(origin + "/_passkey/client.js", {
 				headers: { "if-none-match": '"old"' },
 			})
 		).status,
@@ -1983,7 +1976,12 @@ test("a shared backend retains the built-in auth policies across service instanc
 	const first = managed(setup(), { limits: { consume } });
 	const second = managed(first.storage, { limits: { consume } });
 	const start = await first.start("register");
-	expect((await second.post(start.endpoint, new FormData())).status).toBe(429);
+	const data = new FormData();
+	data.set("email", "user@example.com");
+	data.set("bootstrap", start.bootstrap);
+	expect((await second.post(start.endpoint, data, start.cookie)).status).toBe(
+		429,
+	);
 	expect(consume.mock.calls[0]?.[1]).toEqual({ limit: 5, interval: 600000 });
 	expect(consume.mock.calls[0]?.[0]).toBe(consume.mock.calls[1]?.[0]);
 	const response = await second.submit(
@@ -1992,4 +1990,299 @@ test("a shared backend retains the built-in auth policies across service instanc
 	);
 	expect(response.headers.get("location")).toBe("/account");
 	expect(consume.mock.calls[2]?.[0]).not.toBe(consume.mock.calls[0]?.[0]);
+});
+
+test.each([undefined, "https://foreign.example"])(
+	"generated auth routes reject cross-site posts independently of App CSRF: %s",
+	async (foreign) => {
+		const state = managed();
+		const response = await state.storage.post("/session", new FormData());
+		const session: Auth.Session = await response.json();
+		const cookie = response.headers.getSetCookie().at(-1)!.split(";")[0]!;
+		const app = new App({ csrf: false, auth: state.service });
+		const remove = vi.spyOn(state.storage.options.sessions, "delete");
+		const consume = vi.spyOn(state.storage.options.challenges, "set");
+		for (const path of [
+			"/auth/logout",
+			"/auth/register",
+			"/auth/login",
+			"/_passkey/options/register",
+			"/_passkey/options/login",
+		]) {
+			const headers = new Headers({ cookie, "sec-fetch-site": "cross-site" });
+			if (foreign) headers.set("origin", foreign);
+			const result = await app.fetch(origin + path, {
+				method: "POST",
+				headers,
+				ip: "192.0.2.1",
+				body: new FormData(),
+			});
+			expect(result.status).toBe(
+				path === "/auth/register" || path === "/auth/login" ? 303 : 403,
+			);
+			if (result.status === 303)
+				expect(result.headers.get("location")).toContain("?_auth=");
+			expect(result.headers.getSetCookie()).toHaveLength(0);
+			expect(state.storage.sessions.get(session.id)).toEqual(session);
+		}
+		expect(remove).not.toHaveBeenCalled();
+		expect(consume).not.toHaveBeenCalled();
+	},
+);
+
+test.each(["origin", "sec-fetch-site"])(
+	"generated auth routes accept same-origin %s with App CSRF disabled",
+	async (header) => {
+		const state = managed();
+		const start = await state.start("register");
+		const app = new App({ csrf: false, auth: state.service });
+		const headers = {
+			cookie: start.cookie,
+			[header]: header === "origin" ? origin : "same-origin",
+		};
+		const data = new FormData();
+		data.set("bootstrap", start.bootstrap);
+		data.set("email", "user@example.com");
+		expect(
+			(
+				await app.fetch(origin + start.endpoint, {
+					method: "POST",
+					headers,
+					body: data,
+					ip: "192.0.2.1",
+				})
+			).status,
+		).toBe(200);
+		const logged = await state.storage.post("/session", new FormData());
+		const session: Auth.Session = await logged.json();
+		const result = await app.fetch(origin + "/auth/logout", {
+			method: "POST",
+			headers: {
+				...headers,
+				cookie: logged.headers.getSetCookie().at(-1)!.split(";")[0]!,
+			},
+		});
+		expect(result.status).toBe(303);
+		expect(result.headers.get("set-cookie")).toContain("Max-Age=0");
+		expect(state.storage.sessions.has(session.id)).toBe(false);
+	},
+);
+
+test("default Register and Login render together without duplicate IDs", async () => {
+	const state = managed();
+	state.app.use(
+		Route.get("/forms", (c) => {
+			const { Register, Login } = state.service.forms(c);
+			return [jsx(Register, {}), jsx(Login, {})];
+		}),
+	);
+	const html = await (await state.app.fetch(origin + "/forms")).text();
+	const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+	expect(ids.length).toBe(3);
+	expect(new Set(ids).size).toBe(ids.length);
+	const hidden = [...html.matchAll(/<input[^>]*type="hidden"[^>]*>/g)];
+	expect(hidden).toHaveLength(4);
+	for (const [input] of hidden) expect(input).not.toMatch(/\bid=/);
+	expect(html).toContain('src="/_passkey/client.js"');
+	expect(html).not.toContain("data-ovr");
+});
+
+test("registration rejects changed application fields before account or session creation", async () => {
+	const state = managed();
+	const start = await state.start("register");
+	expect(state.storage.challenges.get(start.ceremony)?.fields).toBe(
+		await Passkey.fields({ email: "user@example.com" }),
+	);
+	const data = new FormData();
+	data.set("email", "changed@example.com");
+	data.set("ceremony", start.ceremony);
+	data.set(
+		"credential",
+		JSON.stringify(await registration(start.options.challenge, await pair())),
+	);
+	const result = await state.post("/auth/register", data, start.cookie);
+	expect(result.headers.get("location")).toBe(origin + "/auth?_auth=register");
+	expect(result.headers.getSetCookie()).toHaveLength(0);
+	expect(state.create).not.toHaveBeenCalled();
+	expect(state.storage.sessions.size).toBe(0);
+	expect(state.storage.challenges.has(start.ceremony)).toBe(false);
+});
+
+test("registration field digests ignore object order and preserve array order and values", async () => {
+	expect(await Passkey.fields({ b: { y: 2, x: 1 }, a: [1, 2] })).toBe(
+		await Passkey.fields({ a: [1, 2], b: { x: 1, y: 2 } }),
+	);
+	expect(await Passkey.fields({ a: [1, 2] })).not.toBe(
+		await Passkey.fields({ a: [2, 1] }),
+	);
+	expect(await Passkey.fields({ a: "1" })).not.toBe(
+		await Passkey.fields({ a: 1 }),
+	);
+});
+
+test("revoking an unrelated session leaves an invalid incoming cookie alone", async () => {
+	const state = setup();
+	const remove = vi.spyOn(state.options.sessions, "delete");
+	const cookie = "__Host-auth-session=invalid";
+	const result = await state.post("/revoke/other", new FormData(), cookie);
+	expect(result.status).toBe(200);
+	expect(remove).toHaveBeenCalledExactlyOnceWith("other");
+	expect(result.headers.getSetCookie()).toHaveLength(0);
+	const read = await state.app.fetch(origin + "/session", {
+		headers: { cookie },
+	});
+	expect(await read.json()).toBeNull();
+	expect(read.headers.get("set-cookie")).toContain("Max-Age=0");
+});
+
+test("invalid registration options spend only the guard budget before a valid signup", async () => {
+	const storage = setup();
+	const consume = vi.fn(storage.consume);
+	const guard = new Limiter({
+		name: "guard",
+		limit: 20,
+		key: () => "all",
+		consume,
+	});
+	const extra = new Limiter({
+		name: "extra",
+		limit: 10,
+		key: () => "all",
+		consume,
+	});
+	const state = managed(storage, {
+		limits: { consume, guard, extra: [extra] },
+	});
+	const start = await state.start("register");
+	consume.mockClear();
+	for (let i = 0; i < 8; i++) {
+		const data = new FormData();
+		data.set("bootstrap", start.bootstrap);
+		data.set("email", "typo");
+		expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
+			422,
+		);
+	}
+	expect(consume).toHaveBeenCalledTimes(8);
+	expect(consume.mock.calls.every(([, policy]) => policy.limit === 20)).toBe(
+		true,
+	);
+	const data = new FormData();
+	data.set("bootstrap", start.bootstrap);
+	data.set("email", "user@example.com");
+	expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
+		200,
+	);
+	expect(
+		consume.mock.calls.slice(-3).map(([, policy]) => policy.limit),
+	).toEqual([20, 5, 10]);
+});
+
+test("rotating secrets preserves sessions and open forms across instances", async () => {
+	const old = managed();
+	const rotated = managed(old.storage, {
+		secret: [
+			"new-signing-secret-with-at-least-32-bytes",
+			"test-secret-with-at-least-32-bytes",
+		],
+	});
+	const start = await old.start("register", "", rotated.post);
+	const result = await rotated.submit(
+		start,
+		await registration(start.options.challenge, await pair()),
+	);
+	expect(result.headers.get("location")).toBe("/account");
+	const logged = await old.storage.post("/session", new FormData());
+	const cookie = logged.headers.getSetCookie().at(-1)!.split(";")[0]!;
+	expect(
+		await (
+			await rotated.app.fetch(origin + "/whoami", { headers: { cookie } })
+		).json(),
+	).not.toBeNull();
+	const removed = managed(old.storage, {
+		secret: "new-signing-secret-with-at-least-32-bytes",
+	});
+	expect(
+		await (
+			await removed.app.fetch(origin + "/whoami", { headers: { cookie } })
+		).json(),
+	).toBeNull();
+});
+
+test("every rotation secret is validated and the configured list is snapshotted", async () => {
+	const state = setup();
+	expect(
+		() =>
+			new Auth({
+				...state.options,
+				secret: ["test-secret-with-at-least-32-bytes", "short"],
+			}),
+	).toThrow("at least 32 bytes");
+	const secrets: [string, ...string[]] = ["test-secret-with-at-least-32-bytes"];
+	const auth = new Auth({ ...state.options, secret: secrets });
+	secrets[0] = "replacement-secret-with-at-least-32-bytes";
+	const app = new App().use(
+		Route.get("/session", async (c) => c.json(await auth.session(c))),
+	);
+	const login = await state.post("/session", new FormData());
+	expect(
+		await (
+			await app.fetch(origin + "/session", {
+				headers: {
+					cookie: login.headers.getSetCookie().at(-1)!.split(";")[0]!,
+				},
+			})
+		).json(),
+	).not.toBeNull();
+});
+
+test.each(["expired", "browser"])(
+	"configured options return a reload response for a %s bootstrap without writing a challenge",
+	async (failure) => {
+		const state = managed();
+		const start = await state.start("register");
+		const set = vi.spyOn(state.storage.options.challenges, "set");
+		const time = vi.spyOn(Date, "now");
+		if (failure === "expired") time.mockReturnValue(Date.now() + Time.hour + 1);
+		try {
+			const data = new FormData();
+			data.set("bootstrap", start.bootstrap);
+			data.set("email", "user@example.com");
+			const response = await state.post(
+				start.endpoint,
+				data,
+				failure === "browser" ? "__Host-auth-browser=other" : start.cookie,
+			);
+			expect(response.status).toBe(410);
+			expect(await response.text()).toBe(
+				"This page has expired. Reload and try again.",
+			);
+			expect(response.headers.getSetCookie()).toHaveLength(0);
+			expect(set).not.toHaveBeenCalled();
+			expect(state.create).not.toHaveBeenCalled();
+		} finally {
+			time.mockRestore();
+		}
+	},
+);
+
+test("registration guard admission precedes parsing and rejects oversized bodies without client tokens", async () => {
+	const storage = setup();
+	const consume = vi.fn(storage.consume);
+	const guard = new Limiter({ name: "guard", consume });
+	const check = vi.spyOn(guard, "check");
+	const state = managed(storage, { limits: { consume, guard } });
+	const data = new FormData();
+	data.set("email", "x".repeat(129 * 1024));
+	data.set("bootstrap", "invalid");
+	check.mockResolvedValueOnce(new Date(Date.now() + 60000));
+	expect((await state.post("/_passkey/options/register", data)).status).toBe(
+		429,
+	);
+	expect(consume).not.toHaveBeenCalled();
+	consume.mockClear();
+	const response = await state.post("/_passkey/options/register", data);
+	expect(response.status).toBe(400);
+	expect(consume).toHaveBeenCalledOnce();
+	expect(storage.challenges.size).toBe(0);
 });

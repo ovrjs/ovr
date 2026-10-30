@@ -40,9 +40,11 @@ export namespace Auth {
 		readonly origin: string;
 		readonly expiration: number;
 		readonly user?: string;
+		/** SHA-256 base64url digest binding validated registration fields to the provider label. */
+		readonly fields?: string;
 	}
 
-	/** Challenge storage shared by all application instances. */
+	/** Challenge storage shared by all instances. Preserve every field, including the optional registration field digest. */
 	export interface Challenges {
 		/** Store until expiration. Return false when shared storage capacity is exhausted. */
 		set(id: string, challenge: Challenge): Result<void | boolean>;
@@ -72,8 +74,8 @@ export namespace Auth {
 
 	/** Database-backed authentication configuration; all instances must share persistence. */
 	export interface Options<Shape extends Form.Shape = Form.Shape> {
-		/** Random signing secret with at least 32 UTF-8 bytes. */
-		readonly secret: string;
+		/** Signing secret(s), each at least 32 UTF-8 bytes. Seal with the first; accept all during rotation. */
+		readonly secret: string | readonly [string, ...string[]];
 		/** Trusted HTTPS origin, for example `https://example.com`. */
 		readonly origin: string;
 		/** Required persistence for atomic, single-use challenges. */
@@ -106,11 +108,11 @@ export namespace Auth {
 		readonly limits: {
 			/** Atomically refill and consume a token across all workers and deployments sharing these policies. */
 			readonly consume: Limiter.Options["consume"];
-			/** Optional generous request ceiling before client key creation. Counts requests denied by later policies too. */
+			/** Optional generous request ceiling before client key creation. Counts invalid fields and requests denied by later policies too. */
 			readonly guard?: Limiter;
 			/** Additional shared policies checked after the client policy, preserving the built-in defaults. */
 			readonly extra?: readonly Limiter[];
-			/** Replace the built-in registration client policy. Use extra to add shared policies without removing it. */
+			/** Replace the built-in registration client policy; invalid options fields do not consume it. Use extra to add shared policies without removing it. */
 			readonly register?: Limiter;
 			/** Replace the built-in login client policy. Use extra to add shared policies without removing it. */
 			readonly login?: Limiter;
@@ -153,7 +155,7 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	/** Validation issue shared by authentication and passkey verification. */
 	static readonly Issue = Issue;
 
-	readonly #options;
+	readonly #options: Auth.Options<Shape>;
 	readonly #states = new WeakMap<object, State>();
 
 	/** Generated endpoints; App mounts them automatically. */
@@ -169,7 +171,17 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 		const origin = new URL(options.origin);
 		if (origin.protocol !== "https:" || origin.origin !== options.origin)
 			throw new TypeError("Auth origin must be an HTTPS origin without a path");
-		if (Codec.encode(options.secret).length < 32)
+		const secrets =
+			typeof options.secret === "string"
+				? [options.secret]
+				: [...options.secret];
+		if (
+			!secrets.length ||
+			secrets.some(
+				(secret) =>
+					typeof secret !== "string" || Codec.encode(secret).length < 32,
+			)
+		)
 			throw new TypeError("Auth secret must contain at least 32 bytes");
 		if (
 			options.duration !== undefined &&
@@ -180,7 +192,13 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 			throw new TypeError(
 				"Auth duration must be a positive lifetime in milliseconds",
 			);
-		this.#options = { ...options };
+		this.#options = {
+			...options,
+			secret:
+				typeof options.secret === "string"
+					? options.secret
+					: [options.secret[0], ...options.secret.slice(1)],
+		};
 		const service = configure(this.#options, (c) => this.#state(c));
 		this.routes = service.routes;
 		this.forms = service.forms;

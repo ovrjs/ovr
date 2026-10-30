@@ -17,18 +17,18 @@ const auth = new Auth({
 	secret,
 	origin: "https://example.com",
 	redirect: "/account",
-	challenges: { set: db.challenge.save, take: db.challenge.take },
+	challenges: { set: db.challenges.set, take: db.challenges.take },
 	sessions: {
-		set: db.session.save,
-		get: db.session.get,
-		delete: db.session.delete,
+		set: db.sessions.set,
+		get: db.sessions.get,
+		delete: db.sessions.delete,
 	},
-	credentials: { get: db.credential.get, update: db.credential.update },
+	credentials: { get: db.credentials.get, update: db.credentials.update },
 	limits: { consume: db.consume },
 	register: {
 		fields: { email: Field.email({ label: "Email" }) },
 		name: ({ email }) => email,
-		create: db.user.create,
+		create: db.users.create,
 	},
 });
 
@@ -36,6 +36,8 @@ const app = new App({ auth });
 ```
 
 `secret` is a server-side random secret containing at least 32 bytes. Keep it stable across deployments. `origin` is your exact HTTPS origin, without a path or trailing slash.
+
+For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session duration; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
 
 `./db` is your application's database module. Implement its functions using the [storage contracts](#storage) below; no adapter class or database integration package is required.
 
@@ -64,6 +66,66 @@ app.use(
 
 The forms automatically load a same-origin JavaScript module. It handles the passkey prompt, validation, errors, retries, and normal form submission, including forms arriving in a streamed response.
 
+### Register
+
+With the email field configured above, `<Register />` generates this HTML. Generated script IDs and signed bootstrap values are abbreviated in these examples.
+
+```html
+<form action="/auth/register" method="POST" enctype="multipart/form-data">
+	<div>
+		<label for="email">Email</label>
+		<input id="email" type="email" name="email" />
+	</div>
+	<input type="hidden" name="credential" />
+	<input type="hidden" name="ceremony" />
+	<button>Register</button>
+	<p
+		role="status"
+		aria-live="polite"
+		data-passkey-fallback
+		data-passkey-error
+	></p>
+	<script
+		id="passkey-register-id"
+		type="module"
+		src="/_passkey/client.js"
+		data-passkey="register"
+		data-endpoint="/_passkey/options/register"
+		data-bootstrap="..."
+	></script>
+	<noscript>JavaScript is required for authentication.</noscript>
+</form>
+```
+
+The hidden `credential` and `ceremony` inputs are filled by the browser script.
+
+### Login
+
+`<Login />` generates a form without account fields:
+
+```html
+<form action="/auth/login" method="POST" enctype="multipart/form-data">
+	<input type="hidden" name="credential" />
+	<input type="hidden" name="ceremony" />
+	<button>Log in</button>
+	<p
+		role="status"
+		aria-live="polite"
+		data-passkey-fallback
+		data-passkey-error
+	></p>
+	<script
+		id="passkey-login-id"
+		type="module"
+		src="/_passkey/client.js"
+		data-passkey="login"
+		data-endpoint="/_passkey/options/login"
+		data-bootstrap="..."
+	></script>
+	<noscript>JavaScript is required for authentication.</noscript>
+</form>
+```
+
 ### Customization
 
 Supply children to control the markup and styling:
@@ -77,6 +139,14 @@ Supply children to control the markup and styling:
 ```
 
 `Register.Field` renders one typed field; `Register.Fields` renders them all. `Login.Error` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/07-schema#post-forms) as ordinary forms.
+
+`<Register.Error class="error" />` generates the following element. `Login.Error` uses the same markup:
+
+```html
+<p role="status" aria-live="polite" class="error" data-passkey-error></p>
+```
+
+The browser script updates this status element and hides the default fallback when you supply your own. With custom form children, it also adds missing protocol inputs, so you only need to render your application fields and submit button.
 
 Use field schemas for format checks. Enforce uniqueness in `register.create` and database constraints, where errors stay generic. `Field.email()` checks syntax; it does not verify ownership of an email address. `register.name` provides a display label for the passkey provider, not a verified identity.
 
@@ -106,7 +176,17 @@ app.use(
 
 Sessions last seven days by default, without extending on each request. Each request checks shared storage, so revocation applies across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.
 
-`Logout` submits a normal form and revokes the current session. You can also call these methods in a handler:
+### Logout
+
+`<Logout />` generates a normal form that revokes the current session. It needs no client script:
+
+```html
+<form action="/auth/logout" method="POST" enctype="multipart/form-data">
+	<button>Log out</button>
+</form>
+```
+
+You can also call these methods in a handler:
 
 ```ts
 await auth.logout(c); // Current session.
@@ -119,7 +199,7 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 
 ## Storage
 
-All instances must share the same database and signing secret. Callbacks may be synchronous or asynchronous. Storage failures must throw.
+All instances must share the same database and signing secrets. Callbacks may be synchronous or asynchronous. Storage failures must throw.
 
 | Callback                             | What your application must do                                                                                   |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
@@ -131,6 +211,8 @@ All instances must share the same database and signing secret. Callbacks may be 
 | `credentials.get(id)`                | Return the credential, or nothing if missing.                                                                   |
 | `credentials.update(next, previous)` | Save `next` only if the stored record still matches every field in `previous`. Return whether a record matched. |
 | `register.create(data, credential)`  | Insert a new user and their first credential together in a transaction.                                         |
+
+Persist the complete challenge, including its optional `fields` digest, which binds the validated registration values to the passkey label. Changing those values between the prompt and final submission fails registration.
 
 Use the exported `Auth.Challenge`, `Auth.Session`, and `Auth.Credential` types for your storage functions. Persist the complete credential, including its owner, public key, counter, and backup flags. Enforce unique user, credential, and session IDs and their relationships in the database.
 
@@ -155,7 +237,7 @@ ovr supplies the per-client policies. You supply the shared atomic storage opera
 | Registration | 5 per 10 minutes      |
 | Login        | 20 per minute         |
 
-The default identity is the trusted client IP, with IPv6 grouped by `/64`. A ceremony makes two requests: options and verification have separate budgets. Admission happens before body parsing and challenge writes. Logout bypasses these policies, including limiter failures.
+The default identity is the trusted client IP, with IPv6 grouped by `/64`. A ceremony makes two requests: options and verification have separate budgets. The optional guard runs before parsing the bounded 128 KB body. Registration options validate application fields before the client and extra policies, so field errors do not spend signup attempts. Other admission checks run before parsing; all run before challenge writes. Logout bypasses these policies, including limiter failures.
 
 `db.consume(key, { limit, interval })` must atomically refill the token bucket and consume one token. Return literal `true` on admission or a positive absolute retry timestamp in milliseconds on denial. Every worker must share the same storage and policy. There is no in-memory fallback. See [Limiter](/05-middleware#rate-limiting) for backend keys, middleware, and custom identities.
 
@@ -210,14 +292,14 @@ Extra policies run after the client policy, in array order, and preserve its def
 | `paths.logout`    | `/auth/logout`   | Logout POST endpoint.                             |
 | `error(error, c)` | `console.error`  | Detailed server-side error logging.               |
 
-Paths must be distinct local paths. The options endpoints and browser module are fixed under `/_ovr/passkey/`; `App` mounts them for you. The relying-party name shown by the browser comes from your origin's hostname.
+Paths must be distinct local paths. The options endpoints and browser module are fixed under `/_passkey/`; `App` mounts them for you. The relying-party name shown by the browser comes from your origin's hostname.
 
-Validation failures mark the affected fields. Other failures use generic messages, with guidance to log in if registration already completed. Detailed errors stay on the server; protocol validation failures are `Auth.Issue` instances. Rate-limit denials include a retry hint, and the client waits before retrying.
+Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Other failures use generic messages, with guidance to log in if registration already completed. Detailed errors stay on the server; protocol validation failures are `Auth.Issue` instances. Rate-limit denials include a retry hint, and the client waits before retrying.
 
 ## Deployment
 
-Use HTTPS, the latest Node.js LTS release, and current browsers with native WebAuthn JSON support. JavaScript is required. Passkey forms load an external same-origin module; nonce-based content security policies can pass `auth.forms(c, { nonce })`.
+Use HTTPS and browsers with native WebAuthn JSON support. JavaScript is required. Passkey forms load an external same-origin module; nonce-based content security policies can pass `auth.forms(c, { nonce })`.
 
 Production storage must be reachable from every instance. An in-memory map or a serverless function's local SQLite file cannot provide shared persistence. Set up expiration cleanup, capacity monitoring, aggregate limits, and network overload protection at your edge.
 
-Auth operations enforce the configured origin. Cookies are host-wide, so use one authentication system per hostname. This implementation supports new-account registration with a first discoverable ES256/P-256 passkey. Adding more passkeys to an existing account, account recovery, and signing-key rotation are not provided.
+Auth operations enforce the configured origin. Generated POST routes also require a same-origin `Sec-Fetch-Site` or matching `Origin`, even with `App` CSRF protection disabled. Cookies are host-wide, so use one authentication system per hostname. This implementation supports new-account registration with a first discoverable ES256/P-256 passkey. Adding more passkeys to an existing account and account recovery are not provided.

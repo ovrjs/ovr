@@ -41,10 +41,12 @@ export class Store {
 				origin: Schema.string(),
 				expiration: Schema.number().int(),
 				user: Schema.string().optional(),
+				fields: Schema.string().optional(),
 			}),
 		),
 	});
 	readonly #db: DatabaseSync;
+	readonly #sql;
 	#pruned = 0;
 
 	/** Open a persistent database, creating the demo schema if necessary. */
@@ -99,6 +101,55 @@ export class Store {
 				throw error;
 			}
 		}
+		this.#sql = {
+			limit: this.#db.prepare(
+				"SELECT tokens, time FROM limits WHERE key = ? AND expiration > ?",
+			),
+			capacity: this.#db.prepare(
+				"SELECT 1 FROM limits WHERE expiration > ? LIMIT 1 OFFSET 9999",
+			),
+			consume: this.#db.prepare(
+				"INSERT INTO limits (key, tokens, time, expiration) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET tokens = excluded.tokens, time = excluded.time, expiration = excluded.expiration",
+			),
+			challenge: this.#db.prepare(
+				`
+				INSERT INTO challenges (id, payload, expiration)
+				SELECT ?, ?, ? WHERE
+				(SELECT count(*) FROM challenges WHERE expiration > ?) < 1000 AND
+				(SELECT count(*) FROM challenges WHERE expiration > ? AND json_extract(payload, '$.browser') = ?) < 10
+			`,
+			),
+			take: this.#db.prepare(
+				"DELETE FROM challenges WHERE id = ? RETURNING payload",
+			),
+			session: this.#db.prepare(
+				"INSERT INTO sessions (id, user, expiration) VALUES (?, ?, ?)",
+			),
+			read: this.#db.prepare(
+				"SELECT id, user, expiration FROM sessions WHERE id = ? AND expiration > ?",
+			),
+			delete: this.#db.prepare("DELETE FROM sessions WHERE id = ?"),
+			credential: this.#db.prepare("SELECT * FROM credentials WHERE id = ?"),
+			update: this.#db.prepare(
+				`
+				UPDATE credentials SET counter = ?, backedUp = ?
+				WHERE id = ? AND user = ? AND publicKey = ? AND counter = ? AND eligible = ? AND backedUp = ?
+			`,
+			),
+			user: this.#db.prepare("SELECT id, email FROM users WHERE id = ?"),
+			list: this.#db.prepare(
+				"SELECT * FROM credentials WHERE user = ? ORDER BY id",
+			),
+			register: this.#db.prepare("INSERT INTO users (id, email) VALUES (?, ?)"),
+			insert: this.#db.prepare(
+				"INSERT INTO credentials (id, user, publicKey, counter, eligible, backedUp) VALUES (?, ?, ?, ?, ?, ?)",
+			),
+			sessions: this.#db.prepare("DELETE FROM sessions WHERE expiration <= ?"),
+			challenges: this.#db.prepare(
+				"DELETE FROM challenges WHERE expiration <= ?",
+			),
+			limits: this.#db.prepare("DELETE FROM limits WHERE expiration <= ?"),
+		};
 		this.prune();
 	}
 
@@ -120,20 +171,9 @@ export class Store {
 		try {
 			const previous = Store.#parse(
 				Store.#limit,
-				this.#db
-					.prepare(
-						"SELECT tokens, time FROM limits WHERE key = ? AND expiration > ?",
-					)
-					.get(key, now),
+				this.#sql.limit.get(key, now),
 			);
-			if (
-				!previous &&
-				this.#db
-					.prepare(
-						"SELECT 1 FROM limits WHERE expiration > ? LIMIT 1 OFFSET 9999",
-					)
-					.get(now)
-			)
+			if (!previous && this.#sql.capacity.get(now))
 				// Evicting a live bucket would restore its burst and let rotating clients bypass quotas.
 				throw new Error("Rate limit storage capacity exhausted");
 			const tokens = previous
@@ -149,16 +189,12 @@ export class Store {
 					now + Math.max(1000, Math.ceil(((1 - tokens) * interval) / limit))
 				);
 			}
-			this.#db
-				.prepare(
-					"INSERT INTO limits (key, tokens, time, expiration) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET tokens = excluded.tokens, time = excluded.time, expiration = excluded.expiration",
-				)
-				.run(
-					key,
-					tokens - 1,
-					previous ? Math.max(now, previous.time) : now,
-					now + interval,
-				);
+			this.#sql.consume.run(
+				key,
+				tokens - 1,
+				previous ? Math.max(now, previous.time) : now,
+				now + interval,
+			);
 			this.#db.exec("COMMIT");
 			return true;
 		} catch (error) {
@@ -173,32 +209,21 @@ export class Store {
 			if (Date.now() - this.#pruned >= 60000) this.prune();
 			// One statement bounds shared outstanding storage, including concurrent instances.
 			return (
-				this.#db
-					.prepare(
-						`
-				INSERT INTO challenges (id, payload, expiration)
-				SELECT ?, ?, ? WHERE
-				(SELECT count(*) FROM challenges WHERE expiration > ?) < 1000 AND
-				(SELECT count(*) FROM challenges WHERE expiration > ? AND json_extract(payload, '$.browser') = ?) < 10
-			`,
-					)
-					.run(
-						id,
-						JSON.stringify(value),
-						value.expiration,
-						Date.now(),
-						Date.now(),
-						value.browser,
-					).changes === 1
+				this.#sql.challenge.run(
+					id,
+					JSON.stringify(value),
+					value.expiration,
+					Date.now(),
+					Date.now(),
+					value.browser,
+				).changes === 1
 			);
 		},
 		take: (id) => {
 			// One statement consumes the record across every connection to this database.
 			const value = Store.#parse(
 				Store.#challenge,
-				this.#db
-					.prepare("DELETE FROM challenges WHERE id = ? RETURNING payload")
-					.get(id),
+				this.#sql.take.get(id),
 			)?.payload;
 			return value && value.expiration > Date.now() ? value : undefined;
 		},
@@ -209,31 +234,18 @@ export class Store {
 		set: (id, value) => {
 			if (id !== value.id) throw new TypeError("Session ID mismatch");
 			if (Date.now() - this.#pruned >= 60000) this.prune();
-			this.#db
-				.prepare("INSERT INTO sessions (id, user, expiration) VALUES (?, ?, ?)")
-				.run(id, value.user, value.expiration);
+			this.#sql.session.run(id, value.user, value.expiration);
 		},
 		get: (id) =>
-			Store.#parse(
-				Store.#session,
-				this.#db
-					.prepare(
-						"SELECT id, user, expiration FROM sessions WHERE id = ? AND expiration > ?",
-					)
-					.get(id, Date.now()),
-			),
+			Store.#parse(Store.#session, this.#sql.read.get(id, Date.now())),
 		delete: (id) => {
-			this.#db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+			this.#sql.delete.run(id);
 		},
 	};
 
 	/** Credential lookup and compare-and-swap updates, without recreating deleted records. */
 	readonly credentials: Auth.Credentials = {
-		get: (id) =>
-			Store.#parse(
-				Store.#credential,
-				this.#db.prepare("SELECT * FROM credentials WHERE id = ?").get(id),
-			),
+		get: (id) => Store.#parse(Store.#credential, this.#sql.credential.get(id)),
 		update: (next, previous) => {
 			if (
 				next.id !== previous.id ||
@@ -243,39 +255,28 @@ export class Store {
 			)
 				return false;
 			return (
-				this.#db
-					.prepare(
-						`
-				UPDATE credentials SET counter = ?, backedUp = ?
-				WHERE id = ? AND user = ? AND publicKey = ? AND counter = ? AND eligible = ? AND backedUp = ?
-			`,
-					)
-					.run(
-						next.counter,
-						Number(next.backedUp),
-						previous.id,
-						previous.user,
-						previous.publicKey,
-						previous.counter,
-						Number(previous.eligible),
-						Number(previous.backedUp),
-					).changes === 1
+				this.#sql.update.run(
+					next.counter,
+					Number(next.backedUp),
+					previous.id,
+					previous.user,
+					previous.publicKey,
+					previous.counter,
+					Number(previous.eligible),
+					Number(previous.backedUp),
+				).changes === 1
 			);
 		},
 	};
 
 	/** Read an account. */
 	user(id: string) {
-		return Store.#parse(
-			Store.#user,
-			this.#db.prepare("SELECT id, email FROM users WHERE id = ?").get(id),
-		);
+		return Store.#parse(Store.#user, this.#sql.user.get(id));
 	}
 
 	/** List an account's registered passkeys. */
 	list(user: string) {
-		return this.#db
-			.prepare("SELECT * FROM credentials WHERE user = ? ORDER BY id")
+		return this.#sql.list
 			.all(user)
 			.map((row) => Store.#parse(Store.#credential, row)!);
 	}
@@ -284,21 +285,15 @@ export class Store {
 	register(credential: Auth.Credential, email: string) {
 		this.#db.exec("BEGIN IMMEDIATE");
 		try {
-			this.#db
-				.prepare("INSERT INTO users (id, email) VALUES (?, ?)")
-				.run(credential.user, email);
-			this.#db
-				.prepare(
-					"INSERT INTO credentials (id, user, publicKey, counter, eligible, backedUp) VALUES (?, ?, ?, ?, ?, ?)",
-				)
-				.run(
-					credential.id,
-					credential.user,
-					credential.publicKey,
-					credential.counter,
-					Number(credential.eligible),
-					Number(credential.backedUp),
-				);
+			this.#sql.register.run(credential.user, email);
+			this.#sql.insert.run(
+				credential.id,
+				credential.user,
+				credential.publicKey,
+				credential.counter,
+				Number(credential.eligible),
+				Number(credential.backedUp),
+			);
 			this.#db.exec("COMMIT");
 		} catch (error) {
 			this.#db.exec("ROLLBACK");
@@ -309,9 +304,9 @@ export class Store {
 	/** Remove expired sessions and unconsumed challenges; called on startup and writes. */
 	prune(now = Date.now()) {
 		this.#pruned = now;
-		this.#db.prepare("DELETE FROM sessions WHERE expiration <= ?").run(now);
-		this.#db.prepare("DELETE FROM challenges WHERE expiration <= ?").run(now);
-		this.#db.prepare("DELETE FROM limits WHERE expiration <= ?").run(now);
+		this.#sql.sessions.run(now);
+		this.#sql.challenges.run(now);
+		this.#sql.limits.run(now);
 	}
 
 	/** Close the database connection. */

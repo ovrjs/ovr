@@ -135,7 +135,7 @@ export class Passkey {
 								type: "module",
 								src: Passkey.client.pathname(),
 								nonce: options.nonce,
-								"data-ovr-passkey": method,
+								"data-passkey": method,
 								"data-endpoint": options.endpoint,
 								"data-bootstrap": await Token.seal(
 									this.#auth.options.secret,
@@ -169,7 +169,7 @@ export class Passkey {
 	}
 
 	/** Dependency-free browser module, served as a normal same-origin JavaScript resource. */
-	static readonly client = Route.get("/_ovr/passkey/client.js", (c) => {
+	static readonly client = Route.get("/_passkey/client.js", (c) => {
 		c.res.headers.set("content-type", "text/javascript; charset=utf-8");
 		c.res.headers.set("x-content-type-options", "nosniff");
 		c.res.headers.set("cache-control", "no-cache");
@@ -202,7 +202,7 @@ export class Passkey {
 		auth: State,
 		token: string,
 		label: (() => string | Promise<string>) | undefined,
-		expected: { method: "register" | "login"; action: string },
+		expected: { method: "register" | "login"; action: string; fields?: string },
 	) {
 		const result = Schema.string()
 			.json(Passkey.#bootstrap)
@@ -214,10 +214,12 @@ export class Passkey {
 			bootstrap.origin !== auth.options.origin
 		)
 			throw new Issue("origin");
-		if (!auth.browser() || bootstrap.browser !== auth.browser())
-			throw new Issue("browser");
-		if (bootstrap.expiration <= Date.now())
-			throw new Issue("bootstrap (expired)");
+		if (
+			!auth.browser() ||
+			bootstrap.browser !== auth.browser() ||
+			bootstrap.expiration <= Date.now()
+		)
+			return c.text("This page has expired. Reload and try again.", 410);
 		if (
 			bootstrap.method !== expected.method ||
 			bootstrap.action !== expected.action
@@ -249,6 +251,7 @@ export class Passkey {
 				origin: bootstrap.origin,
 				expiration: Date.now() + 2 * Time.minute,
 				...(bootstrap.user ? { user: bootstrap.user } : {}),
+				...(expected.fields ? { fields: expected.fields } : {}),
 			})) === false
 		) {
 			c.res.headers.set("retry-after", "60");
@@ -378,9 +381,29 @@ export class Passkey {
 		return result === 0;
 	}
 
+	/** Digest canonical application values so field order cannot change the binding. */
+	static async fields(value: unknown) {
+		return Codec.Base64Url.encode(
+			await Passkey.#hash(
+				Codec.encode(
+					JSON.stringify(value, (_, value) =>
+						value && typeof value === "object" && !Array.isArray(value)
+							? Object.fromEntries(
+									Object.entries(value).sort(([a], [b]) =>
+										a < b ? -1 : a > b ? 1 : 0,
+									),
+								)
+							: value,
+					),
+				),
+			),
+		);
+	}
+
 	/** Verify registration before persisting a new credential. */
-	async register() {
+	async register(fields?: string) {
 		const { state, credential } = await this.#consume("register");
+		if (state.fields !== fields) throw new Issue("registration fields");
 		const result = Passkey.#registration.parse(credential);
 		if (result.issues) throw result;
 		this.#client(result.data.response.clientDataJSON, state);

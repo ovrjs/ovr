@@ -1,4 +1,5 @@
 import { Codec } from "../util/index.js";
+import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 
 /** Internal integrity protection with explicit authentication purposes. */
@@ -19,32 +20,35 @@ export class Token {
 
 	/** Seal a payload for exactly one authentication purpose. */
 	static async seal(
-		secret: string,
+		secret: Auth.Options["secret"],
 		purpose: "session" | "passkey",
 		value: string,
 	) {
 		const payload = `${purpose}:${value}`;
-		return `${payload}.${Codec.Base64Url.encode(new Uint8Array(await crypto.subtle.sign("HMAC", await Token.#key(secret), Codec.encode(payload))))}`;
+		return `${payload}.${Codec.Base64Url.encode(new Uint8Array(await crypto.subtle.sign("HMAC", await Token.#key(typeof secret === "string" ? secret : secret[0]), Codec.encode(payload))))}`;
 	}
 
 	/** Verify both integrity and purpose before exposing the payload. */
 	static async open(
-		secret: string,
+		secret: Auth.Options["secret"],
 		purpose: "session" | "passkey",
 		token: string,
 	) {
 		const dot = token.lastIndexOf(".");
 		if (dot > 0 && token.startsWith(`${purpose}:`)) {
 			try {
-				if (
-					await crypto.subtle.verify(
-						"HMAC",
-						await Token.#key(secret),
-						Codec.Base64Url.decode(token.slice(dot + 1)),
-						Codec.encode(token.slice(0, dot)),
+				const signature = Codec.Base64Url.decode(token.slice(dot + 1));
+				const payload = Codec.encode(token.slice(0, dot));
+				for (const key of typeof secret === "string" ? [secret] : secret)
+					if (
+						await crypto.subtle.verify(
+							"HMAC",
+							await Token.#key(key),
+							signature,
+							payload,
+						)
 					)
-				)
-					return token.slice(purpose.length + 1, dot);
+						return token.slice(purpose.length + 1, dot);
 			} catch {
 				// Malformed signatures are authentication failures.
 			}

@@ -260,3 +260,33 @@ test("does not attach a second credential by reusing an existing signup user ID"
 	expect(store.user(credential.user)?.email).toBe("original@example.com");
 	expect(store.list(credential.user)).toEqual([credential]);
 });
+
+test("cached statements preserve registration field bindings across connections", () => {
+	const path = file();
+	const store = open(path);
+	const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
+	try {
+		store.register(credential, "user@example.com");
+		store.user(credential.user);
+		store.list(credential.user);
+		store.credentials.get(credential.id);
+		expect(store.credentials.update(credential, credential)).toBe(true);
+		store.sessions.set("session-1", session());
+		store.sessions.get("session-1");
+		store.sessions.delete("session-1");
+		store.consume("client", { limit: 5, interval: 60000 });
+		const value = {
+			...challenge(),
+			method: "register",
+			fields: "digest",
+		} satisfies Auth.Challenge;
+		store.challenges.set("pending", value);
+		expect(store.challenges.take("pending")).toEqual(value);
+		store.prune();
+		expect(prepare).not.toHaveBeenCalled();
+		store.challenges.set("shared", value);
+		expect(open(path).challenges.take("shared")).toEqual(value);
+	} finally {
+		prepare.mockRestore();
+	}
+});
