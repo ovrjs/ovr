@@ -17,18 +17,18 @@ const auth = new Auth({
 	secret,
 	origin: "https://example.com",
 	redirect: "/account",
-	challenges: { set: db.saveChallenge, take: db.takeChallenge },
+	challenges: { set: db.challenge.save, take: db.challenge.take },
 	sessions: {
-		set: db.saveSession,
-		get: db.getSession,
-		delete: db.deleteSession,
+		set: db.session.save,
+		get: db.session.get,
+		delete: db.session.delete,
 	},
-	credentials: { get: db.getCredential, update: db.updateCredential },
-	limits: { consume: db.consumeToken },
+	credentials: { get: db.credential.get, update: db.credential.update },
+	limits: { consume: db.consume },
 	register: {
 		fields: { email: Field.email({ label: "Email" }) },
 		name: ({ email }) => email,
-		create: db.createUser,
+		create: db.user.create,
 	},
 });
 
@@ -157,7 +157,7 @@ ovr supplies the per-client policies. You supply the shared atomic storage opera
 
 The default identity is the trusted client IP, with IPv6 grouped by `/64`. A ceremony makes two requests: options and verification have separate budgets. Admission happens before body parsing and challenge writes. Logout bypasses these policies, including limiter failures.
 
-`db.consumeToken(key, { limit, interval })` must atomically refill the token bucket and consume one token. Return literal `true` on admission or a positive absolute retry timestamp in milliseconds on denial. Every worker must share the same storage and policy. There is no in-memory fallback. See [Limiter](/05-middleware#rate-limiting) for backend keys, middleware, and custom identities.
+`db.consume(key, { limit, interval })` must atomically refill the token bucket and consume one token. Return literal `true` on admission or a positive absolute retry timestamp in milliseconds on denial. Every worker must share the same storage and policy. There is no in-memory fallback. See [Limiter](/05-middleware#rate-limiting) for backend keys, middleware, and custom identities.
 
 Your server must supply the real client IP:
 
@@ -178,14 +178,14 @@ import { Auth, Limiter } from "ovr";
 new Auth({
 	...options,
 	limits: {
-		consume: db.consumeToken,
+		consume: db.consume,
 		extra: [
 			new Limiter({
 				name: `auth:all:${options.origin}`,
 				limit: 100,
 				interval: 60000,
 				key: () => "all",
-				consume: db.consumeToken,
+				consume: db.consume,
 			}),
 		],
 	},
