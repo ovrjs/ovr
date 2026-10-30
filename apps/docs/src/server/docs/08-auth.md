@@ -42,7 +42,7 @@ For secret rotation, pass `secret: [current, previous]`: new tokens use the firs
 
 ## Forms
 
-Create your `/auth` page with the registration and login forms. `Auth` supplies the POST endpoints; you supply this page. To use `/login` instead, set `page: "/login"` and change the GET route below.
+Create your `/login` page with both forms. `Auth` supplies the POST endpoints; you supply this page. Use `page` to choose a different URL.
 
 Call `auth.forms(c)` in the route handler, before returning JSX. This lets ovr set the browser-binding cookie before streaming begins.
 
@@ -50,13 +50,15 @@ Call `auth.forms(c)` in the route handler, before returning JSX. This lets ovr s
 import { Route } from "ovr";
 
 app.use(
-	Route.get("/auth", (c) => {
+	Route.get("/login", (c) => {
 		const { Register, Login } = auth.forms(c);
 
 		return (
 			<>
-				<Register />
+				<h2>Log in</h2>
 				<Login />
+				<h2>Create account</h2>
+				<Register />
 			</>
 		);
 	}),
@@ -79,7 +81,7 @@ With the email field configured above, `<Register />` generates this HTML. Gener
 	</div>
 	<input type="hidden" name="credential" />
 	<input type="hidden" name="ceremony" />
-	<button>Register</button>
+	<button>Create account</button>
 	<p
 		role="status"
 		aria-live="polite"
@@ -159,7 +161,7 @@ Read the session before rendering a protected page:
 app.use(
 	Route.get("/account", async (c) => {
 		const session = await auth.session(c);
-		if (!session) return c.redirect("/auth", 303);
+		if (!session) return c.redirect("/login", 303);
 
 		const { Logout } = auth.forms(c);
 
@@ -285,7 +287,7 @@ Extra policies run after the client policy, in array order, and preserve its def
 
 | Option            | Default          | Purpose                                           |
 | ----------------- | ---------------- | ------------------------------------------------- |
-| `page`            | `/auth`          | Your authentication page; failures redirect here. |
+| `page`            | `/login`         | Your authentication page; failures redirect here. |
 | `redirect`        | `/`              | Destination after registration or login.          |
 | `duration`        | Seven days       | Fixed session lifetime in milliseconds.           |
 | `paths.register`  | `/auth/register` | Registration POST endpoint.                       |

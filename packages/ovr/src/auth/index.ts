@@ -98,7 +98,7 @@ export namespace Auth {
 				credential: Auth.Credential,
 			) => Result<void>;
 		};
-		/** Authentication page, also used for generic failure redirects. Defaults to /auth. */
+		/** Authentication page, also used for generic failure redirects. Defaults to /login. */
 		readonly page?: string;
 		/** Destination after registration or login. Defaults to /. */
 		readonly redirect?: string;

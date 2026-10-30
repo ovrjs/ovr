@@ -124,7 +124,7 @@ export class Passkey {
 						props.children ?? [
 							route.Fields?.(),
 							jsx("button", {
-								children: method === "register" ? "Register" : "Log in",
+								children: method === "register" ? "Create account" : "Log in",
 							}),
 						],
 						// A supplied Error component takes precedence over this accessible fallback.

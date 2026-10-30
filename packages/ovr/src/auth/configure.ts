@@ -66,7 +66,7 @@ export function configure<Shape extends Form.Shape>(
 		options: "/_passkey/options",
 		client: "/_passkey/client.js",
 	};
-	const page = options.page ?? "/auth";
+	const page = options.page ?? "/login";
 	const redirect = options.redirect ?? "/";
 	for (const path of [...Object.values(paths), page, redirect]) {
 		if (

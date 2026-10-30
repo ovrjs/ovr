@@ -45,17 +45,17 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 
 				<div class="mt-8 flex justify-center">
 					<div>
-						<h2>Register</h2>
+						<h2>Log in</h2>
+						<Login />
+
+						<hr />
+
+						<h2>Create account</h2>
 						<Register>
 							<Register.Field name="email" />
 							<Register.Error class="text-red-700" />
 							<button>Create account</button>
 						</Register>
-
-						<hr />
-
-						<h2>Log in</h2>
-						<Login />
 
 						{user && (
 							<>
@@ -108,7 +108,7 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 				</ul>
 
 				<Logout>
-					<button>Logout</button>
+					<button>Log out</button>
 				</Logout>
 			</Layout>
 		);

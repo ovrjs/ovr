@@ -1014,7 +1014,6 @@ function managed(
 		...storage.options,
 		limits: { consume: storage.consume },
 		credentials: storage.credentials,
-		page: "/auth",
 		redirect: "/account",
 		error,
 		register: {
@@ -1026,7 +1025,7 @@ function managed(
 	});
 	const app = new App({ auth: service });
 	app.use(
-		Route.get("/auth", (c) => {
+		Route.get("/login", (c) => {
 			const { Register, Login } = service.forms(c, { nonce: "csp-nonce" });
 			if (false) {
 				// @ts-expect-error Application field names remain exact.
@@ -1060,7 +1059,7 @@ function managed(
 		cookie = "",
 		target = post,
 	) => {
-		const page = await app.fetch(origin + "/auth", { headers: { cookie } });
+		const page = await app.fetch(origin + "/login", { headers: { cookie } });
 		const html = await page.text();
 		const script = [...html.matchAll(/<script[^>]+>/g)]
 			.map((v) => v[0])
@@ -1148,7 +1147,7 @@ describe("configured passkey callbacks", () => {
 		expect(warm.storage.sessions.has(session.id)).toBe(false);
 		const current = logged.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const logout = await cold.post("/auth/logout", new FormData(), current);
-		expect(logout.headers.get("location")).toBe("/auth");
+		expect(logout.headers.get("location")).toBe("/login");
 		expect(warm.storage.sessions.size).toBe(0);
 	});
 
@@ -1204,7 +1203,7 @@ describe("configured passkey callbacks", () => {
 			await registration(start.options.challenge, await pair()),
 		);
 		expect(result.headers.get("location")).toBe(
-			origin + "/auth?_auth=register",
+			origin + "/login?_auth=register",
 		);
 		expect(result.headers.getSetCookie()).toHaveLength(0);
 		expect(state.storage.sessions.size).toBe(0);
@@ -1243,7 +1242,7 @@ describe("configured passkey callbacks", () => {
 	test("respects a shared challenge capacity refusal", async () => {
 		const state = managed();
 		vi.spyOn(state.storage.options.challenges, "set").mockReturnValue(false);
-		const page = await state.app.fetch(origin + "/auth");
+		const page = await state.app.fetch(origin + "/login");
 		const html = await page.text();
 		const data = new FormData();
 		data.set(
@@ -1765,7 +1764,7 @@ test("a zero-counter credential requires a matched snapshot even when its values
 		}),
 		"/auth/login",
 	);
-	expect(failure.headers.get("location")).toBe(origin + "/auth?_auth=login");
+	expect(failure.headers.get("location")).toBe(origin + "/login?_auth=login");
 	expect(storage.sessions.size).toBe(0);
 	const accepted = await state.start("login");
 	const success = await state.submit(
@@ -1793,7 +1792,7 @@ test("account persistence may complete before session storage fails; normal logi
 		start,
 		await registration(start.options.challenge, keys),
 	);
-	expect(failed.headers.get("location")).toBe(origin + "/auth?_auth=register");
+	expect(failed.headers.get("location")).toBe(origin + "/login?_auth=register");
 	expect(failed.headers.getSetCookie()).toHaveLength(0);
 	expect(state.storage.records.size).toBe(1);
 	expect(state.storage.sessions.size).toBe(0);
@@ -1827,7 +1826,7 @@ test.each(["register", "login"] as const)(
 		expect(response.status).toBe(303);
 		expect(response.headers.get("cache-control")).toBe("no-store");
 		const location = new URL(response.headers.get("location")!);
-		expect(location.pathname).toBe("/auth");
+		expect(location.pathname).toBe("/login");
 		expect(location.searchParams.get("_auth")).toBe(method);
 		expect(location.searchParams.get("_retry")).toBe(String(retry.getTime()));
 		const page = await state.app.fetch(location, {
@@ -2084,6 +2083,8 @@ test("default Register and Login render together without duplicate IDs", async (
 	expect(hidden).toHaveLength(4);
 	for (const [input] of hidden) expect(input).not.toMatch(/\bid=/);
 	expect(html).toContain('src="/_passkey/client.js"');
+	expect(html).toContain("<button>Create account</button>");
+	expect(html).toContain("<button>Log in</button>");
 	expect(html).not.toContain("data-ovr");
 });
 
@@ -2101,7 +2102,7 @@ test("registration rejects changed application fields before account or session 
 		JSON.stringify(await registration(start.options.challenge, await pair())),
 	);
 	const result = await state.post("/auth/register", data, start.cookie);
-	expect(result.headers.get("location")).toBe(origin + "/auth?_auth=register");
+	expect(result.headers.get("location")).toBe(origin + "/login?_auth=register");
 	expect(result.headers.getSetCookie()).toHaveLength(0);
 	expect(state.create).not.toHaveBeenCalled();
 	expect(state.storage.sessions.size).toBe(0);
