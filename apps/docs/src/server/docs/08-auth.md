@@ -16,7 +16,6 @@ import { App, Auth, Field } from "ovr";
 const auth = new Auth({
 	secret,
 	origin: "https://example.com",
-	redirect: "/account",
 	challenges: { set: db.challenges.set, take: db.challenges.take },
 	sessions: {
 		set: db.sessions.set,
@@ -42,6 +41,8 @@ For secret rotation, pass `secret: [current, previous]`: new tokens use the firs
 `./db` is your application's database module. Implement its functions using the [storage contracts](#storage) below; no adapter class or database integration package is required.
 
 ## Forms
+
+Create your `/auth` page with the registration and login forms. `Auth` supplies the POST endpoints; you supply this page. To use `/login` instead, set `page: "/login"` and change the GET route below.
 
 Call `auth.forms(c)` in the route handler, before returning JSX. This lets ovr set the browser-binding cookie before streaming begins.
 
