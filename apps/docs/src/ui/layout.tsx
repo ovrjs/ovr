@@ -159,6 +159,20 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 
 			<NavHeading>Demo</NavHeading>
 			<NavList>
+				{import.meta.env.DEV && process.env.AUTH_SECRET && (
+					<li>
+						<a
+							href="/demo/auth"
+							data-no-prefetch
+							class={clsx(
+								"button secondary justify-start",
+								c.url.pathname !== "/demo/auth" && "ghost",
+							)}
+						>
+							Auth
+						</a>
+					</li>
+				)}
 				{Object.values(demos)
 					.sort((a, b) => a.pattern.localeCompare(b.pattern))
 					.map((demo) => {
