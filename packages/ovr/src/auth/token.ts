@@ -6,18 +6,15 @@ export class Token {
 	static readonly #keys = new Map<string, Promise<CryptoKey>>();
 
 	static #key(secret: string) {
-		let key = Token.#keys.get(secret);
-		if (!key) {
-			key = crypto.subtle.importKey(
+		return Token.#keys.getOrInsertComputed(secret, () =>
+			crypto.subtle.importKey(
 				"raw",
 				Codec.encode(secret),
 				{ name: "HMAC", hash: "SHA-256" },
 				false,
 				["sign", "verify"],
-			);
-			Token.#keys.set(secret, key);
-		}
-		return key;
+			),
+		);
 	}
 
 	/** Seal a payload for exactly one authentication purpose. */

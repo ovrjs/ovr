@@ -192,12 +192,10 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	}
 
 	#state(c: State.Context) {
-		let state = this.#states.get(c);
-		if (!state) {
-			state = new State(c, this.#options);
-			this.#states.set(c, state);
-		}
-		return state;
+		return this.#states.getOrInsertComputed(
+			c,
+			() => new State(c, this.#options),
+		);
 	}
 
 	/** Read a session in the handler before returning streamed JSX. Does not extend its lifetime. */
