@@ -32,8 +32,5 @@
 		"tailwindcss": "^4.3.3",
 		"vite": "^8.2.0",
 		"vite-imagetools": "^10.0.1"
-	},
-	"engines": {
-		"node": ">=26"
 	}
 }

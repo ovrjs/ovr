@@ -44,8 +44,5 @@
 	},
 	"dependencies": {
 		"@standard-schema/spec": "^1.1.0"
-	},
-	"engines": {
-		"node": ">=26"
 	}
 }

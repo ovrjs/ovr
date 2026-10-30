@@ -1,6 +1,6 @@
 # ovr
 
-Requires Node.js 26 or newer and current browsers.
+ovr supports only the latest Node.js LTS release and current browsers.
 
 ```bash
 npm i ovr

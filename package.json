@@ -34,8 +34,5 @@
 		"turbo": "^2.10.7",
 		"typescript": "^7.0.2",
 		"vitest": "^4.1.10"
-	},
-	"engines": {
-		"node": ">=26"
 	}
 }
