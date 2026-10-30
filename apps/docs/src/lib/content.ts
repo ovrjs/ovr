@@ -21,10 +21,17 @@ export const slugs = (all?: boolean) => {
 
 export const get = (slug: string) => content[`/server/docs/${slug}.md`];
 
-export const demos = import.meta.glob<Result<typeof FrontmatterSchema>>(
-	`@/server/demo/*/index.md`,
-	{ eager: true },
-);
+export const demos = {
+	...import.meta.glob<Result<typeof FrontmatterSchema>>(
+		["@/server/demo/*/index.md", "!@/server/demo/auth/index.md"],
+		{ eager: true },
+	),
+	...(import.meta.env.DEV &&
+		import.meta.glob<Result<typeof FrontmatterSchema>>(
+			"@/server/demo/auth/index.md",
+			{ eager: true },
+		)),
+};
 
 export const md = (result: Result<typeof FrontmatterSchema>) => {
 	return `# ${result.frontmatter.title}\n\n${

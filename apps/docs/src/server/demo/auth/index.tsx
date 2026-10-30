@@ -43,8 +43,9 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 
 				{Render.html(content.html)}
 
-				<div class="mt-24 flex justify-center">
+				<div class="mt-8 flex justify-center">
 					<div>
+						<h2>Register</h2>
 						<Register>
 							<Register.Field name="email" />
 							<Register.Error class="text-red-700" />
@@ -53,6 +54,7 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 
 						<hr />
 
+						<h2>Log in</h2>
 						<Login />
 
 						{user && (

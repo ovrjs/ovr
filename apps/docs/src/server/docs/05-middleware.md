@@ -132,7 +132,7 @@ Returning a value sets the `content-type` header to `html` unless it has already
 
 ## Rate limiting
 
-`Limiter` is reusable middleware. Authentication uses its own built-in policies automatically; ordinary routes opt in:
+`Limiter` is reusable middleware. [Auth](/08-auth#rate-limiting) uses its own built-in policies automatically; ordinary routes opt in:
 
 ```ts
 import { App, Limiter, Route } from "ovr";

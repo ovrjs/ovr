@@ -1,7 +1,5 @@
 import * as content from "@/lib/content";
 import * as demo from "@/server/demo";
-import * as auth from "@/server/demo/auth";
-import { Store } from "@/server/demo/auth/store";
 import * as docs from "@/server/docs";
 import * as home from "@/server/home";
 import * as notFound from "@/server/mw/not-found";
@@ -10,17 +8,18 @@ import * as seo from "@/server/seo";
 import "dotenv/config";
 import * as o from "ovr";
 
-const store =
-	import.meta.env.DEV && process.env.AUTH_SECRET
-		? new Store(process.env.AUTH_DATABASE)
-		: undefined;
-const service =
-	store && process.env.AUTH_SECRET
-		? auth.configure(store, process.env.AUTH_SECRET, process.env.AUTH_ORIGIN)
-		: undefined;
-const app = new o.App(service && { auth: service });
-
-if (store && service) app.use(auth.routes(store, service));
+let app: o.App;
+if (import.meta.env.DEV && process.env.AUTH_SECRET) {
+	const auth = await import("@/server/demo/auth");
+	const { Store } = await import("@/server/demo/auth/store");
+	const store = new Store(process.env.AUTH_DATABASE);
+	const service = auth.configure(
+		store,
+		process.env.AUTH_SECRET,
+		process.env.AUTH_ORIGIN,
+	);
+	app = new o.App({ auth: service }).use(auth.routes(store, service));
+} else app = new o.App();
 
 app.use(redirect, notFound, home, docs, demo, seo);
 
