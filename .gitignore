@@ -10,3 +10,6 @@ logs
 npm-debug.log*
 .vscode
 .vercel
+# Local authentication demo database, including SQLite WAL files
+.auth.sqlite*
+.auth-*.pem

@@ -1,4 +1,5 @@
 import type { App } from "../app/index.js";
+import { OriginIssue } from "../auth/origin.js";
 import { Cookie } from "../cookie/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -71,6 +72,8 @@ export class Context<
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Request)
 	 */
 	readonly req: Request;
+	/** Trusted client IP supplied by the server through App.fetch; never inferred from request headers. */
+	readonly ip: string | undefined;
 
 	/**
 	 * Parsed `URL` created from `req.url`.
@@ -102,8 +105,9 @@ export class Context<
 	 *
 	 * @param req Request
 	 */
-	constructor(req: Request, options: App.Options) {
+	constructor(req: Request, options: App.Options, ip?: string) {
 		this.req = req;
+		this.ip = ip;
 		this.url = new URL(req.url);
 		this.#options = options;
 	}
@@ -277,10 +281,15 @@ export class Context<
 
 		if (!mw) return; // end of stack
 
-		const r = await mw(
-			this, // c
-			() => this.#run(middleware, i + 1), // next
-		);
+		let r: unknown;
+		try {
+			r = await mw(this, () => this.#run(middleware, i + 1));
+		} catch (error) {
+			if (!(error instanceof OriginIssue)) throw error;
+			this.res.headers.set("cache-control", "no-store");
+			this.text("Misdirected Request", 421);
+			return;
+		}
 
 		// resolve the return value
 		if (r instanceof Response) {

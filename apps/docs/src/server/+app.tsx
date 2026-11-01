@@ -8,7 +8,18 @@ import * as seo from "@/server/seo";
 import "dotenv/config";
 import * as o from "ovr";
 
-const app = new o.App();
+let app: o.App;
+if (import.meta.env.DEV && process.env.AUTH_SECRET) {
+	const auth = await import("@/server/demo/auth");
+	const { Store } = await import("@/server/demo/auth/store");
+	const store = new Store(process.env.AUTH_DATABASE);
+	const service = auth.configure(
+		store,
+		process.env.AUTH_SECRET,
+		process.env.AUTH_ORIGIN,
+	);
+	app = new o.App({ auth: service }).use(auth.routes(store, service));
+} else app = new o.App();
 
 app.use(redirect, notFound, home, docs, demo, seo);
 
@@ -36,7 +47,9 @@ if (import.meta.env.DEV) {
 }
 
 export default {
-	fetch: app.fetch,
+	// The auth demo is local-development-only. Production entry points must supply their actual trusted peer IP.
+	fetch: (request: Request) =>
+		app.fetch(request, import.meta.env.DEV ? { ip: "127.0.0.1" } : {}),
 	prerender: () => {
 		const docPrerender = content.slugs().map((slug) => "/" + slug);
 
