@@ -1,7 +1,26 @@
 import { Fragment, type JSX, jsx } from "../jsx/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Checksum, Codec, Size } from "../util/index.js";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type {
+	StandardJSONSchemaV1,
+	StandardSchemaV1,
+} from "@standard-schema/spec";
+
+/** Issue details, a `Schema.Issue` is only built for the public result. */
+type Failure = {
+	expected: unknown;
+	path: Schema.Issue.Path;
+	message: string | undefined;
+};
+
+/**
+ * Compiled parse function. Failures stay plain records until the public
+ * `parse` builds the issues, so failed union branches cost no errors.
+ */
+type Run = (
+	value: unknown,
+	path: Schema.Issue.Path,
+) => { data: any; issues?: never } | { data?: never; issues: Failure[] };
 
 export namespace Schema {
 	/**
@@ -74,6 +93,130 @@ export namespace Schema {
 					? // array - better zod compat
 						Infer<S[number]>[]
 					: never;
+
+	export namespace JsonSchema {
+		/** Supported JSON Schema dialects. */
+		export type Target = "draft-2020-12" | "draft-07";
+
+		/** `toJsonSchema` options. */
+		export interface Options {
+			/**
+			 * JSON Schema dialect.
+			 *
+			 * @default "draft-2020-12"
+			 */
+			readonly target?: Target;
+
+			/**
+			 * Describe the accepted input or the parsed output.
+			 *
+			 * @default "output"
+			 */
+			readonly io?: "input" | "output";
+
+			/**
+			 * `"throw"` for values JSON Schema cannot describe (bigint, instances,
+			 * transforms), or `"any"` to describe them as `{}`.
+			 *
+			 * @default "throw"
+			 */
+			readonly unrepresentable?: "throw" | "any";
+		}
+
+		/** Resolved options used while describing a schema (internal). */
+		export type Context = Required<Options>;
+
+		/** Description of one schema; `optional` keys are omitted from `required` (internal). */
+		export interface Node {
+			readonly schema: Record<string, unknown>;
+			readonly optional?: boolean | undefined;
+		}
+	}
+
+	/**
+	 * Inspectable definition of a schema.
+	 *
+	 * Parsing, JSON Schema, and database tables are all derived from it.
+	 */
+	export type Def =
+		| { readonly type: "unknown" }
+		| {
+				readonly type: "string" | "boolean" | "number" | "bigint" | "date";
+				readonly message?: string | undefined;
+		  }
+		| {
+				readonly type: "literal";
+				readonly value: unknown;
+				readonly message?: string | undefined;
+		  }
+		| {
+				readonly type: "enum";
+				readonly values: readonly unknown[];
+				readonly message?: string | undefined;
+		  }
+		| {
+				readonly type: "instance";
+				readonly class: new (...args: any[]) => unknown;
+				readonly message?: string | undefined;
+		  }
+		| {
+				readonly type: "array";
+				readonly item: Schema<unknown>;
+				readonly message?: string | undefined;
+		  }
+		| {
+				readonly type: "object";
+				readonly shape: Object.Shape;
+				readonly mode: Object.Mode;
+		  }
+		| { readonly type: "union"; readonly options: readonly Schema<unknown>[] }
+		| {
+				readonly type: "optional" | "nullable" | "nullish";
+				readonly inner: Schema<unknown>;
+		  }
+		| {
+				readonly type: "default";
+				readonly inner: Schema<unknown>;
+				readonly value: unknown;
+		  }
+		| {
+				readonly type: "preprocess" | "transform";
+				readonly inner: Schema<unknown>;
+				readonly fn: (value: any) => unknown;
+		  }
+		| {
+				readonly type: "pipe";
+				readonly inner: Schema<unknown>;
+				readonly next: Schema<unknown>;
+		  }
+		| {
+				readonly type: "json";
+				readonly inner: Schema<unknown>;
+				readonly schema: Schema<unknown>;
+				readonly message?: string | undefined;
+		  }
+		| {
+				readonly type: "check";
+				readonly inner: Schema<unknown>;
+				readonly check: Check;
+		  };
+
+	/** Validation applied to the output of another schema. */
+	export type Check =
+		| {
+				readonly name: "min" | "max";
+				readonly value: number | bigint;
+				readonly message: string;
+		  }
+		| {
+				readonly name: "int" | "email" | "url" | "uuid";
+				readonly message: string;
+		  }
+		| {
+				readonly name: "refine";
+				readonly fn: (value: any) => boolean;
+				readonly message: string;
+		  };
 
 	/** Schema.Issue type */
 	export type Issue = InstanceType<typeof Schema.Issue>;
@@ -236,14 +379,29 @@ class ShapeUtil {
  * Minimal schema validator geared around parsing form data like
  * multipart `FormData` and `URLSearchParams`.
  *
- * Implements Standard Schema v1 via the `~standard` property (sync validate).
+ * Implements Standard Schema v1 and Standard JSON Schema v1 via the
+ * `~standard` property (sync validate).
  *
  * @template Output Output type after parsing
  */
-export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
+export class Schema<Output>
+	implements
+		StandardSchemaV1<unknown, Output>,
+		StandardJSONSchemaV1<unknown, Output>
+{
 	/** Email regular expression */
 	static readonly #emailRegex =
 		/^(?!\.)(?!.*\.\.)([a-z0-9_'+\-\.]*)[a-z0-9_'+\-]@([a-z0-9][a-z0-9\-]*\.)+[a-z]{2,}$/i;
+
+	/** UUID regular expression, any version */
+	static readonly #uuidRegex =
+		/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+	/** `$schema` URI for each supported target. */
+	static readonly #dialects: Record<Schema.JsonSchema.Target, string> = {
+		"draft-2020-12": "https://json-schema.org/draft/2020-12/schema",
+		"draft-07": "http://json-schema.org/draft-07/schema#",
+	};
 
 	/** Validation issue produced during parsing. */
 	static readonly Issue = class Issue extends Error {
@@ -330,7 +488,8 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		}
 	};
 
-	readonly "~standard": StandardSchemaV1.Props<unknown, Output> = {
+	readonly "~standard": StandardSchemaV1.Props<unknown, Output> &
+		StandardJSONSchemaV1.Props<unknown, Output> = {
 		version: 1,
 		vendor: "ovr",
 		validate: (value) => {
@@ -338,7 +497,24 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 
 			return result.issues ? result : { value: result.data };
 		},
+		jsonSchema: {
+			input: ({ target, libraryOptions }) =>
+				this.toJsonSchema({
+					...libraryOptions,
+					target: target as Schema.JsonSchema.Target,
+					io: "input",
+				}),
+			output: ({ target, libraryOptions }) =>
+				this.toJsonSchema({
+					...libraryOptions,
+					target: target as Schema.JsonSchema.Target,
+					io: "output",
+				}),
+		},
 	};
+
+	/** Inspectable definition this schema was built from. */
+	readonly def: Schema.Def;
 
 	/**
 	 * Parse and validate an unknown value.
@@ -349,26 +525,628 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	parse: Schema.Parse<Output>;
 
+	/** Compiled parse, nested schemas share one path that is copied only into issues. */
+	readonly #run: Run;
+
 	/**
 	 * Construct a new schema - used internally.
 	 *
 	 * Use static methods on `Schema` to make a new schema.
 	 *
-	 * @param parse Parse function that validates and transforms input
+	 * @param def Schema definition
 	 */
-	constructor(parse: Schema.Parse.Constructor<Output>) {
-		this.parse = (value, path = []) => parse(value, path);
+	constructor(def: Schema.Def) {
+		const run = Schema.#compile(def);
+
+		this.def = def;
+		this.#run = run;
+		this.parse = (value, path) => {
+			const result = run(value, path ? [...path] : []);
+
+			return result.issues
+				? new Schema.AggregateIssue(
+						result.issues.map(
+							(issue) =>
+								new Schema.Issue(issue.expected, issue.path, issue.message),
+						),
+					)
+				: result;
+		};
 	}
 
 	/**
 	 * @internal Required for Field to override and return a `Field` instance
 	 * from the chained methods instead of a `Schema`
 	 * @template O Output type of the new schema
-	 * @param parse Parse function that validates and transforms input
+	 * @param def Definition of the new schema
 	 * @returns New schema instance based on the current instance
 	 */
-	derive<O>(parse: Schema.Parse.Constructor<O>) {
-		return new Schema<O>(parse);
+	derive<O>(def: Schema.Def) {
+		return new Schema<O>(def);
+	}
+
+	/**
+	 * Convert the schema into a JSON Schema document.
+	 *
+	 * Refinements without a JSON Schema equivalent are omitted.
+	 *
+	 * @param options Target dialect, input/output side, and unrepresentable handling
+	 * @returns JSON Schema object
+	 */
+	toJsonSchema(options: Schema.JsonSchema.Options = {}) {
+		const {
+			target = "draft-2020-12",
+			io = "output",
+			unrepresentable = "throw",
+		} = options;
+
+		if (!Object.hasOwn(Schema.#dialects, target)) {
+			throw new TypeError(`Unsupported JSON Schema target: ${target}`);
+		}
+
+		return {
+			$schema: Schema.#dialects[target],
+			...Schema.#node(this, { target, io, unrepresentable }).schema,
+		} as Record<string, unknown>;
+	}
+
+	/**
+	 * @param check Check to apply to the output
+	 * @returns Checked schema
+	 */
+	#check(check: Schema.Check) {
+		return this.derive<Output>({ type: "check", inner: this, check });
+	}
+
+	/**
+	 * @param expected Expected value
+	 * @param path Issue path, copied since parsing continues to change it
+	 * @param message Issue message
+	 * @returns Invalid result with one issue
+	 */
+	static #issue(expected: unknown, path: Schema.Issue.Path, message?: string) {
+		return { issues: [{ expected, path: [...path], message }] };
+	}
+
+	/**
+	 * Compile a definition into its parse function once, at construction.
+	 *
+	 * Nested schemas run with the parent's path, adding their key while they
+	 * parse and removing it after, so valid values allocate no paths.
+	 *
+	 * @param def Schema definition
+	 * @returns Parse function
+	 */
+	static #compile(def: Schema.Def): Run {
+		switch (def.type) {
+			case "unknown":
+				return (v) => ({ data: v });
+			case "string":
+			case "boolean":
+			case "bigint":
+				return (v, path) =>
+					typeof v === def.type
+						? { data: v }
+						: Schema.#issue(def.type, path, def.message);
+			case "number":
+				return (v, path) =>
+					Number.isFinite(v) // isFinite checks type
+						? { data: v }
+						: Schema.#issue("number", path, def.message);
+			case "date":
+				return (v, path) =>
+					v instanceof Date && !Number.isNaN(v.getTime())
+						? { data: v }
+						: Schema.#issue("Date", path, def.message);
+			case "literal":
+				return (v, path) =>
+					v === def.value
+						? { data: def.value }
+						: Schema.#issue(def.value, path, def.message);
+			case "enum":
+				return (v, path) => {
+					for (const value of def.values) {
+						if (v === value) return { data: value };
+					}
+
+					return Schema.#issue(
+						def.values.map((v) => JSON.stringify(v)).join(" | "),
+						path,
+						def.message,
+					);
+				};
+			case "instance":
+				return (v, path) =>
+					v instanceof def.class
+						? { data: v }
+						: Schema.#issue(def.class.name, path, def.message);
+			case "array":
+				return (v, path) => {
+					if (!Array.isArray(v))
+						return Schema.#issue("Array", path, def.message);
+
+					const data: unknown[] = [];
+					let issues: Failure[] | undefined;
+
+					for (let i = 0; i < v.length; i++) {
+						path.push(i);
+						const result = def.item.#run(v[i], path);
+						path.pop();
+
+						if (result.issues) {
+							// the first failure's list is new, so it is reused
+							if (issues) issues.push(...result.issues);
+							else issues = result.issues;
+						} else {
+							data.push(result.data);
+						}
+					}
+
+					return issues ? { issues } : { data };
+				};
+			case "object": {
+				const shape = Object.entries(def.shape);
+
+				return (value, path) => {
+					if (
+						value == null ||
+						typeof value !== "object" ||
+						Array.isArray(value)
+					) {
+						return Schema.#issue("Object", path);
+					}
+
+					const data: Record<string, unknown> = {};
+					let issues: Failure[] | undefined;
+
+					for (const [name, schema] of shape) {
+						path.push(name);
+						const result = schema.#run(
+							(value as Record<string, unknown>)[name],
+							path,
+						);
+						path.pop();
+
+						if (result.issues) {
+							if (issues) issues.push(...result.issues);
+							else issues = result.issues;
+						} else if (result.data !== undefined) {
+							data[name] = result.data;
+						}
+					}
+
+					if (def.mode !== "strip") {
+						for (const [name, next] of Object.entries(value)) {
+							if (!Object.hasOwn(def.shape, name)) {
+								if (def.mode === "strict") {
+									(issues ??= []).push({
+										expected: "never",
+										path: [...path, name],
+										message: "Unexpected key",
+									});
+								} else {
+									data[name] = next;
+								}
+							}
+						}
+					}
+
+					return issues ? { issues } : { data };
+				};
+			}
+			case "union":
+				return (v, path) => {
+					const issues: Failure[] = [];
+
+					for (const schema of def.options) {
+						const result = schema.#run(v, path);
+
+						// return as soon as one passes
+						if (!result.issues) return result;
+
+						issues.push(...result.issues);
+					}
+
+					return { issues };
+				};
+			case "optional":
+				return (v, path) =>
+					v === undefined ? { data: v } : def.inner.#run(v, path);
+			case "nullable":
+				return (v, path) =>
+					v === null ? { data: v } : def.inner.#run(v, path);
+			case "nullish":
+				return (v, path) => (v == null ? { data: v } : def.inner.#run(v, path));
+			case "default":
+				return (v, path) =>
+					v === undefined ? { data: def.value } : def.inner.#run(v, path);
+			case "preprocess":
+				return (v, path) => def.inner.#run(def.fn(v), path);
+			case "transform":
+				return (v, path) => {
+					const result = def.inner.#run(v, path);
+
+					return result.issues ? result : { data: def.fn(result.data) };
+				};
+			case "pipe":
+				return (v, path) => {
+					const result = def.inner.#run(v, path);
+
+					return result.issues ? result : def.next.#run(result.data, path);
+				};
+			case "json":
+				return (v, path) => {
+					const result = def.inner.#run(v, path);
+					if (result.issues) return result;
+
+					let data: unknown;
+
+					try {
+						data = JSON.parse(result.data as string);
+					} catch {
+						return Schema.#issue("JSON", path, def.message);
+					}
+
+					return def.schema.#run(data, path);
+				};
+			case "check": {
+				const test = Schema.#test(def.check);
+
+				return (v, path) => {
+					const result = def.inner.#run(v, path);
+
+					return result.issues || test(result.data)
+						? result
+						: Schema.#issue("refine", path, def.check.message);
+				};
+			}
+		}
+	}
+
+	/**
+	 * @param check Output check
+	 * @returns Function that returns `false` when the value fails the check
+	 */
+	static #test(check: Schema.Check): (value: any) => boolean {
+		switch (check.name) {
+			// a string has between length / 2 and length code points, count only between
+			case "min": {
+				const min = Number(check.value);
+
+				return (v) =>
+					typeof v === "string"
+						? v.length >= min * 2 ||
+							(v.length >= min && Schema.#length(v) >= min)
+						: v >= check.value;
+			}
+			case "max": {
+				const max = Number(check.value);
+
+				return (v) =>
+					typeof v === "string"
+						? v.length <= max ||
+							(v.length <= max * 2 && Schema.#length(v) <= max)
+						: v <= check.value;
+			}
+			case "int":
+				return Number.isSafeInteger;
+			case "email":
+				return (v) => Schema.#emailRegex.test(v);
+			case "url":
+				return URL.canParse;
+			case "uuid":
+				return (v) => Schema.#uuidRegex.test(v);
+			case "refine":
+				return check.fn;
+		}
+	}
+
+	/**
+	 * @param value String
+	 * @returns Number of Unicode code points, a surrogate pair counts once
+	 */
+	static #length(value: string) {
+		let length = value.length;
+
+		for (let i = 0; i < value.length - 1; i++) {
+			const code = value.charCodeAt(i);
+
+			if (code >= 0xd800 && code <= 0xdbff) {
+				const next = value.charCodeAt(i + 1);
+
+				if (next >= 0xdc00 && next <= 0xdfff) {
+					length--;
+					i++;
+				}
+			}
+		}
+
+		return length;
+	}
+
+	/**
+	 * Describe a schema as JSON Schema by walking its definition.
+	 *
+	 * @param schema Schema to describe
+	 * @param c Description context
+	 * @returns Description, optional when its key may be omitted
+	 */
+	static #node(
+		schema: Schema<unknown>,
+		c: Schema.JsonSchema.Context,
+	): Schema.JsonSchema.Node {
+		const { def } = schema;
+
+		switch (def.type) {
+			case "unknown":
+				// accepts undefined, so the key may be absent
+				return { schema: {}, optional: true };
+			case "string":
+			case "boolean":
+			case "number":
+				return { schema: { type: def.type } };
+			case "bigint":
+			case "date":
+			case "instance":
+				return Schema.#unrepresentable(
+					c,
+					def.type === "instance" ? `${def.class.name} instance` : def.type,
+				);
+			case "literal":
+				return Schema.#values(c, [def.value]);
+			case "enum":
+				return Schema.#values(c, def.values);
+			case "array":
+				return {
+					schema: { type: "array", items: Schema.#node(def.item, c).schema },
+				};
+			case "object": {
+				const properties: Record<string, unknown> = {};
+				const required: string[] = [];
+
+				for (const [name, schema] of Object.entries(def.shape)) {
+					const node = Schema.#node(schema, c);
+
+					properties[name] = node.schema;
+					if (!node.optional) required.push(name);
+				}
+
+				return {
+					schema: {
+						type: "object",
+						properties,
+						...(required.length && { required }),
+						// strip accepts unknown input keys but removes them from the output
+						...((def.mode === "strict" ||
+							(def.mode === "strip" && c.io === "output")) && {
+							additionalProperties: false,
+						}),
+					},
+				};
+			}
+			case "union": {
+				const nodes = def.options.map((schema) => Schema.#node(schema, c));
+
+				return {
+					schema:
+						nodes.length === 1
+							? nodes[0]!.schema
+							: { anyOf: nodes.map((node) => node.schema) },
+					optional: nodes.some((node) => node.optional),
+				};
+			}
+			case "optional":
+				return { ...Schema.#node(def.inner, c), optional: true };
+			case "nullable":
+			case "nullish": {
+				const node = Schema.#node(def.inner, c);
+
+				return {
+					schema: { anyOf: [node.schema, { type: "null" }] },
+					optional: def.type === "nullish" || node.optional,
+				};
+			}
+			case "default": {
+				const node = Schema.#node(def.inner, c);
+
+				if (c.io === "input")
+					return {
+						schema: Schema.#isJson(def.value)
+							? { ...node.schema, default: def.value }
+							: node.schema,
+						optional: true,
+					};
+
+				// the default is output without validation by the inner schema
+				if (def.value === undefined)
+					return { schema: node.schema, optional: true };
+				if (!def.inner.parse(def.value).issues) return { schema: node.schema };
+				if (!Schema.#isJson(def.value))
+					return Schema.#unrepresentable(c, "Non-JSON default");
+
+				return { schema: { anyOf: [node.schema, { const: def.value }] } };
+			}
+			case "preprocess":
+				// any input, or none, may be preprocessed into a valid value
+				return c.io === "input"
+					? { schema: {}, optional: true }
+					: Schema.#node(def.inner, c);
+			case "transform":
+				return c.io === "input"
+					? Schema.#node(def.inner, c)
+					: Schema.#unrepresentable(c, "Transform output");
+			case "pipe":
+				return Schema.#node(c.io === "input" ? def.inner : def.next, c);
+			case "json": {
+				if (c.io === "output") return Schema.#node(def.schema, c);
+
+				const node = Schema.#node(def.inner, c);
+
+				return {
+					...node,
+					schema: {
+						...node.schema,
+						contentMediaType: "application/json",
+						// contentSchema was added after draft-07
+						...(c.target === "draft-2020-12" && {
+							contentSchema: Schema.#node(def.schema, c).schema,
+						}),
+					},
+				};
+			}
+			case "check": {
+				const node = Schema.#node(def.inner, c);
+
+				// checks constrain the output, so they describe the input only when it is unchanged
+				if (c.io === "input" && !Schema.#unchanged(def.inner.def)) return node;
+
+				return {
+					...node,
+					schema: {
+						...node.schema,
+						...Schema.#keywords(def.check, node.schema),
+					},
+				};
+			}
+		}
+	}
+
+	/**
+	 * @param def Schema definition
+	 * @returns `true` when parsing never changes a valid value
+	 */
+	static #unchanged(def: Schema.Def): boolean {
+		switch (def.type) {
+			case "preprocess":
+			case "transform":
+			case "json":
+				return false;
+			case "pipe":
+				return (
+					Schema.#unchanged(def.inner.def) && Schema.#unchanged(def.next.def)
+				);
+			case "union":
+				return def.options.every((schema) => Schema.#unchanged(schema.def));
+			case "optional":
+			case "nullable":
+			case "nullish":
+			case "default":
+			case "check":
+				return Schema.#unchanged(def.inner.def);
+		}
+
+		return true;
+	}
+
+	/**
+	 * @param check Output check
+	 * @param schema Description being checked
+	 * @returns JSON Schema keywords equivalent to the check
+	 */
+	static #keywords(check: Schema.Check, schema: Record<string, unknown>) {
+		switch (check.name) {
+			case "email":
+			case "uuid":
+				return { format: check.name };
+			case "url":
+				return { format: "uri" };
+			case "int":
+				return schema.type === "number" && { type: "integer" };
+			case "min":
+			case "max": {
+				if (typeof check.value !== "number") return;
+
+				const min = check.name === "min";
+				const length = schema.type === "string";
+				const key = length
+					? `${check.name}Length`
+					: (schema.type === "number" || schema.type === "integer") &&
+						(min ? "minimum" : "maximum");
+
+				if (!key) return;
+
+				// lengths are integers, so fractional bounds round inward
+				const value = length
+					? min
+						? Math.max(0, Math.ceil(check.value))
+						: Math.floor(check.value)
+					: check.value;
+				const current = schema[key];
+
+				// repeated bounds all apply, so keep the strictest
+				return {
+					[key]:
+						typeof current !== "number"
+							? value
+							: min
+								? Math.max(current, value)
+								: Math.min(current, value),
+				};
+			}
+		}
+	}
+
+	/**
+	 * @param c Description context
+	 * @param name Unrepresentable schema name
+	 * @returns `{}` when allowed by `c`
+	 */
+	static #unrepresentable(
+		c: Schema.JsonSchema.Context,
+		name: string,
+	): Schema.JsonSchema.Node {
+		if (c.unrepresentable === "any") return { schema: {} };
+
+		throw new TypeError(`${name} cannot be represented in JSON Schema`);
+	}
+
+	/**
+	 * @param value Value to check
+	 * @returns `true` when the value round-trips through JSON unchanged
+	 */
+	static #isJson(value: unknown): boolean {
+		if (
+			value === null ||
+			typeof value === "string" ||
+			typeof value === "boolean"
+		)
+			return true;
+		if (typeof value === "number") return Number.isFinite(value);
+		if (Array.isArray(value)) return value.every(Schema.#isJson);
+		if (
+			typeof value === "object" &&
+			Object.getPrototypeOf(value) === Object.prototype
+		)
+			return Object.values(value).every(Schema.#isJson);
+
+		return false;
+	}
+
+	/**
+	 * @param c Description context
+	 * @param values Allowed literal values
+	 * @returns `const` or `enum` description, optional when `undefined` is allowed
+	 */
+	static #values(
+		c: Schema.JsonSchema.Context,
+		values: readonly unknown[],
+	): Schema.JsonSchema.Node {
+		const defined = values.filter((v) => v !== undefined);
+
+		if (!defined.every(Schema.#isJson)) {
+			return Schema.#unrepresentable(c, "Non-JSON literal");
+		}
+
+		return {
+			// `not: {}` matches nothing, so the key must be absent
+			schema:
+				defined.length === 0
+					? { not: {} }
+					: defined.length === 1
+						? { const: defined[0] }
+						: { enum: defined },
+			optional: defined.length < values.length,
+		};
 	}
 
 	/**
@@ -389,11 +1167,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	optional(this: Schema<Output>): Schema<Output | undefined>;
 	optional(this: Schema<Output>) {
-		return this.derive<Output | undefined>((v, path) => {
-			if (v === undefined) return { data: undefined };
-
-			return this.parse(v, path);
-		});
+		return this.derive<Output | undefined>({ type: "optional", inner: this });
 	}
 
 	/**
@@ -414,11 +1188,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	nullable(this: Schema<Output>): Schema<Output | null>;
 	nullable(this: Schema<Output>) {
-		return this.derive<Output | null>((v, path) => {
-			if (v === null) return { data: null };
-
-			return this.parse(v, path);
-		});
+		return this.derive<Output | null>({ type: "nullable", inner: this });
 	}
 
 	/**
@@ -439,10 +1209,9 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	nullish(this: Schema<Output>): Schema<Output | null | undefined>;
 	nullish(this: Schema<Output>) {
-		return this.derive<Output | null | undefined>((v, path) => {
-			if (v == null) return { data: v };
-
-			return this.parse(v, path);
+		return this.derive<Output | null | undefined>({
+			type: "nullish",
+			inner: this,
 		});
 	}
 
@@ -467,11 +1236,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	default(this: Schema<Output>, value: Output): Schema<Output>;
 	default(this: Schema<Output>, value: Output) {
-		return this.derive((v, path) => {
-			if (v === undefined) return { data: value };
-
-			return this.parse(v, path);
-		});
+		return this.derive<Output>({ type: "default", inner: this, value });
 	}
 
 	/**
@@ -498,7 +1263,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		fn: (value: unknown) => unknown,
 	): Schema<Output>;
 	preprocess(this: Schema<Output>, fn: (value: unknown) => unknown) {
-		return this.derive((v, path) => this.parse(fn(v), path));
+		return this.derive<Output>({ type: "preprocess", inner: this, fn });
 	}
 
 	/**
@@ -525,11 +1290,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	transform<O>(this: Schema<Output>, fn: (value: Output) => O): Schema<O>;
 	transform<O>(this: Schema<Output>, fn: (value: Output) => O) {
-		return this.derive((v, path) => {
-			const out = this.parse(v, path);
-
-			return out.issues ? out : { data: fn(out.data) };
-		});
+		return this.derive<O>({ type: "transform", inner: this, fn });
 	}
 
 	/**
@@ -556,11 +1317,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	pipe<O>(this: Schema<Output>, next: Schema<O>): Schema<O>;
 	pipe<O>(this: Schema<Output>, next: Schema<O>) {
-		return this.derive((v, path) => {
-			const result = this.parse(v, path);
-
-			return result.issues ? result : next.parse(result.data, path);
-		});
+		return this.derive<O>({ type: "pipe", inner: this, next });
 	}
 
 	/**
@@ -594,22 +1351,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	json<O>(this: Schema<string>, schema: Schema<O>, message?: string): Schema<O>;
 	json<O>(this: Schema<string>, schema: Schema<O>, message?: string) {
-		return this.derive((v, path) => {
-			const result = this.parse(v, path);
-			if (result.issues) return result;
-
-			let data: unknown;
-
-			try {
-				data = JSON.parse(result.data);
-			} catch {
-				return new Schema.AggregateIssue([
-					new Schema.Issue("JSON", path, message),
-				]);
-			}
-
-			return schema.parse(data, path);
-		});
+		return this.derive<O>({ type: "json", inner: this, schema, message });
 	}
 
 	/**
@@ -639,7 +1381,35 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	email(this: Schema<string>, message?: string): Schema<string>;
 	email(this: Schema<string>, message = "Expected email") {
-		return this.refine((s) => Schema.#emailRegex.test(s), message);
+		return this.#check({ name: "email", message });
+	}
+
+	/**
+	 * Validate an input is a UUID string of any version.
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @param message Issue message when invalid
+	 * @returns UUID field
+	 */
+	uuid<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Values | undefined,
+	>(
+		this: Field.Instance<string, T, U, V>,
+		message?: string,
+	): Field.Instance<string, T, U, V>;
+	/**
+	 * Validate an input is a UUID string of any version.
+	 *
+	 * @param message Issue message when invalid
+	 * @returns UUID schema
+	 */
+	uuid(this: Schema<string>, message?: string): Schema<string>;
+	uuid(this: Schema<string>, message = "Expected UUID") {
+		return this.#check({ name: "uuid", message });
 	}
 
 	/**
@@ -667,7 +1437,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	url(this: Schema<string>, message?: string): Schema<string>;
 	url(this: Schema<string>, message = "Expected URL") {
-		return this.refine(URL.canParse, message);
+		return this.#check({ name: "url", message });
 	}
 
 	/**
@@ -695,13 +1465,14 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 */
 	int(this: Schema<number>, message?: string): Schema<number>;
 	int(this: Schema<number>, message = "Expected integer") {
-		return this.refine(Number.isSafeInteger, message);
+		return this.#check({ name: "int", message });
 	}
 
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
-	 * For strings, this validates minimum length.
+	 * For strings, this validates minimum length in Unicode characters,
+	 * as JSON Schema and Postgres count them.
 	 *
 	 * @template T Field tag name
 	 * @template U Field input type attribute
@@ -760,7 +1531,8 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
-	 * For strings, this validates minimum length.
+	 * For strings, this validates minimum length in Unicode characters,
+	 * as JSON Schema and Postgres count them.
 	 *
 	 * @param value Minimum value or length
 	 * @param message Issue message when invalid
@@ -788,17 +1560,14 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		value: number | bigint,
 		message = `Expected minimum ${String(value)}`,
 	) {
-		return this.refine((next) => {
-			return typeof next === "string"
-				? next.length >= (value as number)
-				: next >= (value as number | bigint);
-		}, message);
+		return this.#check({ name: "min", value, message });
 	}
 
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
-	 * For strings, this validates maximum length.
+	 * For strings, this validates maximum length in Unicode characters,
+	 * as JSON Schema and Postgres count them.
 	 *
 	 * @template T Field tag name
 	 * @template U Field input type attribute
@@ -857,7 +1626,8 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
-	 * For strings, this validates maximum length.
+	 * For strings, this validates maximum length in Unicode characters,
+	 * as JSON Schema and Postgres count them.
 	 *
 	 * @param value Maximum value or length
 	 * @param message Issue message when invalid
@@ -885,11 +1655,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		value: number | bigint,
 		message = `Expected maximum ${String(value)}`,
 	) {
-		return this.refine((next) => {
-			return typeof next === "string"
-				? next.length <= (value as number)
-				: next <= (value as number | bigint);
-		}, message);
+		return this.#check({ name: "max", value, message });
 	}
 
 	/**
@@ -924,15 +1690,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		check: (value: Output) => boolean,
 		message: string,
 	) {
-		return this.derive((v, path) => {
-			const out = this.parse(v, path);
-
-			return out.issues || check(out.data)
-				? out
-				: new Schema.AggregateIssue([
-						new Schema.Issue("refine", path, message),
-					]);
-		});
+		return this.#check({ name: "refine", fn: check, message });
 	}
 
 	/**
@@ -941,7 +1699,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns Unknown schema
 	 */
 	static unknown() {
-		return new Schema((v) => ({ data: v }));
+		return new Schema<unknown>({ type: "unknown" });
 	}
 
 	/**
@@ -951,13 +1709,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns String schema
 	 */
 	static string(message?: string) {
-		return new Schema((v, path) => {
-			return typeof v === "string"
-				? { data: v }
-				: new Schema.AggregateIssue([
-						new Schema.Issue("string", path, message),
-					]);
-		});
+		return new Schema<string>({ type: "string", message });
 	}
 
 	/**
@@ -967,13 +1719,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns Boolean schema
 	 */
 	static boolean(message?: string) {
-		return new Schema((v, path) => {
-			return typeof v === "boolean"
-				? { data: v }
-				: new Schema.AggregateIssue([
-						new Schema.Issue("boolean", path, message),
-					]);
-		});
+		return new Schema<boolean>({ type: "boolean", message });
 	}
 
 	/**
@@ -985,13 +1731,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns Number schema
 	 */
 	static number(message?: string) {
-		return new Schema((v, path) => {
-			return Number.isFinite(v) // isFinite checks type
-				? { data: v as number }
-				: new Schema.AggregateIssue([
-						new Schema.Issue("number", path, message),
-					]);
-		});
+		return new Schema<number>({ type: "number", message });
 	}
 
 	/**
@@ -1001,13 +1741,19 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns Big integer schema
 	 */
 	static bigint(message?: string) {
-		return new Schema((v, path) => {
-			return typeof v === "bigint"
-				? { data: v }
-				: new Schema.AggregateIssue([
-						new Schema.Issue("bigint", path, message),
-					]);
-		});
+		return new Schema<bigint>({ type: "bigint", message });
+	}
+
+	/**
+	 * Validate an input is a valid `Date`.
+	 *
+	 * Rejects invalid dates like `new Date("")`.
+	 *
+	 * @param message Issue message when invalid
+	 * @returns Date schema
+	 */
+	static date(message?: string) {
+		return new Schema<Date>({ type: "date", message });
 	}
 
 	/**
@@ -1017,11 +1763,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns Literal schema
 	 */
 	static literal<const L>(literal: L, message?: string) {
-		return new Schema((v, path) => {
-			return v === literal
-				? { data: literal }
-				: new Schema.AggregateIssue([new Schema.Issue(literal, path, message)]);
-		});
+		return new Schema<L>({ type: "literal", value: literal, message });
 	}
 
 	/**
@@ -1037,19 +1779,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 		allowed: A,
 		message?: string,
 	) {
-		return new Schema<A[number]>((v, path) => {
-			for (const a of allowed) {
-				if (v === a) return { data: a };
-			}
-
-			return new Schema.AggregateIssue([
-				new Schema.Issue(
-					allowed.map((v) => JSON.stringify(v)).join(" | "),
-					path,
-					message,
-				),
-			]);
-		});
+		return new Schema<A[number]>({ type: "enum", values: allowed, message });
 	}
 
 	/**
@@ -1062,21 +1792,9 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	static union<
 		const S extends readonly [Schema<unknown>, ...Schema<unknown>[]],
 	>(schemas: S) {
-		return new Schema((v, path) => {
-			const issues: Schema.Issue[] = [];
-
-			for (const schema of schemas) {
-				const result = schema.parse(v, path);
-
-				if (!result.issues) {
-					// return as soon as one passes
-					return result as Schema.Parse.Result<Schema.Infer<S[number]>>;
-				}
-
-				issues.push(...result.issues);
-			}
-
-			return new Schema.AggregateIssue(issues);
+		return new Schema<Schema.Infer<S[number]>>({
+			type: "union",
+			options: schemas,
 		});
 	}
 
@@ -1089,13 +1807,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns Validated instance
 	 */
 	static instance<O>(constructor: new (...args: any[]) => O, message?: string) {
-		return new Schema((v, path) =>
-			v instanceof constructor
-				? { data: v }
-				: new Schema.AggregateIssue([
-						new Schema.Issue(constructor.name, path, message),
-					]),
-		);
+		return new Schema<O>({ type: "instance", class: constructor, message });
 	}
 
 	/**
@@ -1107,30 +1819,7 @@ export class Schema<Output> implements StandardSchemaV1<unknown, Output> {
 	 * @returns Array schema
 	 */
 	static array<O>(schema: Schema<O>, message?: string) {
-		return new Schema((v, path) => {
-			if (!Array.isArray(v)) {
-				return new Schema.AggregateIssue([
-					new Schema.Issue("Array", path, message),
-				]);
-			}
-
-			const data: O[] = [];
-			const issues: Schema.Issue[] = [];
-
-			for (let i = 0; i < v.length; i++) {
-				const result = schema.parse(v[i], [...path, i]);
-
-				if (result.issues) {
-					issues.push(...result.issues);
-				} else {
-					data.push(result.data);
-				}
-			}
-
-			if (issues.length) return new Schema.AggregateIssue(issues);
-
-			return { data };
-		});
+		return new Schema<O[]>({ type: "array", item: schema, message });
 	}
 
 	/**
@@ -1170,49 +1859,7 @@ class ObjectSchema<
 	 * @param mode Object parsing mode
 	 */
 	constructor(shape: Shape, mode: Mode = "strip" as Mode) {
-		super((value, path) => {
-			if (value == null || typeof value !== "object" || Array.isArray(value)) {
-				return new Schema.AggregateIssue([new Schema.Issue("Object", path)]);
-			}
-
-			const data: Record<string, unknown> = {};
-			const issues: Schema.Issue[] = [];
-
-			for (const [name, schema] of Object.entries(shape)) {
-				const result = schema.parse((value as Record<string, unknown>)[name], [
-					...path,
-					name,
-				]);
-
-				if (result.issues) {
-					issues.push(...result.issues);
-				} else if (result.data !== undefined) {
-					data[name] = result.data;
-				}
-			}
-
-			if (mode !== "strip") {
-				const names = new Set(Object.keys(shape));
-
-				for (const [name, next] of Object.entries(
-					value as Record<string, unknown>,
-				)) {
-					if (!names.has(name)) {
-						if (mode === "strict") {
-							issues.push(
-								new Schema.Issue("never", [...path, name], "Unexpected key"),
-							);
-						} else {
-							data[name] = next;
-						}
-					}
-				}
-			}
-
-			return issues.length
-				? new Schema.AggregateIssue(issues)
-				: ({ data } as { data: Schema.Object.Output<Shape, Mode> });
-		});
+		super({ type: "object", shape, mode });
 
 		this.shape = shape;
 		this.#mode = mode;
@@ -1842,7 +2489,7 @@ class FieldSchema<
 	 * Create a new field.
 	 *
 	 * @param options Field options
-	 * @param parse How to validate the input
+	 * @param schema How to validate the input
 	 * @param read How to read the form data
 	 * @param parts Maximum expected multipart parts for this field
 	 * @param stream If this field should be streamed as a multipart part
@@ -1850,14 +2497,14 @@ class FieldSchema<
 	 */
 	constructor(
 		options: Field.Options<Values, Tag>,
-		parse: Schema<Output> | Schema.Parse.Constructor<Output>,
+		schema: Schema<Output> | Schema.Def,
 		// default to a single value, treating blank as missing
 		read: Field.Read = (data, name) => data.get(name) || undefined,
 		parts = 1,
 		stream?: Stream,
 		persist = false,
 	) {
-		super(parse instanceof Schema ? parse.parse : parse);
+		super(schema instanceof Schema ? schema.def : schema);
 
 		this.#options = options;
 		this.tag = (options.tag ?? "input") as Tag;
@@ -1891,7 +2538,7 @@ class FieldSchema<
 	stream(): Field.Instance<Output, Tag, Type, Values, true> {
 		return new FieldSchema<Output, Tag, Type, Values, true>(
 			this.#options,
-			this.parse,
+			this.def,
 			this.#read,
 			this.parts,
 			true,
@@ -1915,7 +2562,7 @@ class FieldSchema<
 	persist() {
 		return new FieldSchema<Output, Tag, Type, Values, Stream>(
 			this.#options,
-			this.parse,
+			this.def,
 			this.#read,
 			this.parts,
 			this.streaming,
@@ -1927,15 +2574,15 @@ class FieldSchema<
 	 * Derive a new Field from the current instance type.
 	 *
 	 * @template O Output type of the new Field
-	 * @param parse Parse function that validates and transforms input
+	 * @param def Definition of the new Field
 	 * @returns New `Field` instance
 	 */
 	override derive<O>(
-		parse: Schema.Parse.Constructor<O>,
+		def: Schema.Def,
 	): Field.Instance<O, Tag, Type, Values, Stream> {
 		return new FieldSchema<O, Tag, Type, Values, Stream>(
 			this.#options,
-			parse,
+			def,
 			this.#read,
 			this.parts,
 			this.streaming,

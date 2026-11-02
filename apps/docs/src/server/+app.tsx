@@ -11,14 +11,14 @@ import * as o from "ovr";
 let app: o.App;
 if (import.meta.env.DEV && process.env.AUTH_SECRET) {
 	const auth = await import("@/server/demo/auth");
-	const { Store } = await import("@/server/demo/auth/store");
-	const store = new Store(process.env.AUTH_DATABASE);
+	const { open } = await import("@/server/demo/auth/store");
+	const db = await open(process.env.AUTH_DATABASE);
 	const service = auth.configure(
-		store,
+		db,
 		process.env.AUTH_SECRET,
 		process.env.AUTH_ORIGIN,
 	);
-	app = new o.App({ auth: service }).use(auth.routes(store, service));
+	app = new o.App({ auth: service }).use(auth.routes(db, service));
 } else app = new o.App();
 
 app.use(redirect, notFound, home, docs, demo, seo);

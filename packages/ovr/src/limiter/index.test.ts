@@ -1,23 +1,59 @@
 import { App } from "../app/index.js";
+import { Database } from "../database/index.js";
 import { Route } from "../route/index.js";
 import { Limiter } from "./index.js";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { PGlite } from "@electric-sql/pglite";
+import {
+	afterAll,
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	vi,
+} from "vitest";
 
-beforeEach(() => vi.useFakeTimers());
+const engine = await PGlite.create();
+const db = new Database(
+	{
+		query: async (text, values) =>
+			values?.length
+				? engine.query(text, values)
+				: ((await engine.exec(text)).at(-1) ?? { rows: [] }),
+		connect: () => {
+			throw new Error("Limiter does not use transactions");
+		},
+	},
+	[Limiter.table],
+);
+await engine.exec(
+	"CREATE TABLE ovr_limits (key text PRIMARY KEY, tokens double precision NOT NULL, time bigint NOT NULL, expiration bigint NOT NULL)",
+);
+
+/** Database whose queries fail, as when Postgres is unavailable. */
+const broken = (failure: Error) =>
+	new Database(
+		{
+			query: async () => {
+				throw failure;
+			},
+			connect: async () => {
+				throw failure;
+			},
+		},
+		[],
+	);
+
+// only Date, PGlite needs real timers
+beforeEach(async () => {
+	vi.useFakeTimers({ toFake: ["Date"] });
+	await engine.exec("TRUNCATE ovr_limits");
+});
 afterEach(() => vi.useRealTimers());
+afterAll(() => engine.close());
 
 function setup(options: Partial<Limiter.Options> = {}) {
-	// Test-only shared-store stand-in. The library always calls the supplied backend.
-	const counts = new Map<string, number>();
-	const consume = vi.fn(
-		(key: string, { limit, interval }: Limiter.Policy): true | number => {
-			const count = counts.get(key) ?? 0;
-			if (count >= limit) return Date.now() + interval;
-			counts.set(key, count + 1);
-			return true;
-		},
-	);
-	const limiter = new Limiter({ consume, error: vi.fn(), ...options });
+	const limiter = new Limiter({ database: db, error: vi.fn(), ...options });
 	const hit = vi.fn();
 	const app = new App().use(
 		Route.get("/limited", limiter.middleware, (c) => {
@@ -28,30 +64,32 @@ function setup(options: Partial<Limiter.Options> = {}) {
 	);
 	const fetch = (ip = "192.0.2.1", headers: HeadersInit = {}) =>
 		app.fetch("https://example.com/limited", { ip, headers });
-	return { app, limiter, fetch, hit, consume };
+	return { app, limiter, fetch, hit };
 }
 
+const buckets = () =>
+	db.sql`SELECT * FROM ${db.ovr_limits} ORDER BY key`.parse(db.ovr_limits);
+
 describe("token buckets", () => {
-	test("supplies the default policy and consults shared storage on every request", async () => {
+	test("supplies the default policy and refills continuously", async () => {
 		const state = setup();
-		state.consume
-			.mockReturnValueOnce(true)
-			.mockReturnValueOnce(Date.now() + 17501)
-			.mockReturnValueOnce(true);
-		expect((await state.fetch()).status).toBe(200);
+		for (let i = 0; i < 60; i++) expect((await state.fetch()).status).toBe(200);
 		const denied = await state.fetch();
 		expect(denied.status).toBe(429);
-		expect(denied.headers.get("retry-after")).toBe("18");
+		// 60 a minute refills one token a second
+		expect(denied.headers.get("retry-after")).toBe("1");
+		vi.advanceTimersByTime(1000);
 		expect((await state.fetch()).status).toBe(200);
-		expect(state.consume).toHaveBeenCalledTimes(3);
-		expect(state.consume.mock.calls.map((call) => call[0])).toEqual(
-			Array(3).fill(state.consume.mock.calls[0]?.[0]),
-		);
-		expect(state.consume.mock.calls[0]?.[1]).toEqual({
-			limit: 60,
-			interval: 60000,
-		});
-		expect(state.hit).toHaveBeenCalledTimes(2);
+		expect((await state.fetch()).status).toBe(429);
+		expect(state.hit).toHaveBeenCalledTimes(61);
+		const [bucket] = await buckets();
+		expect(JSON.parse(bucket!.key)).toEqual([
+			"requests",
+			60,
+			60000,
+			"",
+			"192.0.2.1",
+		]);
 	});
 
 	test("concurrent checks consume one budget", async () => {
@@ -95,6 +133,19 @@ describe("token buckets", () => {
 		expect(typeof result[2]).toBe("string");
 	});
 
+	test("expired buckets start full and are pruned", async () => {
+		const state = setup({ limit: 1, interval: 1000 });
+		expect((await state.fetch()).status).toBe(200);
+		expect((await state.fetch()).status).toBe(429);
+		vi.advanceTimersByTime(61000);
+		expect((await state.fetch("192.0.2.2")).status).toBe(200);
+		// the first client's expired bucket was pruned
+		expect(
+			(await buckets()).map((bucket) => JSON.parse(bucket.key)[4]),
+		).toEqual(["192.0.2.2"]);
+		expect((await state.fetch()).status).toBe(200);
+	});
+
 	test.each([
 		{ limit: 0 },
 		{ limit: NaN },
@@ -109,11 +160,11 @@ describe("token buckets", () => {
 	});
 });
 
-test("missing shared storage fails at startup instead of allocating local counters", () => {
-	// @ts-expect-error A shared backend is required, including for the default policy.
-	expect(() => new Limiter()).toThrow("consume");
+test("a missing database fails at startup instead of allocating local counters", () => {
+	// @ts-expect-error A database is required, including for the default policy.
+	expect(() => new Limiter()).toThrow("database");
 	// @ts-expect-error A policy without storage is not a valid limiter configuration.
-	expect(() => new Limiter({ limit: 10 })).toThrow("consume");
+	expect(() => new Limiter({ limit: 10 })).toThrow("database");
 });
 
 describe("trusted identities", () => {
@@ -188,38 +239,32 @@ describe("trusted identities", () => {
 
 test("different policies using the default namespace cannot share token balances", async () => {
 	const first = setup({ limit: 1 });
-	const second = setup({ limit: 2, consume: first.consume });
-	const third = setup({ limit: 1, interval: 120000, consume: first.consume });
+	const second = setup({ limit: 2 });
+	const third = setup({ limit: 1, interval: 120000 });
 	expect((await first.fetch()).status).toBe(200);
 	expect((await first.fetch()).status).toBe(429);
 	expect((await second.fetch()).status).toBe(200);
 	expect((await second.fetch()).status).toBe(200);
 	expect((await second.fetch()).status).toBe(429);
 	expect((await third.fetch()).status).toBe(200);
-	expect(new Set(first.consume.mock.calls.map(([key]) => key)).size).toBe(3);
+	expect(await buckets()).toHaveLength(3);
 });
 
-test("fractional retry deadlines round up, while numeric one still denies", async () => {
-	const state = setup();
-	state.consume.mockReturnValueOnce(Date.now() + 1234.5).mockReturnValueOnce(1);
-	const response = await state.fetch();
-	expect(response.status).toBe(429);
-	expect(response.headers.get("retry-after")).toBe("2");
-	const denied = await state.fetch();
-	expect(denied.status).toBe(429);
-	expect(denied.headers.get("retry-after")).toBe("1");
-	expect(state.hit).not.toHaveBeenCalled();
+test("retry deadlines round up and stay between one second and one hour", async () => {
+	const fractional = setup({ name: "fractional", limit: 1, interval: 2500 });
+	expect((await fractional.fetch()).status).toBe(200);
+	expect((await fractional.fetch()).headers.get("retry-after")).toBe("3");
+	const slow = setup({ name: "slow", limit: 1, interval: 2 * 3600000 });
+	expect((await slow.fetch()).status).toBe(200);
+	expect((await slow.fetch()).headers.get("retry-after")).toBe("3600");
+	expect(fractional.hit).toHaveBeenCalledOnce();
+	expect(slow.hit).toHaveBeenCalledOnce();
 });
 
 test("middleware reports failures without exposing them or admitting requests", async () => {
 	const error = vi.fn();
 	const failure = new Error("private storage details");
-	const state = setup({
-		consume: () => {
-			throw failure;
-		},
-		error,
-	});
+	const state = setup({ database: broken(failure), error });
 	const response = await state.fetch();
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private storage");
@@ -231,11 +276,7 @@ test("middleware reports failures without exposing them or admitting requests", 
 	const log = vi.spyOn(console, "error").mockImplementation(() => {});
 	try {
 		const fallback = new App().use(
-			new Limiter({
-				consume: () => {
-					throw failure;
-				},
-			}).middleware,
+			new Limiter({ database: broken(failure) }).middleware,
 		);
 		expect(
 			(await fallback.fetch("https://example.com", { ip: "192.0.2.1" })).status,
@@ -251,33 +292,10 @@ test("middleware reports failures without exposing them or admitting requests", 
 	}
 });
 
-test("separate workers call a shared atomic store with stable keys and policy", async () => {
-	const entries = new Set<string>();
-	const consume = vi.fn(async (key: string, _policy: Limiter.Policy) => {
-		if (entries.has(key)) return Date.now() + 60000;
-		entries.add(key);
-		return true;
-	});
-	const first = setup({ name: "search", consume });
-	const second = setup({ name: "search", consume });
+test("separate workers share buckets through the database", async () => {
+	const first = setup({ name: "search", limit: 1 });
+	const second = setup({ name: "search", limit: 1 });
 	expect((await first.fetch()).status).toBe(200);
 	expect((await second.fetch()).status).toBe(429);
-	expect(consume.mock.calls[0]?.[0]).toBe(consume.mock.calls[1]?.[0]);
-	expect(consume.mock.calls[0]?.[1]).toEqual({ limit: 60, interval: 60000 });
-});
-
-test("shared storage errors and malformed results fail closed", async () => {
-	const state = setup({ consume: async () => NaN });
-	expect((await state.fetch()).status).toBe(503);
-	const failed = setup({
-		consume: async () => {
-			throw new Error("private storage details");
-		},
-	});
-	const response = await failed.fetch();
-	expect(response.status).toBe(503);
-	expect(await response.text()).not.toContain("private storage");
-	// @ts-expect-error A backend must explicitly report admission; a forgotten return is rejected.
-	const empty = setup({ consume: async () => undefined });
-	expect((await empty.fetch()).status).toBe(503);
+	expect(await buckets()).toHaveLength(1);
 });

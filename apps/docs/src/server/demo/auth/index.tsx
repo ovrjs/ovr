@@ -1,39 +1,51 @@
-import type { Store } from "./store";
+import { type Store, users } from "./store";
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Auth, Field, Render, Route } from "ovr";
 
-/** Application callbacks can call any existing database or ORM. SQLite belongs only to this demo. */
+/** Auth stores its data in the demo database; the application creates accounts. */
 export function configure(
-	store: Store,
+	db: Store,
 	secret: string,
 	origin = "https://localhost:5173",
 ) {
 	return new Auth({
 		secret,
 		origin,
+		database: db,
 		page: "/demo/auth",
 		redirect: "/demo/auth/admin",
-		challenges: store.challenges,
-		sessions: store.sessions,
-		credentials: store.credentials,
-		limits: { consume: store.consume },
 		register: {
 			fields: { email: Field.email({ label: "Email" }) },
 			name: (data) => data.email,
-			create: (data, credential) => store.register(credential, data.email),
+			create: async (t, data, user) => {
+				await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id: user, email: data.email })}`;
+			},
 		},
 	});
 }
 
+/**
+ * @param db Demo database
+ * @param id User ID
+ * @returns The account, if it exists
+ */
+async function account(db: Store, id: string) {
+	const [user] = await db.sql`
+		SELECT * FROM ${db.users} WHERE ${db.users.columns.id} = ${id}
+	`.parse(db.users);
+
+	return user;
+}
+
 /** Build the demo UI; ovr supplies the protocol and session handlers. */
-export function routes(store: Store, service: ReturnType<typeof configure>) {
+export function routes(db: Store, service: ReturnType<typeof configure>) {
 	/** Landing page for register/login passkey flows. */
 	const auth = Route.get("/demo/auth", async (c) => {
 		const Layout = createLayout(c);
 		const session = await service.session(c);
-		const user = session ? store.user(session.user) : null;
+		const user = session ? await account(db, session.user) : null;
 
 		const { Register, Login } = service.forms(c);
 
@@ -75,13 +87,17 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 	const admin = Route.get("/demo/auth/admin", async (c) => {
 		const session = await service.session(c);
 		if (!session) return c.redirect(auth, 303);
-		const user = store.user(session.user);
+		const user = await account(db, session.user);
 		if (!user) {
 			await service.logout(c);
 			return c.redirect(auth, 303);
 		}
 		const { Logout } = service.forms(c);
 		const Layout = createLayout(c);
+		const credentials = await db.sql`
+			SELECT * FROM ${db.ovr_credentials}
+			WHERE ${db.ovr_credentials.columns.user} = ${user.id} ORDER BY id
+		`.parse(db.ovr_credentials);
 
 		return (
 			<Layout head={<Meta {...content.frontmatter} />}>
@@ -102,7 +118,7 @@ export function routes(store: Store, service: ReturnType<typeof configure>) {
 
 				<h2>Registered credentials</h2>
 				<ul>
-					{store.list(user.id).map((v) => (
+					{credentials.map((v) => (
 						<li key={v.id}>{v.id}</li>
 					))}
 				</ul>

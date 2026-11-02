@@ -1,13 +1,26 @@
 import { App } from "../app/index.js";
+import { Database } from "../database/index.js";
 import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import { Route } from "../route/index.js";
-import { Field } from "../schema/index.js";
+import { Field, Schema } from "../schema/index.js";
+import { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
 import { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
 import { State } from "./state.js";
-import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import { Storage } from "./storage.js";
+import { PGlite } from "@electric-sql/pglite";
+import {
+	afterAll,
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	expectTypeOf,
+	test,
+	vi,
+} from "vitest";
 
 const origin = "https://example.com";
 const endpoint = "/_passkey/options";
@@ -172,54 +185,140 @@ async function assertion(
 	};
 }
 
-function setup(extra: Partial<State.Options> = {}) {
-	const challenges = new Map<string, Auth.Challenge>();
-	const sessions = new Map<string, Auth.Session>();
-	const records = new Map<string, Auth.Credential>();
-	// Test-only stand-in for a shared atomic backend; never part of the framework.
-	const counts = new Map<string, number>();
-	const consume: Limiter.Options["consume"] = (key, { limit, interval }) => {
-		const count = counts.get(key) ?? 0;
-		if (count >= limit) return Date.now() + interval;
-		counts.set(key, count + 1);
-		return true;
-	};
-	const credentials: Auth.Credentials = {
-		get: (id) => records.get(id),
-		update: (credential, previous) => {
-			if (records.get(credential.id) !== previous) return false;
-			records.set(credential.id, credential);
-			return true;
+/** PGlite has one session, so a transaction holds it until released. */
+const engine = await PGlite.create();
+let session = Promise.resolve();
+const acquire = () => {
+	let release!: () => void;
+	const previous = session;
+	session = new Promise((resolve) => (release = resolve));
+	return previous.then(() => release);
+};
+const run = async (text: string, values?: unknown[]) =>
+	values?.length
+		? engine.query(text, values)
+		: ((await engine.exec(text)).at(-1) ?? { rows: [] });
+const users = new Table("users", {
+	id: Schema.string(),
+	email: Schema.string(),
+});
+const db = new Database(
+	{
+		async query(text, values) {
+			const release = await acquire();
+			try {
+				return await run(text, values);
+			} finally {
+				release();
+			}
 		},
-	};
-	const options: Auth.Options = {
+		async connect() {
+			return { query: run, release: await acquire() };
+		},
+	},
+	[users, ...Auth.tables],
+);
+await engine.exec(`
+	CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);
+	CREATE TABLE ovr_credentials (
+		id text PRIMARY KEY,
+		"user" text NOT NULL,
+		"publicKey" text NOT NULL,
+		counter bigint NOT NULL,
+		eligible boolean NOT NULL,
+		"backedUp" boolean NOT NULL
+	);
+	CREATE TABLE ovr_sessions (id text PRIMARY KEY, "user" text NOT NULL, expiration bigint NOT NULL);
+	CREATE TABLE ovr_challenges (
+		id text PRIMARY KEY,
+		challenge text NOT NULL,
+		browser text NOT NULL,
+		method text NOT NULL,
+		action text NOT NULL,
+		origin text NOT NULL,
+		expiration bigint NOT NULL,
+		"user" text,
+		fields text
+	);
+	CREATE TABLE ovr_limits (key text PRIMARY KEY, tokens double precision NOT NULL, time bigint NOT NULL, expiration bigint NOT NULL);
+`);
+const storage = Storage.of(db);
+
+beforeEach(() =>
+	engine.exec(
+		"TRUNCATE users, ovr_credentials, ovr_sessions, ovr_challenges, ovr_limits",
+	),
+);
+// the store is shared, so spies on it must not leak between tests
+afterEach(() => vi.restoreAllMocks());
+afterAll(() => engine.close());
+
+/** Database whose queries fail, as when Postgres is unavailable. */
+const broken = (failure: Error) =>
+	new Database(
+		{
+			query: async () => {
+				throw failure;
+			},
+			connect: async () => {
+				throw failure;
+			},
+		},
+		[],
+	);
+
+/** Rows stored in an authentication table. */
+const rows = async <T extends Table.Any>(table: T) =>
+	(await db.sql`SELECT * FROM ${table}`.parse<unknown>(
+		table,
+	)) as Schema.Infer<T>[];
+
+/** Storage inspection shared by every service on the test database. */
+const inspect = {
+	size: async (table: (typeof Auth.tables)[number]) =>
+		(await rows(table)).length,
+	record: async (id: string) =>
+		(await storage.credentials.get(id)) ?? undefined,
+	session: async (id: string) =>
+		(await rows(db.ovr_sessions)).find((session) => session.id === id),
+	challenge: async (id: string) =>
+		(await rows(db.ovr_challenges)).find((challenge) => challenge.id === id),
+	/** Change a stored challenge, as another instance or an attacker could. */
+	edit: async (
+		id: string,
+		values: Partial<Schema.Infer<typeof db.ovr_challenges>>,
+	) => {
+		await db.sql`UPDATE ${db.ovr_challenges} SET ${db.sql.set(db.ovr_challenges, values)} WHERE id = ${id}`;
+	},
+};
+
+/** Records which limiters checked requests, by name. */
+const checks = (named: Record<string, Limiter> = {}) => {
+	const spy = vi.spyOn(Limiter.prototype, "check");
+	return () =>
+		spy.mock.contexts.map(
+			(limiter) =>
+				Object.keys(named).find((name) => named[name] === limiter) ?? "default",
+		);
+};
+
+function setup(extra: Partial<State.Options> = {}) {
+	const credentials = storage.credentials;
+	const options: State.Options = {
 		secret: "test-secret-with-at-least-32-bytes",
 		origin,
-		challenges: {
-			set: (id, value) => {
-				challenges.set(id, value);
-			},
-			take: (id) => {
-				const value = challenges.get(id);
-				challenges.delete(id);
-				return value;
-			},
-		},
-		sessions: {
-			set: (id, value) => {
-				sessions.set(id, value);
-			},
-			get: (id) => sessions.get(id),
-			delete: (id) => {
-				sessions.delete(id);
-			},
-		},
-		limits: { consume },
-		credentials,
-		register: { fields: {}, name: () => "User", create: () => {} },
+		challenges: storage.challenges,
+		sessions: storage.sessions,
 		...extra,
 	};
-	const auth = new Auth(options);
+	const settings: Auth.Options = {
+		secret: options.secret,
+		origin: options.origin,
+		...(options.duration === undefined ? {} : { duration: options.duration }),
+		database: db,
+		register: { fields: {}, name: () => "User", create: () => {} },
+	};
+	const auth = new Auth(settings);
 	const app = new App();
 	// Internal protocol tests compose their own routes; applications use new Auth().
 	const issue = (method: "register" | "login") =>
@@ -246,8 +345,7 @@ function setup(extra: Partial<State.Options> = {}) {
 			const input = await c.data();
 			if (input.issues) throw input;
 			const credential = await new Passkey(c, new State(c, options)).register();
-			if (records.has(credential.id)) throw new Error("Duplicate credential");
-			records.set(credential.id, credential);
+			await db.sql`INSERT INTO ${db.ovr_credentials} ${db.sql.values(db.ovr_credentials, credential)}`;
 			c.json(credential);
 		},
 	);
@@ -333,14 +431,12 @@ function setup(extra: Partial<State.Options> = {}) {
 		return post(path, data, cookie);
 	};
 	return {
+		...inspect,
 		app,
 		auth,
-		consume,
-		challenges,
-		sessions,
-		records,
 		credentials,
 		options,
+		settings,
 		post,
 		start,
 		submit,
@@ -364,7 +460,7 @@ async function enrolled(
 		...state,
 		keys,
 		cookie: start.cookie,
-		user: state.records.get(id)!.user,
+		user: (await state.record(id))!.user,
 	};
 }
 
@@ -386,8 +482,8 @@ describe("passkey ceremonies", () => {
 			counter: 1,
 			eligible: false,
 		});
-		expect(state.records.get(id)?.counter).toBe(1);
-		expect(state.challenges.size).toBe(0);
+		expect((await state.record(id))?.counter).toBe(1);
+		expect(await state.size(db.ovr_challenges)).toBe(0);
 	});
 
 	test("requires discoverable credentials and fetches fresh options at submit time", async () => {
@@ -466,14 +562,11 @@ describe("passkey ceremonies", () => {
 	test("consumes expired challenges and rejects the wrong route or ceremony", async () => {
 		const state = setup();
 		const start = await state.start("register");
-		state.challenges.set(start.ceremony, {
-			...state.challenges.get(start.ceremony)!,
-			expiration: Date.now() - 1,
-		});
+		await state.edit(start.ceremony, { expiration: Date.now() - 1 });
 		await expect(state.submit(start, {})).rejects.toThrow("expired");
 		const wrong = await state.start("register", start.cookie);
 		await expect(state.submit(wrong, {}, "/login")).rejects.toThrow("binding");
-		expect(state.challenges.size).toBe(0);
+		expect(await state.size(db.ovr_challenges)).toBe(0);
 	});
 
 	test.each([
@@ -490,7 +583,7 @@ describe("passkey ceremonies", () => {
 				await registration(start.options.challenge, await pair(), { client }),
 			),
 		).rejects.toThrow();
-		expect(state.records.size).toBe(0);
+		expect(await state.size(db.ovr_credentials)).toBe(0);
 	});
 
 	test.each([0x41, 0x44, 0x55])(
@@ -586,7 +679,7 @@ describe("passkey ceremonies", () => {
 			}),
 			"/login",
 		);
-		expect(state.records.get(id)?.backedUp).toBe(true);
+		expect((await state.record(id))?.backedUp).toBe(true);
 		const changed = await state.start("login", state.cookie);
 		await expect(
 			state.submit(
@@ -628,7 +721,7 @@ describe("revocable sessions", () => {
 			const response = await state.post("/session", new FormData());
 			const session: Auth.Session = await response.json();
 			const cookie = response.headers.getSetCookie().at(-1)!;
-			expect(state.sessions.get(session.id)?.expiration).toBe(
+			expect((await state.session(session.id))?.expiration).toBe(
 				Date.now() + Time.week,
 			);
 			expect(cookie).toContain(`Max-Age=${Time.week / Time.second}`);
@@ -658,10 +751,10 @@ describe("revocable sessions", () => {
 		expect(sessions.map((session) => session.user)).toEqual([user, user]);
 		for (const session of sessions) {
 			expect(session.id).not.toBe(user);
-			expect(state.sessions.get(session.id)).toEqual(session);
+			expect(await state.session(session.id)).toEqual(session);
 			expect(session).not.toHaveProperty("token");
 		}
-		expect(state.sessions.size).toBe(2);
+		expect(await state.size(db.ovr_sessions)).toBe(2);
 		const cookies = [first, second].map(
 			(response) => response.headers.getSetCookie().at(-1)!.split(";")[0]!,
 		);
@@ -700,7 +793,7 @@ describe("revocable sessions", () => {
 			headers: { cookie },
 		});
 		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
-		expect(state.sessions.size).toBe(0);
+		expect(await state.size(db.ovr_sessions)).toBe(0);
 	});
 
 	test("rejects a stored session whose ID differs from the signed cookie", async () => {
@@ -741,7 +834,7 @@ describe("revocable sessions", () => {
 			expect(response.status).toBe(200);
 			expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
 			expect(get).toHaveBeenCalledTimes(cached ? 1 : 0);
-			expect(state.sessions.size).toBe(0);
+			expect(await state.size(db.ovr_sessions)).toBe(0);
 		},
 	);
 
@@ -763,7 +856,7 @@ describe("revocable sessions", () => {
 		});
 		expect(response.status).toBe(200);
 		expect(response.headers.getSetCookie().at(-1)).not.toContain("Max-Age=0");
-		expect(state.sessions.size).toBe(1);
+		expect(await state.size(db.ovr_sessions)).toBe(1);
 	});
 
 	test.each(["", " ", "x".repeat(1025), "é".repeat(513)])(
@@ -805,7 +898,7 @@ describe("revocable sessions", () => {
 				await state.app.fetch(origin + "/session", { headers: { cookie } })
 			).json(),
 		).toBeNull();
-		expect(state.sessions.size).toBe(0);
+		expect(await state.size(db.ovr_sessions)).toBe(0);
 	});
 
 	test("rotates sessions and supports explicit revocation", async () => {
@@ -814,14 +907,14 @@ describe("revocable sessions", () => {
 		const cookie = first.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const second = await state.post("/session", new FormData(), cookie);
 		const session: Auth.Session = await second.json();
-		expect(state.sessions.size).toBe(1);
+		expect(await state.size(db.ovr_sessions)).toBe(1);
 		expect(
 			await (
 				await state.app.fetch(origin + "/session", { headers: { cookie } })
 			).json(),
 		).toBeNull();
 		await state.post(`/revoke/${session.id}`, new FormData());
-		expect(state.sessions.size).toBe(0);
+		expect(await state.size(db.ovr_sessions)).toBe(0);
 	});
 
 	test("expires sessions without sliding refresh and propagates storage errors", async () => {
@@ -868,7 +961,12 @@ describe("form contracts", () => {
 		expectTypeOf<keyof Auth.Session>().toEqualTypeOf<
 			"id" | "user" | "expiration"
 		>();
-		expectTypeOf<keyof Auth.Credentials>().toEqualTypeOf<"get" | "update">();
+		expectTypeOf<keyof Auth.Credential>().toEqualTypeOf<
+			"id" | "user" | "publicKey" | "counter" | "eligible" | "backedUp"
+		>();
+		expectTypeOf(Auth.tables.map((table) => table.name)).toEqualTypeOf<
+			("ovr_credentials" | "ovr_sessions" | "ovr_challenges" | "ovr_limits")[]
+		>();
 		expectTypeOf<Parameters<Auth["session"]>[0]>().toEqualTypeOf<
 			Pick<Auth.Context, "url" | "cookie" | "res">
 		>();
@@ -936,10 +1034,7 @@ describe("form contracts", () => {
 	test("binds stored challenges to their exact pathname", async () => {
 		const state = setup();
 		const start = await state.start("register");
-		state.challenges.set(start.ceremony, {
-			...state.challenges.get(start.ceremony)!,
-			action: "/register/other",
-		});
+		await state.edit(start.ceremony, { action: "/register/other" });
 		await expect(state.submit(start, {})).rejects.toThrow("binding");
 	});
 });
@@ -969,7 +1064,7 @@ describe("cryptographic input validation", () => {
 				}),
 			),
 		).rejects.toThrow("public key");
-		expect(state.records.size).toBe(0);
+		expect(await state.size(db.ovr_credentials)).toBe(0);
 	});
 
 	test("rejects malformed credential JSON and invalid base64url without persisting a key", async () => {
@@ -981,7 +1076,7 @@ describe("cryptographic input validation", () => {
 		);
 		credential.rawId = "A";
 		await expect(state.submit(start, credential)).rejects.toThrow("base64url");
-		expect(state.records.size).toBe(0);
+		expect(await state.size(db.ovr_credentials)).toBe(0);
 	});
 
 	test("does not report a successful logout when revocation storage fails", async () => {
@@ -1002,18 +1097,14 @@ function managed(
 	extra: Partial<Auth.Options<{ email: ReturnType<typeof Field.email> }>> = {},
 ) {
 	const create = vi.fn(
-		(data: { email: string }, credential: Auth.Credential) => {
-			if (storage.records.has(credential.id))
-				throw new Error("duplicate credential");
+		async (t: Database.Transaction, data: { email: string }, user: string) => {
 			expect(data).toEqual({ email: "user@example.com" });
-			storage.records.set(credential.id, credential);
+			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id: user, ...data })}`;
 		},
 	);
 	const error = vi.fn();
 	const service = new Auth({
-		...storage.options,
-		limits: { consume: storage.consume },
-		credentials: storage.credentials,
+		...storage.settings,
 		redirect: "/account",
 		error,
 		register: {
@@ -1099,10 +1190,8 @@ function managed(
 }
 
 function policy() {
-	const consume: Limiter.Options["consume"] = () => true;
-	const limiter = new Limiter({ consume });
+	const limiter = new Limiter({ database: db });
 	return {
-		consume,
 		register: limiter,
 		login: limiter,
 		check: vi.spyOn(limiter, "check"),
@@ -1135,7 +1224,7 @@ describe("configured passkey callbacks", () => {
 		const session: Auth.Session = await (
 			await warm.app.fetch(origin + "/whoami", { headers: { cookie } })
 		).json();
-		expect(session.user).toBe(warm.storage.records.get(id)?.user);
+		expect(session.user).toBe((await warm.storage.record(id))?.user);
 		const login = await warm.start("login", cookie, cold.post);
 		const logged = await cold.submit(
 			login,
@@ -1143,12 +1232,12 @@ describe("configured passkey callbacks", () => {
 			"/auth/login",
 		);
 		expect(logged.status).toBe(303);
-		expect(warm.storage.sessions.size).toBe(1);
-		expect(warm.storage.sessions.has(session.id)).toBe(false);
+		expect(await warm.storage.size(db.ovr_sessions)).toBe(1);
+		expect(await warm.storage.session(session.id)).toBeUndefined();
 		const current = logged.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const logout = await cold.post("/auth/logout", new FormData(), current);
 		expect(logout.headers.get("location")).toBe("/login");
-		expect(warm.storage.sessions.size).toBe(0);
+		expect(await warm.storage.size(db.ovr_sessions)).toBe(0);
 	});
 
 	test("renders customizable fields and errors with external nonce-bearing scripts", async () => {
@@ -1173,7 +1262,8 @@ describe("configured passkey callbacks", () => {
 			name: "example.com",
 		});
 		expect(start.options.excludeCredentials).toBeUndefined();
-		const expiration = state.storage.challenges.get(start.ceremony)!.expiration;
+		const expiration = (await state.storage.challenge(start.ceremony))!
+			.expiration;
 		expect(expiration - Date.now()).toBeGreaterThan(119000);
 		const keys = await pair();
 		vi.spyOn(Date, "now").mockReturnValue(expiration - 1);
@@ -1206,7 +1296,7 @@ describe("configured passkey callbacks", () => {
 			origin + "/login?_auth=register",
 		);
 		expect(result.headers.getSetCookie()).toHaveLength(0);
-		expect(state.storage.sessions.size).toBe(0);
+		expect(await state.storage.size(db.ovr_sessions)).toBe(0);
 		expect(state.error).toHaveBeenCalledWith(
 			expect.objectContaining({ message: "private database details" }),
 			expect.anything(),
@@ -1321,32 +1411,30 @@ test("automatic policies ignore cookie rotation, isolate clients, and leave logo
 		expect(
 			(await state.post("/auth/logout", new FormData(), cookie)).status,
 		).toBe(303);
-		expect(state.storage.sessions.size).toBe(0);
+		expect(await state.storage.size(db.ovr_sessions)).toBe(0);
 	} finally {
 		time.mockRestore();
 	}
 });
 
-test("auth requires shared rate-limit storage at startup", () => {
+test("auth requires a database at startup", () => {
 	const storage = setup();
 	expect(
 		() =>
 			new Auth({
-				...storage.options,
-				// @ts-expect-error A shared backend is required; the framework has no implicit counters.
-				limits: undefined,
-				credentials: storage.credentials,
-				register: { fields: {}, name: () => "User", create: () => {} },
+				...storage.settings,
+				// @ts-expect-error A shared database is required; the framework has no implicit storage.
+				database: undefined,
 			}),
-	).toThrow("limits.consume");
+	).toThrow("database");
 });
 
 test("auth rejects client limiter arrays at startup", () => {
 	const storage = setup();
 	for (const method of ["register", "login"]) {
-		expect(() =>
-			managed(storage, { limits: { consume: storage.consume, [method]: [] } }),
-		).toThrow("client policies");
+		expect(() => managed(storage, { limits: { [method]: [] } })).toThrow(
+			"client policies",
+		);
 	}
 });
 
@@ -1370,26 +1458,25 @@ test.each([
 	async ({ method, limit, first, other }) => {
 		const storage = setup();
 		const network = new Limiter({
+			database: db,
 			name: "network",
 			prefix: 48,
 			limit: 40,
-			consume: storage.consume,
 		});
 		const global = new Limiter({
+			database: db,
 			name: "aggregate",
 			key: () => "all",
 			limit: 100,
-			consume: storage.consume,
 		});
 		const shared = [network, global];
 		const checks = shared.map((limiter) => vi.spyOn(limiter, "check"));
 		const limits = {
-			consume: storage.consume,
 			guard: new Limiter({
+				database: db,
 				name: "creation",
 				key: () => "all",
 				limit: 1000,
-				consume: storage.consume,
 			}),
 			extra: shared,
 		};
@@ -1440,7 +1527,7 @@ test.each([
 					guard.mock.calls.filter(([, scope]) => scope === phase),
 				).toHaveLength(121); // Client-denied attempts still reach the guard, but skip extras.
 			}
-			expect(storage.challenges.size).toBe(0);
+			expect(await storage.size(db.ovr_challenges)).toBe(0);
 			expect(warm.create).not.toHaveBeenCalled();
 			expect(cold.create).not.toHaveBeenCalled();
 		} finally {
@@ -1451,23 +1538,20 @@ test.each([
 
 test("a generous guard bounds client-record creation before the default and extra policies", async () => {
 	const storage = setup();
-	const consume = vi.fn(storage.consume);
 	const guard = new Limiter({
+		database: db,
 		name: "creation",
 		key: () => "all",
 		limit: 3,
-		consume,
 	});
 	const aggregate = new Limiter({
+		database: db,
 		name: "aggregate",
 		key: () => "all",
 		limit: 2,
-		consume,
 	});
 	const check = vi.spyOn(aggregate, "check");
-	const state = managed(storage, {
-		limits: { consume, guard, extra: [aggregate] },
-	});
+	const state = managed(storage, { limits: { guard, extra: [aggregate] } });
 	for (let i = 0; i < 10; i++) {
 		const response = await state.post(
 			"/_passkey/options/login",
@@ -1477,36 +1561,34 @@ test("a generous guard bounds client-record creation before the default and extr
 		);
 		expect(response.status).toBe(i < 2 ? 400 : 429);
 	}
+	// one client bucket for each of the three admitted addresses
 	expect(
-		consume.mock.calls.filter(([, policy]) => policy.limit === 20),
+		(await rows(db.ovr_limits)).filter(
+			(bucket) => JSON.parse(bucket.key)[0] === "auth:login:" + origin,
+		),
 	).toHaveLength(3);
 	expect(check).toHaveBeenCalledTimes(3);
-	expect(storage.challenges.size).toBe(0);
-	const hits = consume.mock.calls.length;
+	expect(await storage.size(db.ovr_challenges)).toBe(0);
+	const buckets = await rows(db.ovr_limits);
 	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
-	expect(consume).toHaveBeenCalledTimes(hits);
+	expect(await rows(db.ovr_limits)).toEqual(buckets);
 });
 
 test("a failed creation guard stops backend access and extra checks but leaves logout available", async () => {
 	const storage = setup();
-	const consume = vi.fn(storage.consume);
 	const guard = new Limiter({
-		consume: () => {
-			throw new Error("private creation guard failure");
-		},
+		database: broken(new Error("private creation guard failure")),
 	});
-	const extra = new Limiter({ consume });
+	const extra = new Limiter({ database: db });
 	const check = vi.spyOn(extra, "check");
-	const state = managed(storage, {
-		limits: { consume, guard, extra: [extra] },
-	});
+	const state = managed(storage, { limits: { guard, extra: [extra] } });
 	const response = await state.post("/_passkey/options/login", new FormData());
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private creation");
 	expect(state.error).toHaveBeenCalledOnce();
-	expect(consume).not.toHaveBeenCalled();
+	expect(await storage.size(db.ovr_limits)).toBe(0);
 	expect(check).not.toHaveBeenCalled();
-	expect(storage.challenges.size).toBe(0);
+	expect(await storage.size(db.ovr_challenges)).toBe(0);
 	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
 });
 
@@ -1514,38 +1596,34 @@ test("optional guard and extra policies are validated at startup", () => {
 	const storage = setup();
 	expect(() =>
 		// @ts-expect-error Runtime configuration must also reject non-Limiter guards.
-		managed(storage, { limits: { consume: storage.consume, guard: {} } }),
+		managed(storage, { limits: { guard: {} } }),
 	).toThrow("limits.guard");
 	expect(() =>
 		// @ts-expect-error Runtime configuration must also reject non-Limiter extra entries.
-		managed(storage, { limits: { consume: storage.consume, extra: [{}] } }),
+		managed(storage, { limits: { extra: [{}] } }),
 	).toThrow("limits.extra");
+	expect(() => managed(storage, { limits: { extra: [] } })).not.toThrow();
 	expect(() =>
-		managed(storage, { limits: { consume: storage.consume, extra: [] } }),
-	).not.toThrow();
-	expect(() =>
-		managed(storage, {
-			limits: { consume: storage.consume, extra: Array<Limiter>(1) },
-		}),
+		managed(storage, { limits: { extra: Array<Limiter>(1) } }),
 	).toThrow("limits.extra");
 });
 
 test("layered policies stop prefix sweeping across instances and share an aggregate ceiling", async () => {
 	const storage = setup();
 	const global = new Limiter({
+		database: db,
 		name: "aggregate",
 		limit: 3,
 		key: () => "all",
-		consume: storage.consume,
 	});
 	const network = new Limiter({
+		database: db,
 		name: "network",
 		limit: 2,
 		prefix: 48,
-		consume: storage.consume,
 	});
 	const stack = [network, global];
-	const limits = { consume: storage.consume, extra: stack };
+	const limits = { extra: stack };
 	const first = managed(storage, { limits });
 	const second = managed(storage, { limits });
 	stack.length = 0; // The configured services own snapshots, not the caller's mutable array.
@@ -1577,7 +1655,7 @@ test("layered policies stop prefix sweeping across instances and share an aggreg
 			.status,
 	).toBe(429);
 	expect(calls).toHaveBeenCalledTimes(4);
-	expect(storage.challenges.size).toBe(3);
+	expect(await storage.size(db.ovr_challenges)).toBe(3);
 	expect(first.create).not.toHaveBeenCalled();
 	expect(second.create).not.toHaveBeenCalled();
 	expect((await first.post("/auth/logout", new FormData())).status).toBe(303);
@@ -1585,27 +1663,21 @@ test("layered policies stop prefix sweeping across instances and share an aggreg
 
 test("a failing layer prevents challenge writes and preserves generic errors", async () => {
 	const storage = setup();
-	const earlier = new Limiter({ consume: storage.consume });
+	const earlier = new Limiter({ database: db });
 	const failed = new Limiter({
-		consume: () => {
-			throw new Error("private backend failure");
-		},
+		database: broken(new Error("private backend failure")),
 	});
-	const later = new Limiter({ consume: storage.consume });
+	const later = new Limiter({ database: db });
 	const check = vi.spyOn(later, "check");
 	const state = managed(storage, {
-		limits: {
-			consume: storage.consume,
-			login: earlier,
-			extra: [failed, later],
-		},
+		limits: { login: earlier, extra: [failed, later] },
 	});
 	const response = await state.post("/_passkey/options/login", new FormData());
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private backend");
 	expect(state.error).toHaveBeenCalledOnce();
 	expect(check).not.toHaveBeenCalled();
-	expect(storage.challenges.size).toBe(0);
+	expect(await storage.size(db.ovr_challenges)).toBe(0);
 });
 
 test("limiter errors cannot prevent logout", async () => {
@@ -1723,7 +1795,7 @@ test("configured logout reports storage failure without claiming success", async
 	expect(result.status).toBe(503);
 	expect(await result.text()).toBe("Could not log out. Try again.");
 	expect(result.headers.getSetCookie()).toHaveLength(0);
-	expect(state.storage.sessions.size).toBe(1);
+	expect(await state.storage.size(db.ovr_sessions)).toBe(1);
 });
 
 test("configured options reject substituted operations and oversized bodies before storage", async () => {
@@ -1765,7 +1837,7 @@ test("a zero-counter credential requires a matched snapshot even when its values
 		"/auth/login",
 	);
 	expect(failure.headers.get("location")).toBe(origin + "/login?_auth=login");
-	expect(storage.sessions.size).toBe(0);
+	expect(await storage.size(db.ovr_sessions)).toBe(0);
 	const accepted = await state.start("login");
 	const success = await state.submit(
 		accepted,
@@ -1777,8 +1849,8 @@ test("a zero-counter credential requires a matched snapshot even when its values
 	expect(success.headers.get("location")).toBe("/account");
 	expect(update).toHaveBeenCalledTimes(2);
 	expect(update.mock.calls[0]?.[0]).toEqual(update.mock.calls[0]?.[1]);
-	expect(storage.records.get(id)?.counter).toBe(0);
-	expect(storage.sessions.size).toBe(1);
+	expect((await storage.record(id))?.counter).toBe(0);
+	expect(await storage.size(db.ovr_sessions)).toBe(1);
 });
 
 test("account persistence may complete before session storage fails; normal login can recover", async () => {
@@ -1794,21 +1866,21 @@ test("account persistence may complete before session storage fails; normal logi
 	);
 	expect(failed.headers.get("location")).toBe(origin + "/login?_auth=register");
 	expect(failed.headers.getSetCookie()).toHaveLength(0);
-	expect(state.storage.records.size).toBe(1);
-	expect(state.storage.sessions.size).toBe(0);
+	expect(await state.storage.size(db.ovr_credentials)).toBe(1);
+	expect(await state.storage.size(db.ovr_sessions)).toBe(0);
 	const page = await state.app.fetch(failed.headers.get("location")!);
 	expect(await page.text()).toContain("If you already registered, sign in");
 	const login = await state.start("login", start.cookie);
 	const result = await state.submit(
 		login,
 		await assertion(login.options.challenge, keys, {
-			handle: state.storage.records.get(id)!.user,
+			handle: (await state.storage.record(id))!.user,
 		}),
 		"/auth/login",
 	);
 	expect(result.headers.get("location")).toBe("/account");
 	expect(state.create).toHaveBeenCalledOnce();
-	expect(state.storage.sessions.size).toBe(1);
+	expect(await state.storage.size(db.ovr_sessions)).toBe(1);
 });
 
 test.each(["register", "login"] as const)(
@@ -1841,7 +1913,7 @@ test.each(["register", "login"] as const)(
 		]);
 		expect(take).not.toHaveBeenCalled();
 		expect(state.create).not.toHaveBeenCalled();
-		expect(state.storage.sessions.size).toBe(0);
+		expect(await state.storage.size(db.ovr_sessions)).toBe(0);
 	},
 );
 
@@ -1913,7 +1985,7 @@ test.each(["register", "login"])(
 			expect(denied.headers.get("retry-after")).toBe("3600");
 			expect(check).toHaveBeenCalledTimes(2);
 			expect(state.create).not.toHaveBeenCalled();
-			expect(state.storage.challenges.size).toBe(0);
+			expect(await state.storage.size(db.ovr_challenges)).toBe(0);
 		} finally {
 			time.mockRestore();
 		}
@@ -1965,30 +2037,37 @@ test("signup options and verification have independent default budgets", async (
 	}
 });
 
-test("a shared backend retains the built-in auth policies across service instances", async () => {
-	const entries = new Set<string>();
-	const consume = vi.fn(async (key: string, _policy: Limiter.Policy) => {
-		if (entries.has(key)) return Date.now() + 60000;
-		entries.add(key);
-		return true;
-	});
-	const first = managed(setup(), { limits: { consume } });
-	const second = managed(first.storage, { limits: { consume } });
+test("the database retains the built-in auth policies across service instances", async () => {
+	const first = managed();
+	const second = managed(first.storage);
 	const start = await first.start("register");
 	const data = new FormData();
 	data.set("email", "user@example.com");
 	data.set("bootstrap", start.bootstrap);
+	// five registration options in ten minutes, shared by both instances
+	for (let i = 0; i < 4; i++)
+		expect((await second.post(start.endpoint, data, start.cookie)).status).toBe(
+			200,
+		);
 	expect((await second.post(start.endpoint, data, start.cookie)).status).toBe(
 		429,
 	);
-	expect(consume.mock.calls[0]?.[1]).toEqual({ limit: 5, interval: 600000 });
-	expect(consume.mock.calls[0]?.[0]).toBe(consume.mock.calls[1]?.[0]);
 	const response = await second.submit(
 		start,
 		await registration(start.options.challenge, await pair()),
 	);
 	expect(response.headers.get("location")).toBe("/account");
-	expect(consume.mock.calls[2]?.[0]).not.toBe(consume.mock.calls[0]?.[0]);
+	// verification has its own bucket
+	expect(
+		(await rows(db.ovr_limits)).map((bucket) =>
+			JSON.parse(bucket.key).slice(0, 4),
+		),
+	).toEqual(
+		expect.arrayContaining([
+			["auth:register:" + origin, 5, 600000, "options"],
+			["auth:register:" + origin, 5, 600000, "verify"],
+		]),
+	);
 });
 
 test.each([undefined, "https://foreign.example"])(
@@ -2022,7 +2101,7 @@ test.each([undefined, "https://foreign.example"])(
 			if (result.status === 303)
 				expect(result.headers.get("location")).toContain("?_auth=");
 			expect(result.headers.getSetCookie()).toHaveLength(0);
-			expect(state.storage.sessions.get(session.id)).toEqual(session);
+			expect(await state.storage.session(session.id)).toEqual(session);
 		}
 		expect(remove).not.toHaveBeenCalled();
 		expect(consume).not.toHaveBeenCalled();
@@ -2063,7 +2142,7 @@ test.each(["origin", "sec-fetch-site"])(
 		});
 		expect(result.status).toBe(303);
 		expect(result.headers.get("set-cookie")).toContain("Max-Age=0");
-		expect(state.storage.sessions.has(session.id)).toBe(false);
+		expect(await state.storage.session(session.id)).toBeUndefined();
 	},
 );
 
@@ -2091,7 +2170,7 @@ test("default Register and Login render together without duplicate IDs", async (
 test("registration rejects changed application fields before account or session creation", async () => {
 	const state = managed();
 	const start = await state.start("register");
-	expect(state.storage.challenges.get(start.ceremony)?.fields).toBe(
+	expect((await state.storage.challenge(start.ceremony))?.fields).toBe(
 		await Passkey.fields({ email: "user@example.com" }),
 	);
 	const data = new FormData();
@@ -2105,8 +2184,8 @@ test("registration rejects changed application fields before account or session 
 	expect(result.headers.get("location")).toBe(origin + "/login?_auth=register");
 	expect(result.headers.getSetCookie()).toHaveLength(0);
 	expect(state.create).not.toHaveBeenCalled();
-	expect(state.storage.sessions.size).toBe(0);
-	expect(state.storage.challenges.has(start.ceremony)).toBe(false);
+	expect(await state.storage.size(db.ovr_sessions)).toBe(0);
+	expect(await state.storage.challenge(start.ceremony)).toBeUndefined();
 });
 
 test("registration field digests ignore object order and preserve array order and values", async () => {
@@ -2138,24 +2217,21 @@ test("revoking an unrelated session leaves an invalid incoming cookie alone", as
 
 test("invalid registration options spend only the guard budget before a valid signup", async () => {
 	const storage = setup();
-	const consume = vi.fn(storage.consume);
 	const guard = new Limiter({
+		database: db,
 		name: "guard",
 		limit: 20,
 		key: () => "all",
-		consume,
 	});
 	const extra = new Limiter({
+		database: db,
 		name: "extra",
 		limit: 10,
 		key: () => "all",
-		consume,
 	});
-	const state = managed(storage, {
-		limits: { consume, guard, extra: [extra] },
-	});
+	const state = managed(storage, { limits: { guard, extra: [extra] } });
 	const start = await state.start("register");
-	consume.mockClear();
+	const checked = checks({ guard, extra });
 	for (let i = 0; i < 8; i++) {
 		const data = new FormData();
 		data.set("bootstrap", start.bootstrap);
@@ -2164,19 +2240,14 @@ test("invalid registration options spend only the guard budget before a valid si
 			422,
 		);
 	}
-	expect(consume).toHaveBeenCalledTimes(8);
-	expect(consume.mock.calls.every(([, policy]) => policy.limit === 20)).toBe(
-		true,
-	);
+	expect(checked()).toEqual(Array(8).fill("guard"));
 	const data = new FormData();
 	data.set("bootstrap", start.bootstrap);
 	data.set("email", "user@example.com");
 	expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
 		200,
 	);
-	expect(
-		consume.mock.calls.slice(-3).map(([, policy]) => policy.limit),
-	).toEqual([20, 5, 10]);
+	expect(checked().slice(-3)).toEqual(["guard", "default", "extra"]);
 });
 
 test("rotating secrets preserves sessions and open forms across instances", async () => {
@@ -2215,12 +2286,12 @@ test("every rotation secret is validated and the configured list is snapshotted"
 	expect(
 		() =>
 			new Auth({
-				...state.options,
+				...state.settings,
 				secret: ["test-secret-with-at-least-32-bytes", "short"],
 			}),
 	).toThrow("at least 32 bytes");
 	const secrets: [string, ...string[]] = ["test-secret-with-at-least-32-bytes"];
-	const auth = new Auth({ ...state.options, secret: secrets });
+	const auth = new Auth({ ...state.settings, secret: secrets });
 	secrets[0] = "replacement-secret-with-at-least-32-bytes";
 	const app = new App().use(
 		Route.get("/session", async (c) => c.json(await auth.session(c))),
@@ -2269,10 +2340,9 @@ test.each(["expired", "browser"])(
 
 test("registration guard admission precedes parsing and rejects oversized bodies without client tokens", async () => {
 	const storage = setup();
-	const consume = vi.fn(storage.consume);
-	const guard = new Limiter({ name: "guard", consume });
+	const guard = new Limiter({ database: db, name: "guard" });
 	const check = vi.spyOn(guard, "check");
-	const state = managed(storage, { limits: { consume, guard } });
+	const state = managed(storage, { limits: { guard } });
 	const data = new FormData();
 	data.set("email", "x".repeat(129 * 1024));
 	data.set("bootstrap", "invalid");
@@ -2280,10 +2350,125 @@ test("registration guard admission precedes parsing and rejects oversized bodies
 	expect((await state.post("/_passkey/options/register", data)).status).toBe(
 		429,
 	);
-	expect(consume).not.toHaveBeenCalled();
-	consume.mockClear();
+	expect(await storage.size(db.ovr_limits)).toBe(0);
 	const response = await state.post("/_passkey/options/register", data);
 	expect(response.status).toBe(400);
-	expect(consume).toHaveBeenCalledOnce();
-	expect(storage.challenges.size).toBe(0);
+	// only the guard, the client policy runs after parsing
+	expect(check).toHaveBeenCalledTimes(2);
+	expect(
+		(await rows(db.ovr_limits)).map((bucket) => JSON.parse(bucket.key)[0]),
+	).toEqual(["guard"]);
+	expect(await storage.size(db.ovr_challenges)).toBe(0);
+});
+
+describe("Postgres storage", () => {
+	const expiration = Date.now() + Time.hour;
+	const challenge = (browser: string): Storage.Challenge => ({
+		challenge: "c",
+		browser,
+		method: "login",
+		action: "/auth/login",
+		origin,
+		expiration,
+	});
+
+	test("bounds outstanding challenges for each browser", async () => {
+		for (let i = 0; i < 10; i++)
+			expect(await storage.challenges.set(`a${i}`, challenge("a"))).toBe(true);
+		expect(await storage.challenges.set("a10", challenge("a"))).toBe(false);
+		expect(await storage.challenges.set("b0", challenge("b"))).toBe(true);
+		expect(await inspect.size(db.ovr_challenges)).toBe(11);
+	});
+
+	test("takes a challenge once, even concurrently, preserving optional fields", async () => {
+		await storage.challenges.set("one", {
+			...challenge("a"),
+			user: "u",
+			fields: "digest",
+		});
+		await storage.challenges.set("two", challenge("a"));
+		const taken = await Promise.all([
+			storage.challenges.take("one"),
+			storage.challenges.take("one"),
+		]);
+		expect(taken.filter(Boolean)).toEqual([
+			{ ...challenge("a"), user: "u", fields: "digest" },
+		]);
+		expect(await storage.challenges.take("two")).toEqual(challenge("a"));
+	});
+
+	test("updates a credential only from its current snapshot", async () => {
+		const credential: Auth.Credential = {
+			id: "credential",
+			user: "u",
+			publicKey: "key",
+			counter: 1,
+			eligible: true,
+			backedUp: false,
+		};
+		await db.sql`INSERT INTO ${db.ovr_credentials} ${db.sql.values(db.ovr_credentials, credential)}`;
+		const next = { ...credential, counter: 2, backedUp: true };
+		expect(await storage.credentials.update(next, credential)).toBe(true);
+		// the stored counter has moved on, so the stale snapshot loses
+		expect(
+			await storage.credentials.update({ ...next, counter: 3 }, credential),
+		).toBe(false);
+		expect(await storage.credentials.get("credential")).toEqual(next);
+		await db.sql`DELETE FROM ${db.ovr_credentials}`;
+		expect(await storage.credentials.update(next, next)).toBe(false);
+		expect(await inspect.size(db.ovr_credentials)).toBe(0);
+	});
+
+	test("registers the account and credential together or not at all", async () => {
+		const credential: Auth.Credential = {
+			id: "credential",
+			user: "u",
+			publicKey: "key",
+			counter: 0,
+			eligible: false,
+			backedUp: false,
+		};
+		const create = async (t: Database.Transaction, user: string) => {
+			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id: user, email: "a@example.com" })}`;
+		};
+		await storage.register(create, credential);
+		// a duplicate credential rolls back the second account
+		await expect(
+			storage.register(create, { ...credential, user: "v" }),
+		).rejects.toThrow();
+		await expect(
+			storage.register(
+				async () => {
+					throw new Error("account failed");
+				},
+				{ ...credential, id: "other" },
+			),
+		).rejects.toThrow("account failed");
+		expect(await rows(users)).toEqual([{ id: "u", email: "a@example.com" }]);
+		expect(await rows(db.ovr_credentials)).toEqual([credential]);
+	});
+
+	test("prunes expired sessions and challenges", async () => {
+		const now = Date.now();
+		await storage.sessions.set("old", {
+			id: "old",
+			user: "u",
+			expiration: now + 1,
+		});
+		await storage.challenges.set("old", {
+			...challenge("a"),
+			expiration: now + 1,
+		});
+		vi.spyOn(Date, "now").mockReturnValue(now + 2 * Time.minute);
+		expect(await storage.sessions.get("old")).toBeUndefined();
+		await storage.sessions.set("new", {
+			id: "new",
+			user: "u",
+			expiration: now + Time.hour,
+		});
+		expect((await rows(db.ovr_sessions)).map((session) => session.id)).toEqual([
+			"new",
+		]);
+		expect(await inspect.size(db.ovr_challenges)).toBe(0);
+	});
 });

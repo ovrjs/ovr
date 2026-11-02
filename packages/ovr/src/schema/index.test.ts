@@ -1407,3 +1407,291 @@ describe("Form schema", () => {
 		expect(result.data).toEqual({ name: "ross" });
 	});
 });
+
+describe("toJsonSchema", () => {
+	const draft = "https://json-schema.org/draft/2020-12/schema";
+
+	test("primitives", () => {
+		expect(Schema.string().toJsonSchema()).toEqual({
+			$schema: draft,
+			type: "string",
+		});
+		expect(Schema.number().int().min(1).max(10).toJsonSchema()).toEqual({
+			$schema: draft,
+			type: "integer",
+			minimum: 1,
+			maximum: 10,
+		});
+		expect(Schema.string().min(2).max(5).email().toJsonSchema()).toEqual({
+			$schema: draft,
+			type: "string",
+			minLength: 2,
+			maxLength: 5,
+			format: "email",
+		});
+		expect(Schema.string().url().toJsonSchema().format).toBe("uri");
+		expect(Schema.boolean().toJsonSchema().type).toBe("boolean");
+		expect(Schema.unknown().toJsonSchema()).toEqual({ $schema: draft });
+	});
+
+	test("refine keeps the base description", () => {
+		expect(
+			Schema.string()
+				.refine((s) => s.startsWith("a"), "a")
+				.toJsonSchema(),
+		).toEqual({ $schema: draft, type: "string" });
+	});
+
+	test("literal, enum, union, nullable", () => {
+		expect(Schema.literal("a").toJsonSchema().const).toBe("a");
+		expect(Schema.enum(["a", 1, null]).toJsonSchema().enum).toEqual([
+			"a",
+			1,
+			null,
+		]);
+		expect(
+			Schema.union([Schema.string(), Schema.number()]).toJsonSchema().anyOf,
+		).toEqual([{ type: "string" }, { type: "number" }]);
+		expect(Schema.string().nullable().toJsonSchema().anyOf).toEqual([
+			{ type: "string" },
+			{ type: "null" },
+		]);
+	});
+
+	test("objects and arrays", () => {
+		const schema = Schema.object({
+			name: Schema.string(),
+			tags: Schema.array(Schema.string()),
+			age: Schema.number().optional(),
+			role: Schema.enum(["admin", "user"]).default("user"),
+			note: Schema.string().nullish(),
+		});
+
+		expect(schema.toJsonSchema()).toEqual({
+			$schema: draft,
+			type: "object",
+			properties: {
+				name: { type: "string" },
+				tags: { type: "array", items: { type: "string" } },
+				age: { type: "number" },
+				role: { enum: ["admin", "user"] },
+				note: { anyOf: [{ type: "string" }, { type: "null" }] },
+			},
+			required: ["name", "tags", "role"],
+			additionalProperties: false,
+		});
+
+		const input = schema.toJsonSchema({ io: "input" });
+		expect(input.required).toEqual(["name", "tags"]);
+		expect(input.additionalProperties).toBeUndefined();
+		expect((input.properties as any).role.default).toBe("user");
+	});
+
+	test("object modes", () => {
+		const shape = { a: Schema.string() };
+		expect(
+			Schema.object(shape).strict().toJsonSchema({ io: "input" })
+				.additionalProperties,
+		).toBe(false);
+		expect(
+			Schema.object(shape).loose().toJsonSchema().additionalProperties,
+		).toBeUndefined();
+		expect(Schema.object().toJsonSchema().required).toBeUndefined();
+	});
+
+	test("io differences for preprocess, pipe, json", () => {
+		const n = Schema.number().preprocess(Number);
+		expect(n.toJsonSchema({ io: "input" })).toEqual({ $schema: draft });
+		expect(n.toJsonSchema().type).toBe("number");
+
+		const piped = Schema.string().pipe(Schema.string().email());
+		expect(piped.toJsonSchema({ io: "input" }).format).toBeUndefined();
+		expect(piped.toJsonSchema().format).toBe("email");
+
+		const json = Schema.string().json(Schema.object({ a: Schema.number() }));
+		expect(json.toJsonSchema().type).toBe("object");
+		expect(json.toJsonSchema({ io: "input" })).toEqual({
+			$schema: draft,
+			type: "string",
+			contentMediaType: "application/json",
+			contentSchema: {
+				type: "object",
+				properties: { a: { type: "number" } },
+				required: ["a"],
+			},
+		});
+		expect(
+			json.toJsonSchema({ io: "input", target: "draft-07" }).contentSchema,
+		).toBeUndefined();
+	});
+
+	test("unrepresentable", () => {
+		expect(() => Schema.bigint().toJsonSchema()).toThrow(TypeError);
+		expect(() => Schema.instance(Date).toJsonSchema()).toThrow(TypeError);
+		expect(() => Schema.literal(1n).toJsonSchema()).toThrow(TypeError);
+		const t = Schema.string().transform((s) => s.length);
+		expect(() => t.toJsonSchema()).toThrow(TypeError);
+		expect(t.toJsonSchema({ io: "input" }).type).toBe("string");
+		expect(t.toJsonSchema({ unrepresentable: "any" })).toEqual({
+			$schema: draft,
+		});
+		expect(
+			Schema.object({ d: Schema.instance(Date) }).toJsonSchema({
+				unrepresentable: "any",
+			}).properties,
+		).toEqual({ d: {} });
+	});
+
+	test("targets", () => {
+		expect(Schema.string().toJsonSchema({ target: "draft-07" }).$schema).toBe(
+			"http://json-schema.org/draft-07/schema#",
+		);
+		expect(() =>
+			Schema.string().toJsonSchema({ target: "openapi-3.0" as any }),
+		).toThrow(TypeError);
+	});
+
+	test("fields keep descriptions through chaining", () => {
+		const schema = Schema.object({
+			email: Field.email(),
+			count: Field.number().int().min(0).optional(),
+			plan: Field.select(["free", "pro"]).persist(),
+			bio: Field.textarea().max(500).stream(),
+			agree: Field.checkbox(),
+		});
+
+		expect(schema.toJsonSchema()).toEqual({
+			$schema: draft,
+			type: "object",
+			properties: {
+				email: { type: "string", format: "email" },
+				count: { type: "integer", minimum: 0 },
+				plan: { enum: ["free", "pro"] },
+				bio: { type: "string", maxLength: 500 },
+				agree: { type: "boolean" },
+			},
+			required: ["email", "plan", "bio", "agree"],
+			additionalProperties: false,
+		});
+		expect(() => Field.file().toJsonSchema()).toThrow(TypeError);
+	});
+
+	test("~standard jsonSchema", () => {
+		const schema = Schema.string().transform(Number);
+		const standard = schema["~standard"].jsonSchema;
+		expect(standard.input({ target: "draft-07" })).toEqual({
+			$schema: "http://json-schema.org/draft-07/schema#",
+			type: "string",
+		});
+		expect(
+			standard.output({
+				target: "draft-2020-12",
+				libraryOptions: { unrepresentable: "any" },
+			}),
+		).toEqual({ $schema: draft });
+		expect(() => standard.input({ target: "openapi-3.0" })).toThrow(TypeError);
+	});
+});
+
+describe("Schema.date", () => {
+	test("accepts valid dates", () => {
+		const date = new Date();
+		expect(valid(Schema.date().parse(date))).toBe(date);
+	});
+
+	test("rejects invalid dates and other values", () => {
+		expect(invalid(Schema.date().parse(new Date("")))[0].expected).toBe("Date");
+		expect(invalid(Schema.date().parse("2026-01-01")).length).toBe(1);
+		expect(invalid(Schema.date("Pick a date").parse(1))[0].message).toBe(
+			"Pick a date",
+		);
+	});
+
+	test("cannot be represented in JSON Schema", () => {
+		expect(() => Schema.date().toJsonSchema()).toThrow(TypeError);
+	});
+});
+
+describe("uuid", () => {
+	test("validates UUIDs of any version", () => {
+		const schema = Schema.string().uuid();
+		expect(valid(schema.parse(crypto.randomUUID()))).toBeTypeOf("string");
+		expect(valid(schema.parse("00000000-0000-0000-0000-000000000000"))).toBe(
+			"00000000-0000-0000-0000-000000000000",
+		);
+		expect(invalid(schema.parse("not-a-uuid"))[0].message).toBe(
+			"Expected UUID",
+		);
+	});
+
+	test("describes format uuid", () => {
+		expect(Schema.string().uuid().toJsonSchema().format).toBe("uuid");
+		expect(Field.hidden().uuid().toJsonSchema().format).toBe("uuid");
+	});
+});
+
+describe("def", () => {
+	test("exposes the inspectable definition", () => {
+		const inner = Schema.number();
+		const schema = inner.int().nullable();
+
+		if (schema.def.type !== "nullable") throw new Error("Expected nullable");
+		expect(schema.def.inner.def).toMatchObject({
+			type: "check",
+			inner,
+			check: { name: "int" },
+		});
+	});
+
+	test("chaining never mutates the source schema", () => {
+		const base = Schema.string();
+		base.min(2).email();
+		expect(base.def).toEqual({ type: "string", message: undefined });
+	});
+
+	test("fields keep their definition through stream and persist", () => {
+		const field = Field.text().min(2);
+		expect(field.stream().def).toBe(field.def);
+		expect(field.persist().def).toBe(field.def);
+	});
+});
+
+describe("string length", () => {
+	test("counts Unicode characters like JSON Schema", () => {
+		expect(Schema.string().min(2).parse("😀").issues).toBeDefined();
+		expect(Schema.string().max(1).parse("😀").data).toBe("😀");
+		expect(Schema.string().min(2).max(2).parse("a😀").data).toBe("a😀");
+		// a lone surrogate is one character
+		expect(Schema.string().max(1).parse("\ud83d").data).toBe("\ud83d");
+		expect(Schema.string().max(1).parse("😀😀").issues).toBeDefined();
+		expect(Schema.string().min(3).parse("😀😀").issues).toBeDefined();
+		expect(Schema.string().min(1).parse("x".repeat(10)).data).toHaveLength(10);
+	});
+});
+
+describe("issue paths", () => {
+	test("each issue has its own full path, and the caller's path is unchanged", () => {
+		const schema = Schema.object({
+			a: Schema.array(Schema.object({ b: Schema.string() })),
+			c: Schema.union([Schema.number(), Schema.boolean()]),
+		});
+		const path = ["root"];
+		const result = schema.parse(
+			{ a: [{ b: "ok" }, { b: 1 }, {}], c: "x" },
+			path,
+		);
+
+		expect(path).toEqual(["root"]);
+		expect(result.issues?.map((issue) => issue.path)).toEqual([
+			["root", "a", 1, "b"],
+			["root", "a", 2, "b"],
+			["root", "c"],
+			["root", "c"],
+		]);
+		expect(result.issues?.[0]?.path).not.toBe(result.issues?.[1]?.path);
+		expect(result.issues).toBeInstanceOf(Array);
+		expect(result).toBeInstanceOf(Schema.AggregateIssue);
+		// a valid parse after a failure starts from a clean path
+		expect(schema.parse({ a: [], c: 1 })).toEqual({ data: { a: [], c: 1 } });
+	});
+});

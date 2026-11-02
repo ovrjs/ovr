@@ -10,6 +10,7 @@ import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import type { State } from "./state.js";
+import type { Storage } from "./storage.js";
 import { Token } from "./token.js";
 
 export namespace Passkey {
@@ -344,7 +345,7 @@ export class Passkey {
 		return { state, credential: result.data.credential };
 	}
 
-	#client(value: string, state: Auth.Challenge) {
+	#client(value: string, state: Storage.Challenge) {
 		const result = Schema.string()
 			.json(
 				Schema.object({
@@ -435,7 +436,7 @@ export class Passkey {
 	}
 
 	/** Verify login and atomically update the credential. */
-	async login(credentials: Auth.Credentials) {
+	async login(credentials: Storage.Credentials) {
 		const { state, credential } = await this.#consume("login");
 		const result = Passkey.#assertion.parse(credential);
 		if (result.issues) throw result;

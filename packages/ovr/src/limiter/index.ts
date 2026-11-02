@@ -1,5 +1,9 @@
 import type { Context as ContextType } from "../context/index.js";
+import type { Database } from "../database/index.js";
 import type { Middleware } from "../middleware/index.js";
+import { Schema } from "../schema/index.js";
+import { Table } from "../table/index.js";
+import { Time } from "../util/index.js";
 
 export namespace Limiter {
 	/** Request capabilities available before parsing a body. */
@@ -12,9 +16,11 @@ export namespace Limiter {
 		readonly limit: number;
 		readonly interval: number;
 	}
-	/** Required shared storage, with a default policy of 60 requests per minute. */
+	/** Shared Postgres storage, with a default policy of 60 requests per minute. */
 	export interface Options extends Partial<Policy> {
-		/** Stable namespace, shared by all instances using the same external store. */
+		/** Database containing `Limiter.table`, shared by every instance. */
+		readonly database: Database;
+		/** Stable namespace, shared by all instances using the same database. */
 		readonly name?: string;
 		/** IPv6 network prefix length, from 1 to 128. Defaults to 64; IPv4 is unchanged. */
 		readonly prefix?: number;
@@ -22,15 +28,6 @@ export namespace Limiter {
 		readonly key?: (
 			c: Context,
 		) => string | undefined | Promise<string | undefined>;
-		/**
-		 * Shared storage. Atomically refill and consume a token for this key.
-		 * Return literal true when admitted, or a positive absolute retry time in milliseconds when denied.
-		 * Every instance must use the same policy and stable namespace. Failures must throw.
-		 */
-		readonly consume: (
-			key: string,
-			policy: Policy,
-		) => true | number | Promise<true | number>;
 		/** Report middleware failures server-side. Defaults to console.error. */
 		readonly error?: (error: unknown, c: Context) => void | Promise<void>;
 	}
@@ -39,15 +36,23 @@ export namespace Limiter {
 /** Internal failure to apply a rate limit; callers must not admit the request. */
 export class LimitIssue extends Error {}
 
-/** Dependency-free token buckets, usable by authentication and ordinary route middleware. */
+/** Token buckets stored in Postgres, usable by authentication and ordinary route middleware. */
 export class Limiter {
+	/** Token buckets shared by every limiter, include it in the database's tables. */
+	static readonly table = new Table("ovr_limits", {
+		key: Schema.string(),
+		tokens: Schema.number(),
+		time: Schema.number().int(),
+		expiration: Schema.number().int(),
+	});
+
 	readonly #options;
-	/** Create a policy backed by the application's shared atomic storage operation. */
+	#pruned = 0;
+
+	/** Create a policy backed by the application's database. */
 	constructor(options: Limiter.Options) {
-		if (typeof options?.consume !== "function")
-			throw new TypeError(
-				"Limiter requires shared rate-limit storage in consume",
-			);
+		if (typeof options?.database?.sql !== "function")
+			throw new TypeError("Limiter requires a database");
 		this.#options = {
 			limit: 60,
 			interval: 60000,
@@ -87,17 +92,10 @@ export class Limiter {
 			);
 		const { limit, interval } = this.#options;
 		// Different policies cannot interpret the same stored token balance differently.
-		const retry = await this.#options.consume(
+		const retry = await this.#consume(
 			JSON.stringify([this.#options.name, limit, interval, scope, identity]),
-			{ limit, interval },
 		);
 		if (retry === true) return true;
-		if (
-			!Number.isFinite(retry) ||
-			retry <= 0 ||
-			retry > Number.MAX_SAFE_INTEGER
-		)
-			throw new LimitIssue("Invalid shared limiter result");
 		const now = Date.now();
 		return new Date(
 			Math.min(now + 3600000, Math.max(now + 1000, Math.ceil(retry))),
@@ -128,6 +126,56 @@ export class Limiter {
 		);
 		c.text("Too many requests. Try again later.", 429);
 	};
+
+	/**
+	 * Atomically refill and consume a token, in one statement when admitted.
+	 *
+	 * @param key Bucket key
+	 * @returns `true` when admitted, otherwise the retry time in milliseconds
+	 */
+	async #consume(key: string) {
+		const { database: db, limit, interval } = this.#options;
+		const table = Limiter.table;
+		const now = Date.now();
+
+		// either direction, so a clock moving back cannot stop pruning
+		if (Math.abs(now - this.#pruned) >= Time.minute) {
+			this.#pruned = now;
+			await db.sql`DELETE FROM ${table} WHERE expiration <= ${now}`;
+		}
+
+		// expired buckets start full, others refill continuously since their last use
+		const tokens = db.sql`CASE WHEN l.expiration > ${now}::bigint
+			THEN LEAST(${limit}::float8, l.tokens + GREATEST(0, ${now}::bigint - l.time) * ${limit}::float8 / ${interval}::float8)
+			ELSE ${limit}::float8 END`;
+		const admitted = await db.sql`
+			INSERT INTO ${table} AS l (key, tokens, time, expiration)
+			VALUES (${key}, ${limit - 1}, ${now}, ${now + interval})
+			ON CONFLICT (key) DO UPDATE SET
+				tokens = ${tokens} - 1,
+				time = GREATEST(${now}::bigint, l.time),
+				expiration = ${now + interval}
+			WHERE ${tokens} >= 1
+			RETURNING 1
+		`;
+
+		if (admitted.length) return true;
+
+		const [bucket] = await db.sql`
+			SELECT * FROM ${table} WHERE key = ${key}
+		`.parse(Limiter.table);
+		const available =
+			!bucket || bucket.expiration <= now
+				? limit
+				: Math.min(
+						limit,
+						bucket.tokens + (Math.max(0, now - bucket.time) * limit) / interval,
+					);
+
+		return (
+			now + Math.max(1000, Math.ceil(((1 - available) * interval) / limit))
+		);
+	}
 
 	static #ip(value: string | undefined, prefix: number) {
 		if (!value || value.length > 64 || !/^[\da-f:.]+$/i.test(value)) return;

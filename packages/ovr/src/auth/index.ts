@@ -1,12 +1,14 @@
 import type { Context as ContextType } from "../context/index.js";
+import type { Database } from "../database/index.js";
 import type { JSX } from "../jsx/index.js";
-import type { Limiter } from "../limiter/index.js";
+import { Limiter } from "../limiter/index.js";
 import type { Route } from "../route/index.js";
 import type { Form } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
 import { configure } from "./configure.js";
 import { Issue } from "./issue.js";
 import { State } from "./state.js";
+import { Storage } from "./storage.js";
 
 type Result<T> = T | Promise<T>;
 
@@ -31,27 +33,6 @@ export namespace Auth {
 		Logout: Route.Form<string>;
 	}
 
-	/** Server-side state for one WebAuthn ceremony. */
-	export interface Challenge {
-		readonly challenge: string;
-		readonly browser: string;
-		readonly method: "register" | "login";
-		readonly action: string;
-		readonly origin: string;
-		readonly expiration: number;
-		readonly user?: string;
-		/** SHA-256 base64url digest binding validated registration fields to the provider label. */
-		readonly fields?: string;
-	}
-
-	/** Challenge storage shared by all instances. Preserve every field, including the optional registration field digest. */
-	export interface Challenges {
-		/** Store until expiration. Return false when shared storage capacity is exhausted. */
-		set(id: string, challenge: Challenge): Result<void | boolean>;
-		/** Atomically return and delete an entry; concurrent calls must have one winner. */
-		take(id: string): Result<Challenge | null | undefined>;
-	}
-
 	/** A revocable session with a fixed lifetime. */
 	export interface Session {
 		/** Opaque session ID, usable with `auth.revoke()`. */
@@ -62,40 +43,27 @@ export namespace Auth {
 		readonly expiration: number;
 	}
 
-	/** Session storage shared by all application instances. */
-	export interface Sessions {
-		/** Store a new session until its expiration. */
-		set(id: string, session: Session): Result<void>;
-		/** Return a session, or nothing if it has expired or been revoked. */
-		get(id: string): Result<Session | null | undefined>;
-		/** Revoke a session. */
-		delete(id: string): Result<void>;
-	}
-
-	/** Database-backed authentication configuration; all instances must share persistence. */
+	/** Authentication configuration; all instances share the database. */
 	export interface Options<Shape extends Form.Shape = Form.Shape> {
 		/** Signing secret(s), each at least 32 UTF-8 bytes. Seal with the first; accept all during rotation. */
 		readonly secret: string | readonly [string, ...string[]];
 		/** Trusted HTTPS origin, for example `https://example.com`. */
 		readonly origin: string;
-		/** Required persistence for atomic, single-use challenges. */
-		readonly challenges: Challenges;
-		/** Required persistence for revocable sessions. */
-		readonly sessions: Sessions;
+		/** Database containing `Auth.tables`, which stores challenges, sessions, credentials, and rate limits. */
+		readonly database: Database;
 		/** Session lifetime in milliseconds; defaults to one week, without sliding refresh. */
 		readonly duration?: number;
-		/** Credential lookup and atomic updates using the application's persistence. */
-		readonly credentials: Auth.Credentials;
-		/** Registration fields, provider labels, and atomic account creation. */
+		/** Registration fields, provider labels, and account creation. */
 		readonly register: {
 			/** Application fields, validated before prompting and again before saving. */
 			readonly fields: Shape;
 			/** Human-readable account label, independent of the opaque user handle. */
 			readonly name: (data: Form.Parse.Data<Shape>) => Result<string>;
-			/** Atomically insert a new user and credential, enforcing unique user and credential IDs. Never upsert an existing user. */
+			/** Insert the account with `t`, in the transaction that stores its first credential. Never upsert an existing user. */
 			readonly create: (
+				t: Database.Transaction,
 				data: Form.Parse.Data<Shape>,
-				credential: Auth.Credential,
+				user: string,
 			) => Result<void>;
 		};
 		/** Authentication page, also used for generic failure redirects. Defaults to /login. */
@@ -104,10 +72,8 @@ export namespace Auth {
 		readonly redirect?: string;
 		/** Override the default endpoint paths. Paths must be distinct literal local paths. */
 		readonly paths?: Partial<Record<"register" | "login" | "logout", string>>;
-		/** Shared rate-limit storage; ovr supplies the signup and sign-in policies. */
-		readonly limits: {
-			/** Atomically refill and consume a token across all workers and deployments sharing these policies. */
-			readonly consume: Limiter.Options["consume"];
+		/** Additional and replacement rate limits; ovr supplies the signup and sign-in policies. */
+		readonly limits?: {
 			/** Optional generous request ceiling before client key creation. Counts invalid fields and requests denied by later policies too. */
 			readonly guard?: Limiter;
 			/** Additional shared policies checked after the client policy, preserving the built-in defaults. */
@@ -136,26 +102,22 @@ export namespace Auth {
 		/** Current backup state, which may change. */
 		backedUp: boolean;
 	}
-
-	/** Application-owned credential lookup and persistence. */
-	export interface Credentials {
-		get(id: string): Result<Credential | null | undefined>;
-		/**
-		 * Atomically save `credential` only if the record still matches `previous`.
-		 * Return true when the snapshot matches, even when the values are unchanged.
-		 * Use matched rows (or RETURNING), not changed-row counts. Return false for a
-		 * concurrent change or deletion; never recreate a deleted passkey.
-		 */
-		update(credential: Credential, previous: Credential): Result<boolean>;
-	}
 }
 
-/** Complete passkey authentication with application-owned persistence. */
+/** Complete passkey authentication stored in the application's Postgres database. */
 export class Auth<Shape extends Form.Shape = Form.Shape> {
 	/** Validation issue shared by authentication and passkey verification. */
 	static readonly Issue = Issue;
 
-	readonly #options: Auth.Options<Shape>;
+	/** Tables Auth stores its data in, include them in the database's tables. */
+	static readonly tables = [
+		Storage.credentials,
+		Storage.sessions,
+		Storage.challenges,
+		Limiter.table,
+	] as const;
+
+	readonly #options: State.Options;
 	readonly #states = new WeakMap<object, State>();
 
 	/** Generated endpoints; App mounts them automatically. */
@@ -192,14 +154,20 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 			throw new TypeError(
 				"Auth duration must be a positive lifetime in milliseconds",
 			);
+		if (typeof options.database?.transaction !== "function")
+			throw new TypeError("Auth requires a database");
+		const storage = Storage.of(options.database);
 		this.#options = {
-			...options,
+			origin: options.origin,
 			secret:
 				typeof options.secret === "string"
 					? options.secret
 					: [options.secret[0], ...options.secret.slice(1)],
+			...(options.duration === undefined ? {} : { duration: options.duration }),
+			challenges: storage.challenges,
+			sessions: storage.sessions,
 		};
-		const service = configure(this.#options, (c) => this.#state(c));
+		const service = configure(options, storage, (c) => this.#state(c));
 		this.routes = service.routes;
 		this.forms = service.forms;
 	}

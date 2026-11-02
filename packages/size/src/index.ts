@@ -1,29 +1,34 @@
-export const bytes = 57579;
-export const kb = 57.58;
+export const bytes = 77807;
+export const kb = 77.81;
 
-export const App = { bytes: 25832, kb: 25.83 } as const;
+export const App = { bytes: 31473, kb: 31.47 } as const;
 
-export const Auth = { bytes: 51513, kb: 51.51 } as const;
+export const Auth = { bytes: 63022, kb: 63.02 } as const;
 
-export const Field = { bytes: 20262, kb: 20.26 } as const;
+export const Database = { bytes: 34731, kb: 34.73 } as const;
 
-export const Form = { bytes: 18258, kb: 18.26 } as const;
+export const Field = { bytes: 25903, kb: 25.9 } as const;
+
+export const Form = { bytes: 23899, kb: 23.9 } as const;
 
 export const JSX = { bytes: 3505, kb: 3.51 } as const;
 
-export const Limiter = { bytes: 2308, kb: 2.31 } as const;
+export const Limiter = { bytes: 29145, kb: 29.15 } as const;
 
 export const Multipart = { bytes: 5538, kb: 5.54 } as const;
 
 export const Render = { bytes: 2863, kb: 2.86 } as const;
 
-export const Route = { bytes: 19850, kb: 19.85 } as const;
+export const Route = { bytes: 25491, kb: 25.49 } as const;
 
-export const Schema = { bytes: 18264, kb: 18.26 } as const;
+export const Schema = { bytes: 23905, kb: 23.91 } as const;
+
+export const Table = { bytes: 26034, kb: 26.03 } as const;
 
 export const sizes = {
 	App,
 	Auth,
+	Database,
 	Field,
 	Form,
 	JSX,
@@ -32,4 +37,5 @@ export const sizes = {
 	Render,
 	Route,
 	Schema,
+	Table,
 } as const;

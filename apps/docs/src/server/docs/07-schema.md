@@ -33,6 +33,30 @@ if (result.issues) {
 - When **invalid**, the result is a `Schema.AggregateIssue` containing a non-empty `issues` tuple.
 - When **valid**, the result contains the type-safe `data`.
 
+## JSON Schema
+
+`toJsonSchema` describes a schema as a [JSON Schema](https://json-schema.org/) object, for example to document an API or define tool parameters.
+
+```ts
+user.toJsonSchema();
+// {
+// 	$schema: "https://json-schema.org/draft/2020-12/schema",
+// 	type: "object",
+// 	properties: {
+// 		name: { type: "string", minLength: 2 },
+// 		age: { type: "integer", minimum: 13 },
+// 	},
+// 	required: ["name", "age"],
+// 	additionalProperties: false,
+// }
+```
+
+- `target` selects `"draft-2020-12"` (default) or `"draft-07"`.
+- `io` describes the parsed `"output"` (default) or the accepted `"input"`. They differ for `default`, `preprocess`, `pipe`, `json`, `transform`, and unknown keys removed from objects.
+- Custom `refine` checks are omitted. BigInts, `instance` schemas such as `Field.file()`, and transform outputs throw a `TypeError`; set `unrepresentable: "any"` to describe them as `{}`.
+
+Schemas also implement [Standard JSON Schema](https://standardschema.dev/json-schema) through `~standard.jsonSchema`, so libraries that accept it can convert them directly.
+
 ## POST forms
 
 Use `Field` to describe the expected inputs for a POST route. `Context.data()` parses the [`multipart` request](/06-multipart) with the matching types.

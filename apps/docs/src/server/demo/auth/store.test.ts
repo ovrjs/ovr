@@ -1,292 +1,48 @@
-import { Store } from "./store";
+import { type Store, migrations, open, users } from "./store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import type { Auth } from "ovr";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 
-const stores = new Set<Store>();
+const stores: Store[] = [];
 const folders: string[] = [];
-const credential: Auth.Credential = {
-	id: "credential-1",
-	user: "user-1",
-	publicKey: "test-key",
-	counter: 0,
-	eligible: true,
-	backedUp: false,
-};
-const challenge = (): Auth.Challenge => ({
-	challenge: "nonce",
-	browser: "browser",
-	method: "login",
-	action: "/login",
-	origin: "https://example.com",
-	expiration: Date.now() + 60000,
-});
-const session = (): Auth.Session => ({
-	id: "session-1",
-	user: credential.user,
-	expiration: Date.now() + 60000,
-});
 
-function open(path = ":memory:") {
-	const store = new Store(path);
-	stores.add(store);
-	return store;
-}
-
-function file() {
-	const folder = mkdtempSync(join(tmpdir(), "ovr-auth-"));
-	folders.push(folder);
-	return join(folder, "auth.sqlite");
-}
-
-afterEach(() => {
-	for (const store of stores) store.close();
-	stores.clear();
-	for (const folder of folders)
+afterEach(async () => {
+	for (const store of stores.splice(0)) await store.close();
+	for (const folder of folders.splice(0))
 		rmSync(folder, { recursive: true, force: true });
-	folders.length = 0;
 });
 
-describe("SQLite authentication persistence", () => {
-	test("preserves existing demo sessions when renaming their ID and user columns", () => {
-		const path = file();
-		const db = new DatabaseSync(path);
-		try {
-			db.exec(`
-				PRAGMA foreign_keys = ON;
-				CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL) STRICT;
-				CREATE TABLE sessions (
-					token TEXT PRIMARY KEY,
-					id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-					expiration INTEGER NOT NULL
-				) STRICT;
-			`);
-			db.prepare("INSERT INTO users VALUES (?, ?)").run(
-				credential.user,
-				"user@example.com",
-			);
-			const value = session();
-			db.prepare("INSERT INTO sessions VALUES (?, ?, ?)").run(
-				value.id,
-				value.user,
-				value.expiration,
-			);
-			const store = open(path);
-			expect(store.sessions.get(value.id)).toEqual(value);
-			expect(open(path).sessions.get(value.id)).toEqual(value);
-			expect(store.user(value.user)?.email).toBe("user@example.com");
-			db.prepare("DELETE FROM users WHERE id = ?").run(value.user);
-			expect(store.sessions.get(value.id)).toBeUndefined();
-		} finally {
-			db.close();
-		}
-	});
+describe("demo database", () => {
+	test("applies its migration, matches its tables, and persists across restarts", async () => {
+		const folder = mkdtempSync(join(tmpdir(), "ovr-auth-"));
+		folders.push(folder);
 
-	test("capacity preserves live budgets, fails closed for new keys, and recovers after expiration", () => {
-		const path = file();
-		const store = open(path);
-		const db = new DatabaseSync(path);
-		const now = Date.now();
-		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
-		try {
-			db.prepare(
-				`
-				WITH RECURSIVE entries(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM entries WHERE i < 10000)
-				INSERT INTO limits(key, tokens, time, expiration) SELECT 'bucket-' || i, 0, ?, ? FROM entries
-			`,
-			).run(now, now + 60000);
-			const policy = { limit: 1, interval: 60000 };
-			expect(store.consume("bucket-1", policy)).toBe(now + 60000);
-			expect(() => store.consume("new-client", policy)).toThrow(
-				"capacity exhausted",
-			);
-			expect(store.consume("bucket-1", policy)).toBe(now + 60000);
-			clock.mockReturnValue(now + 60000);
-			expect(store.consume("new-client", policy)).toBe(true);
-			expect(db.prepare("SELECT count(*) AS count FROM limits").get()).toEqual({
-				count: 1,
-			});
-		} finally {
-			clock.mockRestore();
-			db.close();
-		}
-	});
-	test("shares atomic rate-limit budgets across connections and restarts", () => {
-		const path = file();
-		const first = open(path);
-		const second = open(path);
-		const now = Date.now();
-		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
-		try {
-			const policy = { limit: 2, interval: 60000 };
-			expect(first.consume("client", policy)).toBe(true);
-			expect(second.consume("client", policy)).toBe(true);
-			expect(open(path).consume("client", policy)).toBe(now + 30000);
-			expect(second.consume("other", policy)).toBe(true);
-			clock.mockReturnValue(now + 30000);
-			expect(first.consume("client", policy)).toBe(true);
-			expect(second.consume("client", policy)).toBe(now + 60000);
-		} finally {
-			clock.mockRestore();
-		}
-	});
-	test("preserves users, passkeys, sessions, and pending challenges after reopening", () => {
-		const path = file();
-		const first = open(path);
-		first.register(credential, "user@example.com");
-		first.sessions.set("session-1", session());
-		first.challenges.set("challenge-1", challenge());
-		first.close();
-		stores.delete(first);
-		const second = open(path);
-		expect(second.user(credential.user)).toEqual({
-			id: credential.user,
-			email: "user@example.com",
-		});
-		expect(second.credentials.get(credential.id)).toEqual(credential);
-		expect(second.sessions.get("session-1")).toMatchObject({
-			id: "session-1",
-			user: credential.user,
-		});
-		expect(second.challenges.take("challenge-1")).toMatchObject({
-			challenge: "nonce",
-		});
-	});
+		const first = await open(folder);
+		const id = crypto.randomUUID();
+		await first.sql`INSERT INTO ${users} ${first.sql.values(users, { id, email: "a@example.com" })}`;
+		await first.close();
 
-	test("consumes a challenge once across independent database connections", () => {
-		const path = file();
-		const first = open(path);
-		const second = open(path);
-		first.challenges.set("challenge-1", challenge());
-		expect(second.challenges.take("challenge-1")).toBeDefined();
-		expect(first.challenges.take("challenge-1")).toBeUndefined();
-	});
-
-	test("revokes sessions across connections and refuses expired records", () => {
-		const path = file();
-		const first = open(path);
-		const second = open(path);
-		first.register(credential, "user@example.com");
-		first.sessions.set("session-1", session());
-		expect(second.sessions.get("session-1")).toBeDefined();
-		second.sessions.delete("session-1");
-		expect(first.sessions.get("session-1")).toBeUndefined();
-		first.sessions.set("session-1", {
-			...session(),
-			expiration: Date.now() - 1,
-		});
-		expect(second.sessions.get("session-1")).toBeUndefined();
-		first.challenges.set("expired", {
-			...challenge(),
-			expiration: Date.now() - 1,
-		});
-		expect(second.challenges.take("expired")).toBeUndefined();
-	});
-
-	test("atomically updates a snapshot and rejects stale or deleted credentials", () => {
-		const path = file();
-		const first = open(path);
-		const second = open(path);
-		first.register(credential, "user@example.com");
-		const next = { ...credential, counter: 1, backedUp: true };
-		expect(second.credentials.update(next, credential)).toBe(true);
+		const second = await open(folder);
+		stores.push(second);
+		expect(await second.migrate(migrations)).toEqual([]);
+		expect(await second.check()).toEqual([]);
 		expect(
-			first.credentials.update({ ...credential, counter: 2 }, credential),
-		).toBe(false);
-		expect(first.credentials.get(credential.id)).toEqual(next);
-		expect(
-			first.credentials.update({ ...next, publicKey: "replacement" }, next),
-		).toBe(false);
-		expect(
-			first.credentials.update(
-				{ ...next, id: "deleted" },
-				{ ...next, id: "deleted" },
-			),
-		).toBe(false);
+			await second.sql`SELECT * FROM ${second.users}`.parse(users),
+		).toEqual([{ id, email: "a@example.com" }]);
 	});
 
-	test("rolls back a new account when its credential ID already exists", () => {
-		const store = open();
-		store.register(credential, "first@example.com");
-		expect(() =>
-			store.register(
-				{ ...credential, user: "second-user" },
-				"second@example.com",
-			),
-		).toThrow();
-		expect(store.user("second-user")).toBeUndefined();
-		expect(store.user(credential.user)?.email).toBe("first@example.com");
-		expect(store.list(credential.user)).toEqual([credential]);
+	test("deleting an account removes its credentials and sessions", async () => {
+		const db = await open("memory://");
+		stores.push(db);
+		const id = crypto.randomUUID();
+		await db.transaction(async (t) => {
+			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id, email: "a@example.com" })}`;
+			await t.sql`INSERT INTO ${db.ovr_credentials} ${t.sql.values(db.ovr_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
+			await t.sql`INSERT INTO ${db.ovr_sessions} ${t.sql.values(db.ovr_sessions, { id: "s", user: id, expiration: Date.now() + 60000 })}`;
+		});
+		await db.sql`DELETE FROM ${users}`;
+		expect(await db.sql`SELECT * FROM ${db.ovr_credentials}`).toEqual([]);
+		expect(await db.sql`SELECT * FROM ${db.ovr_sessions}`).toEqual([]);
 	});
-
-	test("binds SQL parameters and does not treat account data as executable SQL", () => {
-		const store = open();
-		const email = "'); DROP TABLE users; --";
-		store.register(credential, email);
-		expect(store.user(credential.user)?.email).toBe(email);
-		expect(() => store.sessions.set("wrong-id", session())).toThrow("mismatch");
-		store.sessions.set("session-1", session());
-		store.challenges.set("challenge-1", challenge());
-		store.prune(Date.now() + 120000);
-		expect(store.sessions.get("session-1")).toBeUndefined();
-		expect(store.challenges.take("challenge-1")).toBeUndefined();
-		expect(store.credentials.get(credential.id)).toEqual(credential);
-	});
-});
-
-test("bounds outstanding challenges across connections and reclaims consumed capacity", () => {
-	const path = file();
-	const first = open(path);
-	const second = open(path);
-	for (let i = 0; i < 10; i++)
-		expect(first.challenges.set(`challenge-${i}`, challenge())).toBe(true);
-	expect(second.challenges.set("overflow", challenge())).toBe(false);
-	second.challenges.take("challenge-0");
-	expect(first.challenges.set("replacement", challenge())).toBe(true);
-});
-
-test("does not attach a second credential by reusing an existing signup user ID", () => {
-	const store = open();
-	store.register(credential, "original@example.com");
-	expect(() =>
-		store.register(
-			{ ...credential, id: "second-credential" },
-			"replacement@example.com",
-		),
-	).toThrow();
-	expect(store.user(credential.user)?.email).toBe("original@example.com");
-	expect(store.list(credential.user)).toEqual([credential]);
-});
-
-test("cached statements preserve registration field bindings across connections", () => {
-	const path = file();
-	const store = open(path);
-	const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
-	try {
-		store.register(credential, "user@example.com");
-		store.user(credential.user);
-		store.list(credential.user);
-		store.credentials.get(credential.id);
-		expect(store.credentials.update(credential, credential)).toBe(true);
-		store.sessions.set("session-1", session());
-		store.sessions.get("session-1");
-		store.sessions.delete("session-1");
-		store.consume("client", { limit: 5, interval: 60000 });
-		const value = {
-			...challenge(),
-			method: "register",
-			fields: "digest",
-		} satisfies Auth.Challenge;
-		store.challenges.set("pending", value);
-		expect(store.challenges.take("pending")).toEqual(value);
-		store.prune();
-		expect(prepare).not.toHaveBeenCalled();
-		store.challenges.set("shared", value);
-		expect(open(path).challenges.take("shared")).toEqual(value);
-	} finally {
-		prepare.mockRestore();
-	}
 });

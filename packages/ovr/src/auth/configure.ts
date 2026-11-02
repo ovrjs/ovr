@@ -8,55 +8,49 @@ import { Header, Size } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
 import type { State } from "./state.js";
+import type { Storage } from "./storage.js";
 
 /** Construct startup-complete handlers and request-scoped UI components. */
 export function configure<Shape extends Form.Shape>(
 	options: Auth.Options<Shape>,
+	storage: Storage,
 	state: (c: State.Context) => State,
 ) {
-	if (typeof options.limits?.consume !== "function")
-		throw new TypeError(
-			"Auth requires shared rate-limit storage in limits.consume",
-		);
-	if (
-		options.limits.guard !== undefined &&
-		!(options.limits.guard instanceof Limiter)
-	)
+	const configured = options.limits ?? {};
+	if (configured.guard !== undefined && !(configured.guard instanceof Limiter))
 		throw new TypeError("Auth limits.guard must be a Limiter");
 	if (
-		options.limits.extra !== undefined &&
-		(!Array.isArray(options.limits.extra) ||
-			[...options.limits.extra].some(
-				(limiter) => !(limiter instanceof Limiter),
-			))
+		configured.extra !== undefined &&
+		(!Array.isArray(configured.extra) ||
+			[...configured.extra].some((limiter) => !(limiter instanceof Limiter)))
 	)
 		throw new TypeError("Auth limits.extra must be an array of Limiters");
-	const ceiling = options.limits.guard ? [options.limits.guard] : [];
+	const ceiling = configured.guard ? [configured.guard] : [];
 	// Snapshot stacks at startup so later array mutations cannot disable admission.
 	const limits = Object.fromEntries(
 		Object.entries({
 			register:
-				options.limits.register ??
+				configured.register ??
 				new Limiter({
+					database: options.database,
 					name: "auth:register:" + options.origin,
 					limit: 5,
 					interval: 600000,
-					consume: options.limits.consume,
 				}),
 			login:
-				options.limits.login ??
+				configured.login ??
 				new Limiter({
+					database: options.database,
 					name: "auth:login:" + options.origin,
 					limit: 20,
 					interval: 60000,
-					consume: options.limits.consume,
 				}),
 		}).map(([method, value]) => {
 			if (!(value instanceof Limiter))
 				throw new TypeError(
 					"Auth client policies must be a Limiter; use limits.extra for additional layers",
 				);
-			return [method, [value, ...(options.limits.extra ?? [])]];
+			return [method, [value, ...(configured.extra ?? [])]];
 		}),
 	);
 	const paths = {
@@ -212,7 +206,10 @@ export function configure<Shape extends Form.Shape>(
 					await Passkey.fields(data),
 				);
 				// Pass only application fields, never protocol fields, into the persistence callback.
-				await options.register.create(data, credential);
+				await storage.register(
+					(t, user) => options.register.create(t, data, user),
+					credential,
+				);
 				await state(c).login(credential.user);
 				c.redirect(redirect, 303);
 			},
@@ -223,7 +220,7 @@ export function configure<Shape extends Form.Shape>(
 			// Bound the body before verification.
 			await c.data({ payload: 128 * Size.kb });
 			const credential = await new Passkey(c, state(c)).login(
-				options.credentials,
+				storage.credentials,
 			);
 			await state(c).login(credential.user);
 			c.redirect(redirect, 303);

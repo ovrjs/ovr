@@ -1,0 +1,239 @@
+---
+title: Database
+description: Postgres tables, queries, transactions, and migrations with ovr schemas.
+---
+
+`Database` connects ovr to Postgres. Define tables with [schemas](/07-schema), write queries in SQL, and apply SQL migrations. ovr validates what goes in and comes out, and checks that the live database is compatible with your tables.
+
+## Define tables
+
+Columns are ordinary schemas. A table describes the data your application reads and writes; keys, constraints, indexes, and default expressions belong in [migrations](#migrate).
+
+```ts
+import { Database, Schema, Table } from "ovr";
+import { Pool } from "pg";
+
+const users = new Table(
+	"users",
+	{
+		id: Schema.string().uuid(),
+		email: Schema.string().email(),
+		name: Schema.string().nullable(),
+		created: Schema.date(),
+	},
+	{ default: ["id", "created"] },
+);
+
+const posts = new Table(
+	"posts",
+	{
+		id: Schema.string().uuid(),
+		author: Schema.string().uuid(),
+		title: Schema.string().min(1).max(200),
+		published: Schema.boolean(),
+	},
+	{ default: ["id", "published"] },
+);
+
+export const db = new Database(
+	new Pool({
+		connectionString: process.env.DATABASE_URL,
+		allowExitOnIdle: true,
+	}),
+	[users, posts],
+);
+```
+
+| Option    | Value                                                                           |
+| --------- | ------------------------------------------------------------------------------- |
+| `default` | Columns the database supplies, with a `DEFAULT`, identity, or generated column  |
+| `schema`  | Postgres schema containing the table, the connection's search path when omitted |
+
+Tables are available on the database by name, so a module only needs to export `db`. A table can't be named `sql`, `transaction`, `migrate`, or `check`.
+
+A table is a schema of its rows:
+
+```ts
+type User = Schema.Infer<typeof db.users>;
+// { id: string; email: string; name: string | null; created: Date }
+```
+
+## Connect
+
+`Database` accepts an application-owned, pg-compatible pool such as [`pg`](https://node-postgres.com/). ovr has no driver dependency and never ends the pool. `allowExitOnIdle` lets scripts exit when they finish.
+
+Use your provider's pooled connection string for the application, and a direct connection for migrations. ovr works with transaction-mode poolers such as Supabase's and PlanetScale's: it doesn't use named prepared statements or session state.
+
+## Query
+
+`db.sql` builds a query that runs when awaited. A query is a lazy promise: it runs once, the first time it's awaited or `then`, `catch`, or `finally` is called, and never when it's nested in another query. Tables and columns become quoted identifiers, nested queries are inlined, and every other value is a bound parameter.
+
+```ts
+const rows =
+	await db.sql`SELECT * FROM ${db.users} WHERE ${db.users.columns.email} = ${email}`;
+// unknown[]
+```
+
+`.parse()` parses each row with a schema and returns typed rows, throwing a `Schema.AggregateIssue` if any row fails. Pass the table for whole rows, or a schema describing a join or projection. `.parse()` shares the query's single run, so awaiting a query and then `query.parse(schema)` doesn't run it twice.
+
+```ts
+const [user] = await db.sql`
+	SELECT * FROM ${db.users} WHERE ${db.users.columns.id} = ${id}
+`.parse(db.users);
+
+const feed = await db.sql`
+	SELECT p.title, u.name FROM ${db.posts} p JOIN ${db.users} u ON u.id = p.author
+	WHERE p.published AND u.name IS NOT NULL
+`.parse(Schema.object({ title: Schema.string(), name: Schema.string() }));
+```
+
+Write conditions in SQL. For optional filters, nest a query when the filter applies and an empty query when it doesn't:
+
+```ts
+const posts = await db.sql`
+	SELECT * FROM ${db.posts} WHERE true
+	${author ? db.sql`AND ${db.posts.columns.author} = ${author}` : db.sql``}
+`.parse(db.posts);
+```
+
+`db.sql.values()` validates rows and builds an insert. Columns that are nullable or listed in `default` may be omitted, except `Schema.unknown()` columns, which accept any value and must be given unless they're in `default`. `db.sql.set()` validates the supplied columns of an update.
+
+```ts
+const [post] = await db.sql`
+	INSERT INTO ${db.posts} ${db.sql.values(db.posts, { author: user.id, title })}
+	RETURNING *
+`.parse(db.posts);
+
+await db.sql`
+	UPDATE ${db.posts} SET ${db.sql.set(db.posts, { published: true })}
+	WHERE ${db.posts.columns.id} = ${post.id}
+`;
+```
+
+| Helper                    | Builds                                               |
+| ------------------------- | ---------------------------------------------------- |
+| `db.sql.values(table, r)` | `(columns) VALUES (...)` for one row or several      |
+| `db.sql.set(table, v)`    | `column = value, ...`                                |
+| `db.sql.id(...names)`     | A quoted identifier, such as `db.sql.id("app", "x")` |
+
+Column references are qualified with their table name, so write aliased columns like `p.title` directly. A function that returns a query from an `async` function runs it, because awaiting resolves the query.
+
+## Transact
+
+`db.transaction()` checks out one connection, commits when the callback resolves, and rolls back when it throws. The connection is always released.
+
+```ts
+await db.transaction(async (t) => {
+	await t.sql`DELETE FROM ${db.posts} WHERE ${db.posts.columns.author} = ${user.id}`;
+	await t.sql`DELETE FROM ${db.users} WHERE ${db.users.columns.id} = ${user.id}`;
+});
+```
+
+Use `t.sql` for every query in the transaction. `db.sql` would run on another connection, and `t.sql` queries can't run after the transaction ends.
+
+A failed query aborts the transaction in Postgres, so catching its error doesn't save the transaction: it rolls back and rethrows the error. To recover from an expected error, roll back to a `SAVEPOINT`.
+
+## Migrate
+
+Schema changes are SQL migration files, including keys, constraints, indexes, and defaults. `db.migrate()` applies pending migrations in ID order and records each with a checksum.
+
+```sql
+-- migrations/0001_init.sql
+CREATE TABLE users (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	email text NOT NULL UNIQUE,
+	name text,
+	created timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE posts (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	author uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+	title text NOT NULL,
+	published boolean NOT NULL DEFAULT false
+);
+
+CREATE INDEX ON posts (author, published);
+```
+
+Run them with a script, for example in a release step, then [check](#check) the tables:
+
+```ts
+// scripts/db.ts
+import { db } from "../src/db.ts";
+import { readFile, readdir } from "node:fs/promises";
+
+const dir = new URL("../migrations/", import.meta.url);
+
+const applied = await db.migrate(
+	await Promise.all(
+		(await readdir(dir))
+			.filter((file) => file.endsWith(".sql"))
+			.map(async (id) => ({
+				id,
+				sql: await readFile(new URL(id, dir), "utf8"),
+			})),
+	),
+);
+const differences = await db.check();
+
+console.log({ applied, differences });
+```
+
+- Each migration and its history record commit in one transaction, so a failing migration leaves nothing behind.
+- Concurrent runs wait on an advisory lock, so each migration applies once.
+- Editing or deleting an applied migration, or adding one that sorts before an applied migration, is an error.
+- Statements that cannot run in a transaction, such as `CREATE INDEX CONCURRENTLY`, are not supported.
+
+To build an index on a large production table without blocking writes:
+
+1. Run `CREATE INDEX CONCURRENTLY posts_author_published ON posts (author, published)` from a script.
+2. Confirm the index is valid and has the definition you expect. A failed concurrent build leaves an invalid index behind, which `IF NOT EXISTS` would skip. If it's invalid or different, drop it and run step 1 again.
+
+   ```sql
+   SELECT indisvalid, pg_get_indexdef(indexrelid)
+   FROM pg_index WHERE indexrelid = 'posts_author_published'::regclass;
+   ```
+
+3. Add a migration with `CREATE INDEX IF NOT EXISTS posts_author_published ON posts (author, published)`, using the same name and definition.
+
+New databases build the index in the migration, and the production database skips it.
+
+## Check
+
+`db.check()` is a basic compatibility check between the live database and your tables. It returns one line per difference without changing anything.
+
+```ts
+await db.check();
+// ["users.avatar: missing column (text NULL)"]
+```
+
+To change a table, edit its definition, run `check` to see what differs, and write a migration that resolves it. `check` reports:
+
+- Missing tables and columns
+- Column types that can't store the column's values
+- Nullability that differs from the schema
+- Columns in `default` the database doesn't supply
+- Other `NOT NULL` columns without a default, which inserts can't omit
+
+Domains count their `NOT NULL` constraints and defaults. Keys, constraints, indexes, and other columns are left to your migrations.
+
+`check` can't guarantee that every value your schemas accept fits the database: SQL ranges, lengths, enum values, and constraints can still reject it. Test those with your migrations and application queries.
+
+## Types
+
+Each column schema can be stored in several Postgres types, and `check` accepts any of them. Domains are compared as their base type.
+
+| Schema                          | Postgres                                                               |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| `Schema.string()`, string enums | `text`, `varchar`, `char`, `citext`, `uuid`, enum types                |
+| `Schema.number()`               | `double precision`, `integer`, `bigint`, `numeric`, `real`, `smallint` |
+| `Schema.bigint()`               | `bigint`, `numeric`                                                    |
+| `Schema.boolean()`              | `boolean`                                                              |
+| `Schema.date()`                 | `timestamptz`, `timestamp`, `date`                                     |
+| `Schema.object()`, `array()`    | `jsonb`, `json`                                                        |
+| `.nullable()`                   | allows `NULL`                                                          |
+
+Use `.nullable()` for `NULL` and the `default` option for columns the database supplies. Columns can't use `.optional()`, `.default()`, `.transform()`, `.json()`, or schemas without a column type. JSON array items that may be `undefined` must also accept `null`, because JSON stores `undefined` items as `null`.
+
+`bigint` and `numeric` values are converted to the schema's `bigint` or `number`, except integers beyond `Number.MAX_SAFE_INTEGER`, which fail validation instead of losing precision, including `numeric[]` items `pg` has already parsed as numbers. Dates inside JSON are converted from their ISO strings. JSON values are serialized when written through `values` and `set`, and `null` is stored as JSON `null` unless the column is `.nullable()`. Serialize JSON yourself when binding it in other queries.

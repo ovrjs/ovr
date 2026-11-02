@@ -2,14 +2,13 @@ import { Codec, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import { OriginIssue } from "./origin.js";
+import type { Storage } from "./storage.js";
 import { Token } from "./token.js";
 
 export namespace State {
 	/** Session persistence and signing configuration used by internal request state. */
-	export type Options = Pick<
-		Auth.Options,
-		"secret" | "origin" | "challenges" | "sessions" | "duration"
-	>;
+	export type Options = Pick<Auth.Options, "secret" | "origin" | "duration"> &
+		Pick<Storage, "challenges" | "sessions">;
 	/** Internal capabilities needed for request-local authentication state. */
 	export type Context = Pick<Auth.Context, "url" | "cookie" | "res">;
 }
