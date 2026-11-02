@@ -160,13 +160,12 @@ Use field schemas for format checks. Enforce uniqueness with database constraint
 
 ## Sessions
 
-Read the session before rendering a protected page:
+Require a session before rendering a protected page:
 
 ```tsx
 app.use(
 	Route.get("/account", async (c) => {
-		const session = await auth.session(c);
-		if (!session) return c.redirect("/login", 303);
+		const session = await auth.require(c);
 
 		const { Logout } = auth.forms(c);
 
@@ -180,7 +179,9 @@ app.use(
 );
 ```
 
-`auth.session(c)` returns `{ id, user, expiration }` or `null`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
+`auth.require(c)` returns the session, or redirects to your authentication `page` and ends the request, so the rest of the handler only runs for signed-in users. On pages that are public but change for signed-in users, `auth.session(c)` returns the session or `null`.
+
+A session is `{ id, user, expiration }`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 
 Sessions last seven days by default, without extending on each request. Each request checks the database, so revocation applies across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.
 

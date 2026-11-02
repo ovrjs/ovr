@@ -1968,6 +1968,16 @@ export namespace Form {
 		export type Map<S extends Shape = Shape> = Partial<
 			Record<ShapeUtil.Name<S>, Value>
 		>;
+
+		/**
+		 * Initial values by field name, for example a record being edited.
+		 * Values a field cannot render, such as dates and `null`, are skipped.
+		 *
+		 * @template S Shape type
+		 */
+		export type Initial<S extends Shape = Shape> = {
+			readonly [K in ShapeUtil.Name<S>]?: unknown;
+		};
 	}
 
 	/**
@@ -2025,22 +2035,48 @@ export namespace Form {
 			M extends object = {},
 		> = Schema.Parse.Result<
 			Data<S>,
-			{
-				/** Encoded URL search param field state */
-				readonly search: Result.Search;
-
-				/** Invalid parses do not expose remaining multipart parts */
-				readonly stream?: never;
-			} & M,
+			Result.Invalid<M>,
 			{
 				/** Rest of the multipart parts to stream */
 				readonly stream?: AsyncGenerator<Multipart.Part> | undefined;
+
+				/**
+				 * Create an invalid result for issues found after parsing, for
+				 * example a database constraint, keeping persisted values.
+				 *
+				 * @param messages Issue message by field name
+				 */
+				readonly invalid: (
+					messages: Messages<S>,
+				) => Schema.Parse.Invalid & Result.Invalid<M>;
 			}
 		>;
+
+		/**
+		 * Issue messages by field name.
+		 *
+		 * @template S Form shape
+		 */
+		export type Messages<S extends Shape> = {
+			readonly [K in ShapeUtil.Name<S>]?: string;
+		};
 
 		export namespace Result {
 			/** Form search params iterable */
 			export type Search = [[(typeof Form.params)[1], string]] | undefined;
+
+			/**
+			 * Invalid result metadata.
+			 *
+			 * @template M Extra invalid result metadata
+			 */
+			export type Invalid<M extends object = {}> = {
+				/** Encoded URL search param field state */
+				readonly search: Search;
+
+				/** Invalid parses do not expose remaining multipart parts */
+				readonly stream?: never;
+			} & M;
 		}
 	}
 }
@@ -2152,9 +2188,10 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 *
 	 * @param values Candidate values to keep
 	 * @param persist When `true`, only allow fields marked with `.persist()`
+	 * @param limit When `true`, drop values too long to keep in the URL
 	 * @returns Sanitized values
 	 */
-	#sanitize(values?: Record<string, unknown>, persist = true) {
+	#sanitize(values?: Record<string, unknown>, persist = true, limit = true) {
 		const sanitized: Form.Value.Map<Shape> = {};
 
 		if (values) {
@@ -2171,7 +2208,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 					if (
 						!result.issues &&
-						JSON.stringify(result.data).length <= Form.#maxValueChars
+						(!limit ||
+							JSON.stringify(result.data).length <= Form.#maxValueChars)
 					) {
 						sanitized[name as ShapeUtil.Name<Shape>] = result.data;
 					}
@@ -2183,11 +2221,30 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	}
 
 	/**
-	 * Decode form state from input.
+	 * Decode form state, over the initial values.
+	 *
+	 * @param stateInput Current page URL
+	 * @param initial Initial values, submitted values take precedence
+	 */
+	#decode(
+		stateInput?: URL,
+		initial?: Form.Value.Initial<Shape>,
+	): Form.State<Shape> | undefined {
+		const state = this.#restore(stateInput);
+		// initial values come from the server, not the URL, so no size limit
+		const values = this.#sanitize(initial, false, false);
+
+		if (!values) return state;
+
+		return { id: this.#id, ...state, values: { ...values, ...state?.values } };
+	}
+
+	/**
+	 * Restore form state from the URL.
 	 *
 	 * @param stateInput Current page URL
 	 */
-	#decode(stateInput?: URL): Form.State<Shape> | undefined {
+	#restore(stateInput?: URL): Form.State<Shape> | undefined {
 		if (stateInput) {
 			const values = this.#sanitize(
 				this.names.reduce<Record<string, unknown>>((data, name) => {
@@ -2253,6 +2310,56 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 			return values && { id: this.#id, values };
 		}
+	}
+
+	/**
+	 * Create an invalid result, encoding the issues and persisted values so the
+	 * next render can show them.
+	 *
+	 * @param issues Issues
+	 * @param values Submitted values, only persisted fields are kept
+	 * @returns Invalid result with its encoded search param
+	 */
+	#invalid(issues: Schema.Issue[], values: Record<string, unknown>) {
+		const result = new Schema.AggregateIssue(issues, this.#sanitize(values));
+		let search: Form.Parse.Result.Search;
+
+		if (result.values) {
+			// trim persisted values until the encoded state fits
+			for (let i = this.names.length; i >= 0; i--) {
+				// skip on the first time - try to encode everything first
+				if (i !== this.names.length) delete result.values[this.names[i]!];
+
+				const state = Codec.encode(
+					JSON.stringify({
+						issues: result.issues,
+						id: this.#id,
+						...(Object.keys(result.values).length
+							? { values: result.values }
+							: {}),
+					} satisfies Form.State),
+				);
+
+				if (state.byteLength <= Form.#maxStateBytes) {
+					search = [[Form.params[1], Codec.Base64Url.encode(state)]];
+					break;
+				}
+			}
+		} else {
+			// fall back to issues-only state when nothing persisted.
+			const state = Codec.encode(
+				JSON.stringify({
+					issues: result.issues,
+					id: this.#id,
+				} satisfies Form.State),
+			);
+
+			if (state.byteLength <= Form.#maxStateBytes) {
+				search = [[Form.params[1], Codec.Base64Url.encode(state)]];
+			}
+		}
+
+		return Object.assign(result, { search });
 	}
 
 	/**
@@ -2334,51 +2441,12 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					data[name] = result.data;
 				}
 
-				if (FieldSchema.persisted(field) && value != null) {
-					values[name] = value;
-				}
+				// a cleared field is recorded empty, so it overrides initial values
+				if (FieldSchema.persisted(field)) values[name] = value ?? "";
 			}
 		}
 
 		if (issues.length) {
-			const result = new Schema.AggregateIssue(issues, this.#sanitize(values));
-			let search: Form.Parse.Result.Search;
-
-			if (result.values) {
-				// trim persisted values until the encoded state fits
-				for (let i = this.names.length; i >= 0; i--) {
-					// skip on the first time - try to encode everything first
-					if (i !== this.names.length) delete result.values[this.names[i]!];
-
-					const state = Codec.encode(
-						JSON.stringify({
-							issues: result.issues,
-							id: this.#id,
-							...(Object.keys(result.values).length
-								? { values: result.values }
-								: {}),
-						} satisfies Form.State),
-					);
-
-					if (state.byteLength <= Form.#maxStateBytes) {
-						search = [[Form.params[1], Codec.Base64Url.encode(state)]];
-						break;
-					}
-				}
-			} else {
-				// fall back to issues-only state when nothing persisted.
-				const state = Codec.encode(
-					JSON.stringify({
-						issues: result.issues,
-						id: this.#id,
-					} satisfies Form.State),
-				);
-
-				if (state.byteLength <= Form.#maxStateBytes) {
-					search = [[Form.params[1], Codec.Base64Url.encode(state)]];
-				}
-			}
-
 			if (stream) {
 				// invalid result does not expose streamed parts, drain
 				try {
@@ -2386,10 +2454,22 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				} catch {}
 			}
 
-			return Object.assign(result, { search });
+			return this.#invalid(issues, values);
 		}
 
-		return { data: data as Form.Parse.Data<Shape>, stream };
+		return {
+			data: data as Form.Parse.Data<Shape>,
+			stream,
+			invalid: (messages: Form.Parse.Messages<Shape>) =>
+				this.#invalid(
+					Object.entries(messages).flatMap(([name, message]) =>
+						typeof message === "string"
+							? [new Schema.Issue("valid", [name], message)]
+							: [],
+					),
+					values,
+				),
+		};
 	};
 
 	/**
@@ -2402,10 +2482,15 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	Field = (props: Field.Component.Props<Shape>) =>
+	Field = ({
+		values,
+		...props
+	}: Field.Component.Props<Shape> & {
+		values?: Form.Value.Initial<Shape> | undefined;
+	}) =>
 		this.shape[props.name]!.render({
 			...props,
-			state: this.#decode(props.state),
+			state: this.#decode(props.state, values),
 		});
 
 	/**
@@ -2418,11 +2503,14 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * <User.Fields />
 	 * ```
 	 */
-	Fields = (
-		props: // partial because name is not required
-		Partial<Field.Component.Props<Shape>> = {},
-	) => {
-		const state = this.#decode(props.state); // pulled out to not call each map iteration
+	Fields = ({
+		values,
+		...props
+	}: // partial because name is not required
+	Partial<Field.Component.Props<Shape>> & {
+		values?: Form.Value.Initial<Shape> | undefined;
+	} = {}) => {
+		const state = this.#decode(props.state, values); // pulled out to not call each map iteration
 
 		return this.names.map((name) =>
 			this.shape[name]!.render({ ...props, name, state }),
@@ -2443,12 +2531,15 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * <Radio.Control />
 	 * ```
 	 */
-	component = <N extends ShapeUtil.Name<Shape>>(
-		props: { name: N } & Field.Component.Props<Shape>,
-	): Field.Component<Shape[N]> =>
+	component = <N extends ShapeUtil.Name<Shape>>({
+		values,
+		...props
+	}: { name: N } & Field.Component.Props<Shape> & {
+			values?: Form.Value.Initial<Shape> | undefined;
+		}): Field.Component<Shape[N]> =>
 		this.shape[props.name]!.component({
 			...props,
-			state: this.#decode(props.state),
+			state: this.#decode(props.state, values),
 		});
 
 	/**
@@ -3315,10 +3406,17 @@ export class Field {
 	): Field.Instance<number, "input", T> {
 		return new FieldSchema(
 			{ props },
-			Schema.number(Field.#required).preprocess((value) =>
+			Schema.number(Field.#required).preprocess((value) => {
 				// form submissions read numeric controls as strings
-				value == null || value === "" ? undefined : Number(value),
-			),
+				if (value == null || value === "") return undefined;
+
+				const number = Number(value);
+
+				// integers beyond 2^53 would be rounded, so they are left to fail validation
+				return Number.isInteger(number) && !Number.isSafeInteger(number)
+					? value
+					: number;
+			}),
 		);
 	}
 

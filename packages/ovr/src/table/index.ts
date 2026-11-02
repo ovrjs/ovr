@@ -186,6 +186,8 @@ export class Table<
 			case "nullable":
 				return [Table.#type(def.inner.def, column)[0], true];
 			case "check":
+			// form fields normalize their input, a stored value parses unchanged
+			case "preprocess":
 				return Table.#type(def.inner.def, column);
 			case "json":
 				throw new TypeError(

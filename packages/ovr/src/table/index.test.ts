@@ -1,4 +1,4 @@
-import { Schema } from "../schema/index.js";
+import { Field, Form, Schema } from "../schema/index.js";
 import { Table } from "./index.js";
 import { describe, expect, test } from "vitest";
 
@@ -174,5 +174,37 @@ describe("Table", () => {
 			new Table("t", { c: Schema.object({ d: Schema.string().optional() }) })
 				.columns.c.type,
 		).toBe("json");
+	});
+
+	test("form fields can be columns, so routes reuse their rules", async () => {
+		const posts = new Table("posts", {
+			title: Field.text().min(1),
+			views: Field.number(),
+			done: Field.checkbox(),
+			kind: Field.select(["note", "post"]),
+			body: Field.textarea().nullable(),
+		});
+
+		expect(
+			Object.values(posts.columns).map((c) => [c.name, c.type, c.nullable]),
+		).toEqual([
+			["title", "string", false],
+			["views", "number", false],
+			["done", "boolean", false],
+			["kind", "string", false],
+			["body", "string", true],
+		]);
+
+		// stored values parse unchanged
+		const row = { title: "Hi", views: 3, done: true, kind: "post", body: null };
+		expect(posts.parse(row).data).toEqual(row);
+
+		const { title, views } = posts.shape;
+		const data = new FormData();
+		data.set("title", "");
+		data.set("views", "4");
+		const result = await Form.from({ title, views }).parse(data);
+
+		expect(result.issues?.map((issue) => issue.path)).toEqual([["title"]]);
 	});
 });

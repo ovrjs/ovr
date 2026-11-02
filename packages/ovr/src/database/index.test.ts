@@ -1,4 +1,4 @@
-import { Schema } from "../schema/index.js";
+import { Field, Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
 import { Database } from "./index.js";
 import { PGlite } from "@electric-sql/pglite";
@@ -837,6 +837,17 @@ describe.each(drivers)("$name", (driver) => {
 			db.sql`SELECT '{"count":"1"}'::jsonb AS metadata`.parse(
 				Schema.object({ metadata: Schema.object({ count: Schema.number() }) }),
 			),
+		).rejects.toThrow(Schema.AggregateIssue);
+	});
+
+	test("numeric form columns reject database integers that would lose precision", async () => {
+		const table = new Table("other", { value: Field.number() });
+
+		expect(await db.sql`SELECT 42::bigint AS value`.parse(table)).toEqual([
+			{ value: 42 },
+		]);
+		await expect(
+			db.sql`SELECT 9007199254740993::bigint AS value`.parse(table),
 		).rejects.toThrow(Schema.AggregateIssue);
 	});
 

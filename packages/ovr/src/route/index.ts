@@ -197,7 +197,12 @@ export namespace Route {
 	 */
 	export type Form<Pattern extends string> = (
 		props: JSX.IntrinsicElements["form"] &
-			URLOptions<ExtractParams<Pattern>> & { state?: URL | undefined },
+			URLOptions<ExtractParams<Pattern>> & {
+				/** Current page URL, restores the state of an invalid submission */
+				state?: URL | undefined;
+				/** Initial field values, for example the record being edited */
+				values?: Readonly<Record<string, unknown>> | undefined;
+			},
 	) => JSX.Element;
 
 	/**
@@ -320,7 +325,7 @@ export class Route<Pattern extends string = string> {
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: (({ params, search, hash, state, ...rest }) => {
+			Form: (({ params, search, hash, state, values: _, ...rest }) => {
 				let query: URLSearchParams | undefined;
 
 				if (route.method === Method.post && state) {
@@ -372,11 +377,11 @@ export class Route<Pattern extends string = string> {
 		const { Form } = route;
 
 		return Object.assign(route, schema, {
-			Form: (({ state, ...rest }) =>
+			Form: (({ state, values, ...rest }) =>
 				Form({
 					// add in the default children (Fields) with state and submit button
 					children: [
-						schema.Fields({ state }),
+						schema.Fields({ state, values }),
 						jsx("button", { children: "Submit" }),
 					],
 					state,

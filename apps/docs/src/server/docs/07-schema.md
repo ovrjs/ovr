@@ -105,12 +105,46 @@ The `state` prop for each component takes the current page `c.url`. The URL cont
 
 > If you want to reuse the schema outside of a route, create it with `Form.from(shape)` and pass the resulting form into `Route.get` or `Route.post`.
 
+### Edit a record
+
+Pass `values` to fill the fields with a record's current values. Values restored from an invalid submission take precedence, and values a field can't render, such as dates and `null`, are skipped. `Fields`, `Field`, and `component` accept `values` too.
+
+```tsx
+const update = Route.post("/posts/:id", fields, handler);
+
+const edit = Route.get("/posts/:id/edit", async (c) => {
+	const post = await find(c.params.id);
+
+	return <update.Form params={{ id: post.id }} values={post} state={c.url} />;
+});
+```
+
+### Errors after parsing
+
+Some issues are only found after the data is valid, for example when a database constraint rejects a duplicate email. `result.invalid` puts messages on fields and returns an invalid result with the same `url` as a failed parse, keeping persisted values.
+
+```tsx
+const signup = Route.post({ email: Field.email().persist() }, async (c) => {
+	const result = await c.data();
+	if (result.issues) return c.redirect(result.url, 303);
+
+	const [user] = await db.sql`
+		INSERT INTO ${db.users} ${db.sql.values(db.users, result.data)}
+		ON CONFLICT (email) DO NOTHING RETURNING *
+	`.parse(db.users);
+	if (!user)
+		return c.redirect(result.invalid({ email: "Already registered" }).url, 303);
+
+	// ...
+});
+```
+
 ## Input normalization
 
 ovr also normalizes a few common HTML form quirks before validation:
 
 - Single-value text-like inputs read blank values as missing during form parsing, so optional fields are omitted from the parsed output and `.default(...)` still applies like you would expect.
-- `Field.number()` and `Field.range()` coerce submitted strings into numbers, while blank submissions still count as missing instead of becoming `0`.
+- `Field.number()` and `Field.range()` coerce submitted strings into numbers, while blank submissions still count as missing instead of becoming `0`. Integers beyond `Number.MAX_SAFE_INTEGER` fail validation instead of being rounded.
 - `Field.checkbox()` reads presence as a boolean, so omitted checkboxes become `false`.
 - `Field.file()` and `Field.files()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.
 

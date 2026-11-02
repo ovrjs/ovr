@@ -1392,6 +1392,33 @@ test("automatic policies ignore cookie rotation, isolate clients, and leave logo
 	}
 });
 
+test("require returns the session, or redirects to the page and ends the request", async () => {
+	const state = managed();
+	const after = vi.fn();
+	state.app.use(
+		Route.get("/private", async (c) => {
+			const session = await state.service.require(c);
+			after();
+			return c.json(session);
+		}),
+	);
+
+	const anonymous = await state.app.fetch(origin + "/private");
+	expect(anonymous.status).toBe(303);
+	expect(anonymous.headers.get("location")).toBe("/login");
+	expect(anonymous.headers.get("cache-control")).toBe("no-store");
+	expect(after).not.toHaveBeenCalled();
+
+	const login = await state.storage.post("/session", new FormData());
+	const session: Auth.Session = await login.json();
+	const signed = await state.app.fetch(origin + "/private", {
+		headers: { cookie: login.headers.getSetCookie().at(-1)!.split(";")[0]! },
+	});
+	expect(signed.status).toBe(200);
+	expect(await signed.json()).toEqual(session);
+	expect(after).toHaveBeenCalledOnce();
+});
+
 test("auth requires a database at startup", () => {
 	const storage = setup();
 	expect(

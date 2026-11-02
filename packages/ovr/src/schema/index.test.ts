@@ -907,7 +907,7 @@ describe("Form schema", () => {
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
-	test("blank opted-in text values are omitted from invalid state", async () => {
+	test("blank opted-in text values are kept empty in invalid state, overriding initial values", async () => {
 		const form = Form.from({
 			name: Field.text().persist().min(2),
 			role: Field.radio(["reader", "admin"]).persist(),
@@ -920,7 +920,7 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const state = decodeState(result.search);
 
-		expect(state.values?.name).toBeUndefined();
+		expect(state.values?.name).toBe("");
 		expect(state.values?.role).toBe("owner");
 	});
 

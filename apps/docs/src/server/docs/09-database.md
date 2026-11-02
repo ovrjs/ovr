@@ -58,6 +58,24 @@ type User = Schema.Infer<typeof db.users>;
 // { id: string; email: string; name: string | null; created: Date }
 ```
 
+Columns can be [form fields](/07-schema#post-forms), so routes reuse the table's rules instead of repeating them:
+
+```ts
+const posts = new Table(
+	"posts",
+	{
+		id: Schema.string().uuid(),
+		author: Schema.string().uuid(),
+		title: Field.text().min(1).max(200),
+		body: Field.textarea(),
+	},
+	{ default: ["id"] },
+);
+
+const { title, body } = posts.shape;
+const create = Route.post("/posts", { title, body }, handler);
+```
+
 ## Connect
 
 `Database` accepts an application-owned, pg-compatible pool such as [`pg`](https://node-postgres.com/). ovr has no driver dependency and never ends the pool. `allowExitOnIdle` lets scripts exit when they finish.

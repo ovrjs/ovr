@@ -1,4 +1,4 @@
-import type { Context as ContextType } from "../context/index.js";
+import { type Context as ContextType, Halt } from "../context/index.js";
 import type { Database } from "../database/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
@@ -121,6 +121,7 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	] as const;
 
 	readonly #options: State.Options;
+	readonly #page: string;
 	readonly #states = new WeakMap<object, State>();
 
 	/** Generated endpoints; App mounts them automatically. */
@@ -170,6 +171,7 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 			challenges: storage.challenges,
 			sessions: storage.sessions,
 		};
+		this.#page = options.page ?? "/login";
 		const service = configure(options, storage, (c) => this.#state(c));
 		this.routes = service.routes;
 		this.forms = service.forms;
@@ -190,6 +192,25 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	/** Read a session in the handler before returning streamed JSX. Does not extend its lifetime. */
 	session(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
 		return this.#state(c).session();
+	}
+
+	/**
+	 * Read the session of a protected page, or redirect to the authentication
+	 * page and end the request. Call it in the handler before returning JSX.
+	 *
+	 * ```ts
+	 * const session = await auth.require(c);
+	 * ```
+	 */
+	async require(
+		c: Pick<ContextType, "url" | "cookie" | "res" | "redirect">,
+	): Promise<Auth.Session> {
+		const session = await this.session(c);
+
+		if (session) return session;
+
+		c.redirect(this.#page, 303);
+		throw new Halt("Authentication required");
 	}
 
 	/** Establish a session for an already-authorized user with a non-blank ID of at most 1024 UTF-8 bytes. Built-in passkey handlers do this automatically. */

@@ -10,6 +10,12 @@ import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
 /** Properties to build the final `Response` with once middleware has run. */
+/**
+ * Internal signal that the response is prepared and the request should end,
+ * caught where the middleware threw it.
+ */
+export class Halt extends Error {}
+
 class PreparedResponse {
 	/**
 	 * `body` used to create the `Response`.
@@ -240,8 +246,10 @@ export class Context<
 					: this.url.searchParams,
 			);
 
-			if (result.issues) {
-				// create encoded URL state with invalid fields
+			/** Add the URL to return to with the encoded invalid state. */
+			const invalid = <R extends { search: FormSchema.Parse.Result.Search }>(
+				result: R,
+			) => {
 				let url = new URL(this.url);
 
 				if (post) {
@@ -262,10 +270,17 @@ export class Context<
 
 				if (result.search) url.searchParams.set(...result.search[0]);
 
-				return Object.assign(result, { url }) as Context.Result<Shape>;
-			}
+				return Object.assign(result, { url });
+			};
 
-			return result as Context.Result<Shape>;
+			if (result.issues) return invalid(result) as Context.Result<Shape>;
+
+			const create = result.invalid;
+
+			return Object.assign(result, {
+				invalid: (messages: FormSchema.Parse.Messages<FormSchema.Shape>) =>
+					invalid(create(messages)),
+			}) as Context.Result<Shape>;
 		})());
 	}
 
@@ -285,6 +300,7 @@ export class Context<
 		try {
 			r = await mw(this, () => this.#run(middleware, i + 1));
 		} catch (error) {
+			if (error instanceof Halt) return;
 			if (!(error instanceof OriginIssue)) throw error;
 			this.res.headers.set("cache-control", "no-store");
 			this.text("Misdirected Request", 421);

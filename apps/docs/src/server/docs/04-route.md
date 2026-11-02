@@ -28,6 +28,19 @@ new Route("GET", "/api/:id", (c) => {
 });
 ```
 
+Parameters are strings from the URL. Check them with a [schema](/07-schema) before using them, for example before a query, and respond with a 404 when one is invalid:
+
+```ts
+import { Route, Schema } from "ovr";
+
+const post = Route.get("/posts/:id", async (c) => {
+	if (Schema.string().uuid().parse(c.params.id).issues)
+		return c.text("Not Found", 404);
+
+	// c.params.id is a uuid
+});
+```
+
 ## Wildcard
 
 Use an asterisk `*` to match all remaining segments in the route.

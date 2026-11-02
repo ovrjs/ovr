@@ -559,3 +559,138 @@ describe("Route schema helpers", () => {
 		expect(await res.text()).toBe("ok");
 	});
 });
+
+describe("editing records", () => {
+	const fields = {
+		title: Field.text(),
+		body: Field.textarea(),
+		done: Field.checkbox(),
+		file: Field.file(),
+	};
+
+	test("Form renders initial values, and a failed submission takes precedence", async () => {
+		const update = Route.post("/posts/:id", fields, (c) => c.text("ok"));
+		const post = {
+			id: "1",
+			title: "Draft",
+			body: "Text",
+			done: true,
+			created: new Date(),
+			file: "not a file",
+			note: null,
+		};
+		const html = await new Render(null).string(
+			update.Form({ params: { id: "1" }, values: post }),
+		);
+
+		expect(html).toContain('value="Draft"');
+		expect(html).toContain(">Text</textarea>");
+		expect(html).toContain("checked");
+		expect(html).not.toContain("values=");
+		expect(html).not.toContain("not a file");
+
+		// submitted values restored from the URL override the record
+		const state = new URL("http://localhost:5173/posts/1?title=Typed");
+		const restored = await new Render(null).string(
+			update.Form({ params: { id: "1" }, values: post, state }),
+		);
+
+		expect(restored).toContain('value="Typed"');
+		expect(restored).toContain(">Text</textarea>");
+	});
+
+	test("Field and component accept initial values too", async () => {
+		const form = Form.from(fields);
+		const html = await new Render(null).string([
+			form.Field({ name: "title", values: { title: "One" } }),
+			form.component({ name: "body", values: { body: "Two" } }).Control(),
+		]);
+
+		expect(html).toContain('value="One"');
+		expect(html).toContain(">Two</textarea>");
+	});
+
+	test("initial record values are not limited by the URL persistence budget", async () => {
+		const update = Route.post("/posts/:id", { body: Field.textarea() }, (c) =>
+			c.text("ok"),
+		);
+		const body = "Article text. ".repeat(100);
+		const html = await new Render(null).string(
+			update.Form({ params: { id: "1" }, values: { body } }),
+		);
+
+		expect(html).toContain(`>${body}</textarea>`);
+	});
+
+	test.each(["parse", "database"])(
+		"cleared persisted fields override initial values after a %s error",
+		async (failure) => {
+			const form = Form.from({
+				title: Field.text().optional().persist(),
+				tags: Field.multiselect(["a", "b"]).optional().persist(),
+				email: Field.email().persist(),
+			});
+			const input = new FormData();
+			input.set("title", "");
+			input.set("email", failure === "parse" ? "invalid" : "taken@example.com");
+			const parsed = await form.parse(input);
+			const result = parsed.issues
+				? parsed
+				: parsed.invalid({ email: "Already registered" });
+			const state = new URL("https://example.com/edit");
+			for (const pair of result.search ?? []) state.searchParams.set(...pair);
+			const html = await new Render(null).string(
+				form.Fields({ state, values: { title: "Old title", tags: ["a"] } }),
+			);
+
+			expect(html).not.toContain('value="Old title"');
+			expect(html).not.toContain("selected");
+		},
+	);
+});
+
+describe("invalid after parsing", () => {
+	test("puts issues on fields and keeps persisted values", async () => {
+		const page = Route.get("/signup", (c) => signup.Form({ state: c.url }));
+		const signup = Route.post(
+			"/signup",
+			{ email: Field.email().persist(), name: Field.text() },
+			async (c) => {
+				const result = await c.data();
+
+				if (result.issues) return c.redirect(result.url, 303);
+
+				// for example, a unique constraint rejected the insert
+				return c.redirect(
+					result.invalid({ email: "Already registered" }).url,
+					303,
+				);
+			},
+		);
+		const app = new App().use(page, signup);
+		const data = new FormData();
+
+		data.set("email", "taken@example.com");
+		data.set("name", "Ross");
+
+		const res = await app.fetch(
+			new Request("http://localhost:5173/signup?_return=%2Fsignup", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+		const location = new URL(res.headers.get("location")!);
+
+		expect(res.status).toBe(303);
+		expect(location.pathname).toBe("/signup");
+
+		const html = await (await app.fetch(location)).text();
+
+		expect(html).toContain("Already registered");
+		expect(html).toContain('value="taken@example.com"');
+		expect(html).toContain('aria-invalid="true"');
+		// name is not persisted
+		expect(html).not.toContain("Ross");
+	});
+});

@@ -1,0 +1,7 @@
+---
+"ovr": minor
+---
+
+Route forms and fields accept `values` to edit a record, under any values restored from an invalid submission. Valid `c.data()` results add `invalid(messages)` to put issues found after parsing, such as a database constraint, on fields.
+
+`Field.number()` and `Field.range()` reject integers beyond `Number.MAX_SAFE_INTEGER` instead of rounding them. Cleared persisted fields are kept empty in invalid form state, so they stay cleared over initial values.
