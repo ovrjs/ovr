@@ -77,7 +77,7 @@ export const signup = Route.post({ name: Field.text().min(2) }, async (c) => {
 export const page = Route.get("/signup", (c) => <signup.Form state={c.url} />);
 ```
 
-`signup.Form` renders the `<form>` _and_ the fields inside by default.
+`signup.Form` renders the `<form>` _and_ the fields inside by default. The button is labelled "Submit"; pass `submit` to change it, for example `<signup.Form submit="Sign up" />`.
 
 ```html
 <form

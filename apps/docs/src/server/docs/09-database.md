@@ -136,6 +136,20 @@ await db.sql`
 
 Column references are qualified with their table name, so write aliased columns like `p.title` directly. A function that returns a query from an `async` function runs it, because awaiting resolves the query.
 
+### Constraint errors
+
+A unique constraint is the reliable way to prevent duplicates. `INSERT … ON CONFLICT DO NOTHING RETURNING *` returns no row for a duplicate; for an `UPDATE`, catch the error and check it with `Database.unique`, optionally naming the constraint so other failures still throw:
+
+```ts
+try {
+	await db.sql`UPDATE ${db.posts} SET ${db.sql.set(db.posts, result.data)} WHERE ...`;
+} catch (error) {
+	if (Database.unique(error, "posts_author_title_key"))
+		return c.redirect(result.invalid({ title: "Already used" }).url, 303);
+	throw error;
+}
+```
+
 ## Transact
 
 `db.transaction()` checks out one connection, commits when the callback resolves, and rolls back when it throws. The connection is always released.

@@ -26,9 +26,7 @@ const db = new Database(
 	},
 	[Limiter.table],
 );
-await engine.exec(
-	"CREATE TABLE ovr_limits (key text PRIMARY KEY, tokens double precision NOT NULL, time bigint NOT NULL, expiration bigint NOT NULL)",
-);
+await engine.exec(Limiter.sql[1]);
 
 /** Database whose queries fail, as when Postgres is unavailable. */
 const broken = (failure: Error) =>

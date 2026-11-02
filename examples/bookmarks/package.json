@@ -1,0 +1,16 @@
+{
+	"name": "@ovrjs/example-bookmarks",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"check": "tsc"
+	},
+	"dependencies": {
+		"ovr": "*",
+		"pg": "^8.23.1"
+	},
+	"devDependencies": {
+		"@types/node": "^26.1.2",
+		"@types/pg": "^8.23.1"
+	}
+}

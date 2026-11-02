@@ -38,6 +38,26 @@ export class LimitIssue extends Error {}
 
 /** Token buckets stored in Postgres, usable by authentication and ordinary route middleware. */
 export class Limiter {
+	/**
+	 * Migration SQL creating `Limiter.table`, by version. A version never
+	 * changes, so its checksum stays valid; later changes ship as new versions.
+	 * `Auth.sql` already includes it.
+	 *
+	 * ```ts
+	 * await db.migrate([{ id: "0002_limits", sql: Limiter.sql[1] }, ...]);
+	 * ```
+	 */
+	static readonly sql = {
+		1: `CREATE TABLE ovr_limits (
+	key text PRIMARY KEY,
+	tokens double precision NOT NULL,
+	time bigint NOT NULL,
+	expiration bigint NOT NULL
+);
+CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
+`,
+	} as const;
+
 	/** Token buckets shared by every limiter, include it in the database's tables. */
 	static readonly table = new Table("ovr_limits", {
 		key: Schema.string(),

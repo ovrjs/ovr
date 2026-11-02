@@ -1,0 +1,15 @@
+{
+	"extends": "@robino/tsconfig/check.json",
+	"compilerOptions": {
+		"rootDir": "../..",
+		"strict": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "ovr",
+		"types": ["node"],
+		"paths": {
+			"ovr": ["../../packages/ovr/src/index.ts"],
+			"ovr/jsx-runtime": ["../../packages/ovr/src/jsx-runtime.ts"]
+		}
+	},
+	"include": ["./*.ts", "./*.tsx"]
+}

@@ -14,7 +14,7 @@ import { App, Auth, Database, Field, Schema, Table } from "ovr";
 import { Pool } from "pg";
 
 const users = new Table("users", {
-	id: Schema.string().uuid(),
+	id: Schema.string(),
 	email: Schema.string().email(),
 });
 
@@ -208,49 +208,16 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. Add them to your database with a migration; [`db.check()`](/09-database#check) reports any that are missing or different.
+`Auth.tables` are the tables Auth stores its data in. `Auth.sql[1]` is the SQL that creates them: add it to your migrations, under an ID you choose, so it runs in your order. [`db.check()`](/09-database#check) reports any table that is missing or different.
 
-```sql
--- migrations/0002_auth.sql
-CREATE TABLE ovr_credentials (
-	id text PRIMARY KEY,
-	"user" uuid NOT NULL REFERENCES users ON DELETE CASCADE,
-	"publicKey" text NOT NULL,
-	counter bigint NOT NULL,
-	eligible boolean NOT NULL,
-	"backedUp" boolean NOT NULL
-);
-CREATE INDEX ovr_credentials_user ON ovr_credentials ("user");
-
-CREATE TABLE ovr_sessions (
-	id text PRIMARY KEY,
-	"user" uuid NOT NULL REFERENCES users ON DELETE CASCADE,
-	expiration bigint NOT NULL
-);
-CREATE INDEX ovr_sessions_expiration ON ovr_sessions (expiration);
-
-CREATE TABLE ovr_challenges (
-	id text PRIMARY KEY,
-	challenge text NOT NULL,
-	browser text NOT NULL,
-	method text NOT NULL,
-	action text NOT NULL,
-	origin text NOT NULL,
-	expiration bigint NOT NULL,
-	"user" text,
-	fields text
-);
-CREATE INDEX ovr_challenges_expiration ON ovr_challenges (expiration);
-CREATE INDEX ovr_challenges_browser ON ovr_challenges (browser, expiration);
-
-CREATE TABLE ovr_limits (
-	key text PRIMARY KEY,
-	tokens double precision NOT NULL,
-	time bigint NOT NULL,
-	expiration bigint NOT NULL
-);
-CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
+```ts
+await db.migrate([
+	...files, // your migrations/*.sql
+	{ id: "0002_auth", sql: Auth.sql[1] },
+]);
 ```
+
+A version's SQL never changes, so its checksum stays valid. If a later ovr release changes the tables, it ships the change as `Auth.sql[2]` for you to add as a new migration.
 
 | Table             | Contents                                                      |
 | ----------------- | ------------------------------------------------------------- |
@@ -259,7 +226,15 @@ CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
 | `ovr_challenges`  | Outstanding ceremonies, each used once                        |
 | `ovr_limits`      | [Rate limit](/05-middleware#rate-limiting) buckets            |
 
-User IDs are random UUIDs. The references to your `users` table are optional; with them, deleting an account removes its passkeys and sessions. The tables are available on your database by name, for example to list an account's passkeys:
+Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. To delete an account's passkeys and sessions with it, give your `users` table a `text` ID and reference it in your own migration:
+
+```sql
+-- migrations/0003_auth_users.sql
+ALTER TABLE ovr_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+ALTER TABLE ovr_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+```
+
+The tables are available on your database by name, for example to list an account's passkeys:
 
 ```ts
 const passkeys = await db.sql`

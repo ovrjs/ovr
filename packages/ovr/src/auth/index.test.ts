@@ -218,30 +218,10 @@ const db = new Database(
 	},
 	[users, ...Auth.tables],
 );
-await engine.exec(`
-	CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);
-	CREATE TABLE ovr_credentials (
-		id text PRIMARY KEY,
-		"user" text NOT NULL,
-		"publicKey" text NOT NULL,
-		counter bigint NOT NULL,
-		eligible boolean NOT NULL,
-		"backedUp" boolean NOT NULL
-	);
-	CREATE TABLE ovr_sessions (id text PRIMARY KEY, "user" text NOT NULL, expiration bigint NOT NULL);
-	CREATE TABLE ovr_challenges (
-		id text PRIMARY KEY,
-		challenge text NOT NULL,
-		browser text NOT NULL,
-		method text NOT NULL,
-		action text NOT NULL,
-		origin text NOT NULL,
-		expiration bigint NOT NULL,
-		"user" text,
-		fields text
-	);
-	CREATE TABLE ovr_limits (key text PRIMARY KEY, tokens double precision NOT NULL, time bigint NOT NULL, expiration bigint NOT NULL);
-`);
+// the shipped migration, so these tests cover it too
+await engine.exec(
+	`CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);\n${Auth.sql[1]}`,
+);
 const storage = Storage.of(db);
 
 beforeEach(() =>
@@ -2343,6 +2323,30 @@ test("registration guard admission precedes parsing and rejects oversized bodies
 	);
 	expect(check).toHaveBeenCalledTimes(2);
 	expect(await storage.size(db.ovr_challenges)).toBe(0);
+});
+
+/** Checksums of the shipped migrations: never update them, add a new version instead. */
+const checksums = {
+	auth: "a4d5f0d1412b317cec0679a8b5400c5114354b6f3bf464630991a92e6bfc79e4",
+	limiter: "4cd3ada37ed2f7208ddbf1728780c485de42a5424f126772582c165e54022f1a",
+};
+
+describe("migration SQL", () => {
+	test("creates the tables Auth uses", async () => {
+		expect(await db.check()).toEqual([]);
+	});
+
+	// an applied migration's checksum must never change, new SQL ships as a new version
+	test.each([
+		["Auth.sql[1]", Auth.sql[1], checksums.auth],
+		["Limiter.sql[1]", Limiter.sql[1], checksums.limiter],
+	])("%s never changes", async (_, sql, checksum) => {
+		expect(
+			new Uint8Array(
+				await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sql)),
+			).toHex(),
+		).toBe(checksum);
+	});
 });
 
 describe("Postgres storage", () => {

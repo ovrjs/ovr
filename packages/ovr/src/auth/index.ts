@@ -112,6 +112,51 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	/** Validation issue shared by authentication and passkey verification. */
 	static readonly Issue = Issue;
 
+	/**
+	 * Migration SQL creating `Auth.tables`, by version. A version never
+	 * changes, so its checksum stays valid; later changes ship as new versions.
+	 * User IDs are text, so they hold any ID `auth.login` accepts.
+	 *
+	 * ```ts
+	 * await db.migrate([{ id: "0002_auth", sql: Auth.sql[1] }, ...]);
+	 * ```
+	 */
+	static readonly sql = {
+		1: `CREATE TABLE ovr_credentials (
+	id text PRIMARY KEY,
+	"user" text NOT NULL,
+	"publicKey" text NOT NULL,
+	counter bigint NOT NULL,
+	eligible boolean NOT NULL,
+	"backedUp" boolean NOT NULL
+);
+CREATE INDEX ovr_credentials_user ON ovr_credentials ("user");
+
+CREATE TABLE ovr_sessions (
+	id text PRIMARY KEY,
+	"user" text NOT NULL,
+	expiration bigint NOT NULL
+);
+CREATE INDEX ovr_sessions_user ON ovr_sessions ("user");
+CREATE INDEX ovr_sessions_expiration ON ovr_sessions (expiration);
+
+CREATE TABLE ovr_challenges (
+	id text PRIMARY KEY,
+	challenge text NOT NULL,
+	browser text NOT NULL,
+	method text NOT NULL,
+	action text NOT NULL,
+	origin text NOT NULL,
+	expiration bigint NOT NULL,
+	"user" text,
+	fields text
+);
+CREATE INDEX ovr_challenges_expiration ON ovr_challenges (expiration);
+CREATE INDEX ovr_challenges_browser ON ovr_challenges (browser, expiration);
+
+${Limiter.sql[1]}`,
+	} as const;
+
 	/** Tables Auth stores its data in, include them in the database's tables. */
 	static readonly tables = [
 		Storage.credentials,

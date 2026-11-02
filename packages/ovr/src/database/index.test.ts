@@ -851,6 +851,31 @@ describe.each(drivers)("$name", (driver) => {
 		).rejects.toThrow(Schema.AggregateIssue);
 	});
 
+	test.skipIf(!driver.errors)(
+		"recognizes unique violations by constraint",
+		async () => {
+			await pool.query(
+				"DROP TABLE IF EXISTS other; CREATE TABLE other (a int CONSTRAINT other_a UNIQUE, b int)",
+			);
+			await db.sql`INSERT INTO other (a) VALUES (${1})`;
+			const error = await db.sql`INSERT INTO other (a) VALUES (${1})`.catch(
+				(error: unknown) => error,
+			);
+
+			expect(Database.unique(error)).toBe(true);
+			expect(Database.unique(error, "other_a")).toBe(true);
+			expect(Database.unique(error, "users_email_key")).toBe(false);
+
+			const other =
+				await db.sql`INSERT INTO other (a, b) VALUES (${2}, ${"x"})`.catch(
+					(error: unknown) => error,
+				);
+			expect(Database.unique(other)).toBe(false);
+			expect(Database.unique(new Error("x"))).toBe(false);
+			expect(Database.unique({ code: "23505" })).toBe(false);
+		},
+	);
+
 	test("check reports differences", async () => {
 		await pool.query(`
 			CREATE TABLE users (

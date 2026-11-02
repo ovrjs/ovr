@@ -7,51 +7,19 @@ export const users = new Table("users", {
 	email: Schema.string().email(),
 });
 
-/** Migrations an application keeps as SQL files. */
+/** Migrations an application keeps as SQL files, with ovr's Auth tables in its order. */
 export const migrations: Database.Migration[] = [
 	{
-		id: "0001_auth",
+		id: "0001_users",
+		// text, like Auth's user IDs, so Auth's tables can reference it
+		sql: "CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);",
+	},
+	{ id: "0002_auth", sql: Auth.sql[1] },
+	{
+		id: "0003_auth_users",
 		sql: `
-			CREATE TABLE users (id uuid PRIMARY KEY, email text NOT NULL);
-
-			CREATE TABLE ovr_credentials (
-				id text PRIMARY KEY,
-				"user" uuid NOT NULL REFERENCES users ON DELETE CASCADE,
-				"publicKey" text NOT NULL,
-				counter bigint NOT NULL,
-				eligible boolean NOT NULL,
-				"backedUp" boolean NOT NULL
-			);
-			CREATE INDEX ovr_credentials_user ON ovr_credentials ("user");
-
-			CREATE TABLE ovr_sessions (
-				id text PRIMARY KEY,
-				"user" uuid NOT NULL REFERENCES users ON DELETE CASCADE,
-				expiration bigint NOT NULL
-			);
-			CREATE INDEX ovr_sessions_expiration ON ovr_sessions (expiration);
-
-			CREATE TABLE ovr_challenges (
-				id text PRIMARY KEY,
-				challenge text NOT NULL,
-				browser text NOT NULL,
-				method text NOT NULL,
-				action text NOT NULL,
-				origin text NOT NULL,
-				expiration bigint NOT NULL,
-				"user" text,
-				fields text
-			);
-			CREATE INDEX ovr_challenges_expiration ON ovr_challenges (expiration);
-			CREATE INDEX ovr_challenges_browser ON ovr_challenges (browser, expiration);
-
-			CREATE TABLE ovr_limits (
-				key text PRIMARY KEY,
-				tokens double precision NOT NULL,
-				time bigint NOT NULL,
-				expiration bigint NOT NULL
-			);
-			CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
+			ALTER TABLE ovr_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+			ALTER TABLE ovr_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 		`,
 	},
 ];

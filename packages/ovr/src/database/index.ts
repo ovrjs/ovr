@@ -932,6 +932,33 @@ class Base<T extends readonly Table.Any[]> {
 			},
 		) as Database.Tag;
 	}
+
+	/**
+	 * Check whether an error is a unique constraint violation, for example to
+	 * show it as a form error.
+	 *
+	 * ```ts
+	 * if (Database.unique(error, "users_email_key"))
+	 * 	return c.redirect(result.invalid({ email: "Already registered" }).url, 303);
+	 * ```
+	 *
+	 * @param error Caught error
+	 * @param constraint Constraint name, any unique constraint when omitted
+	 * @returns `true` for a matching unique violation
+	 */
+	static unique(error: unknown, constraint?: string) {
+		if (!(error instanceof Error)) return false;
+
+		const { code, constraint: name } = error as {
+			code?: unknown;
+			constraint?: unknown;
+		};
+
+		// SQLSTATE unique_violation
+		return (
+			code === "23505" && (constraint === undefined || name === constraint)
+		);
+	}
 }
 
 /**
@@ -944,10 +971,11 @@ class Base<T extends readonly Table.Any[]> {
  * const rows = await db.sql`SELECT * FROM ${db.users}`.parse(db.users);
  * ```
  */
-export const Database = Base as new <const T extends readonly Table.Any[]>(
-	pool: Database.Pool,
-	tables: T & Database.Valid<T>,
-) => Database<T>;
+export const Database = Base as Omit<typeof Base, "prototype"> &
+	(new <const T extends readonly Table.Any[]>(
+		pool: Database.Pool,
+		tables: T & Database.Valid<T>,
+	) => Database<T>);
 
 /** Postgres database with its tables accessible by name. */
 export type Database<T extends readonly Table.Any[] = readonly Table.Any[]> =

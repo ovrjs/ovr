@@ -599,6 +599,18 @@ describe("editing records", () => {
 		expect(restored).toContain(">Text</textarea>");
 	});
 
+	test("Form labels its submit button", async () => {
+		const update = Route.post("/posts/:id", fields, (c) => c.text("ok"));
+		const html = await new Render(null).string([
+			update.Form({ params: { id: "1" }, submit: "Save changes" }),
+			update.Form({ params: { id: "1" } }),
+		]);
+
+		expect(html).toContain("<button>Save changes</button>");
+		expect(html).toContain("<button>Submit</button>");
+		expect(html).not.toContain("submit=");
+	});
+
 	test("Field and component accept initial values too", async () => {
 		const form = Form.from(fields);
 		const html = await new Render(null).string([

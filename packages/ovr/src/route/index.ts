@@ -202,6 +202,8 @@ export namespace Route {
 				state?: URL | undefined;
 				/** Initial field values, for example the record being edited */
 				values?: Readonly<Record<string, unknown>> | undefined;
+				/** Label of the generated submit button, defaults to "Submit" */
+				submit?: JSX.Element | undefined;
 			},
 	) => JSX.Element;
 
@@ -325,7 +327,15 @@ export class Route<Pattern extends string = string> {
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: (({ params, search, hash, state, values: _, ...rest }) => {
+			Form: (({
+				params,
+				search,
+				hash,
+				state,
+				values: _,
+				submit: __,
+				...rest
+			}) => {
 				let query: URLSearchParams | undefined;
 
 				if (route.method === Method.post && state) {
@@ -377,12 +387,12 @@ export class Route<Pattern extends string = string> {
 		const { Form } = route;
 
 		return Object.assign(route, schema, {
-			Form: (({ state, values, ...rest }) =>
+			Form: (({ state, values, submit = "Submit", ...rest }) =>
 				Form({
 					// add in the default children (Fields) with state and submit button
 					children: [
 						schema.Fields({ state, values }),
-						jsx("button", { children: "Submit" }),
+						jsx("button", { children: submit }),
 					],
 					state,
 					...rest,
