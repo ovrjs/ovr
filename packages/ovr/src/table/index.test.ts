@@ -122,6 +122,30 @@ describe("Table", () => {
 		expect(() => new Table("", { a: Schema.string() })).toThrow(TypeError);
 	});
 
+	test("rejects nested bigint schemas that the JSON codec cannot store", () => {
+		expect(
+			() =>
+				new Table("entries", {
+					metadata: Schema.object({ id: Schema.bigint() }),
+				}),
+		).toThrow(TypeError);
+	});
+
+	test("rejects bigint array items that the JSON codec cannot store", () => {
+		expect(
+			() => new Table("entries", { ids: Schema.array(Schema.bigint()) }),
+		).toThrow(TypeError);
+	});
+
+	test("rejects nested transforms whose inferred insert type cannot be parsed", () => {
+		expect(
+			() =>
+				new Table("entries", {
+					metadata: Schema.object({ count: Schema.string().transform(Number) }),
+				}),
+		).toThrow(TypeError);
+	});
+
 	test("rejects JSON array items that cannot be read back", () => {
 		for (const item of [
 			Schema.string().optional(),

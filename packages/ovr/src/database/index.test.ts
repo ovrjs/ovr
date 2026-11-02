@@ -272,7 +272,7 @@ describe("sql", () => {
 		]);
 	});
 
-	test("as shares the query's single run", async () => {
+	test("parse shares the query's single run", async () => {
 		const { pool, log } = mock();
 		const db = new Database(pool, []);
 		const query = db.sql`INSERT INTO t DEFAULT VALUES RETURNING *`;
@@ -594,6 +594,46 @@ describe.each(drivers)("$name", (driver) => {
 	});
 
 	test.skipIf(!driver.errors)(
+		"a caught database error cannot report a rolled-back transaction as successful",
+		async () => {
+			await db.sql`CREATE TABLE other (id integer)`;
+
+			await expect(
+				db.transaction(async (t) => {
+					await t.sql`INSERT INTO other VALUES (1)`;
+					try {
+						await t.sql`SELECT 1 / 0`;
+					} catch {
+						// Catching the statement error does not restore the transaction.
+					}
+					return "saved";
+				}),
+			).rejects.toThrow();
+			expect(await db.sql`SELECT * FROM other`).toEqual([]);
+		},
+	);
+
+	test("a lazy query cannot execute after its transaction releases the connection", async () => {
+		await db.sql`CREATE TABLE other (id integer)`;
+		const result = await db.transaction(async (t) => ({
+			query: t.sql`INSERT INTO other VALUES (1)`,
+		}));
+
+		await expect(result.query).rejects.toThrow();
+		expect(await db.sql`SELECT * FROM other`).toEqual([]);
+	});
+
+	test("an escaped transaction tag cannot execute inside a later transaction", async () => {
+		await db.sql`CREATE TABLE other (id integer)`;
+		const sql = await db.transaction(async (t) => t.sql);
+
+		await db.transaction(async () => {
+			await expect(sql`INSERT INTO other VALUES (1)`).rejects.toThrow();
+		});
+		expect(await db.sql`SELECT * FROM other`).toEqual([]);
+	});
+
+	test.skipIf(!driver.errors)(
 		"migrate rolls back a failing migration",
 		async () => {
 			await expect(
@@ -607,6 +647,36 @@ describe.each(drivers)("$name", (driver) => {
 			).toEqual([{ a: null, b: null }]);
 		},
 	);
+
+	test("migration history work scales linearly when bootstrapping a database", async () => {
+		let scanned = 0;
+		const db = new Database(
+			{
+				query: pool.query.bind(pool),
+				connect: async () => {
+					const client = await pool.connect();
+					return {
+						query: async (text, values) => {
+							const result = await client.query(text, values);
+							if (/\bFROM\s+ovr_migrations\b/i.test(text))
+								scanned += result.rows.length;
+							return result;
+						},
+						release: (error) => client.release(error),
+					};
+				},
+			},
+			[],
+		);
+		const migrations = Array.from({ length: 32 }, (_, i) => ({
+			id: String(i).padStart(4, "0"),
+			sql: "SELECT 1",
+		}));
+
+		expect(await db.migrate(migrations)).toHaveLength(migrations.length);
+		// Allow several complete reads, but not 1 + 2 + ... + N history rows.
+		expect(scanned).toBeLessThanOrEqual(migrations.length * 4);
+	});
 
 	test("migrate rejects changed, missing, and out of order migrations", async () => {
 		await migrate();
@@ -758,6 +828,14 @@ describe.each(drivers)("$name", (driver) => {
 		await expect(
 			db.sql`SELECT ARRAY[9007199254740993]::numeric[] AS big`.parse(
 				Schema.object({ big: Schema.array(Schema.number()) }),
+			),
+		).rejects.toThrow(Schema.AggregateIssue);
+	});
+
+	test("driver decoding does not coerce invalid values inside JSON columns", async () => {
+		await expect(
+			db.sql`SELECT '{"count":"1"}'::jsonb AS metadata`.parse(
+				Schema.object({ metadata: Schema.object({ count: Schema.number() }) }),
 			),
 		).rejects.toThrow(Schema.AggregateIssue);
 	});
