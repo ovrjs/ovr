@@ -123,21 +123,27 @@ export class Storage {
 
 			const table = Storage.challenges;
 			const now = Date.now();
-			// one statement bounds outstanding ceremonies across instances
-			const rows = await this.#db.sql`
-				INSERT INTO ${table} (id, challenge, browser, method, action, origin, expiration, "user", fields)
-				SELECT ${id}, ${challenge.challenge}, ${challenge.browser}, ${challenge.method},
-					${challenge.action}, ${challenge.origin}, ${challenge.expiration}::bigint,
-					${challenge.user ?? null}, ${challenge.fields ?? null}
-				WHERE NOT EXISTS (
-					SELECT 1 FROM ${table} WHERE expiration > ${now} OFFSET ${Storage.#capacity.total - 1}
-				) AND (
-					SELECT count(*) FROM ${table} WHERE browser = ${challenge.browser} AND expiration > ${now}
-				) < ${Storage.#capacity.browser}
-				RETURNING id
-			`;
 
-			return rows.length === 1;
+			return this.#db.transaction(async (t) => {
+				// one writer at a time, so concurrent requests cannot share the last
+				// slot; the insert's snapshot is taken after the lock
+				await t.sql`SELECT pg_advisory_xact_lock(hashtext('ovr_challenges'))`;
+
+				const rows = await t.sql`
+					INSERT INTO ${table} (id, challenge, browser, method, action, origin, expiration, "user", fields)
+					SELECT ${id}, ${challenge.challenge}, ${challenge.browser}, ${challenge.method},
+						${challenge.action}, ${challenge.origin}, ${challenge.expiration}::bigint,
+						${challenge.user ?? null}, ${challenge.fields ?? null}
+					WHERE NOT EXISTS (
+						SELECT 1 FROM ${table} WHERE expiration > ${now} OFFSET ${Storage.#capacity.total - 1}
+					) AND (
+						SELECT count(*) FROM ${table} WHERE browser = ${challenge.browser} AND expiration > ${now}
+					) < ${Storage.#capacity.browser}
+					RETURNING id
+				`;
+
+				return rows.length === 1;
+			});
 		},
 		take: async (id) => {
 			const [row] = await this.#db.sql`

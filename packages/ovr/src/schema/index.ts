@@ -599,6 +599,25 @@ export class Schema<Output>
 	}
 
 	/**
+	 * Set an output property, defining `__proto__` as data since assigning it
+	 * would change the object's prototype.
+	 *
+	 * @param data Output object
+	 * @param name Property name
+	 * @param value Property value
+	 */
+	static #set(data: Record<string, unknown>, name: string, value: unknown) {
+		if (name === "__proto__")
+			Object.defineProperty(data, name, {
+				value,
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
+		else data[name] = value;
+	}
+
+	/**
 	 * @param expected Expected value
 	 * @param path Issue path, copied since parsing continues to change it
 	 * @param message Issue message
@@ -711,7 +730,7 @@ export class Schema<Output>
 							if (issues) issues.push(...result.issues);
 							else issues = result.issues;
 						} else if (result.data !== undefined) {
-							data[name] = result.data;
+							Schema.#set(data, name, result.data);
 						}
 					}
 
@@ -725,7 +744,7 @@ export class Schema<Output>
 										message: "Unexpected key",
 									});
 								} else {
-									data[name] = next;
+									Schema.#set(data, name, next);
 								}
 							}
 						}

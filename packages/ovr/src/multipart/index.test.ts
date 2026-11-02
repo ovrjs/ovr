@@ -1132,6 +1132,34 @@ describe("MultipartParser", () => {
 	});
 
 	describe("Error Conditions", () => {
+		it.each([71, 252, 508])(
+			"rejects a %i-character boundary before reading the body",
+			(length) => {
+				const req = new Request("https://example.com/upload", {
+					method: "POST",
+					headers: {
+						"content-type": `multipart/form-data; boundary=${"a".repeat(length)}`,
+					},
+					body: "x".repeat(300),
+				});
+
+				// a 256-byte needle made the search loop hang before boundaries were limited
+				expect(() => new Multipart(req)).toThrow(TypeError);
+			},
+		);
+
+		it("accepts a 70-character boundary", () => {
+			const req = new Request("https://example.com/upload", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${"a".repeat(70)}`,
+				},
+				body: "x",
+			});
+
+			expect(() => new Multipart(req)).not.toThrow();
+		});
+
 		it("throws on request without body", async () => {
 			const req = new Request("http://localhost", { method: "POST" }); // No body
 

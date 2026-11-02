@@ -319,6 +319,31 @@ describe("Array and object schemas", () => {
 		expect(issues[0]?.expected).toBe("never");
 	});
 
+	test("loose objects preserve __proto__ as data without changing the prototype", () => {
+		const input = JSON.parse('{"name":"guest","__proto__":{"admin":true}}');
+		const data = valid(
+			Schema.object({ name: Schema.string() }).loose().parse(input),
+		);
+
+		expect(data.admin).toBeUndefined();
+		expect(Object.hasOwn(data, "__proto__")).toBe(true);
+		expect([Object.prototype, null]).toContain(Object.getPrototypeOf(data));
+		expect(JSON.stringify(data)).toBe(JSON.stringify(input));
+	});
+
+	test("declared __proto__ properties remain own properties after validation", () => {
+		const input = JSON.parse('{"__proto__":{"admin":true}}');
+		const data = valid(
+			Schema.object({
+				["__proto__"]: Schema.object({ admin: Schema.boolean() }),
+			}).parse(input),
+		);
+
+		expect(Object.hasOwn(data, "__proto__")).toBe(true);
+		expect([Object.prototype, null]).toContain(Object.getPrototypeOf(data));
+		expect(JSON.stringify(data)).toBe(JSON.stringify(input));
+	});
+
 	test("object shape parses fields and supports defaults", () => {
 		const schema = Schema.object({
 			a: Schema.string(),

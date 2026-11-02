@@ -15,9 +15,12 @@ class Needle extends Uint8Array {
 	/** Stores where each byte is located in the needle */
 	readonly loc: (number[] | undefined)[] = new Array(256);
 
-	/** @param needle String to find within the stream */
+	/** @param needle String to find within the stream, at most 255 bytes */
 	constructor(needle: string) {
 		super(Codec.encode(needle).buffer);
+
+		// longer needles would overflow `skip`, and a skip of 0 never advances
+		if (this.length > 255) throw new RangeError("Needle exceeds 255 bytes");
 
 		for (let i = 0; i < this.length; i++) {
 			const byte = this[i]!;
@@ -239,6 +242,9 @@ export class Multipart extends Request {
 		const { boundary } = Header.params(params);
 
 		if (!boundary) throw new TypeError("Boundary Not Found");
+		// RFC 2046: 1 to 70 characters from a limited set, not ending in a space
+		if (!/^[\w'()+,./:=? -]{0,69}[\w'()+,./:=?-]$/.test(boundary))
+			throw new TypeError("Invalid Boundary");
 		if (!this.body) throw new TypeError("No Request Body");
 
 		Object.assign(this.#options, options);
