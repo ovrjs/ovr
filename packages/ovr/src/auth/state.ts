@@ -1,7 +1,7 @@
-import { Codec, Time } from "../util/index.js";
+import { Halt } from "../context/index.js";
+import { Codec, Header, Mime, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
-import { OriginIssue } from "./origin.js";
 import type { Storage } from "./storage.js";
 import { Token } from "./token.js";
 
@@ -26,8 +26,14 @@ export class State {
 
 	/** Create authentication helpers for the current request. */
 	constructor(c: State.Context, options: State.Options) {
-		if (c.url.origin !== options.origin)
-			throw new OriginIssue("Authentication requires its configured origin");
+		if (c.url.origin !== options.origin) {
+			// respond 421 and end the request, before any session read
+			c.res.headers.set("cache-control", "no-store");
+			c.res.headers.set(Header.name.type, Header.utf8(Mime.type.text));
+			c.res.body = "Misdirected Request";
+			c.res.status = 421;
+			throw new Halt("Authentication requires its configured origin");
+		}
 		this.#c = c;
 		this.options = { ...options, duration: options.duration ?? Time.week };
 	}

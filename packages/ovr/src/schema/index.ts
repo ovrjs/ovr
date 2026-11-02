@@ -62,19 +62,6 @@ export namespace Schema {
 		 */
 		export type Result<O, M extends object = {}, V extends object = {}> =
 			(Valid<O> & V) | (Invalid & M);
-
-		/**
-		 * Type of constructor input (path is required).
-		 *
-		 * @template O Parse output
-		 * @param value Unknown value to parse
-		 * @param path Issue path (internal)
-		 * @returns Parse result containing data or issues
-		 */
-		export type Constructor<O> = (
-			value: unknown,
-			path: Issue.Path,
-		) => Result<O>;
 	}
 
 	/**

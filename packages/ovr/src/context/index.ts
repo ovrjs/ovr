@@ -1,5 +1,4 @@
 import type { App } from "../app/index.js";
-import { OriginIssue } from "../auth/origin.js";
 import { Cookie } from "../cookie/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -301,10 +300,7 @@ export class Context<
 			r = await mw(this, () => this.#run(middleware, i + 1));
 		} catch (error) {
 			if (error instanceof Halt) return;
-			if (!(error instanceof OriginIssue)) throw error;
-			this.res.headers.set("cache-control", "no-store");
-			this.text("Misdirected Request", 421);
-			return;
+			throw error;
 		}
 
 		// resolve the return value
