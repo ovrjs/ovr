@@ -17,42 +17,51 @@ export function configure<Shape extends Form.Shape>(
 	state: (c: State.Context) => State,
 ) {
 	const configured = options.limits ?? {};
-	if (configured.guard !== undefined && !(configured.guard instanceof Limiter))
-		throw new TypeError("Auth limits.guard must be a Limiter");
-	if (
-		configured.extra !== undefined &&
-		(!Array.isArray(configured.extra) ||
-			[...configured.extra].some((limiter) => !(limiter instanceof Limiter)))
-	)
-		throw new TypeError("Auth limits.extra must be an array of Limiters");
-	const ceiling = configured.guard ? [configured.guard] : [];
-	// Snapshot stacks at startup so later array mutations cannot disable admission.
-	const limits = Object.fromEntries(
-		Object.entries({
-			register:
-				configured.register ??
-				new Limiter({
-					database: options.database,
-					name: "auth:register:" + options.origin,
-					limit: 5,
-					interval: 600000,
-				}),
-			login:
-				configured.login ??
-				new Limiter({
-					database: options.database,
-					name: "auth:login:" + options.origin,
-					limit: 20,
-					interval: 60000,
-				}),
-		}).map(([method, value]) => {
-			if (!(value instanceof Limiter))
-				throw new TypeError(
-					"Auth client policies must be a Limiter; use limits.extra for additional layers",
-				);
-			return [method, [value, ...(configured.extra ?? [])]];
-		}),
+	/** Build a limiter on Auth's database from policy options over `defaults`. */
+	const limiter = (
+		label: string,
+		policy: unknown,
+		defaults: Auth.Limit = {},
+	) => {
+		if (
+			typeof policy !== "object" ||
+			policy === null ||
+			Array.isArray(policy) ||
+			policy instanceof Limiter
+		)
+			throw new TypeError(`Auth ${label} must be rate limit options`);
+		return new Limiter({ ...defaults, ...policy, database: options.database });
+	};
+	if (configured.extra !== undefined && !Array.isArray(configured.extra))
+		throw new TypeError(
+			"Auth limits.extra must be an array of rate limit options",
+		);
+	// Built at startup, so later changes to the options cannot disable admission.
+	const extra = Array.from(configured.extra ?? [], (policy) =>
+		limiter("limits.extra", policy),
 	);
+	const ceiling =
+		configured.guard === undefined
+			? []
+			: [limiter("limits.guard", configured.guard)];
+	const limits = {
+		register: [
+			limiter("limits.register", configured.register ?? {}, {
+				name: "auth:register:" + options.origin,
+				limit: 5,
+				interval: 600000,
+			}),
+			...extra,
+		],
+		login: [
+			limiter("limits.login", configured.login ?? {}, {
+				name: "auth:login:" + options.origin,
+				limit: 20,
+				interval: 60000,
+			}),
+			...extra,
+		],
+	};
 	const paths = {
 		register: options.paths?.register ?? "/auth/register",
 		login: options.paths?.login ?? "/auth/login",

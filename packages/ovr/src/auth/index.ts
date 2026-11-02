@@ -33,6 +33,9 @@ export namespace Auth {
 		Logout: Route.Form<string>;
 	}
 
+	/** Rate limit policy, Auth creates the `Limiter` with its database. */
+	export type Limit = Omit<Limiter.Options, "database" | "error">;
+
 	/** A revocable session with a fixed lifetime. */
 	export interface Session {
 		/** Opaque session ID, usable with `auth.revoke()`. */
@@ -72,16 +75,16 @@ export namespace Auth {
 		readonly redirect?: string;
 		/** Override the default endpoint paths. Paths must be distinct literal local paths. */
 		readonly paths?: Partial<Record<"register" | "login" | "logout", string>>;
-		/** Additional and replacement rate limits; ovr supplies the signup and sign-in policies. */
+		/** Additional and changed rate limits, stored in `database`; ovr supplies the signup and sign-in policies. */
 		readonly limits?: {
 			/** Optional generous request ceiling before client key creation. Counts invalid fields and requests denied by later policies too. */
-			readonly guard?: Limiter;
+			readonly guard?: Auth.Limit;
 			/** Additional shared policies checked after the client policy, preserving the built-in defaults. */
-			readonly extra?: readonly Limiter[];
-			/** Replace the built-in registration client policy; invalid options fields do not consume it. Use extra to add shared policies without removing it. */
-			readonly register?: Limiter;
-			/** Replace the built-in login client policy. Use extra to add shared policies without removing it. */
-			readonly login?: Limiter;
+			readonly extra?: readonly Auth.Limit[];
+			/** Change the built-in registration client policy, 5 per 10 minutes; invalid options fields do not consume it. */
+			readonly register?: Auth.Limit;
+			/** Change the built-in login client policy, 20 per minute. */
+			readonly login?: Auth.Limit;
 		};
 		/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
 		readonly error?: (

@@ -295,20 +295,19 @@ A Fetch `Request` does not expose the socket peer. Use your server's connection 
 
 **Public deployments need aggregate admission ceilings to protect shared challenge capacity.** Per-client limits alone do not contain distributed callers or clients rotating through larger IPv6 allocations. Add shared policies with `limits.extra`, or enforce equivalent limits at the edge.
 
-```ts
-import { Auth, Limiter } from "ovr";
+Policies take the same options as [`Limiter`](/05-middleware#rate-limiting), except `database` and `error`: Auth stores them in its database and reports failures through its own `error` option.
 
+```ts
 new Auth({
 	...options,
 	limits: {
 		extra: [
-			new Limiter({
-				database: db,
+			{
 				name: `auth:all:${options.origin}`,
 				limit: 100,
 				interval: 60000,
 				key: () => "all",
-			}),
+			},
 		],
 	},
 });
@@ -316,7 +315,7 @@ new Auth({
 
 These numbers are an example. Size the combined burst and refill over the two-minute challenge lifetime against the challenge capacity and expected traffic. Shared quotas combine legitimate users too.
 
-Extra policies run after the client policy, in array order, and preserve its defaults. Earlier checks keep their consumed tokens when a later check denies. `limits.register` and `limits.login` replace the corresponding client policy. An optional `limits.guard` runs first to bound bucket creation; it counts rejected attempts too and can lock out everyone if exhausted. Keep it well above normal traffic, or use edge protection for that purpose.
+Extra policies run after the client policy, in array order, and preserve its defaults. Earlier checks keep their consumed tokens when a later check denies. `limits.register` and `limits.login` change the built-in client policies, for example `login: { limit: 10 }`; options you leave out keep their defaults. An optional `limits.guard` runs first to bound bucket creation; it counts rejected attempts too and can lock out everyone if exhausted. Keep it well above normal traffic, or use edge protection for that purpose.
 
 ## Options
 

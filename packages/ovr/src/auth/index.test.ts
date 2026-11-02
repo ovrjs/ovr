@@ -253,20 +253,6 @@ beforeEach(() =>
 afterEach(() => vi.restoreAllMocks());
 afterAll(() => engine.close());
 
-/** Database whose queries fail, as when Postgres is unavailable. */
-const broken = (failure: Error) =>
-	new Database(
-		{
-			query: async () => {
-				throw failure;
-			},
-			connect: async () => {
-				throw failure;
-			},
-		},
-		[],
-	);
-
 /** Rows stored in an authentication table. */
 const rows = async <T extends Table.Any>(table: T) =>
 	(await db.sql`SELECT * FROM ${table}`.parse<unknown>(
@@ -290,16 +276,6 @@ const inspect = {
 	) => {
 		await db.sql`UPDATE ${db.ovr_challenges} SET ${db.sql.set(db.ovr_challenges, values)} WHERE id = ${id}`;
 	},
-};
-
-/** Records which limiters checked requests, by name. */
-const checks = (named: Record<string, Limiter> = {}) => {
-	const spy = vi.spyOn(Limiter.prototype, "check");
-	return () =>
-		spy.mock.contexts.map(
-			(limiter) =>
-				Object.keys(named).find((name) => named[name] === limiter) ?? "default",
-		);
 };
 
 function setup(extra: Partial<State.Options> = {}) {
@@ -1189,14 +1165,14 @@ function managed(
 	return { app, service, storage, create, error, post, start, submit };
 }
 
-function policy() {
-	const limiter = new Limiter({ database: db });
-	return {
-		register: limiter,
-		login: limiter,
-		check: vi.spyOn(limiter, "check"),
-	};
-}
+/** Tokens a policy has spent, by bucket name and scope; freeze the clock so none refill. */
+const spent = async (name: string, scope?: string) =>
+	(await rows(db.ovr_limits))
+		.map((bucket) => ({ key: JSON.parse(bucket.key), tokens: bucket.tokens }))
+		.filter(
+			({ key }) => key[0] === name && (scope === undefined || key[3] === scope),
+		)
+		.reduce((sum, { key, tokens }) => sum + key[1] - tokens, 0);
 
 describe("configured passkey callbacks", () => {
 	test("registers on a cold instance and handles sessions, login, rotation, and logout automatically", async () => {
@@ -1308,9 +1284,8 @@ describe("configured passkey callbacks", () => {
 	});
 
 	test("validates registration fields before prompting and supports distributed request limits", async () => {
-		const limits = policy();
-		const check = limits.check;
-		const state = managed(setup(), { limits });
+		const check = vi.spyOn(Limiter.prototype, "check");
+		const state = managed(setup());
 		const start = await state.start("register");
 		const set = vi.spyOn(state.storage.options.challenges, "set");
 		const invalid = new FormData();
@@ -1433,7 +1408,7 @@ test("auth rejects client limiter arrays at startup", () => {
 	const storage = setup();
 	for (const method of ["register", "login"]) {
 		expect(() => managed(storage, { limits: { [method]: [] } })).toThrow(
-			"client policies",
+			`limits.${method} must be rate limit options`,
 		);
 	}
 });
@@ -1457,32 +1432,16 @@ test.each([
 	"blocked $method traffic from $first cannot drain extra shared budgets",
 	async ({ method, limit, first, other }) => {
 		const storage = setup();
-		const network = new Limiter({
-			database: db,
-			name: "network",
-			prefix: 48,
-			limit: 40,
-		});
-		const global = new Limiter({
-			database: db,
-			name: "aggregate",
-			key: () => "all",
-			limit: 100,
-		});
-		const shared = [network, global];
-		const checks = shared.map((limiter) => vi.spyOn(limiter, "check"));
+		const shared = [
+			{ name: "network", prefix: 48, limit: 40 },
+			{ name: "aggregate", key: () => "all", limit: 100 },
+		];
 		const limits = {
-			guard: new Limiter({
-				database: db,
-				name: "creation",
-				key: () => "all",
-				limit: 1000,
-			}),
+			guard: { name: "creation", key: () => "all", limit: 1000 },
 			extra: shared,
 		};
 		const warm = managed(storage, { limits });
 		const cold = managed(storage, { limits });
-		const guard = vi.spyOn(limits.guard, "check");
 		shared.length = 0; // Extra policies are snapshotted too.
 		const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
 		try {
@@ -1519,13 +1478,9 @@ test.each([
 							"_retry",
 						),
 					).toBe(false);
-				for (const check of checks)
-					expect(
-						check.mock.calls.filter(([, scope]) => scope === phase),
-					).toHaveLength(limit + 1);
-				expect(
-					guard.mock.calls.filter(([, scope]) => scope === phase),
-				).toHaveLength(121); // Client-denied attempts still reach the guard, but skip extras.
+				for (const name of ["network", "aggregate"])
+					expect(await spent(name, phase)).toBe(limit + 1);
+				expect(await spent("creation", phase)).toBe(121); // Client-denied attempts still reach the guard, but skip extras.
 			}
 			expect(await storage.size(db.ovr_challenges)).toBe(0);
 			expect(warm.create).not.toHaveBeenCalled();
@@ -1538,20 +1493,13 @@ test.each([
 
 test("a generous guard bounds client-record creation before the default and extra policies", async () => {
 	const storage = setup();
-	const guard = new Limiter({
-		database: db,
-		name: "creation",
-		key: () => "all",
-		limit: 3,
+	const check = vi.fn(() => "all");
+	const state = managed(storage, {
+		limits: {
+			guard: { name: "creation", key: () => "all", limit: 3 },
+			extra: [{ name: "aggregate", key: check, limit: 2 }],
+		},
 	});
-	const aggregate = new Limiter({
-		database: db,
-		name: "aggregate",
-		key: () => "all",
-		limit: 2,
-	});
-	const check = vi.spyOn(aggregate, "check");
-	const state = managed(storage, { limits: { guard, extra: [aggregate] } });
 	for (let i = 0; i < 10; i++) {
 		const response = await state.post(
 			"/_passkey/options/login",
@@ -1576,12 +1524,17 @@ test("a generous guard bounds client-record creation before the default and extr
 
 test("a failed creation guard stops backend access and extra checks but leaves logout available", async () => {
 	const storage = setup();
-	const guard = new Limiter({
-		database: broken(new Error("private creation guard failure")),
+	const check = vi.fn(() => "all");
+	const state = managed(storage, {
+		limits: {
+			guard: {
+				key: () => {
+					throw new Error("private creation guard failure");
+				},
+			},
+			extra: [{ key: check }],
+		},
 	});
-	const extra = new Limiter({ database: db });
-	const check = vi.spyOn(extra, "check");
-	const state = managed(storage, { limits: { guard, extra: [extra] } });
 	const response = await state.post("/_passkey/options/login", new FormData());
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private creation");
@@ -1595,39 +1548,36 @@ test("a failed creation guard stops backend access and extra checks but leaves l
 test("optional guard and extra policies are validated at startup", () => {
 	const storage = setup();
 	expect(() =>
-		// @ts-expect-error Runtime configuration must also reject non-Limiter guards.
-		managed(storage, { limits: { guard: {} } }),
-	).toThrow("limits.guard");
+		// @ts-expect-error Auth creates its limiters, so a Limiter is rejected.
+		managed(storage, { limits: { guard: new Limiter({ database: db }) } }),
+	).toThrow("limits.guard must be rate limit options");
 	expect(() =>
-		// @ts-expect-error Runtime configuration must also reject non-Limiter extra entries.
-		managed(storage, { limits: { extra: [{}] } }),
+		// @ts-expect-error Runtime configuration must also reject non-object extra entries.
+		managed(storage, { limits: { extra: [null] } }),
 	).toThrow("limits.extra");
-	expect(() => managed(storage, { limits: { extra: [] } })).not.toThrow();
 	expect(() =>
-		managed(storage, { limits: { extra: Array<Limiter>(1) } }),
+		managed(storage, { limits: { guard: {}, extra: [{}] } }),
+	).not.toThrow();
+	expect(() =>
+		managed(storage, { limits: { extra: Array<Auth.Limit>(1) } }),
 	).toThrow("limits.extra");
+	// invalid policies are rejected by the Limiter Auth creates
+	expect(() => managed(storage, { limits: { login: { limit: 0 } } })).toThrow(
+		"Invalid limiter",
+	);
 });
 
 test("layered policies stop prefix sweeping across instances and share an aggregate ceiling", async () => {
 	const storage = setup();
-	const global = new Limiter({
-		database: db,
-		name: "aggregate",
-		limit: 3,
-		key: () => "all",
-	});
-	const network = new Limiter({
-		database: db,
-		name: "network",
-		limit: 2,
-		prefix: 48,
-	});
-	const stack = [network, global];
+	const calls = vi.fn(() => "all");
+	const stack = [
+		{ name: "network", limit: 2, prefix: 48 },
+		{ name: "aggregate", limit: 3, key: calls },
+	];
 	const limits = { extra: stack };
 	const first = managed(storage, { limits });
 	const second = managed(storage, { limits });
 	stack.length = 0; // The configured services own snapshots, not the caller's mutable array.
-	const calls = vi.spyOn(global, "check");
 	const start = await first.start("login", "", (path, data, cookie) =>
 		first.post(path, data, cookie, "2001:db8:1:1::1"),
 	);
@@ -1663,14 +1613,18 @@ test("layered policies stop prefix sweeping across instances and share an aggreg
 
 test("a failing layer prevents challenge writes and preserves generic errors", async () => {
 	const storage = setup();
-	const earlier = new Limiter({ database: db });
-	const failed = new Limiter({
-		database: broken(new Error("private backend failure")),
-	});
-	const later = new Limiter({ database: db });
-	const check = vi.spyOn(later, "check");
+	const check = vi.fn(() => "all");
 	const state = managed(storage, {
-		limits: { login: earlier, extra: [failed, later] },
+		limits: {
+			extra: [
+				{
+					key: () => {
+						throw new Error("private backend failure");
+					},
+				},
+				{ name: "later", key: check },
+			],
+		},
 	});
 	const response = await state.post("/_passkey/options/login", new FormData());
 	expect(response.status).toBe(503);
@@ -1681,11 +1635,12 @@ test("a failing layer prevents challenge writes and preserves generic errors", a
 });
 
 test("limiter errors cannot prevent logout", async () => {
-	const limits = policy();
-	limits.check.mockRejectedValue(new Error("limiter unavailable"));
-	const state = managed(setup(), { limits });
+	const check = vi
+		.spyOn(Limiter.prototype, "check")
+		.mockRejectedValue(new Error("limiter unavailable"));
+	const state = managed(setup());
 	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
-	expect(limits.check).not.toHaveBeenCalled();
+	expect(check).not.toHaveBeenCalled();
 });
 
 test("auth fails closed without trusted peer information and ignores spoofed IP headers", async () => {
@@ -1736,9 +1691,8 @@ test("alternate hosts can serve health checks and redirects without using authen
 });
 
 test("every generated auth endpoint rejects an alternate host before admission or storage", async () => {
-	const limits = policy();
-	const check = limits.check;
-	const state = managed(setup(), { limits });
+	const check = vi.spyOn(Limiter.prototype, "check");
+	const state = managed(setup());
 	const set = vi.spyOn(state.storage.options.challenges, "set");
 	for (const path of [
 		"/auth/register",
@@ -1887,11 +1841,12 @@ test.each(["register", "login"] as const)(
 	"a denied final %s submit redirects to a recoverable form before verification",
 	async (method) => {
 		const retry = new Date(Date.now() + 45000);
-		const limits = policy();
-		const check = limits.check.mockImplementation(async (_c, phase) =>
-			phase === "options" ? true : retry,
-		);
-		const state = managed(setup(), { limits });
+		const check = vi
+			.spyOn(Limiter.prototype, "check")
+			.mockImplementation(async (_c, phase) =>
+				phase === "options" ? true : retry,
+			);
+		const state = managed(setup());
 		const start = await state.start(method);
 		const take = vi.spyOn(state.storage.options.challenges, "take");
 		const response = await state.submit(start, {}, `/auth/${method}`);
@@ -1918,9 +1873,8 @@ test.each(["register", "login"] as const)(
 );
 
 test("a successful ceremony makes two separately admitted requests", async () => {
-	const limits = policy();
-	const check = limits.check;
-	const state = managed(setup(), { limits });
+	const check = vi.spyOn(Limiter.prototype, "check");
+	const state = managed(setup());
 	const start = await state.start("register");
 	const response = await state.submit(
 		start,
@@ -1944,9 +1898,10 @@ test.each([
 		const now = Date.now();
 		const time = vi.spyOn(Date, "now").mockReturnValue(now);
 		try {
-			const limits = policy();
-			limits.check.mockResolvedValue(new Date(now + value));
-			const state = managed(setup(), { limits });
+			vi.spyOn(Limiter.prototype, "check").mockResolvedValue(
+				new Date(now + value),
+			);
+			const state = managed(setup());
 			const response = await state.post(
 				"/_passkey/options/login",
 				new FormData(),
@@ -1969,9 +1924,10 @@ test.each(["register", "login"])(
 		const now = Date.now();
 		const time = vi.spyOn(Date, "now").mockReturnValue(now);
 		try {
-			const limits = policy();
-			const check = limits.check.mockResolvedValue(new Date(now + 86400000));
-			const state = managed(setup(), { limits });
+			const check = vi
+				.spyOn(Limiter.prototype, "check")
+				.mockResolvedValue(new Date(now + 86400000));
+			const state = managed(setup());
 			const response = await state.post(`/auth/${method}`, new FormData());
 			expect(response.status).toBe(303);
 			const location = new URL(response.headers.get("location")!);
@@ -2217,21 +2173,18 @@ test("revoking an unrelated session leaves an invalid incoming cookie alone", as
 
 test("invalid registration options spend only the guard budget before a valid signup", async () => {
 	const storage = setup();
-	const guard = new Limiter({
-		database: db,
-		name: "guard",
-		limit: 20,
-		key: () => "all",
+	const order: string[] = [];
+	const key = (name: string) => () => (order.push(name), "all");
+	const state = managed(storage, {
+		limits: {
+			guard: { name: "guard", limit: 20, key: key("guard") },
+			extra: [{ name: "extra", limit: 10, key: key("extra") }],
+		},
 	});
-	const extra = new Limiter({
-		database: db,
-		name: "extra",
-		limit: 10,
-		key: () => "all",
-	});
-	const state = managed(storage, { limits: { guard, extra: [extra] } });
+	const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
 	const start = await state.start("register");
-	const checked = checks({ guard, extra });
+	const register = "auth:register:" + origin;
+	order.length = 0;
 	for (let i = 0; i < 8; i++) {
 		const data = new FormData();
 		data.set("bootstrap", start.bootstrap);
@@ -2240,14 +2193,18 @@ test("invalid registration options spend only the guard budget before a valid si
 			422,
 		);
 	}
-	expect(checked()).toEqual(Array(8).fill("guard"));
+	expect(order).toEqual(Array(8).fill("guard"));
+	expect(await spent(register, "options")).toBe(1);
 	const data = new FormData();
 	data.set("bootstrap", start.bootstrap);
 	data.set("email", "user@example.com");
 	expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
 		200,
 	);
-	expect(checked().slice(-3)).toEqual(["guard", "default", "extra"]);
+	// the client policy runs between the guard and the extra policy
+	expect(order.slice(-2)).toEqual(["guard", "extra"]);
+	expect(await spent(register, "options")).toBe(2);
+	clock.mockRestore();
 });
 
 test("rotating secrets preserves sessions and open forms across instances", async () => {
@@ -2340,24 +2297,24 @@ test.each(["expired", "browser"])(
 
 test("registration guard admission precedes parsing and rejects oversized bodies without client tokens", async () => {
 	const storage = setup();
-	const guard = new Limiter({ database: db, name: "guard" });
-	const check = vi.spyOn(guard, "check");
-	const state = managed(storage, { limits: { guard } });
+	const check = vi.fn(() => "all");
+	const state = managed(storage, {
+		limits: { guard: { name: "guard", limit: 1, key: check } },
+	});
 	const data = new FormData();
 	data.set("email", "x".repeat(129 * 1024));
 	data.set("bootstrap", "invalid");
-	check.mockResolvedValueOnce(new Date(Date.now() + 60000));
-	expect((await state.post("/_passkey/options/register", data)).status).toBe(
-		429,
-	);
-	expect(await storage.size(db.ovr_limits)).toBe(0);
 	const response = await state.post("/_passkey/options/register", data);
 	expect(response.status).toBe(400);
 	// only the guard, the client policy runs after parsing
-	expect(check).toHaveBeenCalledTimes(2);
 	expect(
 		(await rows(db.ovr_limits)).map((bucket) => JSON.parse(bucket.key)[0]),
 	).toEqual(["guard"]);
+	// the exhausted guard denies before the oversized body is read
+	expect((await state.post("/_passkey/options/register", data)).status).toBe(
+		429,
+	);
+	expect(check).toHaveBeenCalledTimes(2);
 	expect(await storage.size(db.ovr_challenges)).toBe(0);
 });
 
