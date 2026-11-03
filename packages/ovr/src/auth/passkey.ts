@@ -19,9 +19,9 @@ export namespace Passkey {
 		Error: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 	};
 	/** POST route contract retaining typed pathname parameters. */
-	export interface Post<Pattern extends string> extends Omit<
+	export interface Post<Pattern extends string> extends Pick<
 		Route.Post,
-		"url" | "pathname"
+		"Fields" | "extend" | "names"
 	> {
 		pattern: Pattern;
 		Form: Route.Form<Pattern>;
@@ -170,27 +170,29 @@ export class Passkey {
 	}
 
 	/** Dependency-free browser module, served as a normal same-origin JavaScript resource. */
-	static readonly client = Route.get("/_passkey/client.js", (c) => {
-		c.res.headers.set("content-type", "text/javascript; charset=utf-8");
-		c.res.headers.set("x-content-type-options", "nosniff");
-		c.res.headers.set("cache-control", "no-cache");
-		c.res.headers.set("etag", etag);
-		if (
-			c.req.headers
-				.get("if-none-match")
-				?.split(",")
-				.some(
-					(value) =>
-						value.trim() === "*" ||
-						value.trim().replace(/^W\//, "") === etag.slice(2),
-				)
-		) {
-			c.res.status = 304;
-			c.res.body = null;
-			return;
-		}
-		c.res.body = source;
-	});
+	static readonly client = Route.get("/_passkey/client.js")
+		.describe(false)
+		.use((c) => {
+			c.res.headers.set("content-type", "text/javascript; charset=utf-8");
+			c.res.headers.set("x-content-type-options", "nosniff");
+			c.res.headers.set("cache-control", "no-cache");
+			c.res.headers.set("etag", etag);
+			if (
+				c.req.headers
+					.get("if-none-match")
+					?.split(",")
+					.some(
+						(value) =>
+							value.trim() === "*" ||
+							value.trim().replace(/^W\//, "") === etag.slice(2),
+					)
+			) {
+				c.res.status = 304;
+				c.res.body = null;
+				return;
+			}
+			c.res.body = source;
+		});
 
 	#origin() {
 		if (this.#c.url.origin !== this.#auth.options.origin)

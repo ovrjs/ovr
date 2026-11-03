@@ -15,6 +15,12 @@ import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
  */
 export class Halt extends Error {}
 
+/**
+ * Requests an agent makes through an MCP tool, with the session its token
+ * authorizes. Parse issues respond `422` with JSON instead of redirecting.
+ */
+export const agent = new WeakMap<Request, { readonly session?: unknown }>();
+
 class PreparedResponse {
 	/**
 	 * `body` used to create the `Response`.
@@ -68,7 +74,7 @@ export namespace Context {
  * @template Shape Parsed form data shape
  */
 export class Context<
-	Params extends Trie.Params = Trie.Params,
+	Params extends Record<string, unknown> = Trie.Params,
 	Shape extends FormSchema.Shape = FormSchema.Shape,
 > {
 	/**
@@ -213,7 +219,7 @@ export class Context<
 	 * ```ts
 	 * import { Route } from "ovr";
 	 *
-	 * const post = Route.post(async (c) => {
+	 * const post = Route.post().use(async (c) => {
 	 * 	for await (const part of c.form()) {
 	 * 		if (part.name === "email") {
 	 * 			// ...
@@ -272,15 +278,44 @@ export class Context<
 				return Object.assign(result, { url });
 			};
 
-			if (result.issues) return invalid(result) as Context.Result<Shape>;
+			if (result.issues) {
+				this.#agentIssues(result.issues);
+				return invalid(result) as Context.Result<Shape>;
+			}
 
 			const create = result.invalid;
 
 			return Object.assign(result, {
-				invalid: (messages: FormSchema.Parse.Messages<FormSchema.Shape>) =>
-					invalid(create(messages)),
+				invalid: (messages: FormSchema.Parse.Messages<FormSchema.Shape>) => {
+					const result = create(messages);
+					this.#agentIssues(result.issues);
+					return invalid(result);
+				},
 			}) as Context.Result<Shape>;
 		})());
+	}
+
+	/**
+	 * Agents get the issues directly instead of a redirect to the form.
+	 *
+	 * @param issues Parse issues
+	 */
+	#agentIssues(
+		issues: readonly { path: readonly PropertyKey[]; message: string }[],
+	) {
+		if (!agent.has(this.req)) return;
+
+		this.json(
+			{
+				issues: issues.map((issue) => ({
+					path: issue.path.map(String).join("."),
+					message: issue.message,
+				})),
+			},
+			422,
+		);
+
+		throw new Halt();
 	}
 
 	/**
@@ -317,6 +352,17 @@ export class Context<
 			// something to stream
 			const [mime] = Header.shift(this.res.headers.get(Header.name.type));
 
+			if (!mime || mime === Mime.type.html) {
+				// pages are HTML for browsers and Markdown for agents that ask for it
+				this.res.headers.append(Header.name.vary, "Accept");
+
+				if (Context.#markdown(this.req)) {
+					this.res.body = Render.markdown(r, { base: this.url });
+					this.res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
+					return;
+				}
+			}
+
 			this.res.body = Render.stream(r, {
 				// other defined types are safe
 				safe: Boolean(mime && !Mime.markup(mime)),
@@ -329,6 +375,18 @@ export class Context<
 
 			// do not overwrite/remove status - that way user can set it before returning
 		}
+	}
+
+	/**
+	 * @param req Request
+	 * @returns `true` if the request asks for Markdown over HTML
+	 */
+	static #markdown(req: Request) {
+		const accept = req.headers.get(Header.name.accept);
+		// only an explicit request, browsers accept */*
+		const markdown = Header.quality(accept, Mime.type.md, true);
+
+		return markdown > 0 && markdown >= Header.quality(accept, Mime.type.html);
 	}
 
 	/**

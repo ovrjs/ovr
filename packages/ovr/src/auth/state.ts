@@ -1,4 +1,4 @@
-import { Halt } from "../context/index.js";
+import { type Context as ContextType, Halt, agent } from "../context/index.js";
 import { Codec, Header, Mime, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
@@ -17,6 +17,7 @@ export namespace State {
 export class State {
 	static readonly #cookie = "__Host-auth-session";
 	static readonly #binding = "__Host-auth-browser";
+	static readonly #return = "__Host-auth-return";
 	readonly #c: State.Context;
 	#browser: string | undefined;
 	#session: Promise<Auth.Session | null> | undefined;
@@ -84,7 +85,50 @@ export class State {
 
 	/** Read a non-expired, non-revoked session; does not extend its lifetime. */
 	session() {
+		// an agent's tool call, authorized by its token
+		const { req } = this.#c as Partial<Pick<ContextType, "req">>;
+		const call = req && agent.get(req);
+		if (call?.session)
+			return (this.#session ??= Promise.resolve(call.session as Auth.Session));
+
 		return (this.#session ??= this.#read());
+	}
+
+	/**
+	 * Return to a local path after the next login, such as an agent's
+	 * authorization request.
+	 *
+	 * @param path Local path with its query
+	 */
+	remember(path: string) {
+		this.#c.cookie.set(State.#return, path, {
+			secure: true,
+			httpOnly: true,
+			sameSite: "Lax",
+			maxAge: Math.floor((15 * Time.minute) / Time.second),
+		});
+	}
+
+	/**
+	 * @param fallback Destination without a remembered path
+	 * @returns The remembered path, cleared, or the fallback
+	 */
+	resume(fallback: string) {
+		const path = this.#c.cookie.get(State.#return);
+		if (!path) return fallback;
+
+		this.#c.cookie.set(State.#return, "", {
+			secure: true,
+			httpOnly: true,
+			sameSite: "Lax",
+			maxAge: 0,
+		});
+
+		return path.startsWith("/") &&
+			!path.startsWith("//") &&
+			!path.includes("\\")
+			? path
+			: fallback;
 	}
 
 	/** Replace the current session and issue a new signed, secure cookie. */

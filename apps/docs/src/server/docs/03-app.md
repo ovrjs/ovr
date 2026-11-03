@@ -29,7 +29,7 @@ new App({ trailingSlash: "always" });
 
 ### CSRF
 
-ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF) protection.
+ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF) protection. Requests other than `GET` and `HEAD` must come from the same origin, by their `Sec-Fetch-Site` or `Origin` header. Browsers send at least one of these, so a request with neither and without cookies is from another kind of client, such as an [agent](/10-agents), and is allowed.
 
 ```ts
 new App({ csrf: false }); // disables the built-in protection
@@ -49,14 +49,6 @@ new App({
 });
 ```
 
-### Auth
-
-Pass an [Auth service](/08-auth) to mount its registration, login, logout, and browser endpoints.
-
-```ts
-new App({ auth });
-```
-
 ## Use
 
 _Use_ the `use` method to register [routes](/04-route) and [middleware](/05-middleware) to your application.
@@ -69,17 +61,23 @@ app.use([page, login, mw]); // array
 // any combination of these also works
 ```
 
+`use` also mounts services. An [Auth service](/08-auth) adds its registration, login, logout, and browser endpoints, and an [MCP endpoint](/10-agents) adds the route agents connect to.
+
+```ts
+app.use(auth, mcp);
+```
+
 This makes it easy to create a module of routes and/or middleware,
 
 ```tsx
 // home.tsx
 import { Route } from "ovr";
 
-export const page = Route.get("/", (c) => {
+export const page = Route.get("/").use((c) => {
 	// ...
 });
 
-export const login = Route.post((c) => {
+export const login = Route.post().use((c) => {
 	// ...
 });
 ```
@@ -105,15 +103,15 @@ const response = await app.fetch("https://example.com");
 
 Server adapters can pass a trusted client IP with `app.fetch(request, { ip })`. It becomes `c.ip` for [rate limiting](/05-middleware#rate-limiting) and [authentication](/08-auth). A standard Fetch `Request` cannot identify its socket peer, so your server must supply this metadata. Passing only `ip` preserves the original `Request` object; normal `RequestInit` options such as `method` and `headers` remain available in the same argument.
 
-For a direct Deno HTTPS server, use the connection metadata:
+For a Node server with [srvx](https://srvx.h3.dev/guide/handler), use the connection's address:
 
 ```ts
-Deno.serve({ cert, key }, (request, info) =>
-	app.fetch(request, { ip: info.remoteAddr.hostname }),
-);
+import { serve } from "srvx";
+
+serve({ fetch: (request) => app.fetch(request, { ip: request.ip }) });
 ```
 
-`cert` and `key` are your TLS PEM strings. Behind a reverse proxy, the socket peer identifies the proxy. Accept connections only from your proxy and use a client header that it overwrites. Passing the proxy's address makes all users share one rate-limit bucket. [Deno HTTP server API](https://docs.deno.com/api/deno/http-server/).
+Behind a reverse proxy, the socket peer identifies the proxy. Accept connections only from your proxy and use a client header that it overwrites. Passing the proxy's address makes all users share one rate-limit bucket.
 
 For a Cloudflare Worker reached through its Internet-facing edge, with Worker subrequests blocked by your edge policy:
 

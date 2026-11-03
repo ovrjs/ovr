@@ -21,7 +21,7 @@ export class Token {
 	/** Seal a payload for exactly one authentication purpose. */
 	static async seal(
 		secret: Auth.Options["secret"],
-		purpose: "session" | "passkey",
+		purpose: "session" | "passkey" | "consent",
 		value: string,
 	) {
 		const payload = `${purpose}:${value}`;
@@ -31,7 +31,7 @@ export class Token {
 	/** Verify both integrity and purpose before exposing the payload. */
 	static async open(
 		secret: Auth.Options["secret"],
-		purpose: "session" | "passkey",
+		purpose: "session" | "passkey" | "consent",
 		token: string,
 	) {
 		const dot = token.lastIndexOf(".");

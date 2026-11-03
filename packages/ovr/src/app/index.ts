@@ -1,4 +1,3 @@
-import type { Auth } from "../auth/index.js";
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
@@ -6,11 +5,42 @@ import { Route } from "../route/index.js";
 import { Trie } from "../trie/index.js";
 import { Header, Method, type Util } from "../util/index.js";
 
+/** Internal protocol for services that `app.use` mounts, such as `Auth`. */
+export const mount = Symbol("mount");
+
+/** Routes that accept cross-origin requests without cookies, such as OAuth endpoints. */
+export const crossOrigin = new WeakSet<Route>();
+
 export namespace App {
+	/** What a service can use from the app it is mounted on. */
+	export interface Mount {
+		/** Every route the app has, including ones added later */
+		readonly routes: readonly Route[];
+
+		/** The app's request handler */
+		readonly fetch: App["fetch"];
+
+		/**
+		 * @param method Request method
+		 * @param pathname URL pathname
+		 * @returns The route a request would run, before running it
+		 */
+		find(method: string, pathname: string): Route | undefined;
+	}
+
+	/** A service that adds its routes and middleware to the app. */
+	export interface Service {
+		/**
+		 * @param app The app the service is mounted on
+		 * @returns Routes and global middleware to use
+		 */
+		[mount](app: Mount): Util.DeepArray<Route | Middleware>;
+	}
+
 	/** Fetch options plus server-supplied connection metadata. */
 	export interface Fetch extends RequestInit {
 		/** Trusted socket peer or verified edge client IP. Never copy an arbitrary forwarded header. */
-		readonly ip?: string;
+		readonly ip?: string | undefined;
 	}
 	export namespace Options {
 		/** Trailing slash preference */
@@ -25,7 +55,8 @@ export namespace App {
 		 * protection that checks the request's `method`, and its
 		 * [`Sec-Fetch-Site`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-Fetch-Site)
 		 * and [`Origin`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Origin)
-		 * headers.
+		 * headers. Requests with neither header nor a `Cookie` are not from a
+		 * browser and are allowed.
 		 *
 		 * More robust protection requires a stateful server or a database to store
 		 * [CSRF tokens](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF#csrf_tokens).
@@ -50,9 +81,6 @@ export namespace App {
 		 * (overridden by options passed into `Context.form(options)`)
 		 */
 		readonly form?: Multipart.Options;
-
-		/** Configured authentication service; its routes mount automatically. */
-		readonly auth?: Pick<Auth, "origin" | "routes">;
 	};
 }
 
@@ -60,6 +88,9 @@ export namespace App {
 export class App {
 	/** Route trie */
 	readonly #trie = new Trie();
+
+	/** Every route added, in order */
+	readonly #routes: Route[] = [];
 
 	/** Global middleware */
 	readonly #global: Middleware[] = [];
@@ -75,20 +106,6 @@ export class App {
 	constructor(options?: App.Options) {
 		this.#options = { csrf: true, trailingSlash: "never" as const, ...options };
 
-		const auth = this.#options.auth;
-		if (auth) {
-			// Only generated auth endpoints reject alternate hosts before their handlers run.
-			const routes = new Set(auth.routes);
-			this.#global.push((c, next) => {
-				if (c.route && routes.has(c.route) && c.url.origin !== auth.origin) {
-					c.res.headers.set("cache-control", "no-store");
-					return c.text("Misdirected Request", 421);
-				}
-				return next();
-			});
-			this.use(...auth.routes);
-		}
-
 		if (this.#options.csrf) this.#global.push(App.#csrf);
 
 		if (this.#options.trailingSlash !== "ignore") {
@@ -97,17 +114,27 @@ export class App {
 	}
 
 	/**
-	 * @param routes Route or middleware to use
+	 * @param routes Routes, middleware, or services such as `Auth` to use
 	 * @returns `App` instance
 	 */
 	use(
 		...routes: Util.DeepArray<
-			Route | Middleware | Record<string, Route | Middleware>
+			Route | Middleware | App.Service | Record<string, Route | Middleware>
 		>[]
 	) {
 		for (const route of routes) {
 			if (route instanceof Route) {
 				this.#trie.add(route);
+				this.#routes.push(route);
+			} else if (mount in route) {
+				this.use(
+					route[mount]({
+						routes: this.#routes,
+						fetch: this.fetch,
+						find: (method, pathname) =>
+							this.#trie.find(App.#match(method) + pathname)?.route,
+					}),
+				);
 			} else if (Array.isArray(route)) {
 				this.use(...route);
 			} else if (typeof route === "function") {
@@ -150,23 +177,36 @@ export class App {
 			Object.assign(
 				c,
 				// match
-				this.#trie.find(
-					// use GET for HEAD requests to find the correct route
-					(c.req.method === Method.head ? Method.get : c.req.method) +
-						c.url.pathname,
-				),
+				this.#trie.find(App.#match(c.req.method) + c.url.pathname),
 			),
 			this.#global.concat(c.route?.middleware ?? []),
 		);
 	};
 
+	/**
+	 * @param method Request method
+	 * @returns Method to match routes with, GET finds the route for HEAD
+	 */
+	static #match(method: string) {
+		return method === Method.head ? Method.get : method;
+	}
+
 	/** Basic CSRF middleware */
 	static #csrf(c: Middleware.Context, next: Middleware.Next) {
+		const site = c.req.headers.get(Header.name.fetch);
+		const origin = c.req.headers.get(Header.name.origin);
+
 		if (
 			c.req.method === Method.get ||
 			c.req.method === Method.head ||
-			c.req.headers.get(Header.name.fetch) === "same-origin" ||
-			c.req.headers.get(Header.name.origin) === c.url.origin
+			site === "same-origin" ||
+			origin === c.url.origin ||
+			(c.route && crossOrigin.has(c.route)) ||
+			// browsers send at least one, so without cookies this is not a browser,
+			// for example an MCP client
+			(site === null &&
+				origin === null &&
+				!c.req.headers.has(Header.name.cookie))
 		) {
 			return next();
 		}

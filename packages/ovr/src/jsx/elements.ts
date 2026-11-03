@@ -328,6 +328,8 @@ type FieldsetAttributes = Attributes<{
 	disabled: boolean;
 	form: string;
 	name: string;
+	/** WebMCP description of a radio group for browser agents */
+	toolparamdescription: string;
 }>;
 
 type FormAttributes = Attributes<{
@@ -350,6 +352,12 @@ type FormAttributes = Attributes<{
 	method: SharedAttributes["method"];
 	novalidate: boolean;
 	target: SharedAttributes["target"];
+	/** [WebMCP](https://developer.chrome.com/docs/ai/webmcp/declarative-api) tool name for browser agents */
+	toolname: string;
+	/** WebMCP tool description, required with `toolname` */
+	tooldescription: string;
+	/** Lets a browser agent submit the form without the user clicking */
+	toolautosubmit: boolean;
 }>;
 
 type HtmlAttributes = Attributes<{ xmlns: string }>;
@@ -445,6 +453,8 @@ type InputAttributes = Attributes<
 		value: string | number;
 		webkitdirectory: boolean;
 		width: string;
+		/** WebMCP parameter description for browser agents */
+		toolparamdescription: string;
 	},
 	never
 >;
@@ -607,6 +617,8 @@ type SelectAttributes = Attributes<{
 	name: string;
 	required: boolean;
 	size: string | number;
+	/** WebMCP parameter description for browser agents */
+	toolparamdescription: string;
 }>;
 
 type SlotAttributes = Attributes<{ name: string }>;
@@ -656,6 +668,8 @@ type TextareaAttributes = Attributes<{
 	required: boolean;
 	rows: string | number;
 	wrap: "hard" | "soft" | "off";
+	/** WebMCP parameter description for browser agents */
+	toolparamdescription: string;
 }>;
 
 type ThAttributes = Attributes<{

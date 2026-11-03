@@ -64,17 +64,21 @@ Use `Field` to describe the expected inputs for a POST route. `Context.data()` p
 ```tsx
 import { Field, Route } from "ovr";
 
-export const signup = Route.post({ name: Field.text().min(2) }, async (c) => {
-	const result = await c.data();
+export const signup = Route.post()
+	.fields({ name: Field.text().min(2) })
+	.use(async (c) => {
+		const result = await c.data();
 
-	if (result.issues) return c.redirect(result.url, 303);
+		if (result.issues) return c.redirect(result.url, 303);
 
-	// create account...
+		// create account...
 
-	return <p>Welcome, {result.data.name}.</p>;
-});
+		return <p>Welcome, {result.data.name}.</p>;
+	});
 
-export const page = Route.get("/signup", (c) => <signup.Form state={c.url} />);
+export const page = Route.get("/signup").use((c) => (
+	<signup.Form state={c.url} />
+));
 ```
 
 `signup.Form` renders the `<form>` _and_ the fields inside by default. The button is labelled "Submit"; pass `submit` to change it, for example `<signup.Form submit="Sign up" />`.
@@ -103,16 +107,16 @@ export const page = Route.get("/signup", (c) => <signup.Form state={c.url} />);
 
 The `state` prop for each component takes the current page `c.url`. The URL contains a same-origin `_return` query param on the action URL so invalid redirects can return to the page that rendered the form.
 
-> If you want to reuse the schema outside of a route, create it with `Form.from(shape)` and pass the resulting form into `Route.get` or `Route.post`.
+> If you want to reuse the schema outside of a route, create it with `Form.from(shape)` and pass the resulting form to `route.fields(form)`.
 
 ### Edit a record
 
 Pass `values` to fill the fields with a record's current values. Values restored from an invalid submission take precedence, and values a field can't render, such as dates and `null`, are skipped. `Fields`, `Field`, and `component` accept `values` too.
 
 ```tsx
-const update = Route.post("/posts/:id", fields, handler);
+const update = Route.post("/posts/:id").fields(fields).use(handler);
 
-const edit = Route.get("/posts/:id/edit", async (c) => {
+const edit = Route.get("/posts/:id/edit").use(async (c) => {
 	const post = await find(c.params.id);
 
 	return <update.Form params={{ id: post.id }} values={post} state={c.url} />;
@@ -124,19 +128,24 @@ const edit = Route.get("/posts/:id/edit", async (c) => {
 Some issues are only found after the data is valid, for example when a database constraint rejects a duplicate email. `result.invalid` puts messages on fields and returns an invalid result with the same `url` as a failed parse, keeping persisted values.
 
 ```tsx
-const signup = Route.post({ email: Field.email().persist() }, async (c) => {
-	const result = await c.data();
-	if (result.issues) return c.redirect(result.url, 303);
+const signup = Route.post()
+	.fields({ email: Field.email().persist() })
+	.use(async (c) => {
+		const result = await c.data();
+		if (result.issues) return c.redirect(result.url, 303);
 
-	const [user] = await db.sql`
+		const [user] = await db.sql`
 		INSERT INTO ${db.users} ${db.sql.values(db.users, result.data)}
 		ON CONFLICT (email) DO NOTHING RETURNING *
 	`.parse(db.users);
-	if (!user)
-		return c.redirect(result.invalid({ email: "Already registered" }).url, 303);
+		if (!user)
+			return c.redirect(
+				result.invalid({ email: "Already registered" }).url,
+				303,
+			);
 
-	// ...
-});
+		// ...
+	});
 ```
 
 ## Input normalization
@@ -166,14 +175,13 @@ Only opt in non-sensitive fields. Values marked with `.persist()` are encoded in
 ```tsx
 import { Field, Route } from "ovr";
 
-export const search = Route.get(
-	"/search",
-	{
+export const search = Route.get("/search")
+	.fields({
 		q: Field.search({ label: "Search" }).optional(),
 		minPrice: Field.number().min(0).optional(),
 		inStock: Field.checkbox(),
-	},
-	async (c) => {
+	})
+	.use(async (c) => {
 		const result = await c.data();
 
 		if (result.issues) return <search.Form state={result.url} />;
@@ -192,8 +200,7 @@ export const search = Route.get(
 				<h2>Results for {result.data.q || "all products"}</h2>
 			</>
 		);
-	},
-);
+	});
 ```
 
 ## Streaming
@@ -204,14 +211,14 @@ To stream uploads, mark a file field with `.stream()`. `Context.data()` will val
 import { upload } from "./upload";
 import { Field, Route } from "ovr";
 
-const submit = Route.post(
-	{
+const submit = Route.post()
+	.fields({
 		date: Field.date(),
 		// place streamed fields last in the document so previous can be parsed
 		// or adjust the order with client side js before submission
 		license: Field.file().stream(),
-	},
-	async (c) => {
+	})
+	.use(async (c) => {
 		const result = await c.data();
 
 		if (result.issues) return c.redirect(result.url, 303);
@@ -228,8 +235,7 @@ const submit = Route.post(
 		}
 
 		c.redirect("/files", 303);
-	},
-);
+	});
 ```
 
 ## Protections

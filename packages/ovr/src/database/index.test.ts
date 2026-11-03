@@ -840,6 +840,14 @@ describe.each(drivers)("$name", (driver) => {
 		).rejects.toThrow(Schema.AggregateIssue);
 	});
 
+	test("numeric field projections reject rounded driver array values", async () => {
+		await expect(
+			db.sql`SELECT ARRAY[9007199254740993]::numeric[] AS values`.parse(
+				Schema.object({ values: Schema.array(Field.number()) }),
+			),
+		).rejects.toThrow(Schema.AggregateIssue);
+	});
+
 	test("numeric form columns reject database integers that would lose precision", async () => {
 		const table = new Table("other", { value: Field.number() });
 

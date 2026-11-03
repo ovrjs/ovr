@@ -3,7 +3,7 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
-export const seo = ovr.Route.get("/demo/seo", (c) => {
+export const seo = ovr.Route.get("/demo/seo").use((c) => {
 	const Layout = createLayout(c);
 
 	return (

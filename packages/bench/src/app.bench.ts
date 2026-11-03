@@ -23,28 +23,25 @@ describe("render", () => {
 const app = new o.App();
 
 app.use(
-	o.Route.get("/", () => "home"),
-	o.Route.get("/test", () => "test"),
-	o.Route.get("/:slug", (c) => c.params.slug),
-	o.Route.get("/test/:slug", (c) => c.params.slug),
-	o.Route.get("/posts", (c) => c.text("posts")),
-	o.Route.get(
-		"/posts/:postId/comments",
+	o.Route.get("/").use(() => "home"),
+	o.Route.get("/test").use(() => "test"),
+	o.Route.get("/:slug").use((c) => c.params.slug),
+	o.Route.get("/test/:slug").use((c) => c.params.slug),
+	o.Route.get("/posts").use((c) => c.text("posts")),
+	o.Route.get("/posts/:postId/comments").use(
 		(c) => `comments for ${c.params.postId}`,
 	),
-	o.Route.get(
-		"/posts/:postId/comments/:commentId",
+	o.Route.get("/posts/:postId/comments/:commentId").use(
 		(c) => `comment ${c.params.commentId} on post ${c.params.postId}`,
 	),
-	o.Route.get("/api/users", () => "users index"),
-	o.Route.get("/api/users/:id", (c) => `user ${c.params.id}`),
-	o.Route.get("/static/*", (c) => `static ${c.params["*"] ?? ""}`),
-	o.Route.get(
-		"/assets/:type/:name",
+	o.Route.get("/api/users").use(() => "users index"),
+	o.Route.get("/api/users/:id").use((c) => `user ${c.params.id}`),
+	o.Route.get("/static/*").use((c) => `static ${c.params["*"] ?? ""}`),
+	o.Route.get("/assets/:type/:name").use(
 		(c) => `${c.params.type}/${c.params.name}`,
 	),
-	o.Route.get("/files/:path", (c) => `file ${c.params.path}`),
-	o.Route.post("/api/users", (c) => {
+	o.Route.get("/files/:path").use((c) => `file ${c.params.path}`),
+	o.Route.post("/api/users").use((c) => {
 		return c.json({ created: true });
 	}),
 );

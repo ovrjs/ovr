@@ -3,14 +3,15 @@
 A small application written against the current `next` branch. Start with
 [app.tsx](./app.tsx): it contains all the page and CRUD handlers.
 
-| File                                                               | Responsibility                                                                |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| [db.ts](./db.ts)                                                   | Account and bookmark schemas, reusable form fields, Postgres pool             |
-| [auth.ts](./auth.ts)                                               | Passkey configuration and transactional account creation                      |
-| [app.tsx](./app.tsx)                                               | Login, list, edit, create, update, delete, and logout UI                      |
-| [migrations/0001_init.sql](./migrations/0001_init.sql)             | Application tables, constraints, indexes                                      |
-| [migrations/0003_auth_users.sql](./migrations/0003_auth_users.sql) | Delete an account's passkeys and sessions with it                             |
-| [migrate.ts](./migrate.ts)                                         | Apply the migrations, with `Auth.sql[1]` as `0002_auth`, and check the tables |
+| File                                                                 | Responsibility                                                           |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [db.ts](./db.ts)                                                     | Account and bookmark schemas, reusable form fields, Postgres pool        |
+| [auth.ts](./auth.ts)                                                 | Passkey configuration and transactional account creation                 |
+| [app.tsx](./app.tsx)                                                 | Login, list, edit, create, update, delete, and logout UI                 |
+| [migrations/0001_init.sql](./migrations/0001_init.sql)               | Application tables, constraints, indexes                                 |
+| [migrations/0003_auth_users.sql](./migrations/0003_auth_users.sql)   | Delete an account's passkeys and sessions with it                        |
+| [migrations/0005_auth_tokens.sql](./migrations/0005_auth_tokens.sql) | Disconnect an account's agents with it                                   |
+| [migrate.ts](./migrate.ts)                                           | Apply the migrations, with `Auth.sql[1]` and `[2]`, and check the tables |
 
 ## Routes
 
@@ -23,8 +24,11 @@ A small application written against the current `next` branch. Start with
 | GET    | `/bookmarks/:id/edit`   | Load an owned bookmark into the update form               |
 | POST   | `/bookmarks/:id`        | Update an owned bookmark; handle duplicate URL conflicts  |
 | POST   | `/bookmarks/:id/delete` | Delete an owned bookmark                                  |
+| GET    | `/connect`              | Approve an agent that connects through MCP                |
+| POST   | `/mcp`                  | MCP endpoint for agents                                   |
 
-`new App({ auth })` also mounts the authentication routes and browser script.
+`app.use(auth)` mounts the authentication routes and browser script, and
+`app.use(mcp)` the MCP endpoint.
 `auth.forms(c)` supplies the registration, login, and logout components.
 
 Every CRUD handler authenticates before doing work. Reads and mutations include
@@ -37,6 +41,16 @@ ownership. The unique email constraint prevents another account with the exact
 same email, without merging accounts. Email normalization, verification, and
 recovery are separate product choices.
 
+## Agents
+
+The described routes are MCP tools: `post_bookmarks` saves, `post_bookmarks_id`
+edits, and `post_bookmarks_id_delete` deletes, marked destructive. The list and
+edit pages are read-only tools, and every page is a Markdown resource. An agent
+connecting to `/mcp` signs in through OAuth: the user logs in with their passkey
+and approves it on `/connect`, and its tool calls run the same handlers as that
+user, so ownership checks apply unchanged. Requests with
+`Accept: text/markdown` get any page as Markdown.
+
 ## Evaluate it
 
 The files form an application module, not a bundled HTTP server. `npm run check`
@@ -48,7 +62,9 @@ compatibility, login-page rendering, authentication redirects, CRUD, initial edi
 values, duplicate create/update errors, cross-account access rejection, invalid
 UUIDs, unsafe URLs, and logout/revocation. Sessions were established through a
 private test harness using `auth.login`; the browser passkey ceremony was not
-exercised by this check.
+exercised by this check. The migrations, including `Auth.sql[2]`, were applied
+and checked on Postgres 18. The MCP and OAuth flows are covered by ovr's own
+tests; they were not exercised against this example.
 
 Use the repository's TSX build setup with `jsxImportSource: "ovr"`. The included
 tsconfig points to current source for checking; configure the same source aliases
@@ -89,11 +105,8 @@ versioned `Auth.sql`, plus `db.check()` fit an AI-authored workflow without a
 schema diff engine or query builder.
 
 Writing this example led to `submit` labels on route forms, `Database.unique`
-for constraint errors, and the versioned `Auth.sql`. Two suggestions were left
-out on purpose:
-
-- **A parse-or-redirect helper** would save one line per handler but add a
-  second way to read form data; `c.data()` already returns everything needed.
-- **Route parameter schemas** only make sense with typed, converted parameters.
-  Until then, the handler checks the ID with the table's own column schema,
-  `bookmarks.shape.id.parse(c.params.id)`.
+for constraint errors, and the versioned `Auth.sql`. Chained routes let
+`.params({ id })` check IDs with the table's own column schema before the
+handler runs, so an invalid UUID is a 404. A parse-or-redirect helper was left
+out on purpose: it would save one line per handler but add a second way to read
+form data, and `c.data()` already returns everything needed.

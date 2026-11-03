@@ -7,31 +7,30 @@ import { expect, test } from "vitest";
 const c = new Context(new Request("https://localhost/"), {});
 
 const trie = new Trie()
-	.add(Route.get("/", () => "/"))
-	.add(Route.get("/static/static", () => "/static/static"))
-	.add(Route.get("/static/:param", () => "/static/:param"))
-	.add(Route.get("/static/:param/:another", () => "/static/:param/:another"))
+	.add(Route.get("/").use(() => "/"))
+	.add(Route.get("/static/static").use(() => "/static/static"))
+	.add(Route.get("/static/:param").use(() => "/static/:param"))
 	.add(
-		Route.get(
-			"/static/:param/:another/static",
+		Route.get("/static/:param/:another").use(() => "/static/:param/:another"),
+	)
+	.add(
+		Route.get("/static/:param/:another/static").use(
 			() => "/static/:param/:another/static",
 		),
 	)
 	.add(
-		Route.get(
-			"/static/:param/:another/static/static",
+		Route.get("/static/:param/:another/static/static").use(
 			() => "/static/:param/:another/static/static",
 		),
 	)
 	.add(
-		Route.get(
-			"/static/:param/:another/static/different",
+		Route.get("/static/:param/:another/static/different").use(
 			() => "/static/:param/:another/static/different",
 		),
 	)
-	.add(Route.get("/static/fork", () => "/static/fork"))
-	.add(Route.get("/static/fork/:param", () => "/static/fork/:param"))
-	.add(Route.get("/wild/*", () => "/wild/*"));
+	.add(Route.get("/static/fork").use(() => "/static/fork"))
+	.add(Route.get("/static/fork/:param").use(() => "/static/fork/:param"))
+	.add(Route.get("/wild/*").use(() => "/wild/*"));
 
 const match = (path: string) => {
 	const result = trie.find(path);
@@ -124,16 +123,16 @@ test("/static/ (trailing slash)", () => {
 });
 
 test("/*", () => {
-	trie.add(Route.get("/*", () => "/*"));
+	trie.add(Route.get("/*").use(() => "/*"));
 	const result = match("GET/whatever");
 	expect(result.value).toBe("/*");
 	expect(result.params).toStrictEqual({ "*": "whatever" });
 });
 
 test("conflicting param names at same segment throw", () => {
-	const trie = new Trie().add(Route.get("/:id", () => "/:id"));
+	const trie = new Trie().add(Route.get("/:id").use(() => "/:id"));
 
-	expect(() => trie.add(Route.get("/:name", () => "/:name"))).toThrow(
+	expect(() => trie.add(Route.get("/:name").use(() => "/:name"))).toThrow(
 		'Conflicting param names "id" and "name"',
 	);
 });

@@ -45,7 +45,6 @@ The ovr `App` server can be used in any Fetch API compatible runtime via [`App.f
 - [Cloudflare Vite Plugin](https://developers.cloudflare.com/workers/vite-plugin/get-started/) + [vite-ssr-components](https://github.com/yusukebe/vite-ssr-components)
 - [Node + srvx](https://srvx.h3.dev/)
 - [Bun HTTP server](https://bun.sh/docs/api/http)
-- [Deno HTTP server](https://docs.deno.com/runtime/fundamentals/http_server/)
 
 For example, using `srvx` you can plug `app.fetch` into the `serve` [options](https://srvx.h3.dev/guide/handler).
 

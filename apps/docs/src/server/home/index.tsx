@@ -3,7 +3,7 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as o from "ovr";
 
-export const page = o.Route.get("/", (c) => {
+export const page = o.Route.get("/").use((c) => {
 	const Layout = createLayout(c);
 
 	return (

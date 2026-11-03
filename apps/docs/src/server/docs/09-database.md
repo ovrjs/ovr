@@ -73,7 +73,7 @@ const posts = new Table(
 );
 
 const { title, body } = posts.shape;
-const create = Route.post("/posts", { title, body }, handler);
+const create = Route.post("/posts").fields({ title, body }).use(handler);
 ```
 
 ## Connect

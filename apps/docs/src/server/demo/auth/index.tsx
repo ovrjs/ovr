@@ -42,7 +42,7 @@ async function account(db: Store, id: string) {
 /** Build the demo UI; ovr supplies the protocol and session handlers. */
 export function routes(db: Store, service: ReturnType<typeof configure>) {
 	/** Landing page for register/login passkey flows. */
-	const auth = Route.get("/demo/auth", async (c) => {
+	const auth = Route.get("/demo/auth").use(async (c) => {
 		const Layout = createLayout(c);
 		const session = await service.session(c);
 		const user = session ? await account(db, session.user) : null;
@@ -84,7 +84,7 @@ export function routes(db: Store, service: ReturnType<typeof configure>) {
 	});
 
 	/** Protected dashboard route for demo session/credential output. */
-	const admin = Route.get("/demo/auth/admin", async (c) => {
+	const admin = Route.get("/demo/auth/admin").use(async (c) => {
 		const session = await service.require(c);
 		const user = await account(db, session.user);
 		if (!user) {

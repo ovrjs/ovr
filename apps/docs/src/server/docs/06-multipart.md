@@ -10,7 +10,7 @@ When a user submits an [HTML form](https://developer.mozilla.org/en-US/docs/Web/
 The platform built-in [`Request.formData`](https://developer.mozilla.org/en-US/docs/Web/API/Request/formData) buffers the entire request body in memory which limits scalability for very large files or requests. ovr's `Multipart` parser addresses this by streaming the request body in [chunks](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Transfer-Encoding#chunked), detecting boundaries incrementally without full buffering.
 
 - **Streaming Processing** - Holds one chunk in memory at a time for boundary detection. Stream massive files directly to disk, S3, or proxies without buffering.
-- **Compatible** - Native Fetch API implementation means zero adapters for modern stacks (Deno, Bun, Hono, H3, SvelteKit, etc.). Each `Multipart.Part` is an instance of `Request`.
+- **Compatible** - Native Fetch API implementation means zero adapters for modern stacks (Node, Bun, Hono, H3, SvelteKit, etc.). Each `Multipart.Part` is an instance of `Request`.
 - **Size Limits** - Configurable `memory` and `payload` thresholds to prevent oversized requests.
 
 ## Usage
@@ -50,7 +50,7 @@ async function fetch(req: Request) {
 ```ts
 import { Route } from "ovr";
 
-const post = Route.post(async (c) => {
+const post = Route.post().use(async (c) => {
 	for await (const part of c.form()) {
 		// ...
 	}
@@ -120,36 +120,13 @@ import { createWriteStream } from "node:fs";
 import { Writable } from "node:stream";
 import { Route } from "ovr";
 
-const upload = Route.post(async (c) => {
+const upload = Route.post().use(async (c) => {
 	try {
 		for await (const part of c.form()) {
 			if (part.name === "photo") {
 				await part.body.pipeTo(
 					Writable.toWeb(createWriteStream(`/uploads/${part.filename}`)),
 				);
-			}
-		}
-
-		c.text("Upload Complete", 201);
-	} catch (error) {
-		console.error(error);
-		c.text("Upload Failed", 500);
-	}
-});
-```
-
-### Deno
-
-Pass the `Part.body` directly to `Deno.writeFile`.
-
-```ts
-import { Route } from "ovr";
-
-const upload = Route.post(async (c) => {
-	try {
-		for await (const part of c.form()) {
-			if (part.name === "photo") {
-				await Deno.writeFile(`/uploads/${part.filename}`, part.body);
 			}
 		}
 

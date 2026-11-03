@@ -497,6 +497,15 @@ describe("Preprocess schemas", () => {
 		expect(invalid(field.parse(""))[0]?.message).toBe("Required field");
 	});
 
+	test("numeric fields reject unsafe integers already converted to numbers", () => {
+		for (const value of [
+			Number.MAX_SAFE_INTEGER + 1,
+			-Number.MAX_SAFE_INTEGER - 1,
+		]) {
+			expect(Field.number().parse(value).issues).toBeDefined();
+		}
+	});
+
 	test("field number rejects non-finite coerced values", () => {
 		expect(invalid(Field.number().parse("1e309"))[0]?.expected).toBe("number");
 	});

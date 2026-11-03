@@ -1,4 +1,4 @@
-import { Schema } from "../schema/index.js";
+import { Schema, normalizers } from "../schema/index.js";
 
 export namespace Table {
 	/** Column schemas keyed by column name. */
@@ -186,9 +186,14 @@ export class Table<
 			case "nullable":
 				return [Table.#type(def.inner.def, column)[0], true];
 			case "check":
-			// form fields normalize their input, a stored value parses unchanged
-			case "preprocess":
 				return Table.#type(def.inner.def, column);
+			case "preprocess":
+				// form fields normalize their input, a stored value parses unchanged
+				if (normalizers.has(def.fn)) return Table.#type(def.inner.def, column);
+
+				throw new TypeError(
+					`Table ${column}: preprocess() would change stored values when they are read, convert before inserting instead`,
+				);
 			case "json":
 				throw new TypeError(
 					`Table ${column}: use the parsed object or array schema for JSON instead of json()`,

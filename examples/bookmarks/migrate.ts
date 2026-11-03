@@ -16,6 +16,7 @@ try {
 	const applied = await db.migrate([
 		...files,
 		{ id: "0002_auth", sql: Auth.sql[1] },
+		{ id: "0004_auth_agents", sql: Auth.sql[2] },
 	]);
 	const differences = await db.check();
 	if (differences.length) throw new Error(differences.join("\n"));

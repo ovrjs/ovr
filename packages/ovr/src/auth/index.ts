@@ -1,3 +1,4 @@
+import { type App, mount } from "../app/index.js";
 import { type Context as ContextType, Halt } from "../context/index.js";
 import type { Database } from "../database/index.js";
 import type { JSX } from "../jsx/index.js";
@@ -7,6 +8,7 @@ import type { Form } from "../schema/index.js";
 import { Codec, Time } from "../util/index.js";
 import { configure } from "./configure.js";
 import { Issue } from "./issue.js";
+import { oauth } from "./oauth.js";
 import { State } from "./state.js";
 import { Storage } from "./storage.js";
 
@@ -73,6 +75,12 @@ export namespace Auth {
 		readonly page?: string;
 		/** Destination after registration or login. Defaults to /. */
 		readonly redirect?: string;
+		/**
+		 * Page where users approve agents that connect through MCP, such as
+		 * `/connect`. Setting it enables OAuth for agents. The page calls
+		 * `auth.consent(c)` for the request and its form.
+		 */
+		readonly consent?: string;
 		/** Override the default endpoint paths. Paths must be distinct literal local paths. */
 		readonly paths?: Partial<Record<"register" | "login" | "logout", string>>;
 		/** Additional and changed rate limits, stored in `database`; ovr supplies the signup and sign-in policies. */
@@ -91,6 +99,21 @@ export namespace Auth {
 			error: unknown,
 			c: Pick<ContextType, "req" | "url" | "cookie" | "ip">,
 		) => Result<void>;
+	}
+
+	/** An agent's request to act for the user, shown on the consent page. */
+	export interface Consent {
+		/** The agent, as it names itself */
+		readonly client: {
+			/** Name the agent registered, not verified */
+			readonly name: string;
+			/** Client ID metadata document URL, for agents that have one */
+			readonly uri?: string;
+		};
+		/** Host the user returns to after deciding */
+		readonly redirect: string;
+		/** Form with Allow and Deny buttons, or custom `children` buttons named `decision` */
+		readonly Form: (props: JSX.IntrinsicElements["form"]) => JSX.Element;
 	}
 
 	/** Stored ES256 passkey, including state updated after each login. */
@@ -118,7 +141,10 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	 * User IDs are text, so they hold any ID `auth.login` accepts.
 	 *
 	 * ```ts
-	 * await db.migrate([{ id: "0002_auth", sql: Auth.sql[1] }, ...]);
+	 * await db.migrate([
+	 * 	{ id: "0002_auth", sql: Auth.sql[1] },
+	 * 	{ id: "0003_auth_agents", sql: Auth.sql[2] },
+	 * ]);
 	 * ```
 	 */
 	static readonly sql = {
@@ -155,6 +181,21 @@ CREATE INDEX ovr_challenges_expiration ON ovr_challenges (expiration);
 CREATE INDEX ovr_challenges_browser ON ovr_challenges (browser, expiration);
 
 ${Limiter.sql[1]}`,
+		2: `CREATE TABLE ovr_tokens (
+	id text PRIMARY KEY,
+	kind text NOT NULL,
+	"user" text NOT NULL,
+	client text NOT NULL,
+	resource text NOT NULL,
+	scope text NOT NULL,
+	redirect text,
+	challenge text,
+	family text NOT NULL,
+	expiration bigint NOT NULL
+);
+CREATE INDEX ovr_tokens_family ON ovr_tokens (family);
+CREATE INDEX ovr_tokens_user ON ovr_tokens ("user");
+CREATE INDEX ovr_tokens_expiration ON ovr_tokens (expiration);`,
 	} as const;
 
 	/** Tables Auth stores its data in, include them in the database's tables. */
@@ -163,14 +204,28 @@ ${Limiter.sql[1]}`,
 		Storage.sessions,
 		Storage.challenges,
 		Limiter.table,
+		Storage.tokens,
 	] as const;
 
 	readonly #options: State.Options;
 	readonly #page: string;
 	readonly #states = new WeakMap<object, State>();
 
-	/** Generated endpoints; App mounts them automatically. */
+	/** Generated endpoints, mounted with `app.use(auth)`. */
 	readonly routes: readonly Route[];
+	/**
+	 * Read an agent's authorization request on the consent page, with the form
+	 * to allow or deny it. `null` when the request is invalid or expired.
+	 */
+	readonly consent: (c: Auth.Context) => Promise<Auth.Consent | null>;
+	/**
+	 * Read the session of an agent's bearer token issued for `resource`, such
+	 * as the MCP endpoint URL.
+	 */
+	readonly bearer: (
+		c: Pick<ContextType, "req">,
+		resource: string,
+	) => Promise<Auth.Session | null>;
 	/** Prepare request-scoped UI in the handler before returning JSX. */
 	readonly forms: (
 		c: Auth.Context,
@@ -218,8 +273,30 @@ ${Limiter.sql[1]}`,
 		};
 		this.#page = options.page ?? "/login";
 		const service = configure(options, storage, (c) => this.#state(c));
-		this.routes = service.routes;
+		const agents = oauth(options, storage, (c) => this.#state(c));
+		this.routes = [...service.routes, ...agents.routes];
 		this.forms = service.forms;
+		this.consent = agents.consent;
+		this.bearer = agents.bearer;
+	}
+
+	/**
+	 * Mounted by `app.use(auth)`. Generated endpoints reject alternate hosts
+	 * before their handlers run.
+	 */
+	[mount](): ReturnType<App.Service[typeof mount]> {
+		const routes = new Set<Route>(this.routes);
+
+		return [
+			(c: ContextType, next: () => Promise<void>) => {
+				if (c.route && routes.has(c.route) && c.url.origin !== this.origin) {
+					c.res.headers.set("cache-control", "no-store");
+					return c.text("Misdirected Request", 421);
+				}
+				return next();
+			},
+			...this.routes,
+		];
 	}
 
 	/** Canonical HTTPS origin used by this service. */

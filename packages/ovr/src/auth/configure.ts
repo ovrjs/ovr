@@ -203,11 +203,10 @@ export function configure<Shape extends Form.Shape>(
 			}
 		};
 	const register = Passkey.prepare(
-		Route.post(
-			paths.register,
-			options.register.fields,
-			guard("register"),
-			async (c) => {
+		Route.post(paths.register)
+			.describe(false)
+			.fields(options.register.fields)
+			.use(guard("register"), async (c) => {
 				const input = await c.data({ payload: 128 * Size.kb });
 				if (!input || input.issues) throw input;
 				const data = values(input.data);
@@ -220,30 +219,33 @@ export function configure<Shape extends Form.Shape>(
 					credential,
 				);
 				await state(c).login(credential.user);
-				c.redirect(redirect, 303);
-			},
-		),
+				c.redirect(state(c).resume(redirect), 303);
+			}),
 	);
 	const login = Passkey.prepare(
-		Route.post(paths.login, {}, guard("login"), async (c) => {
-			// Bound the body before verification.
-			await c.data({ payload: 128 * Size.kb });
-			const credential = await new Passkey(c, state(c)).login(
-				storage.credentials,
-			);
-			await state(c).login(credential.user);
-			c.redirect(redirect, 303);
-		}),
+		Route.post(paths.login)
+			.describe(false)
+			.fields({})
+			.use(guard("login"), async (c) => {
+				// Bound the body before verification.
+				await c.data({ payload: 128 * Size.kb });
+				const credential = await new Passkey(c, state(c)).login(
+					storage.credentials,
+				);
+				await state(c).login(credential.user);
+				c.redirect(state(c).resume(redirect), 303);
+			}),
 	);
-	const logout = Route.post(paths.logout, guard("logout"), async (c) => {
-		await state(c).logout();
-		c.redirect(page, 303);
-	});
-	const registration = Route.post(
-		`${paths.options}/register`,
-		{ ...options.register.fields, bootstrap: Field.hidden() },
-		guard("register", true),
-		async (c) => {
+	const logout = Route.post(paths.logout)
+		.describe(false)
+		.use(guard("logout"), async (c) => {
+			await state(c).logout();
+			c.redirect(page, 303);
+		});
+	const registration = Route.post(`${paths.options}/register`)
+		.describe(false)
+		.fields({ ...options.register.fields, bootstrap: Field.hidden() })
+		.use(guard("register", true), async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });
 			if (!input) throw new TypeError("Missing registration schema");
 			if (input.issues) {
@@ -267,21 +269,18 @@ export function configure<Shape extends Form.Shape>(
 					fields: await Passkey.fields(values(data)),
 				},
 			);
-		},
-	);
-	const assertion = Route.post(
-		`${paths.options}/login`,
-		{ bootstrap: Field.hidden() },
-		guard("login", true),
-		async (c) => {
+		});
+	const assertion = Route.post(`${paths.options}/login`)
+		.describe(false)
+		.fields({ bootstrap: Field.hidden() })
+		.use(guard("login", true), async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });
 			if (!input || input.issues) throw input;
 			await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
 				method: "login",
 				action: paths.login,
 			});
-		},
-	);
+		});
 	return {
 		routes: [register, login, logout, registration, assertion, Passkey.client],
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */

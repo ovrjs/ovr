@@ -7,7 +7,7 @@ description: Passkey authentication with customizable forms, stored in your Post
 
 ## Create
 
-Create one `Auth` instance and pass it to `App`. This mounts the authentication endpoints automatically.
+Create one `Auth` instance and add it to the app with `app.use(auth)`. This mounts the authentication endpoints.
 
 ```ts
 import { App, Auth, Database, Field, Schema, Table } from "ovr";
@@ -36,7 +36,7 @@ const auth = new Auth({
 	},
 });
 
-const app = new App({ auth });
+const app = new App().use(auth);
 ```
 
 `secret` is a server-side random secret containing at least 32 bytes. Keep it stable across deployments. `origin` is your exact HTTPS origin, without a path or trailing slash.
@@ -55,7 +55,7 @@ Call `auth.forms(c)` in the route handler, before returning JSX. This lets ovr s
 import { Route } from "ovr";
 
 app.use(
-	Route.get("/login", (c) => {
+	Route.get("/login").use((c) => {
 		const { Register, Login } = auth.forms(c);
 
 		return (
@@ -164,7 +164,7 @@ Require a session before rendering a protected page:
 
 ```tsx
 app.use(
-	Route.get("/account", async (c) => {
+	Route.get("/account").use(async (c) => {
 		const session = await auth.require(c);
 
 		const { Logout } = auth.forms(c);
@@ -214,10 +214,11 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 await db.migrate([
 	...files, // your migrations/*.sql
 	{ id: "0002_auth", sql: Auth.sql[1] },
+	{ id: "0004_auth_agents", sql: Auth.sql[2] },
 ]);
 ```
 
-A version's SQL never changes, so its checksum stays valid. If a later ovr release changes the tables, it ships the change as `Auth.sql[2]` for you to add as a new migration.
+A version's SQL never changes, so its checksum stays valid. Changes ship as a new version for you to add as a new migration: `Auth.sql[2]` adds the table for [agents](#agents).
 
 | Table             | Contents                                                      |
 | ----------------- | ------------------------------------------------------------- |
@@ -225,6 +226,7 @@ A version's SQL never changes, so its checksum stays valid. If a later ovr relea
 | `ovr_sessions`    | Revocable sessions                                            |
 | `ovr_challenges`  | Outstanding ceremonies, each used once                        |
 | `ovr_limits`      | [Rate limit](/05-middleware#rate-limiting) buckets            |
+| `ovr_tokens`      | Agents' authorization codes and tokens, stored as hashes      |
 
 Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. To delete an account's passkeys and sessions with it, give your `users` table a `text` ID and reference it in your own migration:
 
@@ -305,11 +307,75 @@ Extra policies run after the client policy, in array order, and preserve its def
 | `paths.register`  | `/auth/register` | Registration POST endpoint.                       |
 | `paths.login`     | `/auth/login`    | Login POST endpoint.                              |
 | `paths.logout`    | `/auth/logout`   | Logout POST endpoint.                             |
+| `consent`         | None             | Page where users approve [agents](#agents).       |
 | `error(error, c)` | `console.error`  | Detailed server-side error logging.               |
 
-Paths must be distinct local paths. The options endpoints and browser module are fixed under `/_passkey/`; `App` mounts them for you. The relying-party name shown by the browser comes from your origin's hostname.
+Paths must be distinct local paths. The options endpoints and browser module are fixed under `/_passkey/`; `app.use(auth)` mounts them. The relying-party name shown by the browser comes from your origin's hostname.
 
 Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Other failures use generic messages, with guidance to log in if registration already completed. Detailed errors stay on the server; protocol validation failures are `Auth.Issue` instances. Rate-limit denials include a retry hint, and the client waits before retrying.
+
+## Agents
+
+Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/10-agents) and act as a user. The user signs in with their passkey in the browser and approves the agent; the agent receives OAuth tokens, never the passkey or a session cookie. Connecting agents requires Node.js or Bun, see below.
+
+Set `consent` to the page where users approve agents, and create the page:
+
+```tsx
+const auth = new Auth({ ...options, consent: "/connect" });
+
+const connect = Route.get("/connect")
+	.describe(false)
+	.use(async (c) => {
+		await auth.require(c);
+		const request = await auth.consent(c);
+		if (!request) return c.text("This request expired. Connect again.", 400);
+
+		return (
+			<>
+				<h1>Connect {request.client.name}?</h1>
+				<p>You will return to {request.redirect}.</p>
+				<request.Form />
+			</>
+		);
+	});
+
+app.use(auth, new Mcp({ auth }), connect);
+```
+
+`request.Form` renders Allow and Deny buttons. Pass your own buttons as `children`, named `decision` with the values `allow` and `deny`. The client name is chosen by the agent and not verified, so the page shows where the user will return. `auth.consent(c)` also sets headers that stop other sites from framing the page.
+
+Auth then serves an OAuth 2.1 authorization server:
+
+| Endpoint                                  | Purpose                                                     |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| `/.well-known/oauth-authorization-server` | Metadata agents discover the endpoints with                 |
+| `/oauth/authorize`                        | Signs the user in if needed, then shows your `consent` page |
+| `/oauth/approve`                          | The consent form's decision                                 |
+| `/oauth/token`                            | Exchanges codes for tokens, and refreshes them              |
+
+An agent's client ID is the HTTPS URL of its [client ID metadata document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-id-metadata-documents), a JSON file with its name and the addresses to return the user to. Auth fetches it when the user connects, so the name shown on the consent page is tied to the agent's website, and there is nothing to register or store. The fetch never follows redirects, reads at most 5 KB, and refuses private and other special-use addresses. The address is checked when the connection looks the name up, so a domain cannot pass the check and then point at your network. Node.js and Bun can check the connection, so `consent` throws in other runtimes.
+
+Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute, each host serves at most 30 downloads per minute, and an instance downloads at most 16 documents at once. Requests for the same agent share one download, and a found agent is kept for 5 minutes.
+
+Agents send the `resource` they will use the token with, such as the MCP endpoint URL, when they authorize and when they request tokens. Authorization requires PKCE with S256. Codes last a minute and are used once, access tokens last an hour, and refresh tokens last 30 days and are replaced each time they are used. Using a code or refresh token a second time revokes every token issued from it, since one of the two parties stole it. A token grants what the user can do, so requests with a `scope` are refused. Tokens are bound to the resource they were requested for, such as the MCP endpoint, and stored as SHA-256 hashes.
+
+In a tool call, `auth.session(c)` and `auth.require(c)` return the session of the user who approved the agent, so the same handlers serve people and agents. `auth.bearer(c, resource)` reads a bearer token's session directly.
+
+To list and disconnect an account's agents, query its refresh tokens:
+
+```ts
+const agents = await db.sql`
+	SELECT DISTINCT ${db.ovr_tokens.columns.client} FROM ${db.ovr_tokens}
+	WHERE ${db.ovr_tokens.columns.user} = ${user} AND kind = 'refresh'
+`;
+
+await db.sql`
+	DELETE FROM ${db.ovr_tokens}
+	WHERE ${db.ovr_tokens.columns.user} = ${user} AND ${db.ovr_tokens.columns.client} = ${client}
+`;
+```
+
+Logging out does not disconnect agents. Token requests are limited to 60 per minute per client IP.
 
 ## Deployment
 

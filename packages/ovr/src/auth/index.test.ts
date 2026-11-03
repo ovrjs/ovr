@@ -2,11 +2,13 @@ import { App } from "../app/index.js";
 import { Database } from "../database/index.js";
 import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
+import { Mcp } from "../mcp/index.js";
 import { Route } from "../route/index.js";
 import { Field, Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
 import { Auth } from "./index.js";
+import { Metadata } from "./metadata.js";
 import { Passkey } from "./passkey.js";
 import { State } from "./state.js";
 import { Storage } from "./storage.js";
@@ -220,13 +222,13 @@ const db = new Database(
 );
 // the shipped migration, so these tests cover it too
 await engine.exec(
-	`CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);\n${Auth.sql[1]}`,
+	`CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);\n${Auth.sql[1]}\n${Auth.sql[2]}`,
 );
 const storage = Storage.of(db);
 
 beforeEach(() =>
 	engine.exec(
-		"TRUNCATE users, ovr_credentials, ovr_sessions, ovr_challenges, ovr_limits",
+		"TRUNCATE users, ovr_credentials, ovr_sessions, ovr_challenges, ovr_limits, ovr_tokens",
 	),
 );
 // the store is shared, so spies on it must not leak between tests
@@ -278,10 +280,9 @@ function setup(extra: Partial<State.Options> = {}) {
 	const app = new App();
 	// Internal protocol tests compose their own routes; applications use new Auth().
 	const issue = (method: "register" | "login") =>
-		Route.post(
-			method === "register" ? endpoint : `${endpoint}/login`,
-			{ bootstrap: Field.text() },
-			async (c) => {
+		Route.post(method === "register" ? endpoint : `${endpoint}/login`)
+			.fields({ bootstrap: Field.text() })
+			.use(async (c) => {
 				const input = await c.data({ payload: 128 * 1024 });
 				if (input.issues) throw input;
 				await Passkey.issue(
@@ -291,29 +292,28 @@ function setup(extra: Partial<State.Options> = {}) {
 					() => "User",
 					{ method, action: `/${method}` },
 				);
-			},
-		);
+			});
 	app.use(issue("register"), issue("login"), Passkey.client);
-	const register = Route.post(
-		"/register",
-		{ email: Field.email() },
-		async (c) => {
+	const register = Route.post("/register")
+		.fields({ email: Field.email() })
+		.use(async (c) => {
 			const input = await c.data();
 			if (input.issues) throw input;
 			const credential = await new Passkey(c, new State(c, options)).register();
 			await db.sql`INSERT INTO ${db.ovr_credentials} ${db.sql.values(db.ovr_credentials, credential)}`;
 			c.json(credential);
-		},
-	);
-	const login = Route.post("/login", {}, async (c) =>
-		c.json(await new Passkey(c, new State(c, options)).login(credentials)),
-	);
+		});
+	const login = Route.post("/login")
+		.fields({})
+		.use(async (c) =>
+			c.json(await new Passkey(c, new State(c, options)).login(credentials)),
+		);
 	Passkey.prepare(register);
 	Passkey.prepare(login);
 	app.use(
 		register,
 		login,
-		Route.get("/register-page", (c) =>
+		Route.get("/register-page").use((c) =>
 			jsx(
 				new Passkey(c, new State(c, options)).form(register, "register", {
 					endpoint,
@@ -321,7 +321,7 @@ function setup(extra: Partial<State.Options> = {}) {
 				{},
 			),
 		),
-		Route.get("/login-page", (c) =>
+		Route.get("/login-page").use((c) =>
 			jsx(
 				new Passkey(c, new State(c, options)).form(login, "login", {
 					endpoint: `${endpoint}/login`,
@@ -329,10 +329,10 @@ function setup(extra: Partial<State.Options> = {}) {
 				{},
 			),
 		),
-		Route.get("/session", async (c) => c.json(await auth.session(c))),
-		Route.post("/session", async (c) => c.json(await auth.login(c, user))),
-		Route.post("/logout", async (c) => c.json(await auth.logout(c))),
-		Route.post("/revoke/:id", async (c) => {
+		Route.get("/session").use(async (c) => c.json(await auth.session(c))),
+		Route.post("/session").use(async (c) => c.json(await auth.login(c, user))),
+		Route.post("/logout").use(async (c) => c.json(await auth.logout(c))),
+		Route.post("/revoke/:id").use(async (c) => {
 			await auth.revoke(c, c.params.id);
 			c.text("revoked");
 		}),
@@ -716,7 +716,7 @@ describe("revocable sessions", () => {
 		);
 		const get = vi.spyOn(state.options.sessions, "get");
 		state.app.use(
-			Route.get("/cached", async (c) => {
+			Route.get("/cached").use(async (c) => {
 				const first = state.auth.session(c);
 				expect(state.auth.session(c)).toBe(first);
 				c.json(await first);
@@ -739,7 +739,7 @@ describe("revocable sessions", () => {
 		const session: Auth.Session = await login.json();
 		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		state.app.use(
-			Route.get("/revoke-current", async (c) => {
+			Route.get("/revoke-current").use(async (c) => {
 				await state.auth.revoke(c, session.id);
 				expect(await state.auth.session(c)).toBeNull();
 				c.text("revoked");
@@ -776,7 +776,7 @@ describe("revocable sessions", () => {
 			const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
 			const get = vi.spyOn(state.options.sessions, "get");
 			state.app.use(
-				Route.get("/direct-revoke", async (c) => {
+				Route.get("/direct-revoke").use(async (c) => {
 					if (cached) await state.auth.session(c);
 					get.mockRejectedValue(new Error("reads unavailable"));
 					await state.auth.revoke(c, session.id);
@@ -800,7 +800,7 @@ describe("revocable sessions", () => {
 		const previous: Auth.Session = await login.json();
 		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		state.app.use(
-			Route.get("/rotate-revoke", async (c) => {
+			Route.get("/rotate-revoke").use(async (c) => {
 				const session = await state.auth.login(c, "next-user");
 				await state.auth.revoke(c, previous.id);
 				expect(await state.auth.session(c)).toEqual(session);
@@ -822,7 +822,7 @@ describe("revocable sessions", () => {
 			const get = vi.spyOn(state.options.sessions, "get");
 			const set = vi.spyOn(state.options.sessions, "set");
 			state.app.use(
-				Route.get("/invalid-user", async (c) => {
+				Route.get("/invalid-user").use(async (c) => {
 					await expect(state.auth.login(c, id)).rejects.toThrow("user ID");
 					c.text("rejected");
 				}),
@@ -921,7 +921,13 @@ describe("form contracts", () => {
 			"id" | "user" | "publicKey" | "counter" | "eligible" | "backedUp"
 		>();
 		expectTypeOf(Auth.tables.map((table) => table.name)).toEqualTypeOf<
-			("ovr_credentials" | "ovr_sessions" | "ovr_challenges" | "ovr_limits")[]
+			(
+				| "ovr_credentials"
+				| "ovr_sessions"
+				| "ovr_challenges"
+				| "ovr_limits"
+				| "ovr_tokens"
+			)[]
 		>();
 		expectTypeOf<Parameters<Auth["session"]>[0]>().toEqualTypeOf<
 			Pick<Auth.Context, "url" | "cookie" | "res">
@@ -935,15 +941,13 @@ describe("form contracts", () => {
 
 	test("retains typed route parameters and safely serializes script arguments", async () => {
 		const state = setup();
-		const route = Route.post(
-			"/accounts/:account/passkeys",
-			{ email: Field.email() },
-			(c) => c.text(c.params.account),
-		);
+		const route = Route.post("/accounts/:account/passkeys")
+			.fields({ email: Field.email() })
+			.use((c) => c.text(c.params.account));
 		Passkey.prepare(route);
 		state.app.use(
 			route,
-			Route.get("/typed", (c) => {
+			Route.get("/typed").use((c) => {
 				const Register = new Passkey(c, new State(c, state.options)).form(
 					route,
 					"register",
@@ -972,13 +976,11 @@ describe("form contracts", () => {
 
 	test("rejects reserved schema fields rather than silently replacing them", async () => {
 		const state = setup();
-		const route = Route.post(
-			"/conflict",
-			{ credential: Field.email(), challenge: Field.text() },
-			(c) => c.text("unused"),
-		);
+		const route = Route.post("/conflict")
+			.fields({ credential: Field.email(), challenge: Field.text() })
+			.use((c) => c.text("unused"));
 		state.app.use(
-			Route.get("/conflict", (c) => {
+			Route.get("/conflict").use((c) => {
 				new Passkey(c, new State(c, state.options)).form(route, "register", {
 					endpoint,
 				});
@@ -1070,9 +1072,9 @@ function managed(
 		},
 		...extra,
 	});
-	const app = new App({ auth: service });
+	const app = new App().use(service);
 	app.use(
-		Route.get("/login", (c) => {
+		Route.get("/login").use((c) => {
 			const { Register, Login } = service.forms(c, { nonce: "csp-nonce" });
 			if (false) {
 				// @ts-expect-error Application field names remain exact.
@@ -1092,7 +1094,7 @@ function managed(
 				jsx(Login, {}),
 			];
 		}),
-		Route.get("/whoami", async (c) => c.json(await service.session(c))),
+		Route.get("/whoami").use(async (c) => c.json(await service.session(c))),
 	);
 	const post = (path: string, data: FormData, cookie = "", ip = "192.0.2.1") =>
 		app.fetch(origin + path, {
@@ -1376,7 +1378,7 @@ test("require returns the session, or redirects to the page and ends the request
 	const state = managed();
 	const after = vi.fn();
 	state.app.use(
-		Route.get("/private", async (c) => {
+		Route.get("/private").use(async (c) => {
 			const session = await state.service.require(c);
 			after();
 			return c.json(session);
@@ -1680,8 +1682,8 @@ test("host mismatches return a controlled status before session reads or callbac
 test("alternate hosts can serve health checks and redirects without using authentication", async () => {
 	const state = managed();
 	state.app.use(
-		Route.get("/health", (c) => c.text("ok")),
-		Route.get("/canonical", (c) => c.redirect(origin + "/", 308)),
+		Route.get("/health").use((c) => c.text("ok")),
+		Route.get("/canonical").use((c) => c.redirect(origin + "/", 308)),
 	);
 	for (const host of [
 		"https://127.0.0.1",
@@ -1734,7 +1736,7 @@ test("auth helpers enforce their origin even without App auth integration", asyn
 	const state = setup();
 	const app = new App();
 	app.use(
-		Route.get("/private", async (c) => c.json(await state.auth.session(c))),
+		Route.get("/private").use(async (c) => c.json(await state.auth.session(c))),
 	);
 	const response = await app.fetch("https://wrong.example/private");
 	expect(response.status).toBe(421);
@@ -2040,7 +2042,7 @@ test.each([undefined, "https://foreign.example"])(
 		const response = await state.storage.post("/session", new FormData());
 		const session: Auth.Session = await response.json();
 		const cookie = response.headers.getSetCookie().at(-1)!.split(";")[0]!;
-		const app = new App({ csrf: false, auth: state.service });
+		const app = new App({ csrf: false }).use(state.service);
 		const remove = vi.spyOn(state.storage.options.sessions, "delete");
 		const consume = vi.spyOn(state.storage.options.challenges, "set");
 		for (const path of [
@@ -2076,7 +2078,7 @@ test.each(["origin", "sec-fetch-site"])(
 	async (header) => {
 		const state = managed();
 		const start = await state.start("register");
-		const app = new App({ csrf: false, auth: state.service });
+		const app = new App({ csrf: false }).use(state.service);
 		const headers = {
 			cookie: start.cookie,
 			[header]: header === "origin" ? origin : "same-origin",
@@ -2112,7 +2114,7 @@ test.each(["origin", "sec-fetch-site"])(
 test("default Register and Login render together without duplicate IDs", async () => {
 	const state = managed();
 	state.app.use(
-		Route.get("/forms", (c) => {
+		Route.get("/forms").use((c) => {
 			const { Register, Login } = state.service.forms(c);
 			return [jsx(Register, {}), jsx(Login, {})];
 		}),
@@ -2258,7 +2260,7 @@ test("every rotation secret is validated and the configured list is snapshotted"
 	const auth = new Auth({ ...state.settings, secret: secrets });
 	secrets[0] = "replacement-secret-with-at-least-32-bytes";
 	const app = new App().use(
-		Route.get("/session", async (c) => c.json(await auth.session(c))),
+		Route.get("/session").use(async (c) => c.json(await auth.session(c))),
 	);
 	const login = await state.post("/session", new FormData());
 	expect(
@@ -2328,6 +2330,7 @@ test("registration guard admission precedes parsing and rejects oversized bodies
 /** Checksums of the shipped migrations: never update them, add a new version instead. */
 const checksums = {
 	auth: "a4d5f0d1412b317cec0679a8b5400c5114354b6f3bf464630991a92e6bfc79e4",
+	agents: "eb4ce917272254a7a441b8faf589fedcf65880c354dd416bf8fa38ad3f6d2acc",
 	limiter: "4cd3ada37ed2f7208ddbf1728780c485de42a5424f126772582c165e54022f1a",
 };
 
@@ -2339,6 +2342,7 @@ describe("migration SQL", () => {
 	// an applied migration's checksum must never change, new SQL ships as a new version
 	test.each([
 		["Auth.sql[1]", Auth.sql[1], checksums.auth],
+		["Auth.sql[2]", Auth.sql[2], checksums.agents],
 		["Limiter.sql[1]", Limiter.sql[1], checksums.limiter],
 	])("%s never changes", async (_, sql, checksum) => {
 		expect(
@@ -2458,5 +2462,680 @@ describe("Postgres storage", () => {
 			"new",
 		]);
 		expect(await inspect.size(db.ovr_challenges)).toBe(0);
+	});
+});
+
+describe("agents", () => {
+	const ip = "203.0.113.9";
+	const mcp = `${origin}/mcp`;
+	const callback = "http://127.0.0.1:4000/callback";
+	const agent = "https://agent.example/client.json";
+
+	/** Client ID metadata documents the agents host */
+	const documents: Record<string, unknown> = {
+		[agent]: {
+			client_id: agent,
+			client_name: "Test Agent",
+			redirect_uris: [callback],
+		},
+		"https://agent.example/web.json": {
+			client_id: "https://agent.example/web.json",
+			redirect_uris: ["https://agent.example/cb"],
+		},
+		"https://agent.example/unsafe.json": {
+			client_id: "https://agent.example/unsafe.json",
+			redirect_uris: ["javascript:alert(1)"],
+		},
+		"https://agent.example/other.json": {
+			client_id: agent,
+			redirect_uris: [callback],
+		},
+	};
+
+	function agents() {
+		vi.spyOn(Metadata, "fetch").mockImplementation(
+			async (url) => documents[url.href],
+		);
+
+		const auth = new Auth({
+			secret: "test-secret-with-at-least-32-bytes",
+			origin,
+			database: db,
+			consent: "/connect",
+			register: { fields: {}, name: () => "User", create: () => {} },
+		});
+		const notes = Route.post("/notes")
+			.describe("Write a note")
+			.fields({ text: Field.text() })
+			.use(async (c) => {
+				const session = await auth.require(c);
+				const result = await c.data();
+				if (result.issues) return;
+				return c.text(`${session.user} wrote ${result.data.text}`);
+			});
+		const app = new App().use(
+			auth,
+			new Mcp({ auth }),
+			notes,
+			Route.get("/sign-in").use(async (c) => {
+				await auth.login(c, "user-1");
+				return c.text("signed in");
+			}),
+			Route.get("/connect").use(async (c) => {
+				const request = await auth.consent(c);
+				if (!request) return c.text("No request", 400);
+				return jsx("main", {
+					children: [
+						jsx("h1", { children: `Allow ${request.client.name}?` }),
+						jsx("p", { children: request.redirect }),
+						request.Form({}),
+					],
+				});
+			}),
+		);
+
+		/** Browser with a cookie jar */
+		const cookies = new Map<string, string>();
+		const browser = async (url: string, init: RequestInit = {}) => {
+			const headers = new Headers(init.headers);
+			headers.set(
+				"cookie",
+				Array.from(cookies, ([k, v]) => `${k}=${v}`).join("; "),
+			);
+			const res = await app.fetch(new URL(url, origin), {
+				...init,
+				headers,
+				ip,
+			});
+			for (const cookie of res.headers.getSetCookie()) {
+				const [pair] = cookie.split(";");
+				const [name, value] = pair!.split("=") as [string, string];
+				if (value) cookies.set(name, value);
+				else cookies.delete(name);
+			}
+			return res;
+		};
+
+		return { auth, app, browser };
+	}
+
+	const verifier = "v".repeat(43);
+	const challenge = async () =>
+		Codec.Base64Url.encode(
+			new Uint8Array(
+				await crypto.subtle.digest("SHA-256", Codec.encode(verifier)),
+			),
+		);
+
+	/** Registers a client, signs in, approves it, and exchanges the code */
+	async function connect(decision = "allow") {
+		const state = agents();
+		const { browser } = state;
+		const client_id = agent;
+
+		const authorize = new URL(`${origin}/oauth/authorize`);
+		authorize.search = new URLSearchParams({
+			response_type: "code",
+			client_id,
+			redirect_uri: "http://127.0.0.1:5123/callback",
+			code_challenge: await challenge(),
+			code_challenge_method: "S256",
+			state: "xyz",
+			resource: mcp,
+		}).toString();
+
+		// signed out: to the login page, and back after logging in
+		const first = await browser(authorize.href);
+		expect(first.headers.get("location")).toBe("/login");
+		await browser("/sign-in");
+
+		const consent = await browser(authorize.href);
+		const page = new URL(consent.headers.get("location")!);
+		expect(page.pathname).toBe("/connect");
+
+		const consentPage = await browser(page.href);
+		const html = await consentPage.text();
+		expect(html).toContain("Allow Test Agent?");
+		expect(html).toContain("127.0.0.1:5123");
+		const request = /name="request" value="([^"]+)"/
+			.exec(html)![1]!
+			.replaceAll("&quot;", '"')
+			.replaceAll("&amp;", "&");
+
+		const form = new FormData();
+		form.set("request", request);
+		form.set("decision", decision);
+		const approved = await browser("/oauth/approve", {
+			method: "POST",
+			body: form,
+			headers: { origin },
+		});
+		const redirect = new URL(approved.headers.get("location")!);
+		expect(redirect.origin + redirect.pathname).toBe(
+			"http://127.0.0.1:5123/callback",
+		);
+		expect(redirect.searchParams.get("state")).toBe("xyz");
+		expect(redirect.searchParams.get("iss")).toBe(origin);
+
+		return {
+			...state,
+			client_id,
+			redirect,
+			consentHeaders: consentPage.headers,
+		};
+	}
+
+	const token = (app: App, body: Record<string, string>) =>
+		app.fetch(`${origin}/oauth/token`, {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams({ resource: mcp, ...body }),
+			ip,
+		});
+
+	const call = (app: App, access: string | undefined, text: string) =>
+		app.fetch(mcp, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"mcp-protocol-version": "2026-07-28",
+				"mcp-method": "tools/call",
+				"mcp-name": "post_notes",
+				...(access ? { authorization: `Bearer ${access}` } : {}),
+			},
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "tools/call",
+				params: {
+					name: "post_notes",
+					arguments: { text },
+					_meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28" },
+				},
+			}),
+			ip,
+		});
+
+	test("metadata points agents to the authorization server", async () => {
+		const { app } = agents();
+
+		const resource = await app.fetch(
+			`${origin}/.well-known/oauth-protected-resource/mcp`,
+		);
+		expect(await resource.json()).toMatchObject({
+			resource: mcp,
+			authorization_servers: [origin],
+		});
+
+		const server = await app.fetch(
+			`${origin}/.well-known/oauth-authorization-server`,
+		);
+		expect(server.headers.get("access-control-allow-origin")).toBe("*");
+		expect(await server.json()).toMatchObject({
+			issuer: origin,
+			authorization_endpoint: `${origin}/oauth/authorize`,
+			token_endpoint: `${origin}/oauth/token`,
+			code_challenge_methods_supported: ["S256"],
+			client_id_metadata_document_supported: true,
+		});
+		expect(
+			await (
+				await app.fetch(`${origin}/.well-known/oauth-authorization-server`)
+			).json(),
+		).not.toHaveProperty("registration_endpoint");
+
+		const unauthorized = await call(app, undefined, "hi");
+		expect(unauthorized.status).toBe(401);
+		expect(unauthorized.headers.get("www-authenticate")).toBe(
+			`Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+		);
+	});
+
+	test("metadata documents are never fetched from special-use addresses", async () => {
+		const net = process.getBuiltinModule("node:net");
+		let connections = 0;
+		const server = net.createServer((socket) => {
+			connections++;
+			socket.destroy();
+		});
+		await new Promise<void>((resolve) =>
+			server.listen(0, "127.0.0.1", resolve),
+		);
+		const { port } = server.address() as { port: number };
+
+		try {
+			for (const host of [
+				"localhost",
+				"localhost.",
+				"127.0.0.1",
+				"[::1]",
+				"[::ffff:127.0.0.1]",
+			])
+				expect(
+					await Metadata.fetch(new URL(`https://${host}:${port}/client.json`)),
+				).toBeUndefined();
+			expect(connections).toBe(0);
+		} finally {
+			server.close();
+		}
+	});
+
+	test("metadata documents are fetched from public addresses", async () => {
+		const dns = process.getBuiltinModule("node:dns");
+		const https = process.getBuiltinModule("node:https");
+		const { Readable } = process.getBuiltinModule("node:stream");
+		const { EventEmitter } = process.getBuiltinModule("node:events");
+
+		vi.spyOn(dns, "lookup").mockImplementation(((
+			_hostname: string,
+			_options: unknown,
+			callback: Function,
+		) =>
+			callback(null, [
+				{ address: "8.8.8.8", family: 4 },
+				{ address: "2606:4700::1", family: 6 },
+			])) as any);
+		// connects through the lookup, without the network
+		vi.spyOn(https, "get").mockImplementation(((
+			_url: URL,
+			options: any,
+			callback: Function,
+		) => {
+			options.lookup("agent.example", { all: true }, (error: unknown) => {
+				if (error) throw error;
+				callback(
+					Object.assign(Readable.from([Buffer.from('{"client_id":"a"}')]), {
+						statusCode: 200,
+					}),
+				);
+			});
+			return new EventEmitter();
+		}) as any);
+
+		try {
+			expect(
+				await Metadata.fetch(new URL("https://agent.example/client.json")),
+			).toEqual({ client_id: "a" });
+		} finally {
+			vi.restoreAllMocks();
+		}
+	});
+
+	test("an issuer-origin token cannot authenticate a different origin's resource", async () => {
+		const { auth } = agents();
+		await storage.tokens.set("test-access", {
+			kind: "access",
+			user: "user-1",
+			client: "agent",
+			resource: origin,
+			scope: "",
+			expiration: Date.now() + 60000,
+		});
+		const resource = "https://other.example/mcp";
+		const req = new Request(resource, {
+			headers: { authorization: "Bearer test-access" },
+		});
+		expect(await auth.bearer({ req }, resource)).toBeNull();
+	});
+
+	test("the OAuth consent page prevents framing by another origin", async () => {
+		const { consentHeaders } = await connect();
+		expect(
+			/^(deny|sameorigin)$/i.test(
+				consentHeaders.get("x-frame-options") ?? "",
+			) ||
+				/(?:^|;)\s*frame-ancestors\s+'(?:self|none)'\s*(?:;|$)/i.test(
+					consentHeaders.get("content-security-policy") ?? "",
+				),
+		).toBe(true);
+	});
+
+	test("replaying a spent refresh token revokes its active successor", async () => {
+		const { app } = agents();
+		await storage.tokens.set("first-refresh", {
+			kind: "refresh",
+			user: "user-1",
+			client: "agent",
+			resource: mcp,
+			scope: "",
+			expiration: Date.now() + 60000,
+		});
+		const refresh = (value: string) =>
+			token(app, {
+				grant_type: "refresh_token",
+				client_id: "agent",
+				refresh_token: value,
+			});
+		const rotated = await refresh("first-refresh");
+		expect(rotated.status).toBe(200);
+		const { refresh_token } = await rotated.json();
+		expect((await refresh("first-refresh")).status).toBe(400);
+		expect((await refresh(refresh_token)).status).toBe(400);
+	});
+
+	test("a failed refresh leaves the original token usable and no orphan access token", async () => {
+		const { app } = agents();
+		await storage.tokens.set("original", {
+			kind: "refresh",
+			user: "user-1",
+			client: "agent",
+			resource: mcp,
+			scope: "",
+			expiration: Date.now() + 60000,
+		});
+		const refresh = () =>
+			token(app, {
+				grant_type: "refresh_token",
+				client_id: "agent",
+				refresh_token: "original",
+			});
+		// Fail only the write of the replacement refresh token.
+		await engine.exec(
+			"ALTER TABLE ovr_tokens ADD CONSTRAINT fail_refresh CHECK (kind <> 'refresh') NOT VALID",
+		);
+		try {
+			await refresh().catch(() => undefined);
+		} finally {
+			await engine.exec("ALTER TABLE ovr_tokens DROP CONSTRAINT fail_refresh");
+		}
+		expect((await rows(db.ovr_tokens)).map((row) => row.kind)).toEqual([
+			"refresh",
+		]);
+		expect((await refresh()).status).toBe(200);
+	});
+
+	test.each(["token"])(
+		"OAuth %s stops reading at the body limit",
+		async (endpoint) => {
+			const { app } = agents();
+			let pulls = 0;
+			const body = new ReadableStream<Uint8Array>(
+				{
+					pull(controller) {
+						if (++pulls === 1)
+							controller.enqueue(new Uint8Array(16 * 1024 + 1));
+						else controller.close();
+					},
+				},
+				{ highWaterMark: 0 },
+			);
+			const req = new Request(new URL("/oauth/" + endpoint, origin), {
+				method: "POST",
+				body,
+				...{ duplex: "half" },
+				headers: {
+					"content-type":
+						endpoint === "token"
+							? "application/x-www-form-urlencoded"
+							: "application/json",
+				},
+			});
+			const res = await app.fetch(req, { ip });
+			expect(res.status).toBeGreaterThanOrEqual(400);
+			expect(pulls).toBe(1);
+		},
+	);
+
+	test("an unknown scope cannot reach the consent page as a grantable permission", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const query = new URLSearchParams({
+			response_type: "code",
+			client_id: agent,
+			redirect_uri: callback,
+			code_challenge: await challenge(),
+			code_challenge_method: "S256",
+			resource: mcp,
+			scope: "unknown:permission",
+		});
+		const res = await browser("/oauth/authorize?" + query);
+		expect(
+			new URL(res.headers.get("location")!).searchParams.get("error"),
+		).toBe("invalid_scope");
+	});
+
+	test("the user approves, and the agent acts as the user", async () => {
+		const { app, client_id, redirect } = await connect();
+		const code = redirect.searchParams.get("code")!;
+
+		const wrong = await token(app, {
+			grant_type: "authorization_code",
+			code,
+			client_id,
+			redirect_uri: redirect.origin + redirect.pathname,
+			code_verifier: "w".repeat(43),
+		});
+		expect(wrong.status).toBe(400);
+		expect(await wrong.json()).toEqual({ error: "invalid_grant" });
+
+		// the failed attempt used the code
+		const { redirect: again, client_id: second, app: other } = await connect();
+		const exchanged = await token(other, {
+			grant_type: "authorization_code",
+			code: again.searchParams.get("code")!,
+			client_id: second,
+			redirect_uri: again.origin + again.pathname,
+			code_verifier: verifier,
+			resource: mcp,
+		});
+		expect(exchanged.status).toBe(200);
+		expect(exchanged.headers.get("cache-control")).toBe("no-store");
+		const tokens = await exchanged.json();
+		expect(tokens).toMatchObject({ token_type: "Bearer", expires_in: 3600 });
+
+		const res = await call(other, tokens.access_token, "hello");
+		expect((await res.json()).result.content[0].text).toBe(
+			"user-1 wrote hello",
+		);
+
+		// refresh tokens rotate
+		const refreshed = await token(other, {
+			grant_type: "refresh_token",
+			refresh_token: tokens.refresh_token,
+			client_id: second,
+		});
+		const next = await refreshed.json();
+		expect(next.access_token).not.toBe(tokens.access_token);
+
+		const reused = await token(other, {
+			grant_type: "refresh_token",
+			refresh_token: tokens.refresh_token,
+			client_id: second,
+		});
+		expect(reused.status).toBe(400);
+
+		const audience = await other.fetch(mcp, {
+			method: "POST",
+			headers: {
+				authorization: "Bearer nope",
+				"content-type": "application/json",
+			},
+			body: "{}",
+		});
+		expect(audience.status).toBe(401);
+		void app;
+	});
+
+	test("denying returns an error to the agent", async () => {
+		const { redirect } = await connect("deny");
+
+		expect(redirect.searchParams.get("error")).toBe("access_denied");
+		expect(redirect.searchParams.has("code")).toBe(false);
+	});
+
+	test("rejects unknown clients, redirects, and resources, and requires PKCE", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const authorize = (query: Record<string, string>) =>
+			browser(`/oauth/authorize?${new URLSearchParams(query)}`);
+
+		// only metadata documents identify agents
+		for (const client_id of [
+			"nope",
+			"https://agent.example/missing.json",
+			"https://agent.example/unsafe.json",
+			"https://agent.example/other.json",
+		])
+			expect((await authorize({ client_id })).status).toBe(400);
+
+		const web = "https://agent.example/web.json";
+		expect(
+			(
+				await authorize({
+					client_id: web,
+					redirect_uri: "https://evil.example/cb",
+				})
+			).status,
+		).toBe(400);
+
+		const error = async (query: Record<string, string>) =>
+			new URL(
+				(await authorize({ client_id: web, state: "s", ...query })).headers.get(
+					"location",
+				)!,
+			);
+
+		const pkce = await error({ response_type: "code", resource: mcp });
+		expect(pkce.origin).toBe("https://agent.example");
+		expect(pkce.searchParams.get("error")).toBe("invalid_request");
+		expect(pkce.searchParams.get("state")).toBe("s");
+
+		const resource = await error({
+			response_type: "code",
+			code_challenge: await challenge(),
+			code_challenge_method: "S256",
+		});
+		expect(resource.searchParams.get("error")).toBe("invalid_target");
+	});
+
+	test("client ID metadata documents", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+
+		const res = await browser(
+			`/oauth/authorize?${new URLSearchParams({
+				client_id: agent,
+				response_type: "code",
+				code_challenge: await challenge(),
+				code_challenge_method: "S256",
+				resource: mcp,
+			})}`,
+		);
+		const page = await browser(res.headers.get("location")!);
+
+		expect(Metadata.fetch).toHaveBeenCalledWith(new URL(agent));
+		const html = await page.text();
+		expect(html).toContain("Allow Test Agent?");
+		expect(html).toContain("127.0.0.1:4000");
+	});
+
+	test("agents can connect from Node.js and Bun", async () => {
+		for (const [agent, supported] of [
+			["Node.js/26", true],
+			["Bun/1.4.4", true],
+			["Cloudflare-Workers", false],
+			["Deno/2.5.0", false],
+		] as const) {
+			vi.spyOn(navigator, "userAgent", "get").mockReturnValue(agent);
+			expect(Metadata.supported).toBe(supported);
+			const auth = () =>
+				new Auth({
+					secret: "test-secret-with-at-least-32-bytes",
+					origin,
+					database: db,
+					consent: "/connect",
+					register: { fields: {}, name: () => "User", create: () => {} },
+				});
+			if (supported) auth();
+			else expect(auth).toThrow(/Node\.js or Bun/);
+		}
+	});
+
+	describe("metadata document downloads", () => {
+		const authorize = (app: App, client_id: string, from = ip) =>
+			app.fetch(
+				`${origin}/oauth/authorize?${new URLSearchParams({ client_id })}`,
+				{ ip: from },
+			);
+
+		test("a found agent is kept, and one download is shared", async () => {
+			const { app } = agents();
+
+			const [first, second] = await Promise.all([
+				authorize(app, agent),
+				authorize(app, agent),
+			]);
+			expect(first.status).toBe(303);
+			expect(second.status).toBe(303);
+			expect((await authorize(app, agent)).status).toBe(303);
+			expect(Metadata.fetch).toHaveBeenCalledTimes(1);
+
+			// unknown agents are downloaded again
+			await authorize(app, "https://agent.example/missing.json");
+			await authorize(app, "https://agent.example/missing.json");
+			expect(Metadata.fetch).toHaveBeenCalledTimes(3);
+		});
+
+		test("each IP is limited", async () => {
+			const { app } = agents();
+
+			for (let i = 0; i < 30; i++)
+				expect((await authorize(app, agent)).status).toBe(303);
+			const limited = await authorize(app, agent);
+			expect(limited.status).toBe(429);
+			expect((await authorize(app, agent, "203.0.113.10")).status).toBe(303);
+		});
+
+		test("downloads from each host are limited", async () => {
+			const { app } = agents();
+
+			for (let i = 0; i < 30; i++)
+				expect(
+					(
+						await authorize(
+							app,
+							`https://agent.example/${i}.json`,
+							`198.51.100.${i}`,
+						)
+					).status,
+				).toBe(400);
+			const limited = await authorize(
+				app,
+				"https://agent.example/30.json",
+				"198.51.100.30",
+			);
+			expect(limited.status).toBe(503);
+			expect(Metadata.fetch).toHaveBeenCalledTimes(30);
+
+			// other hosts and found agents are unaffected
+			await authorize(app, "https://other.example/client.json");
+			expect(Metadata.fetch).toHaveBeenCalledTimes(31);
+		});
+
+		test("downloads at once are limited", async () => {
+			const { app } = agents();
+			const { promise, resolve } = Promise.withResolvers<void>();
+			vi.mocked(Metadata.fetch).mockImplementation(async (url) => {
+				await promise;
+				return documents[url.href];
+			});
+
+			const waiting = Array.from({ length: 16 }, (_, i) =>
+				authorize(
+					app,
+					`https://agent${i}.example/client.json`,
+					`198.51.100.${i}`,
+				),
+			);
+			await vi.waitFor(() => expect(Metadata.fetch).toHaveBeenCalledTimes(16));
+
+			const limited = await authorize(app, agent, "198.51.100.16");
+			expect(limited.status).toBe(503);
+
+			resolve();
+			for (const res of await Promise.all(waiting))
+				expect(res.status).toBe(400);
+			expect((await authorize(app, agent, "198.51.100.16")).status).toBe(303);
+		});
 	});
 });

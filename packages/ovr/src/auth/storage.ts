@@ -1,7 +1,7 @@
 import type { Database } from "../database/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
-import { Time } from "../util/index.js";
+import { Codec, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 
 type Result<T> = T | Promise<T>;
@@ -34,6 +34,21 @@ export namespace Storage {
 		/** Return a session, or nothing if it has expired or been revoked. */
 		get(id: string): Result<Auth.Session | null | undefined>;
 		delete(id: string): Result<void>;
+	}
+
+	/** OAuth client registered by an agent. */
+	/** OAuth authorization code or token, stored by its hash. */
+	export interface Token {
+		readonly kind: "code" | "access" | "refresh";
+		readonly user: string;
+		readonly client: string;
+		readonly resource: string;
+		readonly scope: string;
+		readonly expiration: number;
+		readonly redirect?: string;
+		readonly challenge?: string;
+		/** Hash of the code the token descends from, defaults to its own */
+		readonly family?: string;
 	}
 
 	/** Credential lookup and compare-and-swap updates. */
@@ -79,6 +94,21 @@ export class Storage {
 		fields: Schema.string().nullable(),
 	});
 
+	/** Authorization codes, access tokens, and refresh tokens, by hash. */
+	static readonly tokens = new Table("ovr_tokens", {
+		id: Schema.string(),
+		// a used code or refresh token is kept as "spent" to detect replays
+		kind: Schema.enum(["code", "access", "refresh", "spent"]),
+		user: Schema.string(),
+		client: Schema.string(),
+		resource: Schema.string(),
+		scope: Schema.string(),
+		redirect: Schema.string().nullable(),
+		challenge: Schema.string().nullable(),
+		family: Schema.string(),
+		expiration: Schema.number().int(),
+	});
+
 	/** Outstanding ceremonies across all browsers, and for one browser. */
 	static readonly #capacity = { total: 10000, browser: 10 };
 
@@ -115,6 +145,127 @@ export class Storage {
 			.sql`DELETE FROM ${Storage.challenges} WHERE expiration <= ${now}`;
 		await this.#db
 			.sql`DELETE FROM ${Storage.sessions} WHERE expiration <= ${now}`;
+		if (this.#oauth)
+			await this.#db
+				.sql`DELETE FROM ${Storage.tokens} WHERE expiration <= ${now}`;
+	}
+
+	/** OAuth tables are in use, so their rows are pruned too */
+	#oauth = false;
+
+	/**
+	 * @param token Code or token
+	 * @returns SHA-256 hash to store it by
+	 */
+	static async hash(token: string) {
+		return Codec.Base64Url.encode(
+			new Uint8Array(
+				await crypto.subtle.digest("SHA-256", Codec.encode(token)),
+			),
+		);
+	}
+
+	readonly tokens = {
+		/**
+		 * @param token Code or token, stored by its hash
+		 * @param row Token data
+		 */
+		set: async (token: string, row: Storage.Token) => {
+			this.#oauth = true;
+			await this.#prune();
+			await this.#insert(this.#db.sql, token, row);
+		},
+		/**
+		 * Uses a code or refresh token once, in one transaction with the tokens
+		 * it is exchanged for. Replaying a used one revokes its whole family.
+		 *
+		 * @param token Code or refresh token
+		 * @param kind Kind of token
+		 * @param exchange Checks the unexpired token, returns the tokens to issue in its family, or `undefined` to refuse
+		 * @returns `true` if the tokens were issued
+		 */
+		exchange: async (
+			token: string,
+			kind: "code" | "refresh",
+			exchange: (
+				row: Storage.Token,
+			) => Promise<Record<string, Storage.Token> | undefined>,
+		) => {
+			this.#oauth = true;
+			await this.#prune();
+			const id = await Storage.hash(token);
+
+			return this.#db.transaction(async (t) => {
+				const [row] = await t.sql`
+					UPDATE ${Storage.tokens} SET kind = 'spent'
+					WHERE id = ${id} AND kind = ${kind}
+					RETURNING *
+				`.parse(Storage.tokens);
+
+				if (!row) {
+					// stolen and used by someone else, so neither party keeps access
+					await t.sql`
+						DELETE FROM ${Storage.tokens} WHERE family = (
+							SELECT family FROM ${Storage.tokens} WHERE id = ${id} AND kind = 'spent'
+						)
+					`;
+					return false;
+				}
+
+				const used = Storage.#token([{ ...row, kind }]);
+				const issued = used && (await exchange(used));
+				if (!issued) return false;
+
+				for (const [value, issue] of Object.entries(issued))
+					await this.#insert(t.sql, value, { ...issue, family: row.family });
+
+				return true;
+			});
+		},
+		/**
+		 * @param token Access token
+		 * @returns The unexpired token
+		 */
+		get: async (token: string) =>
+			Storage.#token(
+				await this.#db.sql`
+					SELECT * FROM ${Storage.tokens}
+					WHERE id = ${await Storage.hash(token)} AND kind = 'access'
+				`.parse(Storage.tokens),
+			),
+	};
+
+	/**
+	 * @param sql SQL tag to insert with
+	 * @param token Code or token, stored by its hash
+	 * @param row Token data
+	 */
+	async #insert(sql: Database.Tag, token: string, row: Storage.Token) {
+		const id = await Storage.hash(token);
+		await sql`
+			INSERT INTO ${Storage.tokens} ${sql.values(Storage.tokens, {
+				redirect: null,
+				challenge: null,
+				...row,
+				family: row.family ?? id,
+				id,
+			})}
+		`;
+	}
+
+	/**
+	 * @param rows Token rows
+	 * @returns The first row unless it has expired
+	 */
+	static #token([row]: Table.Row<(typeof Storage.tokens)["shape"]>[]) {
+		if (!row || row.expiration <= Date.now()) return;
+		const { redirect, challenge, kind, ...token } = row;
+		return {
+			...token,
+			kind: kind as Storage.Token["kind"],
+			...(redirect === null ? {} : { redirect }),
+			...(challenge === null ? {} : { challenge }),
+		};
 	}
 
 	readonly challenges: Storage.Challenges = {

@@ -5,7 +5,7 @@ import { Meta } from "@/ui/meta";
 import { clsx } from "clsx";
 import * as ovr from "ovr";
 
-export const llms = ovr.Route.get("/llms.txt", (c) => {
+export const llms = ovr.Route.get("/llms.txt").use((c) => {
 	c.text(
 		[
 			homeResult,
@@ -17,7 +17,7 @@ export const llms = ovr.Route.get("/llms.txt", (c) => {
 	);
 });
 
-export const page = ovr.Route.get("/:slug", (c) => {
+export const page = ovr.Route.get("/:slug").use((c) => {
 	let md = false;
 
 	if (c.params.slug.endsWith(".md")) {

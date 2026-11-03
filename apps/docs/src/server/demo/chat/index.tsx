@@ -20,7 +20,7 @@ async function* Poet(props: { message: string }) {
 	}
 }
 
-export const chat = ovr.Route.get("/demo/chat", (c) => {
+export const chat = ovr.Route.get("/demo/chat").use((c) => {
 	const Layout = createLayout(c);
 
 	return (
@@ -46,9 +46,9 @@ export const chat = ovr.Route.get("/demo/chat", (c) => {
 	);
 });
 
-export const stream = ovr.Route.post(
-	{ message: ovr.Field.text() },
-	async (c) => {
+export const stream = ovr.Route.post()
+	.fields({ message: ovr.Field.text() })
+	.use(async (c) => {
 		const Layout = createLayout(c);
 
 		const { data } = await c.data();
@@ -66,5 +66,4 @@ export const stream = ovr.Route.post(
 				</div>
 			</Layout>
 		);
-	},
-);
+	});

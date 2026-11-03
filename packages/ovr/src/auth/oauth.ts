@@ -1,0 +1,661 @@
+import { crossOrigin } from "../app/index.js";
+import type { Context } from "../context/index.js";
+import { jsx } from "../jsx/index.js";
+import { Limiter } from "../limiter/index.js";
+import type { Middleware } from "../middleware/index.js";
+import { Route } from "../route/index.js";
+import { Field } from "../schema/index.js";
+import { Codec, Header, Time } from "../util/index.js";
+import type { Auth } from "./index.js";
+import { Issue } from "./issue.js";
+import { Metadata } from "./metadata.js";
+import type { State } from "./state.js";
+import { Storage } from "./storage.js";
+import { Token } from "./token.js";
+
+/** Authorization request waiting for the user's approval */
+type Pending = {
+	readonly client: string;
+	readonly name: string;
+	readonly redirect: string;
+	readonly challenge: string;
+	readonly resource: string;
+	readonly state: string | null;
+	readonly user: string;
+	readonly expiration: number;
+};
+
+/** Agent from its client ID metadata document */
+type Client = {
+	readonly id: string;
+	readonly name: string;
+	readonly redirects: readonly string[];
+};
+
+/** OAuth endpoint paths */
+const paths = {
+	metadata: "/.well-known/oauth-authorization-server",
+	authorize: "/oauth/authorize",
+	approve: "/oauth/approve",
+	token: "/oauth/token",
+} as const;
+
+/** Lifetimes */
+const lifetime = {
+	consent: 10 * Time.minute,
+	code: Time.minute,
+	access: Time.hour,
+	refresh: 30 * Time.day,
+};
+
+/** Largest request body */
+const limit = 16 * 1024;
+
+/** Client ID metadata document downloads */
+const downloads = {
+	/** Downloads at once, per instance */
+	concurrent: 16,
+	/** Agents kept after they are found, per instance */
+	cached: 1000,
+	/** How long a found agent is kept */
+	lifetime: 5 * Time.minute,
+};
+
+/**
+ * OAuth 2.1 authorization server for agents. The user signs in with a passkey
+ * and approves the agent on the app's consent page; the agent receives tokens.
+ *
+ * @param options Auth options
+ * @param storage Auth storage
+ * @param state Request state
+ * @returns Endpoints, the consent form, and bearer token verification
+ */
+export function oauth(
+	options: Auth.Options<any>,
+	storage: Storage,
+	state: (c: State.Context) => State,
+) {
+	const { origin } = options;
+	const page = options.page ?? "/login";
+	const consent = options.consent;
+
+	if (
+		consent !== undefined &&
+		(!consent.startsWith("/") ||
+			consent.startsWith("//") ||
+			new URL(consent, origin).pathname !== consent)
+	)
+		throw new TypeError("Auth consent must be a literal local path");
+
+	if (consent !== undefined && !Metadata.supported)
+		throw new TypeError(
+			"Connecting agents requires Node.js or Bun to fetch client ID metadata documents safely",
+		);
+
+	const limiter = new Limiter({
+		name: `auth:tokens:${origin}`,
+		limit: 60,
+		interval: Time.minute,
+		database: options.database,
+	});
+
+	/** Authorization requests, by IP, each can download a document */
+	const authorizations = new Limiter({
+		name: `auth:authorize:${origin}`,
+		limit: 30,
+		interval: Time.minute,
+		database: options.database,
+	});
+
+	/** Downloads from each document host, so the server cannot flood one */
+	const hosts = new Limiter({
+		name: `auth:metadata:${origin}`,
+		limit: 30,
+		interval: Time.minute,
+		database: options.database,
+		key: () => "hosts",
+	});
+
+	/** Agents found recently, by client ID */
+	const found = new Map<string, { client: Client; expiration: number }>();
+
+	/** Downloads in progress, by client ID */
+	const pending = new Map<string, Promise<Client | null | undefined>>();
+
+	/**
+	 * Finds an agent, downloading its document at most once at a time.
+	 *
+	 * @param c Request context
+	 * @param id Client ID
+	 * @returns The agent, `undefined` if it is unknown, or `null` if downloads are limited
+	 */
+	const agent = async (c: Context, id: string | null) => {
+		const url = id ? identify(id) : undefined;
+		if (!id || !url) return;
+
+		const known = found.get(id);
+		if (known && known.expiration > Date.now()) return known.client;
+		found.delete(id);
+
+		let download = pending.get(id);
+		if (!download) {
+			if (pending.size >= downloads.concurrent) return null;
+
+			download = (async () => {
+				if ((await hosts.check(c, url.host).catch(() => false)) !== true)
+					return null;
+
+				const client = await find(id, url);
+				if (client) {
+					// the oldest agent is forgotten first
+					if (found.size >= downloads.cached)
+						found.delete(found.keys().next().value!);
+					found.set(id, {
+						client,
+						expiration: Date.now() + downloads.lifetime,
+					});
+				}
+				return client;
+			})().finally(() => pending.delete(id));
+
+			pending.set(id, download);
+		}
+
+		return download;
+	};
+
+	const random = () =>
+		Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
+
+	/** Public endpoints that browser-based agents call from their own origin */
+	const cors: Middleware = async (c, next) => {
+		c.res.headers.set(Header.name.cache, "no-store");
+		c.res.headers.set("access-control-allow-origin", "*");
+		c.res.headers.set(
+			"access-control-allow-headers",
+			"authorization, content-type, mcp-protocol-version",
+		);
+		c.res.headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+		if (c.req.method === "OPTIONS") {
+			c.res.status = 204;
+			return;
+		}
+		return next();
+	};
+
+	const admit = async (c: Context, limiter: Limiter) => {
+		const admission = await limiter.check(c).catch(() => false as const);
+		if (admission === true) return true;
+		c.json({ error: "temporarily_unavailable" }, admission ? 429 : 503);
+		return false;
+	};
+
+	const fail = (
+		c: Context,
+		error: string,
+		description?: string,
+		status = 400,
+	) =>
+		c.json(
+			{ error, ...(description ? { error_description: description } : {}) },
+			status,
+		);
+
+	/** @returns Body parameters, bounded in size */
+	const body = async (c: Context) => {
+		const bytes = await Codec.read(c.req.body, limit);
+		if (!bytes) return;
+		try {
+			return Codec.decode(bytes);
+		} catch {
+			return;
+		}
+	};
+
+	const routes: Route[] = [];
+
+	const cross = (route: Route) => {
+		crossOrigin.add(route);
+		routes.push(
+			route,
+			new Route("OPTIONS", route.pattern).describe(false).use(cors),
+		);
+		return route;
+	};
+
+	/** The user's decision from the consent page */
+	const approve = Route.post(paths.approve)
+		.describe(false)
+		.fields({ request: Field.hidden(), decision: Field.hidden() })
+		.use(async (c) => {
+			c.res.headers.set(Header.name.cache, "no-store");
+			if (
+				c.req.headers.get(Header.name.fetch) !== "same-origin" &&
+				c.req.headers.get(Header.name.origin) !== origin
+			)
+				return c.text("Forbidden", 403);
+
+			const result = await c.data();
+			const pending = !result.issues && (await open(result.data.request));
+			if (!pending)
+				return c.text("The request expired. Try connecting again.", 400);
+
+			const session = await state(c).session();
+			if (!session || session.user !== pending.user)
+				return c.text("Forbidden", 403);
+
+			const url = new URL(pending.redirect);
+
+			if (result.data.decision === "allow") {
+				const code = random();
+				await storage.tokens.set(code, {
+					kind: "code",
+					user: pending.user,
+					client: pending.client,
+					resource: pending.resource,
+					scope: "",
+					redirect: pending.redirect,
+					challenge: pending.challenge,
+					expiration: Date.now() + lifetime.code,
+				});
+				url.searchParams.set("code", code);
+			} else {
+				url.searchParams.set("error", "access_denied");
+			}
+
+			if (pending.state !== null) url.searchParams.set("state", pending.state);
+			url.searchParams.set("iss", origin);
+
+			return c.redirect(url, 303);
+		});
+
+	if (consent !== undefined) {
+		// authorization server metadata, RFC 8414
+		cross(
+			Route.get(paths.metadata)
+				.describe(false)
+				.use(cors, (c) =>
+					c.json({
+						issuer: origin,
+						authorization_endpoint: origin + paths.authorize,
+						token_endpoint: origin + paths.token,
+						response_types_supported: ["code"],
+						grant_types_supported: ["authorization_code", "refresh_token"],
+						code_challenge_methods_supported: ["S256"],
+						token_endpoint_auth_methods_supported: ["none"],
+						client_id_metadata_document_supported: true,
+						authorization_response_iss_parameter_supported: true,
+					}),
+				),
+		);
+
+		routes.push(
+			Route.get(paths.authorize)
+				.describe(false)
+				.use(async (c) => {
+					c.res.headers.set(Header.name.cache, "no-store");
+					const query = c.url.searchParams;
+
+					const admission = await authorizations
+						.check(c)
+						.catch(() => false as const);
+					if (admission !== true)
+						return c.text(
+							"Too many requests. Try again later.",
+							admission ? 429 : 503,
+						);
+
+					const client = await agent(c, query.get("client_id"));
+					if (client === null)
+						return c.text(
+							"Too many agents are connecting. Try again later.",
+							503,
+						);
+					if (!client) return c.text("Unknown client.", 400);
+
+					const redirect = match(client.redirects, query.get("redirect_uri"));
+					if (!redirect) return c.text("Invalid redirect URI.", 400);
+
+					// the client is known, so other errors go back to it
+					const error = (code: string, description: string) => {
+						const url = new URL(redirect);
+						url.searchParams.set("error", code);
+						url.searchParams.set("error_description", description);
+						if (query.has("state"))
+							url.searchParams.set("state", query.get("state")!);
+						url.searchParams.set("iss", origin);
+						return c.redirect(url, 303);
+					};
+
+					if (query.get("response_type") !== "code")
+						return error("unsupported_response_type", "Use the code flow.");
+
+					const challenge = query.get("code_challenge");
+					if (
+						query.get("code_challenge_method") !== "S256" ||
+						!challenge ||
+						!/^[\w-]{43}$/.test(challenge)
+					)
+						return error("invalid_request", "PKCE with S256 is required.");
+
+					// tokens are bound to the resource the agent will use them with
+					const resource = query.get("resource");
+					if (!resource)
+						return error("invalid_target", "Resource is required.");
+					let target: URL;
+					try {
+						target = new URL(resource);
+					} catch {
+						return error("invalid_target", "Invalid resource.");
+					}
+					if (target.origin !== origin || target.hash)
+						return error("invalid_target", "Unknown resource.");
+
+					// a token grants everything the user can do, there are no narrower scopes
+					if (query.get("scope"))
+						return error("invalid_scope", "Scopes are not supported.");
+
+					const session = await state(c).session();
+					if (!session) {
+						// come back here after logging in
+						state(c).remember(c.url.pathname + c.url.search);
+						return c.redirect(page, 303);
+					}
+
+					const url = new URL(consent, origin);
+					url.searchParams.set(
+						"request",
+						await Token.seal(
+							options.secret,
+							"consent",
+							JSON.stringify({
+								client: client.id,
+								name: client.name,
+								redirect,
+								challenge,
+								resource,
+								state: query.get("state"),
+								user: session.user,
+								expiration: Date.now() + lifetime.consent,
+							} satisfies Pending),
+						),
+					);
+
+					return c.redirect(url, 303);
+				}),
+			approve,
+		);
+
+		cross(
+			Route.post(paths.token)
+				.describe(false)
+				.use(cors, async (c) => {
+					if (!(await admit(c, limiter))) return;
+
+					const text = await body(c);
+					if (text === undefined) return fail(c, "invalid_request");
+					const params = new URLSearchParams(text);
+					const grant = params.get("grant_type");
+					const client = params.get("client_id");
+					const resource = params.get("resource");
+
+					const code = grant === "authorization_code";
+					if (!code && grant !== "refresh_token")
+						return fail(c, "unsupported_grant_type");
+
+					const access = random();
+					const refresh = random();
+					let error = "invalid_grant";
+
+					// codes and refresh tokens are used once, refresh tokens rotate
+					const issued = await storage.tokens.exchange(
+						params.get(code ? "code" : "refresh_token") ?? "",
+						code ? "code" : "refresh",
+						async (token) => {
+							if (token.client !== client) return;
+							if (code) {
+								const verifier = params.get("code_verifier") ?? "";
+								if (
+									token.redirect !== params.get("redirect_uri") ||
+									!/^[\w.~-]{43,128}$/.test(verifier) ||
+									(await hash(verifier)) !== token.challenge
+								)
+									return;
+							}
+							if (resource !== token.resource) {
+								error = "invalid_target";
+								return;
+							}
+
+							const now = Date.now();
+							const row = {
+								user: token.user,
+								client: token.client,
+								resource: token.resource,
+								scope: token.scope,
+							};
+
+							return {
+								[access]: {
+									...row,
+									kind: "access",
+									expiration: now + lifetime.access,
+								},
+								[refresh]: {
+									...row,
+									kind: "refresh",
+									expiration: now + lifetime.refresh,
+								},
+							};
+						},
+					);
+					if (!issued) return fail(c, error);
+
+					c.json({
+						access_token: access,
+						token_type: "Bearer",
+						expires_in: lifetime.access / Time.second,
+						refresh_token: refresh,
+					});
+				}),
+		);
+	}
+
+	return {
+		routes,
+
+		/**
+		 * @param c Request context
+		 * @returns The authorization request on the consent page, with its form
+		 */
+		async consent(c: State.Context): Promise<Auth.Consent | null> {
+			// the page grants access, so other sites cannot frame it to trick a click
+			c.res.headers.set("x-frame-options", "DENY");
+			c.res.headers.append("content-security-policy", "frame-ancestors 'none'");
+
+			const pending = await open(c.url.searchParams.get("request"));
+			if (!pending) return null;
+
+			const session = await state(c).session();
+			if (!session || session.user !== pending.user) return null;
+
+			const request = c.url.searchParams.get("request")!;
+
+			return {
+				client: {
+					name: pending.name,
+					...(/^https:/.test(pending.client) ? { uri: pending.client } : {}),
+				},
+				redirect: new URL(pending.redirect).host || pending.redirect,
+				Form: (props) =>
+					approve.Form({
+						...props,
+						children: [
+							jsx("input", { type: "hidden", name: "request", value: request }),
+							props.children ?? [
+								jsx("button", {
+									name: "decision",
+									value: "allow",
+									children: "Allow",
+								}),
+								jsx("button", {
+									name: "decision",
+									value: "deny",
+									children: "Deny",
+								}),
+							],
+						],
+					}),
+			};
+		},
+
+		/**
+		 * @param c Request context
+		 * @param resource Resource the token must be issued for
+		 * @returns Session for the user the token acts for
+		 */
+		async bearer(
+			c: Pick<Context, "req">,
+			resource: string,
+		): Promise<Auth.Session | null> {
+			if (consent === undefined)
+				throw new TypeError("Set the Auth consent option to connect agents");
+
+			const token = /^Bearer\s+([\w.~+/-]+=*)$/i.exec(
+				c.req.headers.get("authorization") ?? "",
+			)?.[1];
+			if (!token) return null;
+
+			const row = await storage.tokens.get(token);
+			if (!row || row.resource !== resource) return null;
+
+			return {
+				id: await Storage.hash(token),
+				user: row.user,
+				expiration: row.expiration,
+			};
+		},
+	};
+
+	/**
+	 * @param request Sealed authorization request
+	 * @returns The request, unless it is invalid or expired
+	 */
+	async function open(request: string | null) {
+		if (!request) return;
+		try {
+			const pending = JSON.parse(
+				await Token.open(options.secret, "consent", request),
+			) as Pending;
+			if (pending.expiration > Date.now()) return pending;
+		} catch (error) {
+			if (!(error instanceof Issue) && !(error instanceof SyntaxError))
+				throw error;
+		}
+	}
+}
+
+/**
+ * @param text Text to hash
+ * @returns Base64url SHA-256, as PKCE S256 uses
+ */
+function hash(text: string) {
+	return Storage.hash(text);
+}
+
+/**
+ * @param uri Redirect URI an agent registers
+ * @returns `true` if it is HTTPS, a loopback address, or an app's own scheme
+ */
+function redirectable(uri: unknown) {
+	if (typeof uri !== "string" || uri.length > 2000) return false;
+	try {
+		const url = new URL(uri);
+		if (url.hash || url.username || url.password) return false;
+		if (url.protocol === "https:") return true;
+		if (url.protocol === "http:") return loopback(url.hostname);
+		return ![
+			"javascript:",
+			"data:",
+			"file:",
+			"blob:",
+			"vbscript:",
+			"about:",
+		].includes(url.protocol);
+	} catch {
+		return false;
+	}
+}
+
+/** @returns `true` for loopback hosts */
+function loopback(host: string) {
+	return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+}
+
+/**
+ * @param redirects Registered redirect URIs
+ * @param uri Requested redirect URI
+ * @returns The redirect URI to use, any port is allowed for loopback addresses
+ */
+function match(redirects: readonly string[], uri: string | null) {
+	if (uri === null) return redirects.length === 1 ? redirects[0] : undefined;
+	if (redirects.includes(uri)) return uri;
+
+	try {
+		const url = new URL(uri);
+		if (url.protocol !== "http:" || !loopback(url.hostname)) return;
+		for (const redirect of redirects) {
+			const registered = new URL(redirect);
+			registered.port = url.port;
+			if (registered.href === url.href) return uri;
+		}
+	} catch {
+		return;
+	}
+}
+
+/**
+ * @param id Client ID
+ * @returns The URL of the agent's client ID metadata document
+ */
+function identify(id: string) {
+	if (!id.startsWith("https://")) return;
+
+	let url: URL;
+	try {
+		url = new URL(id);
+	} catch {
+		return;
+	}
+	if (url.pathname === "/" || url.hash || url.username || url.password) return;
+
+	return url;
+}
+
+/**
+ * Fetches a client ID metadata document, the agent's ID is its URL.
+ *
+ * @param id Client ID
+ * @param url Client ID, parsed
+ * @returns The client
+ */
+async function find(id: string, url: URL): Promise<Client | undefined> {
+	const metadata = (await Metadata.fetch(url)) as Record<string, unknown>;
+	const redirects = metadata?.redirect_uris;
+	if (
+		metadata?.client_id !== id ||
+		!Array.isArray(redirects) ||
+		!redirects.length ||
+		!redirects.every(redirectable)
+	)
+		return;
+
+	return {
+		id,
+		name:
+			typeof metadata.client_name === "string" && metadata.client_name.trim()
+				? metadata.client_name.trim().slice(0, 100)
+				: url.host,
+		redirects,
+	};
+}

@@ -54,11 +54,11 @@ function setup(options: Partial<Limiter.Options> = {}) {
 	const limiter = new Limiter({ database: db, error: vi.fn(), ...options });
 	const hit = vi.fn();
 	const app = new App().use(
-		Route.get("/limited", limiter.middleware, (c) => {
+		Route.get("/limited").use(limiter.middleware, (c) => {
 			hit();
 			c.text("ok");
 		}),
-		Route.get("/health", (c) => c.text("ok")),
+		Route.get("/health").use((c) => c.text("ok")),
 	);
 	const fetch = (ip = "192.0.2.1", headers: HeadersInit = {}) =>
 		app.fetch("https://example.com/limited", { ip, headers });
@@ -115,7 +115,7 @@ describe("token buckets", () => {
 			key: (c) => c.req.headers.get("key") ?? undefined,
 		});
 		const app = new App().use(
-			Route.get("/", async (c) => {
+			Route.get("/").use(async (c) => {
 				c.json([
 					await limiter.check(c, "options"),
 					await limiter.check(c, "verify"),

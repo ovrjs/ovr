@@ -10,6 +10,8 @@ export const auth = new Auth({
 	origin: process.env.AUTH_ORIGIN,
 	page: "/login",
 	redirect: "/bookmarks",
+	// agents connect through MCP after the user approves them here
+	consent: "/connect",
 	database: db,
 	register: {
 		fields: { email: db.users.shape.email },

@@ -21,8 +21,7 @@ const appFetch = (pathname: string, method: Route.Method = Method.get) =>
 test("context", () => {
 	app.use(
 		notFound,
-		Route.get(
-			"/",
+		Route.get("/").use(
 			async (c, next) => {
 				c.res.headers.set("hello", "world");
 				await next();
@@ -35,19 +34,19 @@ test("context", () => {
 				c.text("hello world");
 			},
 		),
-		Route.get("/api/:id/", (c) => {
+		Route.get("/api/:id/").use((c) => {
 			expect(c.params.id).toBeDefined();
 			c.json(c.params);
 		}),
-		Route.get("/wild/*", (c) => {
+		Route.get("/wild/*").use((c) => {
 			expect(c.params["*"]).toBeDefined();
 			c.json(c.params);
 		}),
-		Route.post("/post/", async (c) => {
+		Route.post("/post/").use(async (c) => {
 			const formData = await c.req.formData();
 			c.json(formData.get("key"));
 		}),
-		Route.get("/page/", () => "page"),
+		Route.get("/page/").use(() => "page"),
 	);
 });
 
@@ -58,14 +57,29 @@ test("GET /", async () => {
 	expect(text).toBe("hello world");
 });
 
+test("a cookie-authenticated write needs browser origin evidence", async () => {
+	let wrote = false;
+	const app = new App().use(
+		Route.post("/change").use(() => {
+			wrote = true;
+		}),
+	);
+	const response = await app.fetch("https://example.com/change", {
+		method: "POST",
+		headers: { cookie: "session=valid" },
+	});
+	expect(response.status).toBe(403);
+	expect(wrote).toBe(false);
+});
+
 test("passes Request directly unless options are provided", async () => {
 	const req = new Request("http://localhost:5173/request");
 	const reuse = new App({ csrf: false }).use(
-		Route.get("/request", (c) => {
+		Route.get("/request").use((c) => {
 			expect(c.req).toBe(req);
 			c.text("request");
 		}),
-		Route.post("/request", (c) => {
+		Route.post("/request").use((c) => {
 			expect(c.req).not.toBe(req);
 			c.text(c.req.method);
 		}),
@@ -86,7 +100,7 @@ test("server connection metadata preserves the original Request and is not infer
 		headers: { "x-forwarded-for": "192.0.2.99" },
 	});
 	const app = new App().use(
-		Route.get("/", (c) => {
+		Route.get("/").use((c) => {
 			expect(c.req).toBe(req);
 			c.json({ ip: c.ip ?? null });
 		}),
@@ -153,7 +167,7 @@ describe("trailing slash", () => {
 	});
 
 	test("never", async () => {
-		const nev = new App().use(Route.get("/test", (c) => c.text("test")));
+		const nev = new App().use(Route.get("/test").use((c) => c.text("test")));
 
 		const res = await nev.fetch(new Request("http://localhost:5173/test/"));
 
@@ -164,8 +178,8 @@ describe("trailing slash", () => {
 	test("ignore", async () => {
 		const ignore = new App({ trailingSlash: "ignore" }).use(
 			notFound,
-			Route.get("/nope", (c) => c.text("nope")),
-			Route.get("/yup/", (c) => c.text("yup")),
+			Route.get("/nope").use((c) => c.text("nope")),
+			Route.get("/yup/").use((c) => c.text("yup")),
 		);
 
 		expect(
@@ -193,7 +207,7 @@ test("html", async () => {
 
 test("etag", async () => {
 	const r = new App().use(
-		Route.get("/etag", (c) => {
+		Route.get("/etag").use((c) => {
 			const text = "hello world";
 			const matched = c.etag("hello");
 

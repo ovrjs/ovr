@@ -11,7 +11,7 @@ import { Route } from "ovr";
 // simulate latency
 const delay = () => new Promise((r) => setTimeout(r, 300));
 
-const sse = Route.get("/sse", (c) => {
+const sse = Route.get("/sse").use((c) => {
 	// set the content-type header to create a SSE
 	c.res.headers.set("content-type", "text/event-stream");
 

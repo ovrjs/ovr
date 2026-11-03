@@ -7,12 +7,25 @@ description: ovr application routes.
 
 ovr's built-in router offers efficient matching, supporting static paths, [parameters](#parameters), and [wildcards](#wildcard). Utilizing a [radix trie](https://en.wikipedia.org/wiki/Radix_tree) structure ensures performance does not degrade as more routes are added.
 
-Create a route to a specific resource in your application with the `Route` class. Construct the route with an HTTP `method`, the route `pattern`, and the [`middleware`](/05-middleware) to handle the request.
+Create a route to a specific resource in your application with the `Route` class. Construct the route with an HTTP `method` and the route `pattern`, then add the [`middleware`](/05-middleware) that handles the request with `use`.
 
 ```ts
 import { Route } from "ovr";
 
-const route = new Route("GET", "/", () => "html");
+const route = new Route("GET", "/").use(() => "html");
+```
+
+Each method adds to the route and returns it, so a route reads as a chain. `params` and `fields` declare the types the middleware sees, so they come before `use`, which throws otherwise.
+
+```ts
+const update = Route.post("/posts/:id")
+	.describe("Change a post's title or body") // for agents
+	.params({ id: Schema.string().uuid() }) // checked before the middleware
+	.fields({ title, body }) // parsed by c.data()
+	.use(async (c) => {
+		const session = await auth.require(c);
+		// ...
+	});
 ```
 
 ## Parameters
@@ -22,31 +35,33 @@ Create a parameter for a route by prefixing a segment with a colon `:`.
 The pattern `/api/:id` sets `Context.params.id` to the actual path segment requested, for example `/api/123`. The name of the parameter is extracted from the pattern using TypeScript to ensure `Context.params` always has the correct type.
 
 ```ts
-new Route("GET", "/api/:id", (c) => {
+new Route("GET", "/api/:id").use((c) => {
 	// matches "/api/123"
 	c.params.id; // "123"
 });
 ```
 
-Parameters are strings from the URL. Check them with a [schema](/07-schema) before using them, for example before a query, and respond with a 404 when one is invalid:
+Parameters are strings from the URL. Check them with a [schema](/07-schema) before using them, for example before a query. `params` parses each one before the route's middleware runs, and a parameter that fails its schema responds with a 404, since that resource does not exist.
 
 ```ts
 import { Route, Schema } from "ovr";
 
-const post = Route.get("/posts/:id", async (c) => {
-	if (Schema.string().uuid().parse(c.params.id).issues)
-		return c.text("Not Found", 404);
-
-	// c.params.id is a uuid
-});
+const post = Route.get("/posts/:id/:slug")
+	.params({ id: Schema.number().preprocess(Number).int() })
+	.use(async (c) => {
+		c.params.id; // number
+		c.params.slug; // string, no schema
+	});
 ```
+
+The 404 has an empty body, so global middleware that renders a not found page renders it here too. A table's columns are schemas, so `params({ id: posts.shape.id })` checks an ID the same way the database does.
 
 ## Wildcard
 
 Use an asterisk `*` to match all remaining segments in the route.
 
 ```ts
-new Route("GET", "/files/*", (c) => {
+new Route("GET", "/files/*").use((c) => {
 	c.params["*"]; // matched wildcard path (ex: "images/logo.png")
 });
 ```
@@ -78,7 +93,7 @@ More specific matches are prioritized. The following pathnames would match the c
 `Route.get` makes it easy to create a [GET](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/GET) route and corresponding `Anchor`, `Button`, and `Form` components for it. This ensures if you change the route's pattern, you don't need to update all of the links to it throughout your application. Anytime you need to generate a link to a route use the `Anchor` component.
 
 ```tsx
-const page = Route.get("/", () => {
+const page = Route.get("/").use(() => {
 	return (
 		<main>
 			{/* <a href="/"> */}
@@ -98,16 +113,16 @@ const page = Route.get("/", () => {
 
 There is also a `Route.post` function that will create a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route and corresponding `Form` and `Button` elements. Anytime you need to handle a form submission, use the generated `Form` component. These components also automatically set the `enctype=multipart/form-data` attribute.
 
-For `Route.post`, ovr will automatically generate a unique pathname for the route based on a hash of the middleware provided.
+For `Route.post`, ovr will automatically generate a unique pathname for the route based on a hash of its middleware.
 
 ```tsx
-const login = Route.post(async (c) => {
+const login = Route.post().use(async (c) => {
 	const data = await c.req.formData();
 	// ...
 	c.redirect("/", 303);
 });
 
-const page = Route.get("/", () => {
+const page = Route.get("/").use(() => {
 	return (
 		<main>
 			{/* <form method="POST" action="/_p/generated-hash" enctype="multipart/form-data"> */}
@@ -123,10 +138,27 @@ const page = Route.get("/", () => {
 You can set the pattern manually if you need a stable pattern or if you are using parameters.
 
 ```tsx
-const custom = Route.post("/custom/:pattern", (c) => {
+const custom = Route.post("/custom/:pattern").use((c) => {
 	// ...
 });
 ```
+
+## Describe
+
+`describe` explains what the route does for AI agents. Described routes become tools for agents that connect to the app's [MCP endpoint](/10-agents), and the description says when to use them. Write it for a reader who sees the route without your UI.
+
+```ts
+const remove = Route.post("/posts/:id/delete")
+	.describe("Delete a post permanently", { destructive: true })
+	.use(async (c) => {
+		// ...
+	});
+```
+
+- `name` - tool name, generated from the pattern by default, for example `posts_id_delete`.
+- `destructive` - the route deletes or overwrites data, so agents should confirm with the user first.
+
+`describe(false)` hides a route from agents. Auth's routes are hidden this way.
 
 ## Props
 
@@ -137,7 +169,7 @@ Components created via helpers have the following props available:
 - `hash` - [fragment hash](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) appended with a `#` at the end of the URL.
 
 ```tsx
-const page = Route.get("/hello/:name", () => {
+const page = Route.get("/hello/:name").use(() => {
 	return (
 		// <form method="GET" action="/hello/world?search=param#hash">
 		<page.Form
@@ -156,7 +188,9 @@ const page = Route.get("/hello/:name", () => {
 Given the following `Route`, a variety of other properties are available to use.
 
 ```tsx
-const page = Route.get("/hello/:name", (c) => <h1>Hello {c.params.name}</h1>);
+const page = Route.get("/hello/:name").use((c) => (
+	<h1>Hello {c.params.name}</h1>
+));
 ```
 
 ### Method
@@ -180,7 +214,7 @@ page.middleware; // Middleware[]
 `Params` is a type helper to get the specific params of the route based on the pattern.
 
 ```ts
-typeof page.Params; // { name: string }
+type Params = Route.Params<typeof page>; // { name: string }
 ```
 
 ### Pattern

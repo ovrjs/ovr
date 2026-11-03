@@ -1,6 +1,6 @@
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Form as FormSchema } from "../schema/index.js";
+import { Form as FormSchema, Schema as ValueSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";
@@ -56,6 +56,45 @@ export namespace Route {
 		| "PATCH"
 		| (string & {});
 
+	/** Agent options from `route.describe()`. */
+	export type Describe = {
+		/** Tool name, derived from the pattern by default */
+		readonly name?: string | undefined;
+		/** The route deletes or overwrites data, so agents should confirm first */
+		readonly destructive?: boolean | undefined;
+	};
+
+	/** How agents call a route, from `route.tool`. */
+	export type Tool = {
+		/** Tool name, for example `post_posts_id_delete` */
+		readonly name: string;
+		/** What the tool does */
+		readonly description: string;
+		/** Only reads, a GET */
+		readonly read: boolean;
+		/** Deletes or overwrites data */
+		readonly destructive: boolean;
+	};
+
+	/**
+	 * Schemas for route pattern parameters, keyed by parameter name.
+	 *
+	 * @template Pattern Route pattern
+	 */
+	export type ParamSchemas<Pattern extends string> = {
+		readonly [K in keyof ExtractParams<Pattern>]?: ValueSchema<unknown>;
+	};
+
+	/**
+	 * Route parameters after their schemas convert them.
+	 *
+	 * @template Params Current parameters
+	 * @template P Parameter schemas
+	 */
+	export type Converted<Params, P> = Util.Prettify<
+		Omit<Params, keyof P> & { [K in keyof P]: ValueSchema.Infer<P[K]> }
+	>;
+
 	// these types are needed for proper JSDoc on `get` and `post` return types
 	/**
 	 * Helper type for a route with a `<Button>` component.
@@ -109,25 +148,73 @@ export namespace Route {
 	};
 
 	/**
+	 * Schema helpers once `route.fields()` sets a shape.
+	 *
+	 * @template Shape Form field shape
+	 */
+	type WithSchema<Shape extends FormSchema.Shape> = [FormSchema.Shape] extends [
+		Shape,
+	]
+		? MaybeForm
+		: Route.Schema<Shape>;
+
+	/**
 	 * GET route type with route components and optional schema helpers.
 	 *
 	 * @template Pattern Route pattern
+	 * @template Params Parameters passed to middleware
+	 * @template Shape Form field shape
 	 */
-	export type Get<Pattern extends string = string> = Route<Pattern> &
+	export type Get<
+		Pattern extends string = string,
+		Params extends Route.ParamsBase = any,
+		Shape extends FormSchema.Shape = any,
+	> = Route<Pattern, Params, Shape, "get"> &
 		WithAnchor<Pattern> &
 		WithButton<Pattern> &
 		WithForm<Pattern> &
-		MaybeForm;
+		WithSchema<Shape>;
 
 	/**
 	 * POST route type with route components and optional schema helpers.
 	 *
 	 * @template Pattern Route pattern
+	 * @template Params Parameters passed to middleware
+	 * @template Shape Form field shape
 	 */
-	export type Post<Pattern extends string = string> = Route<Pattern> &
+	export type Post<
+		Pattern extends string = string,
+		Params extends Route.ParamsBase = any,
+		Shape extends FormSchema.Shape = any,
+	> = Route<Pattern, Params, Shape, "post"> &
 		WithButton<Pattern> &
 		WithForm<Pattern> &
-		MaybeForm;
+		WithSchema<Shape>;
+
+	/** Components a route has: GET routes add an `<Anchor>` */
+	export type Kind = "get" | "post" | "plain";
+
+	/**
+	 * A route of the given kind.
+	 *
+	 * @template K Route kind
+	 * @template Pattern Route pattern
+	 * @template Params Parameters passed to middleware
+	 * @template Shape Form field shape
+	 */
+	export type Of<
+		K extends Route.Kind,
+		Pattern extends string,
+		Params extends Route.ParamsBase,
+		Shape extends FormSchema.Shape,
+	> = K extends "get"
+		? Route.Get<Pattern, Params, Shape>
+		: K extends "post"
+			? Route.Post<Pattern, Params, Shape>
+			: Route<Pattern, Params, Shape, K>;
+
+	/** Parameters passed to middleware, strings unless a schema converts them */
+	export type ParamsBase = Record<string, unknown>;
 
 	/**
 	 * Schema helper type attached to routes that have a form schema.
@@ -222,37 +309,205 @@ export namespace Route {
 /**
  * Route to use in the application.
  *
+ * Each method adds to the route and returns it, so a route reads as a chain:
+ *
+ * ```ts
+ * const update = Route.post("/posts/:id")
+ * 	.describe("Change a post's title or body")
+ * 	.params({ id: Schema.string().uuid() })
+ * 	.fields({ title, body })
+ * 	.use(async (c) => {
+ * 		// ...
+ * 	});
+ * ```
+ *
  * @template Pattern Route pattern
+ * @template Params Parameters passed to middleware
+ * @template Shape Form field shape
+ * @template Kind Components the route has
  */
-export class Route<Pattern extends string = string> {
-	/** Route pattern */
-	readonly pattern: Pattern;
-
+export class Route<
+	Pattern extends string = string,
+	// any by default so a `Route` type accepts every route
+	Params extends Route.ParamsBase = any,
+	Shape extends FormSchema.Shape = any,
+	Kind extends Route.Kind = any,
+> {
 	/** HTTP method */
 	readonly method: Route.Method;
 
-	/** Route middleware stack, runs after global middleware */
-	readonly middleware: Middleware<any, any>[]; // any so you can use other middleware
+	/** Description for agents, `false` hides the route from them */
+	description?: string | false;
 
-	/** Pattern parts */
-	#parts: string[];
+	/** Agent options from `describe` */
+	agent: Route.Describe = {};
+
+	/** Schemas that check and convert pattern parameters */
+	paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
+
+	/** Route pattern, `undefined` to generate one from the middleware */
+	#pattern: Pattern | undefined;
+
+	/** Generated pattern, cleared when middleware is added */
+	#generated: Pattern | undefined;
+
+	/** Middleware added with `use` */
+	readonly #stack: Middleware<any, any>[] = [];
 
 	/**
 	 * Create a new route.
 	 *
 	 * @param method HTTP Method
-	 * @param pattern Route pattern
-	 * @param middleware Route middleware
+	 * @param pattern Route pattern, generated from the middleware when omitted
 	 */
-	constructor(
-		method: Route.Method,
-		pattern: Pattern,
-		...middleware: Middleware<ExtractParams<Pattern>, any>[]
-	) {
+	constructor(method: Route.Method, pattern?: Pattern) {
 		this.method = method;
-		this.pattern = pattern;
-		this.middleware = middleware;
-		this.#parts = pattern.split("/");
+		this.#pattern = pattern;
+	}
+
+	/** Route pattern */
+	get pattern(): Pattern {
+		// create pattern with checksum of all mw stringified
+		return (
+			this.#pattern ??
+			(this.#generated ??=
+				`/_p/${Checksum.djb2(this.#stack.join())}` as Pattern)
+		);
+	}
+
+	/** Route middleware stack, runs after global middleware */
+	get middleware(): Middleware<any, any>[] {
+		const schemas = this.paramSchemas;
+		if (!schemas) return this.#stack;
+
+		return [
+			(c, next) => {
+				for (const name in schemas) {
+					const result = schemas[name]!.parse(c.params[name]);
+
+					// a parameter that does not match is a resource that does not exist
+					if (result.issues) return void (c.res.status = 404);
+
+					c.params[name] = result.data;
+				}
+
+				return next();
+			},
+			...this.#stack,
+		];
+	}
+
+	/**
+	 * The tool agents call the route as, through MCP and the route's `Form`.
+	 * POST and other methods are tools, GET is one when it has a description
+	 * or fields, and `describe(false)` hides the route.
+	 */
+	get tool(): Route.Tool | undefined {
+		if (this.description === false || this.method === Method.head) return;
+
+		const read = this.method === Method.get;
+		// other pages are resources
+		if (read && !this.description && !("parse" in this)) return;
+
+		const segments = this.pattern
+			.split("/")
+			.filter(Boolean)
+			.map((segment) =>
+				segment === "*" ? "wildcard" : segment.replace(/^:/, ""),
+			);
+
+		return {
+			name:
+				this.agent.name ??
+				`${this.method.toLowerCase()}_${segments.join("_") || "index"}`
+					.replace(/[^\w-]+/g, "_")
+					.replace(/_+/g, "_")
+					.slice(0, 64),
+			description: this.description || `${this.method} ${this.pattern}`,
+			read,
+			destructive: !read && Boolean(this.agent.destructive),
+		};
+	}
+
+	/**
+	 * Describe the route for agents. Described routes become MCP tools, and
+	 * `false` hides the route from agents.
+	 *
+	 * @param description What the route does, written for an agent
+	 * @param options Tool name and hints
+	 * @returns The route
+	 */
+	describe(description: string | false, options: Route.Describe = {}) {
+		this.description = description;
+		this.agent = options;
+		return this;
+	}
+
+	/**
+	 * Check and convert pattern parameters before the middleware runs.
+	 * A parameter that fails its schema responds `404`.
+	 *
+	 * @param schemas Schemas keyed by parameter name
+	 * @returns The route, with converted `c.params` types
+	 */
+	params<P extends Route.ParamSchemas<Pattern>>(
+		schemas: P,
+	): Route.Of<Kind, Pattern, Route.Converted<Params, P>, Shape> {
+		this.#before("params");
+
+		for (const name in schemas) {
+			if (!this.pattern.includes(`:${name}`) && name !== "*") {
+				throw new TypeError(
+					`Route "${this.pattern}" has no parameter "${name}".`,
+				);
+			}
+		}
+
+		this.paramSchemas = { ...this.paramSchemas, ...schemas } as Record<
+			string,
+			ValueSchema<unknown>
+		>;
+
+		return this as any;
+	}
+
+	/**
+	 * Set the form fields that `c.data()` parses, and that the route's `Form`
+	 * renders by default.
+	 *
+	 * @param fields Field shape or form schema
+	 * @returns The route with form helpers
+	 */
+	fields<S extends FormSchema.Shape>(
+		fields: S | FormSchema<S>,
+	): Route.Of<Kind, Pattern, Params, S> {
+		this.#before("fields");
+		return Object.assign(this, FormSchema.from(fields)) as any;
+	}
+
+	/**
+	 * Middleware is typed by the params and fields set before it, so they
+	 * cannot change after it is added.
+	 *
+	 * @param method Method that changes the types
+	 */
+	#before(method: string) {
+		if (this.#stack.length)
+			throw new TypeError(
+				`Call .${method}() before .use() on route "${this.pattern}".`,
+			);
+	}
+
+	/**
+	 * Add middleware to the route. The last one usually responds.
+	 *
+	 * @param middleware Route middleware
+	 * @returns The route
+	 */
+	use(...middleware: Middleware<Params, Shape>[]) {
+		this.#stack.push(...middleware);
+		this.#generated = undefined;
+		return this;
 	}
 
 	/**
@@ -291,12 +546,13 @@ export class Route<Pattern extends string = string> {
 	 * @param [params] Parameters to insert
 	 * @returns Resolved `pathname` with params
 	 */
-	pathname<Params extends ExtractParams<Pattern>>(
-		...[params]: keyof Params extends never ? [] : [Params]
-	): InsertParams<Pattern, Params> {
-		if (!params) return this.pattern as InsertParams<Pattern, Params>;
+	pathname<P extends ExtractParams<Pattern>>(
+		...[params]: keyof P extends never ? [] : [P]
+	): InsertParams<Pattern, P> {
+		if (!params) return this.pattern as InsertParams<Pattern, P>;
 
-		return this.#parts
+		return this.pattern
+			.split("/")
 			.map((part) => {
 				if (part.startsWith(":")) {
 					return params[part.slice(1) as keyof typeof params];
@@ -306,7 +562,7 @@ export class Route<Pattern extends string = string> {
 
 				return part;
 			})
-			.join("/") as InsertParams<Pattern, Params>;
+			.join("/") as InsertParams<Pattern, P>;
 	}
 
 	/**
@@ -332,8 +588,8 @@ export class Route<Pattern extends string = string> {
 				search,
 				hash,
 				state,
-				values: _,
-				submit: __,
+				values,
+				submit = "Submit",
 				...rest
 			}) => {
 				let query: URLSearchParams | undefined;
@@ -356,6 +612,9 @@ export class Route<Pattern extends string = string> {
 					);
 				}
 
+				const { Fields } = route as Route.Post<Pattern>;
+				const { tool } = route;
+
 				return jsx("form", {
 					action: route.url({
 						params,
@@ -364,6 +623,21 @@ export class Route<Pattern extends string = string> {
 					} as Route.URLOptions<ExtractParams<Pattern>>),
 					method: route.method,
 					enctype,
+					// with fields, default to the fields and a submit button
+					children: Fields && [
+						Fields({ state, values }),
+						jsx("button", { children: submit }),
+					],
+					// WebMCP, browser agents call the form as the route's tool. A form
+					// bound to a parameter, like a delete form in each row, would repeat
+					// the name, so those set the attributes themselves when they are unique
+					...(tool &&
+						!/[:*]/.test(route.pattern) && {
+							toolname: tool.name,
+							tooldescription: tool.description,
+							// the user confirms destructive changes by submitting
+							toolautosubmit: !tool.destructive,
+						}),
 					...rest,
 				});
 			}) as Route.Form<Pattern>,
@@ -372,221 +646,33 @@ export class Route<Pattern extends string = string> {
 
 	/**
 	 * @template Pattern Route pattern
-	 * @template R Route type with Form component
-	 * @param route Route to add schema behavior to
-	 * @param schema Form schema
-	 * @returns Route with schema behavior attached
+	 * @param pattern Route pattern
+	 * @returns GET `Route` with added components
 	 */
-	static #withSchema<
-		Pattern extends string,
-		R extends { middleware: Middleware<any, any>[]; Form: Route.Form<Pattern> },
-	>(route: R, schema?: Route.Schema): R | (R & Route.Schema) {
-		if (!schema) return route;
+	static get<Pattern extends string>(pattern: Pattern) {
+		const route = Route.#withComponents(new Route(Method.get, pattern));
 
-		// original form shell from normal route
-		const { Form } = route;
-
-		return Object.assign(route, schema, {
-			Form: (({ state, values, submit = "Submit", ...rest }) =>
-				Form({
-					// add in the default children (Fields) with state and submit button
-					children: [
-						schema.Fields({ state, values }),
-						jsx("button", { children: submit }),
-					],
-					state,
+		return Object.assign(route, {
+			Anchor: (({ params, search, hash, ...rest }) =>
+				jsx("a", {
+					href: route.url({ params, search, hash } as Route.URLOptions<
+						ExtractParams<Pattern>
+					>),
 					...rest,
-				} as Parameters<typeof Form>[0])) as Route.Form<Pattern>,
-		});
+				})) as Route.Anchor<Pattern>,
+		}) as Route.Get<Pattern, ExtractParams<Pattern>, FormSchema.Shape>;
 	}
 
 	/**
 	 * @template Pattern Route pattern
-	 * @param pattern Route pattern
-	 * @param middleware GET middleware
-	 * @returns GET `Route` with added components
-	 */
-	static get<Pattern extends string>(
-		pattern: Pattern,
-		...middleware: Middleware<ExtractParams<Pattern>>[]
-	): Route.Get<Pattern>;
-	/**
-	 * @template Pattern Route pattern
-	 * @template S Form field shape
-	 * @param pattern Route pattern
-	 * @param fields Form field shape
-	 * @param middleware GET middleware
-	 * @returns GET `Route` with added components
-	 */
-	static get<Pattern extends string, S extends FormSchema.Shape>(
-		pattern: Pattern,
-		fields: S,
-		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Get<Pattern> & Route.Schema<S>;
-	/**
-	 * @template Pattern Route pattern
-	 * @template S Form field shape
-	 * @param pattern Route pattern
-	 * @param form Form schema
-	 * @param middleware GET middleware
-	 * @returns GET `Route` with added components
-	 */
-	static get<Pattern extends string, S extends FormSchema.Shape>(
-		pattern: Pattern,
-		form: Route.Schema<S>,
-		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Get<Pattern> & Route.Schema<S>;
-	static get<Pattern extends string>(
-		pattern: Pattern,
-		schemaOrMiddleware?:
-			| Route.Schema
-			| FormSchema.Shape
-			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
-		...middleware: (
-			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>
-		)[]
-	) {
-		let schema: Route.Schema | undefined;
-
-		if (schemaOrMiddleware) {
-			if (typeof schemaOrMiddleware === "function") {
-				middleware.unshift(schemaOrMiddleware);
-			} else {
-				schema = FormSchema.from(schemaOrMiddleware);
-			}
-		}
-
-		const route = Route.#withComponents(
-			new Route(Method.get, pattern, ...middleware),
-		);
-
-		return Route.#withSchema(
-			Object.assign(route, {
-				Anchor: (({ params, search, hash, ...rest }) =>
-					jsx("a", {
-						href: route.url({ params, search, hash } as Route.URLOptions<
-							ExtractParams<Pattern>
-						>),
-						...rest,
-					})) as Route.Anchor<Pattern>,
-			}),
-			schema,
-		);
-	}
-
-	/**
-	 * @param middleware POST middleware
+	 * @param [pattern] Route pattern, generated from the middleware when omitted
 	 * @returns POST `Route` with added components
 	 */
-	static post(...middleware: Middleware<{}>[]): Route.Post;
-	/**
-	 * @template S Form field shape
-	 * @param fields Form field shape
-	 * @param middleware POST middleware
-	 * @returns POST `Route` with added components
-	 */
-	static post<S extends FormSchema.Shape>(
-		fields: S,
-		...middleware: Middleware<{}, S>[]
-	): Route.Post & Route.Schema<S>;
-	/**
-	 * @template S Form field shape
-	 * @param form Form schema
-	 * @param middleware POST middleware
-	 * @returns POST `Route` with added components
-	 */
-	static post<S extends FormSchema.Shape>(
-		form: Route.Schema<S>,
-		...middleware: Middleware<{}, S>[]
-	): Route.Post & Route.Schema<S>;
-	/**
-	 * @template Pattern Route pattern
-	 * @param pattern Route pattern
-	 * @param middleware POST middleware
-	 * @returns POST `Route` with added components
-	 */
-	static post<Pattern extends string>(
-		pattern: Pattern,
-		...middleware: Middleware<ExtractParams<Pattern>>[]
-	): Route.Post<Pattern>;
-	/**
-	 * @template Pattern Route pattern
-	 * @template S Form field shape
-	 * @param pattern Route pattern
-	 * @param fields Form field shape
-	 * @param middleware POST middleware
-	 * @returns POST `Route` with added components
-	 */
-	static post<Pattern extends string, S extends FormSchema.Shape>(
-		pattern: Pattern,
-		fields: S,
-		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Post<Pattern> & Route.Schema<S>;
-	/**
-	 * @template Pattern Route pattern
-	 * @template S Form field shape
-	 * @param pattern Route pattern
-	 * @param form Form schema
-	 * @param middleware POST middleware
-	 * @returns POST `Route` with added components
-	 */
-	static post<Pattern extends string, S extends FormSchema.Shape>(
-		pattern: Pattern,
-		form: Route.Schema<S>,
-		...middleware: Middleware<ExtractParams<Pattern>, S>[]
-	): Route.Post<Pattern> & Route.Schema<S>;
-	static post<Pattern extends string>(
-		patternOrSchemaOrMiddleware:
-			| Pattern
-			| Route.Schema
-			| FormSchema.Shape
-			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
-		schemaOrMiddleware?:
-			| Route.Schema
-			| FormSchema.Shape
-			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
-		...middleware: (
-			| Middleware<ExtractParams<Pattern>>
-			| Middleware<ExtractParams<Pattern>, FormSchema.Shape>
-		)[]
-	) {
-		let pattern: Pattern | undefined;
-		let schema: Route.Schema | undefined;
-
-		const resolve = (
-			psm?:
-				| Pattern
-				| Route.Schema
-				| FormSchema.Shape
-				| Middleware<ExtractParams<Pattern>>
-				| Middleware<ExtractParams<Pattern>, FormSchema.Shape>,
-		) => {
-			if (psm) {
-				if (typeof psm === "string") {
-					pattern = psm;
-				} else if (typeof psm !== "function") {
-					schema = FormSchema.from(psm);
-				} else {
-					middleware.unshift(psm);
-				}
-			}
-		};
-
-		resolve(patternOrSchemaOrMiddleware);
-		resolve(schemaOrMiddleware);
-
-		if (!pattern) {
-			// create pattern with checksum of all mw stringified
-			pattern = `/_p/${Checksum.djb2(middleware.join())}` as Pattern;
-		}
-
-		return Route.#withSchema(
-			Route.#withComponents(new Route(Method.post, pattern, ...middleware)),
-			schema,
-		);
+	static post<Pattern extends string = string>(pattern?: Pattern) {
+		return Route.#withComponents(new Route(Method.post, pattern)) as Route.Post<
+			Pattern,
+			ExtractParams<Pattern>,
+			FormSchema.Shape
+		>;
 	}
 }

@@ -17,7 +17,7 @@ export namespace Middleware {
 	 * @template Shape Parsed form data shape
 	 */
 	export type Context<
-		Params extends Trie.Params = Trie.Params,
+		Params extends Record<string, unknown> = Trie.Params,
 		Shape extends Form.Shape = Form.Shape,
 	> = ContextType<Params, Shape>;
 
@@ -35,6 +35,6 @@ export namespace Middleware {
  * @returns `Response` or element(s) to stream as HTML
  */
 export type Middleware<
-	Params extends Trie.Params = Trie.Params,
+	Params extends Record<string, unknown> = Trie.Params,
 	Shape extends Form.Shape = Form.Shape,
 > = (context: ContextType<Params, Shape>, next: Middleware.Next) => any;

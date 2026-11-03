@@ -15,6 +15,7 @@ export const migrations: Database.Migration[] = [
 		sql: "CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);",
 	},
 	{ id: "0002_auth", sql: Auth.sql[1] },
+	{ id: "0002_auth_agents", sql: Auth.sql[2] },
 	{
 		id: "0003_auth_users",
 		sql: `

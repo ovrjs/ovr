@@ -8,8 +8,8 @@ description: First class form validation with ovr.
 ```tsx
 import { Field, Route } from "ovr";
 
-export const enroll = Route.post(
-	{
+export const enroll = Route.post()
+	.fields({
 		name: Field.text({ placeholder: "Harry Potter" })
 			.min(2, "Expected at least 2 characters")
 			.persist(),
@@ -35,8 +35,8 @@ export const enroll = Route.post(
 			.refine((v) => v, "You must accept the castle rules")
 			.persist(),
 		license: Field.file().stream(), // put `.stream()` last to parse fields first
-	},
-	async (c) => {
+	})
+	.use(async (c) => {
 		const result = await c.data();
 
 		if (result.issues) return c.redirect(result.url, 303);
@@ -49,10 +49,9 @@ export const enroll = Route.post(
 		}
 
 		c.redirect(form, 303);
-	},
-);
+	});
 
-export const form = Route.get("/demo/form", (c) => (
+export const form = Route.get("/demo/form").use((c) => (
 	<enroll.Form state={c.url} />
 ));
 ```

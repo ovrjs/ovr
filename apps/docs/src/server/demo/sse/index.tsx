@@ -3,7 +3,7 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
-export const ssePage = ovr.Route.get("/demo/sse", (c) => {
+export const ssePage = ovr.Route.get("/demo/sse").use((c) => {
 	const Layout = createLayout(c);
 
 	return (
@@ -21,7 +21,7 @@ export const ssePage = ovr.Route.get("/demo/sse", (c) => {
 // simulate latency
 const delay = () => new Promise((r) => setTimeout(r, 300));
 
-export const sse = ovr.Route.get("/sse/event", (c) => {
+export const sse = ovr.Route.get("/sse/event").use((c) => {
 	// set the content-type header to create a SSE
 	c.res.headers.set("content-type", "text/event-stream");
 

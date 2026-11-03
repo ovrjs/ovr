@@ -18,14 +18,14 @@ if (import.meta.env.DEV && process.env.AUTH_SECRET) {
 		process.env.AUTH_SECRET,
 		process.env.AUTH_ORIGIN,
 	);
-	app = new o.App({ auth: service }).use(auth.routes(db, service));
+	app = new o.App().use(service, auth.routes(db, service));
 } else app = new o.App();
 
 app.use(redirect, notFound, home, docs, demo, seo);
 
 if (import.meta.env.DEV) {
 	app.use(
-		o.Route.get("/backpressure", async (c) => {
+		o.Route.get("/backpressure").use(async (c) => {
 			// need to make each chunk is very large to observe pull stop
 			// log something in the Context.page => pull method to see
 			const res = await fetch("http://localhost:5173/demo/memory");

@@ -37,18 +37,18 @@ const paths = [
 ];
 
 const routes = [
-	o.Route.get("/", () => "home"),
-	o.Route.get("/test", () => "test"),
-	o.Route.get("/:slug", (c) => c.params.slug),
-	o.Route.get("/test/:slug", (c) => c.params.slug),
-	o.Route.get("/posts", (c) => c.text("posts")),
-	o.Route.get("/posts/:postId/comments", () => "comments"),
-	o.Route.get("/posts/:postId/comments/:commentId", () => "comment"),
-	o.Route.get("/api/users", () => "users"),
-	o.Route.get("/api/users/:id", () => "user"),
-	o.Route.get("/static/*", () => "static"),
-	o.Route.get("/assets/:type/:name", () => "asset"),
-	o.Route.get("/files/:path", () => "file"),
+	o.Route.get("/").use(() => "home"),
+	o.Route.get("/test").use(() => "test"),
+	o.Route.get("/:slug").use((c) => c.params.slug),
+	o.Route.get("/test/:slug").use((c) => c.params.slug),
+	o.Route.get("/posts").use((c) => c.text("posts")),
+	o.Route.get("/posts/:postId/comments").use(() => "comments"),
+	o.Route.get("/posts/:postId/comments/:commentId").use(() => "comment"),
+	o.Route.get("/api/users").use(() => "users"),
+	o.Route.get("/api/users/:id").use(() => "user"),
+	o.Route.get("/static/*").use(() => "static"),
+	o.Route.get("/assets/:type/:name").use(() => "asset"),
+	o.Route.get("/files/:path").use(() => "file"),
 ];
 
 const app = new o.App().use(routes);

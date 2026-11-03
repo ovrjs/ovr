@@ -17,6 +17,12 @@ type Failure = {
  * Compiled parse function. Failures stay plain records until the public
  * `parse` builds the issues, so failed union branches cost no errors.
  */
+/**
+ * Preprocessors that only normalize input, so a stored value parses unchanged.
+ * Tables allow these and reject other preprocessors.
+ */
+export const normalizers = new WeakSet<(value: any) => unknown>();
+
 type Run = (
 	value: unknown,
 	path: Schema.Issue.Path,
@@ -3393,18 +3399,28 @@ export class Field {
 	): Field.Instance<number, "input", T> {
 		return new FieldSchema(
 			{ props },
-			Schema.number(Field.#required).preprocess((value) => {
-				// form submissions read numeric controls as strings
-				if (value == null || value === "") return undefined;
-
-				const number = Number(value);
-
-				// integers beyond 2^53 would be rounded, so they are left to fail validation
-				return Number.isInteger(number) && !Number.isSafeInteger(number)
-					? value
-					: number;
-			}),
+			Schema.number(Field.#required).preprocess(Field.#toNumber),
 		);
+	}
+
+	/**
+	 * @param value Form entry or stored number
+	 * @returns The number to validate
+	 */
+	static #toNumber(value: unknown) {
+		// form submissions read numeric controls as strings
+		if (value == null || value === "") return undefined;
+
+		const number = Number(value);
+
+		// integers beyond 2^53 were or would be rounded, left as text to fail validation
+		return Number.isInteger(number) && !Number.isSafeInteger(number)
+			? String(value)
+			: number;
+	}
+
+	static {
+		normalizers.add(Field.#toNumber);
 	}
 
 	/**

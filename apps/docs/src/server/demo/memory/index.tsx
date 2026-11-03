@@ -3,7 +3,7 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
-export const memory = ovr.Route.get("/demo/memory", async (c) => {
+export const memory = ovr.Route.get("/demo/memory").use(async (c) => {
 	const Layout = createLayout(c);
 
 	function* OverNineThousand() {

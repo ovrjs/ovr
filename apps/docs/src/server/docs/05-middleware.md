@@ -60,7 +60,7 @@ For each request, ovr creates a `Context` object _(abbreviated as `c` in these d
 `Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/04-route#parameters), the matched `route`, and helpers for cookies and request parsing.
 
 ```ts
-Route.get("/api/:id", (c) => {
+Route.get("/api/:id").use((c) => {
 	c.req; // original `Request`
 	c.ip; // trusted client IP supplied by your server, or undefined
 	c.url; // parsed web `URL`
@@ -81,7 +81,7 @@ Route.get("/api/:id", (c) => {
 These properties can be set directly:
 
 ```ts
-Route.get("/api/:id", (c) => {
+Route.get("/api/:id").use((c) => {
 	c.res.body = "# Markdown"; // BodyInit | null | undefined
 	c.res.status = 200; // number | undefined
 	c.res.headers.set("content-type", "text/markdown; charset=utf-8"); // Headers
@@ -94,7 +94,7 @@ new Response(c.res.body, { status: c.res.status, headers: c.res.headers });
 The response can be also be set with helper functions or by returning a value from the middleware.
 
 ```tsx
-Route.get("/api/:id", (c) => {
+Route.get("/api/:id").use((c) => {
 	// use helper functions to set common headers
 	c.html(body, status); // HTML
 	c.text(body, status); // plain text
@@ -141,7 +141,7 @@ const app = new App();
 const search = new Limiter({ database: db, name: "search" }); // Default policy: 60 per minute.
 
 app.use(
-	Route.get("/search", search.middleware, (c) => c.text("Search results")),
+	Route.get("/search").use(search.middleware, (c) => c.text("Search results")),
 );
 
 // Your server supplies the trusted socket peer or verified edge client IP:

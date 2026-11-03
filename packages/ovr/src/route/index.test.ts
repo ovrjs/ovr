@@ -1,19 +1,34 @@
 import { App } from "../app/index.js";
 import { Render } from "../render/index.js";
-import { Field, Form } from "../schema/index.js";
+import { Field, Form, Schema } from "../schema/index.js";
 import { Route } from "./index.js";
-import { describe, expect, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 
 describe("Route schema helpers", () => {
+	test("later parameter conversion cannot change the type seen by earlier middleware", async () => {
+		const route = Route.get("/items/:id").use((c) =>
+			c.text(c.params.id.toUpperCase()),
+		);
+		try {
+			route.params({ id: Schema.number().preprocess(Number) });
+		} catch (error) {
+			// Rejecting this order at setup also prevents a request-time type error.
+			if (!(error instanceof TypeError)) throw error;
+		}
+		const response = await new App()
+			.use(route)
+			.fetch("http://localhost/items/42");
+		expect(await response.text()).toBe("42");
+	});
+
 	test("Route.get parses query params with shape schema via c.data()", async () => {
-		const search = Route.get(
-			"/search",
-			{
+		const search = Route.get("/search")
+			.fields({
 				query: Field.text(),
 				tags: Field.multiselect(["a", "b", "c"]),
 				active: Field.checkbox(),
-			},
-			async (c) => {
+			})
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) {
@@ -22,8 +37,7 @@ describe("Route schema helpers", () => {
 				}
 
 				c.json(result.data);
-			},
-		);
+			});
 		const app = new App().use(search);
 
 		const res = await app.fetch(
@@ -43,16 +57,18 @@ describe("Route schema helpers", () => {
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
 		});
-		const user = Route.get("/user", form, async (c) => {
-			const result = await c.data();
+		const user = Route.get("/user")
+			.fields(form)
+			.use(async (c) => {
+				const result = await c.data();
 
-			if (result.issues) {
-				c.text("Invalid", 400);
-				return;
-			}
+				if (result.issues) {
+					c.text("Invalid", 400);
+					return;
+				}
 
-			c.json(result.data);
-		});
+				c.json(result.data);
+			});
 		const app = new App().use(user);
 
 		const res = await app.fetch(
@@ -64,10 +80,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("invalid GET schema parse uses current request URL and encoded _form", async () => {
-		const search = Route.get(
-			"/search",
-			{ role: Field.radio(["reader", "admin"]) },
-			async (c) => {
+		const search = Route.get("/search")
+			.fields({ role: Field.radio(["reader", "admin"]) })
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) {
@@ -76,8 +91,7 @@ describe("Route schema helpers", () => {
 				}
 
 				c.text("ok");
-			},
-		);
+			});
 		const app = new App().use(search);
 
 		const res = await app.fetch(
@@ -100,16 +114,18 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled GET handles HEAD requests without form parsing", async () => {
-		const search = Route.get("/search", { query: Field.text() }, async (c) => {
-			const result = await c.data();
+		const search = Route.get("/search")
+			.fields({ query: Field.text() })
+			.use(async (c) => {
+				const result = await c.data();
 
-			if (result.issues) {
-				c.text("Invalid", 400);
-				return;
-			}
+				if (result.issues) {
+					c.text("Invalid", 400);
+					return;
+				}
 
-			c.text(result.data.query);
-		});
+				c.text(result.data.query);
+			});
 		const app = new App().use(search);
 
 		const res = await app.fetch(
@@ -123,9 +139,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled Route.get exposes route and schema helpers", () => {
-		const form = Route.get("/profile", { name: Field.text() }, (c) =>
-			c.text("ok"),
-		);
+		const form = Route.get("/profile")
+			.fields({ name: Field.text() })
+			.use((c) => c.text("ok"));
 
 		expect(typeof form.Anchor).toBe("function");
 		expect(typeof form.Form).toBe("function");
@@ -135,9 +151,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled Route.get Form defaults to Fields and submit button", async () => {
-		const profile = Route.get("/profile", { name: Field.text() }, (c) =>
-			c.text("ok"),
-		);
+		const profile = Route.get("/profile")
+			.fields({ name: Field.text() })
+			.use((c) => c.text("ok"));
 
 		const html = await new Render(null).string(profile.Form({}));
 
@@ -148,9 +164,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema-enabled Route.post Form encodes _return from URL state", async () => {
-		const submit = Route.post("/submit", { name: Field.text() }, (c) =>
-			c.text("ok"),
-		);
+		const submit = Route.post("/submit")
+			.fields({ name: Field.text() })
+			.use((c) => c.text("ok"));
 		const state = new URL(
 			"http://localhost:5173/signup?tab=profile&_form=stale&_return=%2Fold#details",
 		);
@@ -166,10 +182,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("invalid POST schema parse prefers same-origin _return query", async () => {
-		const submit = Route.post(
-			"/submit",
-			{ role: Field.radio(["reader", "admin"]) },
-			async (c) => {
+		const submit = Route.post("/submit")
+			.fields({ role: Field.radio(["reader", "admin"]) })
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) {
@@ -178,8 +193,7 @@ describe("Route schema helpers", () => {
 				}
 
 				c.text("ok");
-			},
-		);
+			});
 		const app = new App().use(submit);
 		const data = new FormData();
 
@@ -209,11 +223,10 @@ describe("Route schema helpers", () => {
 	});
 
 	test("invalid POST schema parse exposes search object for explicit page redirects", async () => {
-		const page = Route.get("/source", (c) => c.text("source"));
-		const submit = Route.post(
-			"/submit",
-			{ role: Field.radio(["reader", "admin"]) },
-			async (c) => {
+		const page = Route.get("/source").use((c) => c.text("source"));
+		const submit = Route.post("/submit")
+			.fields({ role: Field.radio(["reader", "admin"]) })
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) {
@@ -222,8 +235,7 @@ describe("Route schema helpers", () => {
 				}
 
 				c.text("ok");
-			},
-		);
+			});
 		const app = new App().use(page).use(submit);
 		const data = new FormData();
 
@@ -250,10 +262,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("invalid POST schema parse falls back to request URL when _return is missing", async () => {
-		const submit = Route.post(
-			"/submit",
-			{ role: Field.radio(["reader", "admin"]) },
-			async (c) => {
+		const submit = Route.post("/submit")
+			.fields({ role: Field.radio(["reader", "admin"]) })
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) {
@@ -262,8 +273,7 @@ describe("Route schema helpers", () => {
 				}
 
 				c.text("ok");
-			},
-		);
+			});
 		const app = new App().use(submit);
 		const data = new FormData();
 
@@ -295,10 +305,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("invalid POST schema parse ignores cross-origin _return query", async () => {
-		const submit = Route.post(
-			"/submit",
-			{ role: Field.radio(["reader", "admin"]) },
-			async (c) => {
+		const submit = Route.post("/submit")
+			.fields({ role: Field.radio(["reader", "admin"]) })
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) {
@@ -307,8 +316,7 @@ describe("Route schema helpers", () => {
 				}
 
 				c.text("ok");
-			},
-		);
+			});
 		const app = new App().use(submit);
 		const data = new FormData();
 
@@ -342,10 +350,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("invalid multipart POST with streamed file field returns redirect", async () => {
-		const submit = Route.post(
-			"/upload",
-			{ name: Field.text().min(2), license: Field.file().stream() },
-			async (c) => {
+		const submit = Route.post("/upload")
+			.fields({ name: Field.text().min(2), license: Field.file().stream() })
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) {
@@ -360,8 +367,7 @@ describe("Route schema helpers", () => {
 				}
 
 				c.text("ok");
-			},
-		);
+			});
 		const app = new App().use(submit);
 		const data = new FormData();
 
@@ -399,10 +405,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("c.data passes multipart options to parser", async () => {
-		const submit = Route.post(
-			"/limit",
-			{ a: Field.text(), b: Field.text() },
-			async (c) => {
+		const submit = Route.post("/limit")
+			.fields({ a: Field.text(), b: Field.text() })
+			.use(async (c) => {
 				try {
 					const result = await c.data({ parts: 1 });
 
@@ -415,8 +420,7 @@ describe("Route schema helpers", () => {
 				} catch (error) {
 					c.text(error instanceof Error ? error.message : String(error), 413);
 				}
-			},
-		);
+			});
 		const app = new App().use(submit);
 		const data = new FormData();
 
@@ -436,7 +440,7 @@ describe("Route schema helpers", () => {
 	});
 
 	test("c.data returns null on routes without a schema", async () => {
-		const noSchema = Route.get("/no-schema", async (c) => {
+		const noSchema = Route.get("/no-schema").use(async (c) => {
 			const result = await c.data();
 			c.text(result === null ? "ok" : "bad");
 		});
@@ -448,10 +452,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("c.data auto-applies schema parts limit", async () => {
-		const submit = Route.post(
-			"/auto-limit",
-			{ a: Field.text(), b: Field.text() },
-			async (c) => {
+		const submit = Route.post("/auto-limit")
+			.fields({ a: Field.text(), b: Field.text() })
+			.use(async (c) => {
 				try {
 					const result = await c.data();
 
@@ -464,8 +467,7 @@ describe("Route schema helpers", () => {
 				} catch (error) {
 					c.text(error instanceof Error ? error.message : String(error), 413);
 				}
-			},
-		);
+			});
 		const app = new App().use(submit);
 		const data = new FormData();
 
@@ -486,10 +488,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("schema auto parts overrides app multipart parts option", async () => {
-		const submit = Route.post(
-			"/app-limit",
-			{ a: Field.text(), b: Field.text() },
-			async (c) => {
+		const submit = Route.post("/app-limit")
+			.fields({ a: Field.text(), b: Field.text() })
+			.use(async (c) => {
 				try {
 					const result = await c.data();
 
@@ -502,8 +503,7 @@ describe("Route schema helpers", () => {
 				} catch (error) {
 					c.text(error instanceof Error ? error.message : String(error), 413);
 				}
-			},
-		);
+			});
 		const app = new App({ form: { parts: 1 } }).use(submit);
 		const data = new FormData();
 
@@ -523,10 +523,9 @@ describe("Route schema helpers", () => {
 	});
 
 	test("c.data parts option overrides app multipart parts option", async () => {
-		const submit = Route.post(
-			"/call-limit",
-			{ a: Field.text(), b: Field.text() },
-			async (c) => {
+		const submit = Route.post("/call-limit")
+			.fields({ a: Field.text(), b: Field.text() })
+			.use(async (c) => {
 				try {
 					const result = await c.data({ parts: 2 });
 
@@ -539,8 +538,7 @@ describe("Route schema helpers", () => {
 				} catch (error) {
 					c.text(error instanceof Error ? error.message : String(error), 413);
 				}
-			},
-		);
+			});
 		const app = new App({ form: { parts: 1 } }).use(submit);
 		const data = new FormData();
 
@@ -569,7 +567,9 @@ describe("editing records", () => {
 	};
 
 	test("Form renders initial values, and a failed submission takes precedence", async () => {
-		const update = Route.post("/posts/:id", fields, (c) => c.text("ok"));
+		const update = Route.post("/posts/:id")
+			.fields(fields)
+			.use((c) => c.text("ok"));
 		const post = {
 			id: "1",
 			title: "Draft",
@@ -600,7 +600,9 @@ describe("editing records", () => {
 	});
 
 	test("Form labels its submit button", async () => {
-		const update = Route.post("/posts/:id", fields, (c) => c.text("ok"));
+		const update = Route.post("/posts/:id")
+			.fields(fields)
+			.use((c) => c.text("ok"));
 		const html = await new Render(null).string([
 			update.Form({ params: { id: "1" }, submit: "Save changes" }),
 			update.Form({ params: { id: "1" } }),
@@ -623,9 +625,9 @@ describe("editing records", () => {
 	});
 
 	test("initial record values are not limited by the URL persistence budget", async () => {
-		const update = Route.post("/posts/:id", { body: Field.textarea() }, (c) =>
-			c.text("ok"),
-		);
+		const update = Route.post("/posts/:id")
+			.fields({ body: Field.textarea() })
+			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
 		const html = await new Render(null).string(
 			update.Form({ params: { id: "1" }, values: { body } }),
@@ -663,11 +665,10 @@ describe("editing records", () => {
 
 describe("invalid after parsing", () => {
 	test("puts issues on fields and keeps persisted values", async () => {
-		const page = Route.get("/signup", (c) => signup.Form({ state: c.url }));
-		const signup = Route.post(
-			"/signup",
-			{ email: Field.email().persist(), name: Field.text() },
-			async (c) => {
+		const page = Route.get("/signup").use((c) => signup.Form({ state: c.url }));
+		const signup = Route.post("/signup")
+			.fields({ email: Field.email().persist(), name: Field.text() })
+			.use(async (c) => {
 				const result = await c.data();
 
 				if (result.issues) return c.redirect(result.url, 303);
@@ -677,8 +678,7 @@ describe("invalid after parsing", () => {
 					result.invalid({ email: "Already registered" }).url,
 					303,
 				);
-			},
-		);
+			});
 		const app = new App().use(page, signup);
 		const data = new FormData();
 
@@ -704,5 +704,132 @@ describe("invalid after parsing", () => {
 		expect(html).toContain('aria-invalid="true"');
 		// name is not persisted
 		expect(html).not.toContain("Ross");
+	});
+});
+
+describe("chained routes", () => {
+	test("forms are WebMCP tools for browser agents", async () => {
+		const render = (element: unknown) =>
+			new Render(null).string(element as Parameters<Render["string"]>[0]);
+
+		const create = Route.post("/posts")
+			.describe("Create a post")
+			.fields({ title: Field.text() });
+		expect(await render(create.Form({}))).toContain(
+			'toolname="post_posts" tooldescription="Create a post" toolautosubmit',
+		);
+
+		// the user confirms destructive changes
+		const clear = Route.post("/posts/clear").describe("Delete every post", {
+			name: "clear_posts",
+			destructive: true,
+		});
+		const cleared = await render(clear.Form({}));
+		expect(cleared).toContain('toolname="clear_posts"');
+		expect(cleared).not.toContain("toolautosubmit");
+
+		// a form per record would repeat the name, hidden routes are not tools
+		const remove = Route.post("/posts/:id/delete").describe("Delete a post");
+		const login = Route.post("/login").describe(false);
+		for (const html of [
+			await render(remove.Form({ params: { id: "1" } })),
+			await render(login.Form({})),
+			await render(Route.get("/about").Form({})),
+		])
+			expect(html).not.toContain("toolname");
+
+		// props override them
+		expect(
+			await render(
+				remove.Form({
+					params: { id: "1" },
+					toolname: "delete_post",
+					tooldescription: "Delete this post",
+				}),
+			),
+		).toContain('toolname="delete_post" tooldescription="Delete this post"');
+	});
+
+	test("each step returns the same route", () => {
+		const route = Route.get("/posts");
+		const handler = () => "posts";
+
+		expect(route.describe("List posts").use(handler)).toBe(route);
+		expect(route.middleware).toEqual([handler]);
+		expect(route.description).toBe("List posts");
+	});
+
+	test("describe stores agent options, and false hides the route", () => {
+		const remove = Route.post("/posts/:id/delete").describe("Delete a post", {
+			name: "delete_post",
+			destructive: true,
+		});
+		const hidden = Route.post("/internal").describe(false);
+
+		expect(remove.agent).toEqual({ name: "delete_post", destructive: true });
+		expect(hidden.description).toBe(false);
+	});
+
+	test("params convert values before the middleware runs", async () => {
+		const show = Route.get("/posts/:id/:slug")
+			.params({ id: Schema.number().preprocess(Number).int() })
+			.use((c) => {
+				expectTypeOf(c.params).toEqualTypeOf<{ id: number; slug: string }>();
+
+				return c.json(c.params);
+			});
+		const app = new App().use(show);
+
+		const res = await app.fetch("http://localhost/posts/5/hello");
+
+		expect(await res.json()).toEqual({ id: 5, slug: "hello" });
+	});
+
+	test("a parameter that fails its schema is a 404 before the middleware runs", async () => {
+		let ran = false;
+		const show = Route.get("/posts/:id")
+			.params({ id: Schema.string().uuid() })
+			.use(() => {
+				ran = true;
+			});
+		const app = new App().use(show);
+
+		const res = await app.fetch("http://localhost/posts/nope");
+
+		expect(res.status).toBe(404);
+		expect(ran).toBe(false);
+	});
+
+	test("params rejects names the pattern does not have", () => {
+		expect(() =>
+			// @ts-expect-error - not a parameter of the pattern
+			Route.get("/posts/:id").params({ ids: Schema.string() }),
+		).toThrow('Route "/posts/:id" has no parameter "ids".');
+	});
+
+	test("fields keep their types after params, and params after fields", () => {
+		const update = Route.post("/posts/:id")
+			.fields({ title: Field.text() })
+			.params({ id: Schema.string().uuid() })
+			.use(async (c) => {
+				const result = await c.data();
+				if (result.issues) return;
+
+				expectTypeOf(result.data.title).toEqualTypeOf<string>();
+				expectTypeOf(c.params).toEqualTypeOf<{ id: string }>();
+			});
+
+		expect(update.names).toEqual(["title"]);
+	});
+
+	test("generated POST patterns follow the final middleware", () => {
+		const route = Route.post();
+		const empty = route.pattern;
+
+		route.use(() => "created");
+
+		expect(route.pattern).toMatch(/^\/_p\//);
+		expect(route.pattern).not.toBe(empty);
+		expect(Route.post().use(() => "created").pattern).toBe(route.pattern);
 	});
 });

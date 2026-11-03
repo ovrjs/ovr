@@ -13,7 +13,7 @@ import { Route } from "ovr";
 
 const siteOrigin = "https://ovrjs.com";
 
-export const sitemap = Route.get("/sitemap.xml", (c) => {
+export const sitemap = Route.get("/sitemap.xml").use((c) => {
 	c.res.headers.set("content-type", "application/xml; charset=utf-8");
 
 	return (
@@ -35,12 +35,14 @@ export const sitemap = Route.get("/sitemap.xml", (c) => {
 });
 
 // allows all robots and points to the sitemap
-export const robots = Route.get("/robots.txt", (c) =>
+export const robots = Route.get("/robots.txt").use((c) =>
 	c.text(
 		`User-agent: *\nDisallow:\n\nSitemap: ${siteOrigin}${sitemap.pathname()}`,
 	),
 );
 
 // prevents 404 if icon is named something else
-export const favicon = Route.get("/favicon.ico", (c) => c.redirect(logo.black));
+export const favicon = Route.get("/favicon.ico").use((c) =>
+	c.redirect(logo.black),
+);
 ```

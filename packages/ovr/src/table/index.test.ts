@@ -112,6 +112,15 @@ describe("Table", () => {
 		}
 	});
 
+	test("rejects arbitrary preprocessors that change stored column values", () => {
+		expect(
+			() =>
+				new Table("prices", {
+					cents: Schema.number().preprocess((value) => Number(value) * 100),
+				}),
+		).toThrow(TypeError);
+	});
+
 	test("rejects unknown default columns", () => {
 		expect(
 			() =>

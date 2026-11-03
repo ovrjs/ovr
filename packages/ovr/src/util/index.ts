@@ -32,6 +32,7 @@ export class Mime {
 	/** Mime type constants */
 	static type = {
 		html: Mime.#text("html"),
+		md: Mime.#text("markdown"),
 		text: Mime.#text("plain"),
 		json: Mime.#application("json"),
 		stream: Mime.#application("octet-stream"),
@@ -87,6 +88,8 @@ export class Header {
 		loc: "location",
 		origin: "origin",
 		fetch: "sec-fetch-site",
+		accept: "accept",
+		vary: "vary",
 	} as const;
 
 	/**
@@ -107,6 +110,42 @@ export class Header {
 		return semi === -1
 			? [header, null]
 			: [header!.slice(0, semi), header!.slice(semi)];
+	}
+
+	/**
+	 * @param accept `Accept` header
+	 * @param mime Media type to look for
+	 * @param exact Ignore wildcard ranges
+	 * @returns The quality the header gives the type, by its most specific match
+	 */
+	static quality(accept: string | null, mime: string, exact?: boolean) {
+		if (!accept) return 0;
+		const [type] = mime.split("/");
+		let best = -1;
+		let q = 0;
+
+		for (const range of accept.split(",")) {
+			const [value, params] = Header.shift(range.trim());
+			const match = value?.trim().toLowerCase();
+			const score =
+				match === mime
+					? 2
+					: exact
+						? -1
+						: match === `${type}/*`
+							? 1
+							: match === "*/*"
+								? 0
+								: -1;
+
+			if (score > best) {
+				best = score;
+				const quality = Number(Header.params(params?.slice(1) ?? "").q ?? 1);
+				q = Number.isNaN(quality) ? 0 : quality;
+			}
+		}
+
+		return q;
 	}
 
 	/**
@@ -209,6 +248,40 @@ export class Codec {
 	 */
 	static decode(bytes?: Uint8Array) {
 		return Codec.#decoder.decode(bytes);
+	}
+
+	/**
+	 * Reads a body, cancelling it as soon as it exceeds the limit.
+	 *
+	 * @param body Body to read
+	 * @param limit Largest size in bytes
+	 * @returns The bytes, or `undefined` when the body is too large
+	 */
+	static async read(body: ReadableStream<Uint8Array> | null, limit: number) {
+		if (!body) return new Uint8Array();
+
+		const reader = body.getReader();
+		const chunks: Uint8Array[] = [];
+		let size = 0;
+
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if ((size += value.length) > limit) {
+				await reader.cancel();
+				return;
+			}
+			chunks.push(value);
+		}
+
+		const bytes = new Uint8Array(size);
+		let offset = 0;
+		for (const chunk of chunks) {
+			bytes.set(chunk, offset);
+			offset += chunk.length;
+		}
+
+		return bytes;
 	}
 
 	static readonly Base64 = class Base64 {
