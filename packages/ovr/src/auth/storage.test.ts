@@ -1,4 +1,5 @@
 import { Database } from "../database/index.js";
+import { Auth } from "./index.js";
 import { Storage } from "./storage.js";
 import pg from "pg";
 import {
@@ -8,11 +9,12 @@ import {
 	describe,
 	expect,
 	test,
+	vi,
 } from "vitest";
 
 // Independent Postgres backends are required; PGlite serializes these writes.
 describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
-	"concurrent challenge storage",
+	"concurrent auth storage",
 	() => {
 		const schema = `ovr_storage_${crypto.randomUUID().replaceAll("-", "")}`;
 		let pool: pg.Pool;
@@ -23,9 +25,11 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 			pool = new pg.Pool({
 				connectionString: process.env.OVR_TEST_DATABASE_URL,
 				options: `-c search_path=${schema}`,
+				application_name: schema,
 				max: 12,
 			});
 			await pool.query(`CREATE SCHEMA ${schema}`);
+			await pool.query(Auth.sql[2]);
 			await pool.query(`
 			CREATE TABLE ovr_sessions (id text PRIMARY KEY, expiration bigint NOT NULL);
 			CREATE TABLE ovr_challenges (
@@ -59,6 +63,56 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 		});
 
 		beforeEach(() => pool.query("TRUNCATE ovr_challenges, ovr_sessions"));
+
+		test("replay revokes tokens being issued concurrently in the same family", async () => {
+			const row: Storage.Token = {
+				kind: "refresh",
+				user: "user-1",
+				client: "agent",
+				scope: "",
+				resource: "https://example.com/mcp",
+				expiration: Date.now() + 60_000,
+			};
+			await storage.tokens.set("first", row);
+			await storage.tokens.exchange("first", "refresh", async () => ({
+				second: row,
+			}));
+			const entered = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			const rotation = storage.tokens.exchange(
+				"second",
+				"refresh",
+				async () => {
+					entered.resolve();
+					await release.promise;
+					return { survivor: { ...row, kind: "access" } };
+				},
+			);
+			await entered.promise;
+			let done = false;
+			const replay = storage.tokens
+				.exchange("first", "refresh", async () => undefined)
+				.finally(() => {
+					done = true;
+				});
+			try {
+				// Wait until revocation has started, even if it must wait for the rotation.
+				await vi.waitFor(
+					async () => {
+						const waiting = await pool.query(
+							"SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+							[schema],
+						);
+						expect(done || waiting.rows.length > 0).toBe(true);
+					},
+					{ timeout: 3000 },
+				);
+			} finally {
+				release.resolve();
+				await Promise.all([rotation, replay]);
+			}
+			expect(await storage.tokens.get("survivor")).toBeUndefined();
+		});
 
 		test.each(["browser", "total"])(
 			"enforces the %s capacity across concurrent requests",

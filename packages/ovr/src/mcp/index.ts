@@ -125,9 +125,6 @@ export class Mcp {
 	/** App the endpoint is mounted on */
 	#app?: App.Mount;
 
-	/** Tools, rebuilt when routes are added */
-	#tools?: { count: number; tools: Map<string, Tool> };
-
 	/** @param options MCP server options */
 	constructor(options: Mcp.Options = {}) {
 		this.#options = { ...options, path: options.path ?? "/mcp" };
@@ -459,14 +456,16 @@ export class Mcp {
 		);
 	}
 
-	/** @returns Tools by name, from the app's current routes */
+	/**
+	 * Built for each request, a route described or hidden after it was mounted
+	 * is listed and called as it is now.
+	 *
+	 * @returns Tools by name, from the app's current routes
+	 */
 	#list() {
-		const routes = this.#app!.routes;
-		if (this.#tools?.count === routes.length) return this.#tools.tools;
-
 		const tools = new Map<string, Tool>();
 
-		for (const route of routes) {
+		for (const route of this.#app!.routes) {
 			const { tool } = route;
 			if (!tool) continue;
 
@@ -518,8 +517,6 @@ export class Mcp {
 				},
 			});
 		}
-
-		this.#tools = { count: routes.length, tools };
 
 		return tools;
 	}
@@ -574,9 +571,13 @@ export class Mcp {
 			)
 			.join("/");
 
-		const url = new URL(pathname, c.url);
+		// a path, so an argument such as `/host` cannot change the origin
+		const url = new URL(c.url.origin + pathname);
 		// arguments such as `..` or a more specific pattern could select another route
-		if (this.#app!.find(route.method, url.pathname) !== route)
+		if (
+			url.origin !== c.url.origin ||
+			this.#app!.find(route.method, url.pathname) !== route
+		)
 			return Mcp.#error(`Parameters do not match ${route.pattern}`);
 
 		const read = route.method === Method.get;

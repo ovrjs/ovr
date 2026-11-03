@@ -2761,6 +2761,75 @@ describe("agents", () => {
 		}
 	});
 
+	test("a pooled socket to a private address cannot serve a metadata request", async () => {
+		const http = process.getBuiltinModule("node:http");
+		const https = process.getBuiltinModule("node:https");
+		const net = process.getBuiltinModule("node:net");
+		const { once } = process.getBuiltinModule("node:events");
+		let requests = 0;
+		const server = http.createServer((_req, res) => {
+			requests++;
+			res.end('{"private":true}');
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const address = server.address();
+		if (!address || typeof address === "string")
+			throw new Error("Missing port");
+		const { port } = address;
+		const socket = net.connect(port, "127.0.0.1");
+		const key = https.globalAgent.getName({ host: "localhost", port });
+		try {
+			await once(socket, "connect");
+			// Model an idle connection established by another caller. Node writes
+			// the HTTP request straight to the pooled socket without a new lookup.
+			Object.assign(https.globalAgent.freeSockets, { [key]: [socket] });
+			await Metadata.fetch(new URL(`https://localhost:${port}/client.json`));
+			expect(requests).toBe(0);
+		} finally {
+			Reflect.deleteProperty(https.globalAgent.freeSockets, key);
+			socket.destroy();
+			server.close();
+		}
+	});
+
+	test("a trickling metadata response cannot keep a download slot indefinitely", async () => {
+		const http = process.getBuiltinModule("node:http");
+		const https = process.getBuiltinModule("node:https");
+		const { once } = process.getBuiltinModule("node:events");
+		const server = http.createServer((_req, res) => {
+			res.write("{");
+			const timer = setInterval(() => res.write(" "), 100);
+			res.on("close", () => clearInterval(timer));
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const address = server.address();
+		if (!address || typeof address === "string")
+			throw new Error("Missing port");
+		// Substitute only the destination and transport. The real request still
+		// receives the downloader's deadline, timeout and cancellation options.
+		vi.spyOn(https, "get").mockImplementation((_url, options, callback) =>
+			http.get(new URL(`http://127.0.0.1:${address.port}/`), options, callback),
+		);
+		let done = false;
+		const download = Metadata.fetch(
+			new URL("https://slow.invalid/metadata"),
+		).finally(() => {
+			done = true;
+		});
+		try {
+			await vi.waitFor(() => expect(done).toBe(true), {
+				timeout: 6500,
+				interval: 100,
+			});
+		} finally {
+			server.closeAllConnections();
+			server.close();
+			await download;
+		}
+	}, 10000);
+
 	test("an issuer-origin token cannot authenticate a different origin's resource", async () => {
 		const { auth } = agents();
 		await storage.tokens.set("test-access", {

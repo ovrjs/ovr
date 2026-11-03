@@ -196,6 +196,16 @@ export class Storage {
 			const id = await Storage.hash(token);
 
 			return this.#db.transaction(async (t) => {
+				const [found] = await t.sql`
+					SELECT * FROM ${Storage.tokens} WHERE id = ${id}
+				`.parse(Storage.tokens);
+				if (!found) return false;
+				const { family } = found;
+
+				// one exchange per family at a time, so a revocation waits for tokens
+				// being issued and its snapshot, taken after the lock, includes them
+				await t.sql`SELECT pg_advisory_xact_lock(hashtext('ovr_tokens'), hashtext(${family}))`;
+
 				const [row] = await t.sql`
 					UPDATE ${Storage.tokens} SET kind = 'spent'
 					WHERE id = ${id} AND kind = ${kind}
@@ -205,8 +215,8 @@ export class Storage {
 				if (!row) {
 					// stolen and used by someone else, so neither party keeps access
 					await t.sql`
-						DELETE FROM ${Storage.tokens} WHERE family = (
-							SELECT family FROM ${Storage.tokens} WHERE id = ${id} AND kind = 'spent'
+						DELETE FROM ${Storage.tokens} WHERE family = ${family} AND EXISTS (
+							SELECT 1 FROM ${Storage.tokens} WHERE id = ${id} AND kind = 'spent'
 						)
 					`;
 					return false;

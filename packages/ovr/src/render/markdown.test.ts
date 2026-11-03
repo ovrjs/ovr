@@ -10,6 +10,16 @@ const md = (html: string, options?: Markdown.Options) =>
 	Markdown.convert(html, options);
 
 describe("Markdown", () => {
+	test("an image URL cannot inject a second Markdown image", () => {
+		const result = md(
+			'<img alt="photo" src="https://cdn.example/a)![tracker](https://other.example/p">',
+			{ base: "https://example.com/" },
+		);
+		expect(result).toContain("![photo]");
+		expect(result).not.toContain(
+			"](https://cdn.example/a)![tracker](https://other.example/p)",
+		);
+	});
 	test("does not emit a JavaScript link after URL normalization", () => {
 		expect(
 			md('<a href="java&#9;script:alert(1)">Run</a>', {

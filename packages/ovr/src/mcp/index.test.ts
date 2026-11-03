@@ -129,6 +129,35 @@ function setup() {
 }
 
 describe("Mcp", () => {
+	test("a wildcard argument cannot change the request's origin", async () => {
+		const { app, rpc } = setup();
+		const origins: string[] = [];
+		app.use(
+			Route.post("/*")
+				.describe("Catch all", { name: "catch_all" })
+				.use((c) => {
+					origins.push(c.url.origin);
+					return "ok";
+				}),
+		);
+		await rpc("tools/call", {
+			name: "catch_all",
+			arguments: { wildcard: "/other.example/private" },
+		});
+		expect(origins).not.toContain("http://other.example");
+	});
+	test("a cached tool cannot run after the route is hidden", async () => {
+		const { app, rpc } = setup();
+		let called = false;
+		const route = Route.post("/toggle").use(() => {
+			called = true;
+		});
+		app.use(route);
+		await rpc("tools/list");
+		route.describe(false);
+		await rpc("tools/call", { name: "post_toggle" });
+		expect(called).toBe(false);
+	});
 	test("mounting a service twice cannot switch the first endpoint to another app", async () => {
 		const mcp = new Mcp();
 		const first = new App().use(

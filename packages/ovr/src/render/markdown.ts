@@ -870,16 +870,17 @@ export class Markdown {
 						break;
 					}
 					const url = resolved ? this.#href(resolved) : href;
+					const destination = Markdown.#destination(url);
 					out +=
 						text === url || !text
-							? `<${url}>`
-							: `[${text}](${/[\s()]/.test(url) ? `<${url}>` : url})`;
+							? `<${destination}>`
+							: `[${text}](${destination})`;
 					break;
 				}
 				case "img": {
 					const url = child.attrs.src && this.#url(child.attrs.src);
 					if (url)
-						out += `![${Markdown.#escape(child.attrs.alt ?? "")}](${this.#href(url)})`;
+						out += `![${Markdown.#escape(child.attrs.alt ?? "")}](${Markdown.#destination(this.#href(url))})`;
 					break;
 				}
 				case "input":
@@ -908,6 +909,18 @@ export class Markdown {
 			const url = new URL(href, this.#options.base ?? "http://localhost/");
 			if (Markdown.#schemes.has(url.protocol)) return url;
 		} catch {}
+	}
+
+	/**
+	 * @param url URL
+	 * @returns The URL as a link destination, characters that could end it are percent-encoded
+	 */
+	static #destination(url: string) {
+		return url.replace(
+			/[\s()<>]/g,
+			(char) =>
+				`%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`,
+		);
 	}
 
 	/**

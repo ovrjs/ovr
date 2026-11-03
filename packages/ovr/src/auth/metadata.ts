@@ -74,11 +74,22 @@ export class Metadata {
 		if (net.isIP(host) && special(host)) return;
 
 		const bytes = await new Promise<Uint8Array | undefined>((resolve) => {
+			// for the whole download, a response sent slowly cannot hold it open
+			const deadline = setTimeout(() => {
+				req.destroy();
+				done();
+			}, 5 * Time.second);
+			const done = (bytes?: Uint8Array) => {
+				clearTimeout(deadline);
+				resolve(bytes);
+			};
+
 			const req = https.get(
 				url,
 				{
+					// a new connection, a pooled one may not have had its address checked
+					agent: false,
 					headers: { accept: Mime.type.json },
-					timeout: 5 * Time.second,
 					lookup: (hostname, options, callback) =>
 						dns.lookup(hostname, { ...options, all: true }, (error, all) => {
 							if (error) return callback(error, "", 0);
@@ -92,7 +103,7 @@ export class Metadata {
 					// redirects are not followed
 					if (res.statusCode !== 200) {
 						res.destroy();
-						return resolve(undefined);
+						return done();
 					}
 
 					const chunks: Uint8Array[] = [];
@@ -100,16 +111,16 @@ export class Metadata {
 					res.on("data", (chunk: Uint8Array) => {
 						if ((size += chunk.length) > Metadata.#limit) {
 							res.destroy();
-							return resolve(undefined);
+							return done();
 						}
 						chunks.push(chunk);
 					});
-					res.on("end", () => resolve(Buffer.concat(chunks)));
-					res.on("error", () => resolve(undefined));
+					res.on("end", () => done(Buffer.concat(chunks)));
+					// the first of these settles the download, closing early is a failure
+					res.on("close", () => done());
 				},
 			);
-			req.on("timeout", () => req.destroy());
-			req.on("error", () => resolve(undefined));
+			req.on("error", () => done());
 		});
 
 		if (!bytes) return;
