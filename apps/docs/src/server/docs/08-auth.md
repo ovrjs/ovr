@@ -37,7 +37,9 @@ const app = new App().use(auth);
 
 For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session duration; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
 
-`database` is your application's [Database](/09-database). Include `Auth.tables` in its tables, and create them with a [migration](#storage).
+`database` is your application's [Database](/09-database). Include `Auth.tables` in its tables, and `database.migrate()` [creates them](#storage).
+
+`users` is your users table, which must be in `database` too. Its form fields, other than `id` and columns with defaults, are the registration form. Columns with defaults, such as a `role` an admin form edits, are set by the server, so a signup cannot choose them. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
 
 ## Forms
 
@@ -237,8 +239,6 @@ const passkeys = await database.sql`
 `.parse(database.auth_credentials);
 ```
 
-The users table's form fields, other than `id` and columns with defaults, are the registration form. Columns with defaults, such as a `role` an admin form edits, are set by the server, so a signup cannot choose them. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
-
 Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, and all browsers together 10,000; [aggregate rate limits](#additional-limits) protect that capacity from abuse.
 
 ## Rate limiting
@@ -288,7 +288,7 @@ These numbers are an example. Size the burst and refill over the two-minute chal
 
 ## Options
 
-`Auth.Options<Shape>` describes the complete configuration. `database` and `register` are shown above, and `limits` under [rate limiting](#rate-limiting); these remaining options customize normal application behavior:
+`Auth.Options` describes the complete configuration. `secret`, `origin`, `database`, and `users` are shown [above](#create), and `limits` under [rate limiting](#rate-limiting); these remaining options customize normal application behavior:
 
 | Option            | Default         | Purpose                                           |
 | ----------------- | --------------- | ------------------------------------------------- |
@@ -342,7 +342,7 @@ Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint
 | `/oauth/deny`                             | Denies the agent                                            |
 | `/oauth/token`                            | Exchanges codes for tokens, and refreshes them              |
 
-An agent's client ID is the HTTPS URL of its [client ID metadata document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-id-metadata-documents), a JSON file with its name and the addresses to return the user to. Auth fetches it when the user connects, so the name shown on the consent page is tied to the agent's website, and there is nothing to register or store. The fetch never follows redirects, reads at most 5 KB, and refuses private and other special-use addresses. The address is checked when the connection looks the name up, so a domain cannot pass the check and then point at your network. Node.js and Bun can check the connection, so `consent` throws in other runtimes.
+An agent's client ID is the HTTPS URL of its [client ID metadata document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-id-metadata-documents), a JSON file with its name and the addresses to return the user to. Auth fetches it when the user connects, so the name shown on the consent page is tied to the agent's website, and there is nothing to register or store. The fetch never follows redirects, reads at most 5 KB, and refuses private and other special-use addresses. The address is checked when the connection looks the name up, so a domain cannot pass the check and then point at your network. Node.js and Bun can check the connection, so mounting `new Mcp({ auth })` throws in other runtimes.
 
 Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute, each host serves at most 30 downloads per minute, and an instance downloads at most 16 documents at once. Requests for the same agent share one download, and a found agent is kept for 5 minutes.
 

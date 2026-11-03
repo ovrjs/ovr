@@ -61,12 +61,6 @@ app.use([page, login, mw]); // array
 // any combination of these also works
 ```
 
-`use` also mounts services. An [Auth service](/08-auth) adds its registration, login, logout, and browser endpoints, and an [MCP endpoint](/10-agents) adds the route agents connect to.
-
-```ts
-app.use(auth, mcp);
-```
-
 This makes it easy to create a module of routes and/or middleware,
 
 ```tsx
@@ -89,6 +83,12 @@ and then use them all at once:
 import * as home from "./home";
 
 app.use(home); // uses all exports
+```
+
+`use` also mounts services. An [Auth service](/08-auth) adds its registration, login, logout, and browser endpoints, and an [MCP endpoint](/10-agents) adds the route agents connect to.
+
+```ts
+app.use(auth, mcp);
 ```
 
 ## Fetch

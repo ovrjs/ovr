@@ -193,7 +193,7 @@ CREATE INDEX ON posts (author, published);
 Run them with a script, for example in a release step, then [check](#check) the tables:
 
 ```ts
-// scripts/database.ts
+// scripts/migrate.ts
 import { database } from "../src/database.ts";
 import { readFile, readdir } from "node:fs/promises";
 

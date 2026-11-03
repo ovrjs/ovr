@@ -57,7 +57,7 @@ For each request, ovr creates a `Context` object _(abbreviated as `c` in these d
 
 ## Properties
 
-`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/04-route#parameters), the matched `route`, and helpers for cookies and request parsing.
+`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/04-route#parameters), the matched `route`, the signed-in [session](/08-auth#sessions), and helpers for cookies and request parsing.
 
 ```ts
 Route.get("/api/:id").use((c) => {
@@ -66,6 +66,7 @@ Route.get("/api/:id").use((c) => {
 	c.url; // parsed web `URL`
 	c.params; // type-safe route parameters { id: "123" }
 	c.route; // matched `Route`
+	c.session(); // signed-in session, with app.use(auth)
 	c.cookie.get(name); // get cookie
 	c.form(); // multipart form data
 	c.data(); // route schema data

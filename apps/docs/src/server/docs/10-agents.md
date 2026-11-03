@@ -49,6 +49,13 @@ const mcp = new Mcp({
 app.use(mcp);
 ```
 
+| Option         | Default        | Purpose                                                     |
+| -------------- | -------------- | ----------------------------------------------------------- |
+| `name`         | The app's host | Server name shown in clients                                |
+| `instructions` | None           | Guidance for agents on how to use the app                   |
+| `path`         | `/mcp`         | Endpoint path                                               |
+| `auth`         | None           | `Auth` service agents sign in with, see [Sign in](#sign-in) |
+
 ### Tools
 
 Only [described routes](/04-route#describe) become tools, so adding a route never lets agents call it. Write the description for an agent that sees the route without your UI:
@@ -76,7 +83,7 @@ A tool's input schema combines the pattern's parameters, converted by `params` s
 
 A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown, following redirects within the app. When `c.data()` finds issues, the agent receives them as an error with each field's message, instead of a redirect back to the form. Your handlers do not change.
 
-`route.tool` is the name, description, and hints a route is called with, or `undefined` when it is not a tool. Names of patterns with `_` or other punctuation, or longer than 64 characters, end with a short hash of the pattern, so `/a/b` and `/a_b` get different names. Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, so you find out when the app starts.
+`route.tool` is the name and description a route is called with, and whether it only reads, or `undefined` when it is not a tool. Names of patterns with `_` or other punctuation, or longer than 64 characters, end with a short hash of the pattern, so `/a/b` and `/a_b` get different names. Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, so you find out when the app starts.
 
 ### Resources
 
@@ -103,14 +110,6 @@ claude mcp add --transport http posts https://example.com/mcp
 ### Protocol
 
 The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) Streamable HTTP transport: each JSON-RPC request is a POST that receives a JSON response, with `server/discover`, the mirrored request headers, and no sessions. Clients of earlier versions, which start with `initialize`, are told the supported version. Requests from another `Origin` are rejected.
-
-| Option         | Default | Purpose                                   |
-| -------------- | ------- | ----------------------------------------- |
-| `name`         | `ovr`   | Server name shown in clients              |
-| `version`      | `1.0.0` | Server version shown in clients           |
-| `instructions` | None    | Guidance for agents on how to use the app |
-| `path`         | `/mcp`  | Endpoint path                             |
-| `auth`         | None    | `Auth` service that agents sign in with   |
 
 ## WebMCP
 

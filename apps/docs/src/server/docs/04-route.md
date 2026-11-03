@@ -15,7 +15,7 @@ import { Route } from "ovr";
 const route = new Route("GET", "/").use(() => "html");
 ```
 
-Each method adds to the route and returns it, so a route reads as a chain. `params` and `fields` declare the types the middleware sees, so they come before `use`, which throws otherwise.
+Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/07-schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`, which throws otherwise.
 
 ```ts
 const update = Route.post("/posts/:id")
@@ -134,7 +134,9 @@ const page = Route.get("/").use(() => {
 });
 ```
 
-Patterns can have parameters, like any route, and the route's `Form` and `Button` take their values with `params`.
+To parse typed form data instead of reading `c.req` yourself, declare the route's [`fields`](/07-schema#post-forms): its `Form` then renders them, and `c.data()` validates them.
+
+Patterns can have parameters, like any route, and the route's `Form` and `Button` take their values with [`params`](#props).
 
 ```tsx
 const remove = Route.post("/posts/:id/delete").use((c) => {
@@ -146,25 +148,9 @@ const remove = Route.post("/posts/:id/delete").use((c) => {
 </remove.Form>;
 ```
 
-## Describe
-
-`describe` explains what the route does for AI agents. Only described routes become tools for agents that connect to the app's [MCP endpoint](/10-agents) or use the page's forms, and the description says when to use them. Write it for a reader who sees the route without your UI.
-
-```ts
-const remove = Route.post("/posts/:id/delete")
-	.describe("Delete a post permanently")
-	.use(async (c) => {
-		// ...
-	});
-```
-
-GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
-
-`describe(false)` also hides a page from agents, which can otherwise read it as Markdown. Auth hides its pages, such as its browser script, this way.
-
 ## Props
 
-Components created via helpers have the following props available:
+The `Anchor`, `Button`, and `Form` components of `Route.get` and `Route.post` take these props to build the URL:
 
 - `params` - if the route's pattern has parameters, they must be passed as a prop to properly construct the URL.
 - `search` - [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/URLSearchParams) to append to the URL, passed into `URLSearchParams` constructor to create the query string.
@@ -184,6 +170,22 @@ const page = Route.get("/hello/:name").use(() => {
 	);
 });
 ```
+
+## Describe
+
+`describe` explains what the route does for AI agents. Only described routes become tools for agents that connect to the app's [MCP endpoint](/10-agents) or use the page's forms, and the description says when to use them. Write it for a reader who sees the route without your UI.
+
+```ts
+const remove = Route.post("/posts/:id/delete")
+	.describe("Delete a post permanently")
+	.use(async (c) => {
+		// ...
+	});
+```
+
+GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
+
+`describe(false)` also hides a page from agents, which can otherwise read it as Markdown. Auth hides its pages, such as its browser script, this way. See [Agents](/10-agents) for how tools and pages are served to agents.
 
 ## Properties
 
