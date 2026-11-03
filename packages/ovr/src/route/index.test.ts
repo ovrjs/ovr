@@ -728,12 +728,13 @@ describe("chained routes", () => {
 		expect(cleared).toContain('toolname="clear_posts"');
 		expect(cleared).not.toContain("toolautosubmit");
 
-		// a form per record would repeat the name, hidden routes are not tools
+		// a form per record would repeat the name, and only described routes are tools
 		const remove = Route.post("/posts/:id/delete").describe("Delete a post");
 		const login = Route.post("/login").describe(false);
 		for (const html of [
 			await render(remove.Form({ params: { id: "1" } })),
 			await render(login.Form({})),
+			await render(Route.post("/internal").Form({})),
 			await render(Route.get("/about").Form({})),
 		])
 			expect(html).not.toContain("toolname");

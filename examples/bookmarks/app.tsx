@@ -5,6 +5,9 @@ import { App, Database, type JSX, Mcp, Route } from "ovr";
 const { bookmarks } = db;
 const { id, title, url } = bookmarks.shape;
 
+/** Short, public values, so these forms refill them after an error */
+const editable = { title: title.persist(), url: url.persist() };
+
 /** Shared document shell. Resolve authentication and data before rendering. */
 function Page({ title, children }: { title: string; children: JSX.Element }) {
 	return (
@@ -42,7 +45,7 @@ const login = Route.get("/login")
 
 const create = Route.post("/bookmarks")
 	.describe("Save a bookmark")
-	.fields({ title, url })
+	.fields(editable)
 	.use(async (c) => {
 		const session = await auth.require(c);
 		const result = await c.data();
@@ -55,11 +58,10 @@ const create = Route.post("/bookmarks")
 			RETURNING *
 		`.parse(bookmarks);
 
-		if (!bookmark)
-			return c.redirect(
-				result.invalid({ url: "You already saved this URL" }).url,
-				303,
-			);
+		if (!bookmark) {
+			const invalid = result.invalid({ url: "You already saved this URL" });
+			return c.redirect(invalid.url, 303);
+		}
 
 		return c.redirect(list, 303);
 	});
@@ -67,7 +69,7 @@ const create = Route.post("/bookmarks")
 const update = Route.post("/bookmarks/:id")
 	.describe("Change a bookmark's title or URL")
 	.params({ id })
-	.fields({ title, url })
+	.fields(editable)
 	.use(async (c) => {
 		const session = await auth.require(c);
 		const result = await c.data();
@@ -83,11 +85,10 @@ const update = Route.post("/bookmarks/:id")
 			if (!bookmark) return c.text("Not Found", 404);
 		} catch (error) {
 			// Match the specific constraint, not every database failure.
-			if (Database.unique(error, "bookmarks_owner_url"))
-				return c.redirect(
-					result.invalid({ url: "You already saved this URL" }).url,
-					303,
-				);
+			if (Database.unique(error, "bookmarks_owner_url")) {
+				const invalid = result.invalid({ url: "You already saved this URL" });
+				return c.redirect(invalid.url, 303);
+			}
 			throw error;
 		}
 

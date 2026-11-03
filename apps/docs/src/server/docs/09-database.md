@@ -144,8 +144,10 @@ A unique constraint is the reliable way to prevent duplicates. `INSERT … ON CO
 try {
 	await db.sql`UPDATE ${db.posts} SET ${db.sql.set(db.posts, result.data)} WHERE ...`;
 } catch (error) {
-	if (Database.unique(error, "posts_author_title_key"))
-		return c.redirect(result.invalid({ title: "Already used" }).url, 303);
+	if (Database.unique(error, "posts_author_title_key")) {
+		const invalid = result.invalid({ title: "Already used" });
+		return c.redirect(invalid.url, 303);
+	}
 	throw error;
 }
 ```

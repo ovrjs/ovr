@@ -138,11 +138,10 @@ const signup = Route.post()
 		INSERT INTO ${db.users} ${db.sql.values(db.users, result.data)}
 		ON CONFLICT (email) DO NOTHING RETURNING *
 	`.parse(db.users);
-		if (!user)
-			return c.redirect(
-				result.invalid({ email: "Already registered" }).url,
-				303,
-			);
+		if (!user) {
+			const invalid = result.invalid({ email: "Already registered" });
+			return c.redirect(invalid.url, 303);
+		}
 
 		// ...
 	});
@@ -166,7 +165,7 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 - set `aria-invalid` and `aria-describedby`
 - autofocus the first invalid field
 
-Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling.
+Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/09-database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
 
 ## GET forms
 

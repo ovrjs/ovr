@@ -145,7 +145,7 @@ const custom = Route.post("/custom/:pattern").use((c) => {
 
 ## Describe
 
-`describe` explains what the route does for AI agents. Described routes become tools for agents that connect to the app's [MCP endpoint](/10-agents), and the description says when to use them. Write it for a reader who sees the route without your UI.
+`describe` explains what the route does for AI agents. Only described routes become tools for agents that connect to the app's [MCP endpoint](/10-agents) or use the page's forms, and the description says when to use them. Write it for a reader who sees the route without your UI.
 
 ```ts
 const remove = Route.post("/posts/:id/delete")
@@ -155,10 +155,10 @@ const remove = Route.post("/posts/:id/delete")
 	});
 ```
 
-- `name` - tool name, generated from the pattern by default, for example `posts_id_delete`.
+- `name` - tool name, generated from the method and pattern by default, for example `post_posts_id_delete`.
 - `destructive` - the route deletes or overwrites data, so agents should confirm with the user first.
 
-`describe(false)` hides a route from agents. Auth's routes are hidden this way.
+`describe(false)` also hides a page from agents, which can otherwise read it as Markdown. Auth's routes are hidden this way.
 
 ## Props
 

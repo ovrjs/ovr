@@ -67,6 +67,7 @@ function setup() {
 		});
 
 	const search = Route.get("/search")
+		.describe("Search posts")
 		.fields({ q: Field.search() })
 		.use(async (c) => {
 			const result = await c.data();
@@ -149,9 +150,11 @@ describe("Mcp", () => {
 	test("a cached tool cannot run after the route is hidden", async () => {
 		const { app, rpc } = setup();
 		let called = false;
-		const route = Route.post("/toggle").use(() => {
-			called = true;
-		});
+		const route = Route.post("/toggle")
+			.describe("Toggle")
+			.use(() => {
+				called = true;
+			});
 		app.use(route);
 		await rpc("tools/list");
 		route.describe(false);
@@ -325,7 +328,7 @@ describe("Mcp", () => {
 			inputSchema: { type: "object", properties: {} },
 			annotations: { readOnlyHint: true, openWorldHint: false },
 		});
-		expect(search.description).toBe("GET /search");
+		expect(search.description).toBe("Search posts");
 		expect(Object.keys(search.inputSchema.properties)).toEqual(["q"]);
 		expect(create.inputSchema.properties.title).toMatchObject({ minLength: 3 });
 		expect(create.annotations).toEqual({
@@ -429,6 +432,7 @@ describe("Mcp", () => {
 			{
 				uri: "http://localhost/search",
 				name: "/search",
+				description: "Search posts",
 				mimeType: "text/markdown",
 			},
 		]);
@@ -581,13 +585,37 @@ describe("Mcp", () => {
 
 	test("generated tool names", () => {
 		expect(Route.get("/").describe("Home").tool?.name).toBe("get_index");
-		expect(Route.post("/posts/:id/delete").tool?.name).toBe(
-			"post_posts_id_delete",
-		);
+		expect(
+			Route.post("/posts/:id/delete").describe("Delete a post").tool?.name,
+		).toBe("post_posts_id_delete");
 		expect(Route.get("/files/*").describe("Files").tool?.name).toBe(
 			"get_files_wildcard",
 		);
+	});
+
+	test("only described routes are tools", async () => {
+		const { app, rpc } = setup();
+		let called = false;
+		app.use(
+			Route.post("/undescribed")
+				.fields({ text: Field.text() })
+				.use(() => {
+					called = true;
+				}),
+		);
+
+		const { body } = await rpc("tools/list");
+		expect(
+			body.result.tools.map((tool: { name: string }) => tool.name),
+		).not.toContain("post_undescribed");
+		await rpc("tools/call", { name: "post_undescribed", arguments: {} });
+		expect(called).toBe(false);
+
 		// pages are resources, not tools
+		expect(Route.post("/internal").tool).toBeUndefined();
+		expect(
+			Route.get("/search").fields({ q: Field.search() }).tool,
+		).toBeUndefined();
 		expect(Route.get("/about").tool).toBeUndefined();
 		expect(Route.post("/hidden").describe(false).tool).toBeUndefined();
 	});

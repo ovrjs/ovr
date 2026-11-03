@@ -11,14 +11,13 @@ const bookmarks = new Table(
 	{
 		id: Schema.string().uuid(),
 		owner: Schema.string().uuid(),
-		title: Field.text({ label: "Title" }).min(1).max(120).persist(),
+		title: Field.text({ label: "Title" }).min(1).max(120),
 		url: Field.url({ label: "URL" })
 			.max(300)
 			.refine(
 				(value) => /^https?:\/\//i.test(value),
 				"Use an HTTP or HTTPS URL",
-			)
-			.persist(),
+			),
 		created: Schema.date(),
 	},
 	{ default: ["id", "created"] },

@@ -399,15 +399,13 @@ export class Route<
 
 	/**
 	 * The tool agents call the route as, through MCP and the route's `Form`.
-	 * POST and other methods are tools, GET is one when it has a description
-	 * or fields, and `describe(false)` hides the route.
+	 * Only described routes are tools, so mounting a route never lets agents
+	 * call it; GET tools are read-only.
 	 */
 	get tool(): Route.Tool | undefined {
-		if (this.description === false || this.method === Method.head) return;
+		if (!this.description || this.method === Method.head) return;
 
 		const read = this.method === Method.get;
-		// other pages are resources
-		if (read && !this.description && !("parse" in this)) return;
 
 		const segments = this.pattern
 			.split("/")
@@ -423,7 +421,7 @@ export class Route<
 					.replace(/[^\w-]+/g, "_")
 					.replace(/_+/g, "_")
 					.slice(0, 64),
-			description: this.description || `${this.method} ${this.pattern}`,
+			description: this.description,
 			read,
 			destructive: !read && Boolean(this.agent.destructive),
 		};

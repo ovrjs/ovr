@@ -91,9 +91,10 @@ limit is an example policy to size for the deployment. No pagination is included
 the list deliberately shows only the latest 50 bookmarks.
 
 The sample persists short, non-sensitive bookmark titles and public URLs after
-validation errors. `.persist()` stores these in the return URL. For private
-titles, secret links, or long documents, remove that opt-in and choose a form
-state strategy that does not expose those values in URLs. `no-store` and
+validation errors. The routes choose `.persist()` for the table's fields, which
+stores these in the return URL, while the table keeps only their validation. For
+private titles, secret links, or long documents, remove that opt-in and choose a
+form state strategy that does not expose those values in URLs. `no-store` and
 `no-referrer` do not remove URLs from browser history or server logs.
 
 ## What this shows about the API

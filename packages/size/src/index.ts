@@ -1,9 +1,9 @@
-export const bytes = 113637;
-export const kb = 113.64;
+export const bytes = 113545;
+export const kb = 113.55;
 
-export const App = { bytes: 47023, kb: 47.02 } as const;
+export const App = { bytes: 46931, kb: 46.93 } as const;
 
-export const Auth = { bytes: 90510, kb: 90.51 } as const;
+export const Auth = { bytes: 90418, kb: 90.42 } as const;
 
 export const Database = { bytes: 48983, kb: 48.98 } as const;
 
@@ -15,13 +15,13 @@ export const JSX = { bytes: 14445, kb: 14.45 } as const;
 
 export const Limiter = { bytes: 43496, kb: 43.5 } as const;
 
-export const Mcp = { bytes: 48244, kb: 48.24 } as const;
+export const Mcp = { bytes: 48152, kb: 48.15 } as const;
 
 export const Multipart = { bytes: 6285, kb: 6.29 } as const;
 
 export const Render = { bytes: 13803, kb: 13.8 } as const;
 
-export const Route = { bytes: 40501, kb: 40.5 } as const;
+export const Route = { bytes: 40409, kb: 40.41 } as const;
 
 export const Schema = { bytes: 37850, kb: 37.85 } as const;
 
