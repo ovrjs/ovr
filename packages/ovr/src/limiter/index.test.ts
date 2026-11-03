@@ -55,8 +55,11 @@ afterEach(() => {
 });
 afterAll(() => engine.close());
 
-function setup(options: Partial<Limiter.Options> = {}) {
-	const limiter = new Limiter({ database: db, ...options });
+function setup({
+	name = "requests",
+	...options
+}: Partial<Limiter.Options> & { name?: string } = {}) {
+	const limiter = new Limiter(name, { database: db, ...options });
 	const hit = vi.fn();
 	const app = new App().use(
 		Route.get("/limited").use(limiter.middleware, (c) => {
@@ -162,9 +165,9 @@ describe("token buckets", () => {
 
 test("a missing database fails at startup instead of allocating local counters", () => {
 	// @ts-expect-error A database is required, including for the default policy.
-	expect(() => new Limiter()).toThrow("database");
+	expect(() => new Limiter("requests")).toThrow("database");
 	// @ts-expect-error A policy without storage is not a valid limiter configuration.
-	expect(() => new Limiter({ limit: 10 })).toThrow("database");
+	expect(() => new Limiter("requests", { limit: 10 })).toThrow("database");
 });
 
 describe("trusted identities", () => {
@@ -227,7 +230,7 @@ describe("trusted identities", () => {
 	});
 });
 
-test("different policies using the default namespace cannot share token balances", async () => {
+test("different policies with the same name cannot share token balances", async () => {
 	const first = setup({ limit: 1 });
 	const second = setup({ limit: 2 });
 	const third = setup({ limit: 1, interval: 120000 });
@@ -259,6 +262,15 @@ test("middleware logs failures without exposing them or admitting requests", asy
 	expect(await response.text()).not.toContain("private storage");
 	expect(console.error).toHaveBeenCalledWith(failure);
 	expect(state.hit).not.toHaveBeenCalled();
+});
+
+test("limiters with different names and the same policy keep separate buckets", async () => {
+	const pages = setup({ name: "pages", limit: 1 });
+	const search = setup({ name: "search", limit: 1 });
+	expect((await pages.fetch()).status).toBe(200);
+	expect((await search.fetch()).status).toBe(200);
+	expect((await pages.fetch()).status).toBe(429);
+	expect(await buckets()).toHaveLength(2);
 });
 
 test("separate workers share buckets through the database", async () => {

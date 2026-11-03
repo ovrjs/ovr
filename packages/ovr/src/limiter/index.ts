@@ -20,8 +20,6 @@ export namespace Limiter {
 	export interface Options extends Partial<Policy> {
 		/** Database containing `Limiter.table`, shared by every instance. */
 		readonly database: Database;
-		/** Stable namespace, shared by all instances using the same database. */
-		readonly name?: string;
 		/** Override trusted-IP keying, for example with an authenticated user ID. Missing keys fail closed. */
 		readonly key?: (
 			c: Context,
@@ -61,23 +59,23 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 		]);
 	}
 
+	readonly #name;
 	readonly #options;
 	#pruned = 0;
 
-	/** Create a policy backed by the application's database. */
-	constructor(options: Limiter.Options) {
+	/**
+	 * Create a policy backed by the application's database.
+	 *
+	 * @param name Stable name of the policy's buckets. Limiters with the same name and policy share them, across every server using the database.
+	 */
+	constructor(name: string, options: Limiter.Options) {
 		if (typeof options?.database?.sql !== "function")
 			throw new TypeError("Limiter requires a database");
 		if (Reflect.get(options.database, Limiter.table.name) !== Limiter.table)
 			throw new TypeError(
 				"Limiter's table is missing from the database, add Limiter.table to its tables",
 			);
-		this.#options = {
-			limit: 60,
-			interval: 60000,
-			name: "requests",
-			...options,
-		};
+		this.#options = { limit: 60, interval: 60000, ...options };
 		for (const [name, value] of Object.entries({
 			limit: this.#options.limit,
 			interval: this.#options.interval,
@@ -89,8 +87,9 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 			)
 				throw new TypeError(`Invalid limiter ${name}`);
 		}
-		if (!this.#options.name || this.#options.name.length > 512)
-			throw new TypeError("Invalid limiter namespace");
+		if (typeof name !== "string" || !name || name.length > 512)
+			throw new TypeError("Invalid limiter name");
+		this.#name = name;
 	}
 
 	/** Admit a request or return its retry deadline. Scopes have independent budgets. */
@@ -105,7 +104,7 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 		const { limit, interval } = this.#options;
 		// Different policies cannot interpret the same stored token balance differently.
 		const retry = await this.#consume(
-			JSON.stringify([this.#options.name, limit, interval, scope, identity]),
+			JSON.stringify([this.#name, limit, interval, scope, identity]),
 		);
 		if (retry === true) return true;
 		const now = Date.now();

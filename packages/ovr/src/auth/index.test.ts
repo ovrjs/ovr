@@ -2185,7 +2185,9 @@ describe("migration SQL", () => {
 					users,
 				}),
 		).toThrow("...Auth.tables");
-		expect(() => new Limiter({ database: bare })).toThrow("Limiter.table");
+		expect(() => new Limiter("requests", { database: bare })).toThrow(
+			"Limiter.table",
+		);
 	});
 
 	test("Auth creates accounts in a users table it can insert into", () => {

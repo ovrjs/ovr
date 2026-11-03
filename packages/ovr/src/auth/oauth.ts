@@ -89,24 +89,21 @@ export function oauth(
 	)
 		throw new TypeError("Auth consent must be a literal local path");
 
-	const limiter = new Limiter({
-		name: `auth:tokens:${origin}`,
+	const limiter = new Limiter(`auth:tokens:${origin}`, {
 		limit: 60,
 		interval: Time.minute,
 		database: options.database,
 	});
 
 	/** Authorization requests, by IP, each can download a document */
-	const authorizations = new Limiter({
-		name: `auth:authorize:${origin}`,
+	const authorizations = new Limiter(`auth:authorize:${origin}`, {
 		limit: 30,
 		interval: Time.minute,
 		database: options.database,
 	});
 
 	/** Downloads from each document host, so the server cannot flood one */
-	const hosts = new Limiter({
-		name: `auth:metadata:${origin}`,
+	const hosts = new Limiter(`auth:metadata:${origin}`, {
 		limit: 30,
 		interval: Time.minute,
 		database: options.database,

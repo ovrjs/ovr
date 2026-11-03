@@ -45,6 +45,7 @@ export function configure<U extends Auth.Users>(
 	/** Build a limiter on Auth's database from policy options over `defaults`. */
 	const limiter = (
 		label: string,
+		name: string,
 		policy: unknown,
 		defaults: Auth.Limit = {},
 	) => {
@@ -55,20 +56,26 @@ export function configure<U extends Auth.Users>(
 			policy instanceof Limiter
 		)
 			throw new TypeError(`Auth ${label} must be rate limit options`);
-		return new Limiter({ ...defaults, ...policy, database: options.database });
+		return new Limiter(name, {
+			...defaults,
+			...policy,
+			database: options.database,
+		});
 	};
 	// Built at startup, so later changes to the options cannot disable admission.
 	const limits = {
-		register: limiter("limits.register", configured.register ?? {}, {
-			name: "auth:register:" + options.origin,
-			limit: 5,
-			interval: 600000,
-		}),
-		login: limiter("limits.login", configured.login ?? {}, {
-			name: "auth:login:" + options.origin,
-			limit: 20,
-			interval: 60000,
-		}),
+		register: limiter(
+			"limits.register",
+			"auth:register:" + options.origin,
+			configured.register ?? {},
+			{ limit: 5, interval: 600000 },
+		),
+		login: limiter(
+			"limits.login",
+			"auth:login:" + options.origin,
+			configured.login ?? {},
+			{ limit: 20, interval: 60000 },
+		),
 	};
 	const paths = {
 		register: "/auth/register",

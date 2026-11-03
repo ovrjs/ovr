@@ -139,7 +139,7 @@ Returning a value sets the `content-type` header to `html` unless it has already
 import { App, Limiter, Route } from "ovr";
 
 const app = new App();
-const search = new Limiter({ database, name: "search" }); // Default policy: 60 per minute.
+const search = new Limiter("search", { database }); // Default policy: 60 per minute.
 
 app.use(
 	Route.get("/search").use(search.middleware, (c) => c.text("Search results")),
@@ -151,7 +151,9 @@ app.fetch(request, { ip });
 
 The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Missing/invalid identity or limiter storage failures return HTTP 503; exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`.
 
-`database` is required. Optional settings are `limit`, `interval` (milliseconds), `name`, and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
+The first argument names the limiter's buckets. Name each limiter: two with the same name and policy share their buckets, which is how separate servers using one database count together, but two limiters stacked on one route would then spend a request's tokens twice. Keep the name when you deploy, since a new name starts every client with a full budget.
+
+`database` is required. Optional settings are `limit`, `interval` (milliseconds), and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
 Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/09-database#migrate) creates it before your own migrations; `new Limiter()` throws when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
 

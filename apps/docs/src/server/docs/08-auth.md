@@ -264,14 +264,13 @@ A Fetch `Request` does not expose the socket peer. Use your server's connection 
 
 ### Additional limits
 
-`limits.register` and `limits.login` change the built-in client policies, for example `login: { limit: 10 }`; options you leave out keep their defaults. They take the same options as [`Limiter`](/05-middleware#rate-limiting), except `database`, which is Auth's.
+`limits.register` and `limits.login` change the built-in client policies, for example `login: { limit: 10 }`; options you leave out keep their defaults. They take the same options as [`Limiter`](/05-middleware#rate-limiting), except `database`, which is Auth's; Auth names them.
 
 **Public deployments need an aggregate ceiling to protect shared challenge capacity.** Per-client limits alone do not contain distributed callers. Enforce one at your edge, or check a shared [`Limiter`](/05-middleware#rate-limiting) on Auth's endpoints, `/auth/*` and `/_passkey/*`, before mounting `auth`:
 
 ```ts
-const ceiling = new Limiter({
+const ceiling = new Limiter("auth:all", {
 	database,
-	name: "auth:all",
 	limit: 100,
 	key: () => "all",
 });
