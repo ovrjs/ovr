@@ -64,7 +64,7 @@ Use `Field` to describe the expected inputs for a POST route. `Context.data()` p
 ```tsx
 import { Field, Route } from "ovr";
 
-export const signup = Route.post()
+export const signup = Route.post("/signup")
 	.fields({ name: Field.text().min(2) })
 	.use(async (c) => {
 		const result = await c.data();
@@ -85,7 +85,7 @@ export const page = Route.get("/signup").use((c) => (
 
 ```html
 <form
-	action="/_p/generated-hash?_return=%2Fsignup"
+	action="/signup?_return=%2Fsignup"
 	method="POST"
 	enctype="multipart/form-data"
 >
@@ -128,7 +128,7 @@ const edit = Route.get("/posts/:id/edit").use(async (c) => {
 Some issues are only found after the data is valid, for example when a database constraint rejects a duplicate email. `result.invalid` puts messages on fields and returns an invalid result with the same `url` as a failed parse, keeping persisted values.
 
 ```tsx
-const signup = Route.post()
+const signup = Route.post("/signup")
 	.fields({ email: Field.email().persist() })
 	.use(async (c) => {
 		const result = await c.data();
@@ -210,7 +210,7 @@ To stream uploads, mark a file field with `.stream()`. `Context.data()` will val
 import { upload } from "./upload";
 import { Field, Route } from "ovr";
 
-const submit = Route.post()
+const submit = Route.post("/submit")
 	.fields({
 		date: Field.date(),
 		// place streamed fields last in the document so previous can be parsed

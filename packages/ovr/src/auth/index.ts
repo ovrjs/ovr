@@ -36,7 +36,7 @@ export namespace Auth {
 	}
 
 	/** Rate limit policy, Auth creates the `Limiter` with its database. */
-	export type Limit = Omit<Limiter.Options, "database" | "error">;
+	export type Limit = Omit<Limiter.Options, "database">;
 
 	/** A revocable session with a fixed lifetime. */
 	export interface Session {
@@ -81,14 +81,8 @@ export namespace Auth {
 		 * `auth.consent(c)` for the request and its form.
 		 */
 		readonly consent?: string;
-		/** Override the default endpoint paths. Paths must be distinct literal local paths. */
-		readonly paths?: Partial<Record<"register" | "login" | "logout", string>>;
-		/** Additional and changed rate limits, stored in `database`; ovr supplies the signup and sign-in policies. */
+		/** Change the built-in signup and sign-in rate limits, stored in `database`. */
 		readonly limits?: {
-			/** Optional generous request ceiling before client key creation. Counts invalid fields and requests denied by later policies too. */
-			readonly guard?: Auth.Limit;
-			/** Additional shared policies checked after the client policy, preserving the built-in defaults. */
-			readonly extra?: readonly Auth.Limit[];
 			/** Change the built-in registration client policy, 5 per 10 minutes; invalid options fields do not consume it. */
 			readonly register?: Auth.Limit;
 			/** Change the built-in login client policy, 20 per minute. */
@@ -148,7 +142,7 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	 * ```
 	 */
 	static readonly sql = {
-		1: `CREATE TABLE ovr_credentials (
+		1: `CREATE TABLE auth_credentials (
 	id text PRIMARY KEY,
 	"user" text NOT NULL,
 	"publicKey" text NOT NULL,
@@ -156,17 +150,17 @@ export class Auth<Shape extends Form.Shape = Form.Shape> {
 	eligible boolean NOT NULL,
 	"backedUp" boolean NOT NULL
 );
-CREATE INDEX ovr_credentials_user ON ovr_credentials ("user");
+CREATE INDEX auth_credentials_user ON auth_credentials ("user");
 
-CREATE TABLE ovr_sessions (
+CREATE TABLE auth_sessions (
 	id text PRIMARY KEY,
 	"user" text NOT NULL,
 	expiration bigint NOT NULL
 );
-CREATE INDEX ovr_sessions_user ON ovr_sessions ("user");
-CREATE INDEX ovr_sessions_expiration ON ovr_sessions (expiration);
+CREATE INDEX auth_sessions_user ON auth_sessions ("user");
+CREATE INDEX auth_sessions_expiration ON auth_sessions (expiration);
 
-CREATE TABLE ovr_challenges (
+CREATE TABLE auth_challenges (
 	id text PRIMARY KEY,
 	challenge text NOT NULL,
 	browser text NOT NULL,
@@ -177,11 +171,11 @@ CREATE TABLE ovr_challenges (
 	"user" text,
 	fields text
 );
-CREATE INDEX ovr_challenges_expiration ON ovr_challenges (expiration);
-CREATE INDEX ovr_challenges_browser ON ovr_challenges (browser, expiration);
+CREATE INDEX auth_challenges_expiration ON auth_challenges (expiration);
+CREATE INDEX auth_challenges_browser ON auth_challenges (browser, expiration);
 
 ${Limiter.sql[1]}`,
-		2: `CREATE TABLE ovr_tokens (
+		2: `CREATE TABLE auth_tokens (
 	id text PRIMARY KEY,
 	kind text NOT NULL,
 	"user" text NOT NULL,
@@ -193,9 +187,9 @@ ${Limiter.sql[1]}`,
 	family text NOT NULL,
 	expiration bigint NOT NULL
 );
-CREATE INDEX ovr_tokens_family ON ovr_tokens (family);
-CREATE INDEX ovr_tokens_user ON ovr_tokens ("user");
-CREATE INDEX ovr_tokens_expiration ON ovr_tokens (expiration);`,
+CREATE INDEX auth_tokens_family ON auth_tokens (family);
+CREATE INDEX auth_tokens_user ON auth_tokens ("user");
+CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 	} as const;
 
 	/** Tables Auth stores its data in, include them in the database's tables. */

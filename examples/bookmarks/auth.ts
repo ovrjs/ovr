@@ -22,14 +22,4 @@ export const auth = new Auth({
 			`;
 		},
 	},
-	limits: {
-		extra: [
-			{
-				name: `bookmarks:auth:${process.env.AUTH_ORIGIN}`,
-				key: () => "all",
-				limit: 100,
-				interval: 60_000,
-			},
-		],
-	},
 });

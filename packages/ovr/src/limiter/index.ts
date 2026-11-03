@@ -22,14 +22,10 @@ export namespace Limiter {
 		readonly database: Database;
 		/** Stable namespace, shared by all instances using the same database. */
 		readonly name?: string;
-		/** IPv6 network prefix length, from 1 to 128. Defaults to 64; IPv4 is unchanged. */
-		readonly prefix?: number;
 		/** Override trusted-IP keying, for example with an authenticated user ID. Missing keys fail closed. */
 		readonly key?: (
 			c: Context,
 		) => string | undefined | Promise<string | undefined>;
-		/** Report middleware failures server-side. Defaults to console.error. */
-		readonly error?: (error: unknown, c: Context) => void | Promise<void>;
 	}
 }
 
@@ -48,18 +44,18 @@ export class Limiter {
 	 * ```
 	 */
 	static readonly sql = {
-		1: `CREATE TABLE ovr_limits (
+		1: `CREATE TABLE rate_limits (
 	key text PRIMARY KEY,
 	tokens double precision NOT NULL,
 	time bigint NOT NULL,
 	expiration bigint NOT NULL
 );
-CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
+CREATE INDEX rate_limits_expiration ON rate_limits (expiration);
 `,
 	} as const;
 
 	/** Token buckets shared by every limiter, include it in the database's tables. */
-	static readonly table = new Table("ovr_limits", {
+	static readonly table = new Table("rate_limits", {
 		key: Schema.string(),
 		tokens: Schema.number(),
 		time: Schema.number().int(),
@@ -77,7 +73,6 @@ CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
 			limit: 60,
 			interval: 60000,
 			name: "requests",
-			prefix: 64,
 			...options,
 		};
 		for (const [name, value] of Object.entries({
@@ -93,19 +88,13 @@ CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
 		}
 		if (!this.#options.name || this.#options.name.length > 512)
 			throw new TypeError("Invalid limiter namespace");
-		if (
-			!Number.isInteger(this.#options.prefix) ||
-			this.#options.prefix < 1 ||
-			this.#options.prefix > 128
-		)
-			throw new TypeError("Invalid limiter IPv6 prefix");
 	}
 
 	/** Admit a request or return its retry deadline. Scopes have independent budgets. */
 	async check(c: Limiter.Context, scope = ""): Promise<true | Date> {
 		const identity = this.#options.key
 			? await this.#options.key(c)
-			: Limiter.#ip(c.ip, this.#options.prefix);
+			: Limiter.#ip(c.ip);
 		if (typeof identity !== "string" || !identity || identity.length > 1024)
 			throw new LimitIssue(
 				"Rate limiting requires a trusted client IP in App.fetch(request, { ip }), or an explicit authenticated key",
@@ -128,12 +117,7 @@ CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
 		try {
 			result = await this.check(c);
 		} catch (error) {
-			try {
-				if (this.#options.error) await this.#options.error(error, c);
-				else console.error(error);
-			} catch (failure) {
-				console.error(failure);
-			}
+			console.error(error);
 			c.res.headers.set("cache-control", "no-store");
 			c.text("Service temporarily unavailable. Try again later.", 503);
 			return;
@@ -197,7 +181,11 @@ CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
 		);
 	}
 
-	static #ip(value: string | undefined, prefix: number) {
+	/**
+	 * @param value Client IP
+	 * @returns The IPv4 address, or the IPv6 /64 network, one home or office
+	 */
+	static #ip(value: string | undefined) {
 		if (!value || value.length > 64 || !/^[\da-f:.]+$/i.test(value)) return;
 		if (!value.includes(":"))
 			return value.split(".").length === 4 &&
@@ -228,13 +216,8 @@ CREATE INDEX ovr_limits_expiration ON ovr_limits (expiration);
 		}
 		return (
 			groups
-				.map((v, i) =>
-					(
-						parseInt(v, 16) &
-						(0xffff << Math.min(16, Math.max(0, (i + 1) * 16 - prefix)))
-					).toString(16),
-				)
-				.join(":") + `/${prefix}`
+				.map((v, i) => (i < 4 ? parseInt(v, 16).toString(16) : "0"))
+				.join(":") + "/64"
 		);
 	}
 }

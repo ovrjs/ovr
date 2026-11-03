@@ -86,9 +86,9 @@ import { app } from "./app.js";
 const response = await app.fetch(request, { ip });
 ```
 
-Close the exported `pool` during shutdown. The authentication aggregate rate
-limit is an example policy to size for the deployment. No pagination is included;
-the list deliberately shows only the latest 50 bookmarks.
+Close the exported `pool` during shutdown. For a public deployment, add an
+aggregate limit on authentication at your edge, as the Auth guide describes. No
+pagination is included; the list deliberately shows only the latest 50 bookmarks.
 
 The sample persists short, non-sensitive bookmark titles and public URLs after
 validation errors. The routes choose `.persist()` for the table's fields, which

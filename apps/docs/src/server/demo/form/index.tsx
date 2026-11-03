@@ -3,7 +3,7 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Field, Render, Route } from "ovr";
 
-export const enroll = Route.post()
+export const enroll = Route.post("/demo/form")
 	.fields({
 		name: Field.text({ placeholder: "Harry Potter" })
 			.min(2, "Expected at least 2 characters")

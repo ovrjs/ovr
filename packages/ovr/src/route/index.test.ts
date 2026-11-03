@@ -721,11 +721,10 @@ describe("chained routes", () => {
 
 		// the user confirms destructive changes
 		const clear = Route.post("/posts/clear").describe("Delete every post", {
-			name: "clear_posts",
 			destructive: true,
 		});
 		const cleared = await render(clear.Form({}));
-		expect(cleared).toContain('toolname="clear_posts"');
+		expect(cleared).toContain('toolname="post_posts_clear"');
 		expect(cleared).not.toContain("toolautosubmit");
 
 		// a form per record would repeat the name, and only described routes are tools
@@ -762,12 +761,11 @@ describe("chained routes", () => {
 
 	test("describe stores agent options, and false hides the route", () => {
 		const remove = Route.post("/posts/:id/delete").describe("Delete a post", {
-			name: "delete_post",
 			destructive: true,
 		});
 		const hidden = Route.post("/internal").describe(false);
 
-		expect(remove.agent).toEqual({ name: "delete_post", destructive: true });
+		expect(remove.agent).toEqual({ destructive: true });
 		expect(hidden.description).toBe(false);
 	});
 
@@ -821,16 +819,5 @@ describe("chained routes", () => {
 			});
 
 		expect(update.names).toEqual(["title"]);
-	});
-
-	test("generated POST patterns follow the final middleware", () => {
-		const route = Route.post();
-		const empty = route.pattern;
-
-		route.use(() => "created");
-
-		expect(route.pattern).toMatch(/^\/_p\//);
-		expect(route.pattern).not.toBe(empty);
-		expect(Route.post().use(() => "created").pattern).toBe(route.pattern);
 	});
 });

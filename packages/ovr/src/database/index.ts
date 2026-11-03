@@ -647,12 +647,12 @@ class Base<T extends readonly Table.Any[]> {
 			await this.#transaction(async (client) => {
 				const sql = Base.#tag(client);
 
-				await sql`SELECT pg_advisory_xact_lock(hashtext('ovr_migrations'))`;
-				await sql`CREATE TABLE IF NOT EXISTS ovr_migrations (id text PRIMARY KEY, checksum text NOT NULL, applied timestamptz NOT NULL DEFAULT now())`;
+				await sql`SELECT pg_advisory_xact_lock(hashtext('migrations'))`;
+				await sql`CREATE TABLE IF NOT EXISTS migrations (id text PRIMARY KEY, checksum text NOT NULL, applied timestamptz NOT NULL DEFAULT now())`;
 
 				// "C" collation orders IDs like JavaScript string comparison
 				const history = await sql`
-					SELECT id, checksum FROM ovr_migrations
+					SELECT id, checksum FROM migrations
 					${last === undefined ? sql`` : sql`WHERE id COLLATE "C" > ${last}`}
 					ORDER BY id COLLATE "C"
 				`.parse(Schema.object({ id: Schema.string(), checksum: Schema.string() }));
@@ -676,7 +676,7 @@ class Base<T extends readonly Table.Any[]> {
 					);
 
 				await new Sql([next.sql], [], client);
-				await sql`INSERT INTO ovr_migrations (id, checksum) VALUES (${next.id}, ${checksums.get(next.id)})`;
+				await sql`INSERT INTO migrations (id, checksum) VALUES (${next.id}, ${checksums.get(next.id)})`;
 				applied.push(next.id);
 				done.add(next.id);
 				last = next.id;
@@ -938,8 +938,10 @@ class Base<T extends readonly Table.Any[]> {
 	 * show it as a form error.
 	 *
 	 * ```ts
-	 * if (Database.unique(error, "users_email_key"))
-	 * 	return c.redirect(result.invalid({ email: "Already registered" }).url, 303);
+	 * if (Database.unique(error, "users_email_key")) {
+	 * 	const invalid = result.invalid({ email: "Already registered" });
+	 * 	return c.redirect(invalid.url, 303);
+	 * }
 	 * ```
 	 *
 	 * @param error Caught error

@@ -8,7 +8,7 @@ description: First class form validation with ovr.
 ```tsx
 import { Field, Route } from "ovr";
 
-export const enroll = Route.post()
+export const enroll = Route.post("/demo/form")
 	.fields({
 		name: Field.text({ placeholder: "Harry Potter" })
 			.min(2, "Expected at least 2 characters")

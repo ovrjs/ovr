@@ -19,8 +19,8 @@ export const migrations: Database.Migration[] = [
 	{
 		id: "0003_auth_users",
 		sql: `
-			ALTER TABLE ovr_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
-			ALTER TABLE ovr_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+			ALTER TABLE auth_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+			ALTER TABLE auth_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 		`,
 	},
 ];

@@ -77,7 +77,7 @@ export const page = Route.get("/").use((c) => {
 	// ...
 });
 
-export const login = Route.post().use((c) => {
+export const login = Route.post("/login").use((c) => {
 	// ...
 });
 ```

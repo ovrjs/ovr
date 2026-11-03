@@ -2,7 +2,7 @@ import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Form as FormSchema, Schema as ValueSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
-import { Checksum, Method, Mime } from "../util/index.js";
+import { Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";
 
 /**
@@ -58,8 +58,6 @@ export namespace Route {
 
 	/** Agent options from `route.describe()`. */
 	export type Describe = {
-		/** Tool name, derived from the pattern by default */
-		readonly name?: string | undefined;
 		/** The route deletes or overwrites data, so agents should confirm first */
 		readonly destructive?: boolean | undefined;
 	};
@@ -345,11 +343,8 @@ export class Route<
 	/** Schemas that check and convert pattern parameters */
 	paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
 
-	/** Route pattern, `undefined` to generate one from the middleware */
-	#pattern: Pattern | undefined;
-
-	/** Generated pattern, cleared when middleware is added */
-	#generated: Pattern | undefined;
+	/** Route pattern */
+	readonly #pattern: Pattern;
 
 	/** Middleware added with `use` */
 	readonly #stack: Middleware<any, any>[] = [];
@@ -358,21 +353,16 @@ export class Route<
 	 * Create a new route.
 	 *
 	 * @param method HTTP Method
-	 * @param pattern Route pattern, generated from the middleware when omitted
+	 * @param pattern Route pattern
 	 */
-	constructor(method: Route.Method, pattern?: Pattern) {
+	constructor(method: Route.Method, pattern: Pattern) {
 		this.method = method;
 		this.#pattern = pattern;
 	}
 
 	/** Route pattern */
 	get pattern(): Pattern {
-		// create pattern with checksum of all mw stringified
-		return (
-			this.#pattern ??
-			(this.#generated ??=
-				`/_p/${Checksum.djb2(this.#stack.join())}` as Pattern)
-		);
+		return this.#pattern;
 	}
 
 	/** Route middleware stack, runs after global middleware */
@@ -415,12 +405,10 @@ export class Route<
 			);
 
 		return {
-			name:
-				this.agent.name ??
-				`${this.method.toLowerCase()}_${segments.join("_") || "index"}`
-					.replace(/[^\w-]+/g, "_")
-					.replace(/_+/g, "_")
-					.slice(0, 64),
+			name: `${this.method.toLowerCase()}_${segments.join("_") || "index"}`
+				.replace(/[^\w-]+/g, "_")
+				.replace(/_+/g, "_")
+				.slice(0, 64),
 			description: this.description,
 			read,
 			destructive: !read && Boolean(this.agent.destructive),
@@ -432,7 +420,7 @@ export class Route<
 	 * `false` hides the route from agents.
 	 *
 	 * @param description What the route does, written for an agent
-	 * @param options Tool name and hints
+	 * @param options Hints for agents
 	 * @returns The route
 	 */
 	describe(description: string | false, options: Route.Describe = {}) {
@@ -504,7 +492,6 @@ export class Route<
 	 */
 	use(...middleware: Middleware<Params, Shape>[]) {
 		this.#stack.push(...middleware);
-		this.#generated = undefined;
 		return this;
 	}
 
@@ -663,10 +650,10 @@ export class Route<
 
 	/**
 	 * @template Pattern Route pattern
-	 * @param [pattern] Route pattern, generated from the middleware when omitted
+	 * @param pattern Route pattern
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string = string>(pattern?: Pattern) {
+	static post<Pattern extends string>(pattern: Pattern) {
 		return Route.#withComponents(new Route(Method.post, pattern)) as Route.Post<
 			Pattern,
 			ExtractParams<Pattern>,

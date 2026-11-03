@@ -228,7 +228,7 @@ const storage = Storage.of(db);
 
 beforeEach(() =>
 	engine.exec(
-		"TRUNCATE users, ovr_credentials, ovr_sessions, ovr_challenges, ovr_limits, ovr_tokens",
+		"TRUNCATE users, auth_credentials, auth_sessions, auth_challenges, rate_limits, auth_tokens",
 	),
 );
 // the store is shared, so spies on it must not leak between tests
@@ -248,15 +248,15 @@ const inspect = {
 	record: async (id: string) =>
 		(await storage.credentials.get(id)) ?? undefined,
 	session: async (id: string) =>
-		(await rows(db.ovr_sessions)).find((session) => session.id === id),
+		(await rows(db.auth_sessions)).find((session) => session.id === id),
 	challenge: async (id: string) =>
-		(await rows(db.ovr_challenges)).find((challenge) => challenge.id === id),
+		(await rows(db.auth_challenges)).find((challenge) => challenge.id === id),
 	/** Change a stored challenge, as another instance or an attacker could. */
 	edit: async (
 		id: string,
-		values: Partial<Schema.Infer<typeof db.ovr_challenges>>,
+		values: Partial<Schema.Infer<typeof db.auth_challenges>>,
 	) => {
-		await db.sql`UPDATE ${db.ovr_challenges} SET ${db.sql.set(db.ovr_challenges, values)} WHERE id = ${id}`;
+		await db.sql`UPDATE ${db.auth_challenges} SET ${db.sql.set(db.auth_challenges, values)} WHERE id = ${id}`;
 	},
 };
 
@@ -300,7 +300,7 @@ function setup(extra: Partial<State.Options> = {}) {
 			const input = await c.data();
 			if (input.issues) throw input;
 			const credential = await new Passkey(c, new State(c, options)).register();
-			await db.sql`INSERT INTO ${db.ovr_credentials} ${db.sql.values(db.ovr_credentials, credential)}`;
+			await db.sql`INSERT INTO ${db.auth_credentials} ${db.sql.values(db.auth_credentials, credential)}`;
 			c.json(credential);
 		});
 	const login = Route.post("/login")
@@ -439,7 +439,7 @@ describe("passkey ceremonies", () => {
 			eligible: false,
 		});
 		expect((await state.record(id))?.counter).toBe(1);
-		expect(await state.size(db.ovr_challenges)).toBe(0);
+		expect(await state.size(db.auth_challenges)).toBe(0);
 	});
 
 	test("requires discoverable credentials and fetches fresh options at submit time", async () => {
@@ -522,7 +522,7 @@ describe("passkey ceremonies", () => {
 		await expect(state.submit(start, {})).rejects.toThrow("expired");
 		const wrong = await state.start("register", start.cookie);
 		await expect(state.submit(wrong, {}, "/login")).rejects.toThrow("binding");
-		expect(await state.size(db.ovr_challenges)).toBe(0);
+		expect(await state.size(db.auth_challenges)).toBe(0);
 	});
 
 	test.each([
@@ -539,7 +539,7 @@ describe("passkey ceremonies", () => {
 				await registration(start.options.challenge, await pair(), { client }),
 			),
 		).rejects.toThrow();
-		expect(await state.size(db.ovr_credentials)).toBe(0);
+		expect(await state.size(db.auth_credentials)).toBe(0);
 	});
 
 	test.each([0x41, 0x44, 0x55])(
@@ -710,7 +710,7 @@ describe("revocable sessions", () => {
 			expect(await state.session(session.id)).toEqual(session);
 			expect(session).not.toHaveProperty("token");
 		}
-		expect(await state.size(db.ovr_sessions)).toBe(2);
+		expect(await state.size(db.auth_sessions)).toBe(2);
 		const cookies = [first, second].map(
 			(response) => response.headers.getSetCookie().at(-1)!.split(";")[0]!,
 		);
@@ -749,7 +749,7 @@ describe("revocable sessions", () => {
 			headers: { cookie },
 		});
 		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
-		expect(await state.size(db.ovr_sessions)).toBe(0);
+		expect(await state.size(db.auth_sessions)).toBe(0);
 	});
 
 	test("rejects a stored session whose ID differs from the signed cookie", async () => {
@@ -790,7 +790,7 @@ describe("revocable sessions", () => {
 			expect(response.status).toBe(200);
 			expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
 			expect(get).toHaveBeenCalledTimes(cached ? 1 : 0);
-			expect(await state.size(db.ovr_sessions)).toBe(0);
+			expect(await state.size(db.auth_sessions)).toBe(0);
 		},
 	);
 
@@ -812,7 +812,7 @@ describe("revocable sessions", () => {
 		});
 		expect(response.status).toBe(200);
 		expect(response.headers.getSetCookie().at(-1)).not.toContain("Max-Age=0");
-		expect(await state.size(db.ovr_sessions)).toBe(1);
+		expect(await state.size(db.auth_sessions)).toBe(1);
 	});
 
 	test.each(["", " ", "x".repeat(1025), "é".repeat(513)])(
@@ -854,7 +854,7 @@ describe("revocable sessions", () => {
 				await state.app.fetch(origin + "/session", { headers: { cookie } })
 			).json(),
 		).toBeNull();
-		expect(await state.size(db.ovr_sessions)).toBe(0);
+		expect(await state.size(db.auth_sessions)).toBe(0);
 	});
 
 	test("rotates sessions and supports explicit revocation", async () => {
@@ -863,14 +863,14 @@ describe("revocable sessions", () => {
 		const cookie = first.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const second = await state.post("/session", new FormData(), cookie);
 		const session: Auth.Session = await second.json();
-		expect(await state.size(db.ovr_sessions)).toBe(1);
+		expect(await state.size(db.auth_sessions)).toBe(1);
 		expect(
 			await (
 				await state.app.fetch(origin + "/session", { headers: { cookie } })
 			).json(),
 		).toBeNull();
 		await state.post(`/revoke/${session.id}`, new FormData());
-		expect(await state.size(db.ovr_sessions)).toBe(0);
+		expect(await state.size(db.auth_sessions)).toBe(0);
 	});
 
 	test("expires sessions without sliding refresh and propagates storage errors", async () => {
@@ -922,11 +922,11 @@ describe("form contracts", () => {
 		>();
 		expectTypeOf(Auth.tables.map((table) => table.name)).toEqualTypeOf<
 			(
-				| "ovr_credentials"
-				| "ovr_sessions"
-				| "ovr_challenges"
-				| "ovr_limits"
-				| "ovr_tokens"
+				| "auth_credentials"
+				| "auth_sessions"
+				| "auth_challenges"
+				| "rate_limits"
+				| "auth_tokens"
 			)[]
 		>();
 		expectTypeOf<Parameters<Auth["session"]>[0]>().toEqualTypeOf<
@@ -1022,7 +1022,7 @@ describe("cryptographic input validation", () => {
 				}),
 			),
 		).rejects.toThrow("public key");
-		expect(await state.size(db.ovr_credentials)).toBe(0);
+		expect(await state.size(db.auth_credentials)).toBe(0);
 	});
 
 	test("rejects malformed credential JSON and invalid base64url without persisting a key", async () => {
@@ -1034,7 +1034,7 @@ describe("cryptographic input validation", () => {
 		);
 		credential.rawId = "A";
 		await expect(state.submit(start, credential)).rejects.toThrow("base64url");
-		expect(await state.size(db.ovr_credentials)).toBe(0);
+		expect(await state.size(db.auth_credentials)).toBe(0);
 	});
 
 	test("does not report a successful logout when revocation storage fails", async () => {
@@ -1149,7 +1149,7 @@ function managed(
 
 /** Tokens a policy has spent, by bucket name and scope; freeze the clock so none refill. */
 const spent = async (name: string, scope?: string) =>
-	(await rows(db.ovr_limits))
+	(await rows(db.rate_limits))
 		.map((bucket) => ({ key: JSON.parse(bucket.key), tokens: bucket.tokens }))
 		.filter(
 			({ key }) => key[0] === name && (scope === undefined || key[3] === scope),
@@ -1190,12 +1190,12 @@ describe("configured passkey callbacks", () => {
 			"/auth/login",
 		);
 		expect(logged.status).toBe(303);
-		expect(await warm.storage.size(db.ovr_sessions)).toBe(1);
+		expect(await warm.storage.size(db.auth_sessions)).toBe(1);
 		expect(await warm.storage.session(session.id)).toBeUndefined();
 		const current = logged.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const logout = await cold.post("/auth/logout", new FormData(), current);
 		expect(logout.headers.get("location")).toBe("/login");
-		expect(await warm.storage.size(db.ovr_sessions)).toBe(0);
+		expect(await warm.storage.size(db.auth_sessions)).toBe(0);
 	});
 
 	test("renders customizable fields and errors with external nonce-bearing scripts", async () => {
@@ -1254,7 +1254,7 @@ describe("configured passkey callbacks", () => {
 			origin + "/login?_auth=register",
 		);
 		expect(result.headers.getSetCookie()).toHaveLength(0);
-		expect(await state.storage.size(db.ovr_sessions)).toBe(0);
+		expect(await state.storage.size(db.auth_sessions)).toBe(0);
 		expect(state.error).toHaveBeenCalledWith(
 			expect.objectContaining({ message: "private database details" }),
 			expect.anything(),
@@ -1308,33 +1308,11 @@ describe("configured passkey callbacks", () => {
 		).toBe(429);
 	});
 
-	test("supports custom endpoints and rejects invalid paths at startup", async () => {
-		const state = managed(setup(), {
-			paths: {
-				register: "/join/register",
-				login: "/join/login",
-				logout: "/join/logout",
-			},
-		});
-		const start = await state.start("register");
-		expect(start.endpoint).toBe("/_passkey/options/register");
-		expect(start.html).toContain('action="/join/register"');
-		expect(start.html).toContain('src="/_passkey/client.js"');
-		expect(
-			(
-				await state.submit(
-					start,
-					await registration(start.options.challenge, await pair()),
-					"/join/register",
-				)
-			).status,
-		).toBe(303);
-		expect(() =>
-			managed(setup(), { paths: { register: "https://evil.example" } }),
-		).toThrow("local paths");
-		expect(() =>
-			managed(setup(), { paths: { register: "/auth/login" } }),
-		).toThrow("distinct");
+	test("rejects invalid pages at startup", () => {
+		expect(() => managed(setup(), { page: "https://evil.example" })).toThrow(
+			"local paths",
+		);
+		expect(() => managed(setup(), { page: "/auth/login" })).toThrow("distinct");
 	});
 });
 
@@ -1368,7 +1346,7 @@ test("automatic policies ignore cookie rotation, isolate clients, and leave logo
 		expect(
 			(await state.post("/auth/logout", new FormData(), cookie)).status,
 		).toBe(303);
-		expect(await state.storage.size(db.ovr_sessions)).toBe(0);
+		expect(await state.storage.size(db.auth_sessions)).toBe(0);
 	} finally {
 		time.mockRestore();
 	}
@@ -1422,225 +1400,22 @@ test("auth rejects client limiter arrays at startup", () => {
 	}
 });
 
-test.each([
-	{ method: "register", limit: 5, first: "192.0.2.1", other: "192.0.2.2" },
-	{ method: "login", limit: 20, first: "192.0.2.1", other: "192.0.2.2" },
-	{
-		method: "register",
-		limit: 5,
-		first: "2001:db8:1:1::1",
-		other: "2001:db8:1:2::1",
-	},
-	{
-		method: "login",
-		limit: 20,
-		first: "2001:db8:1:1::1",
-		other: "2001:db8:1:2::1",
-	},
-])(
-	"blocked $method traffic from $first cannot drain extra shared budgets",
-	async ({ method, limit, first, other }) => {
-		const storage = setup();
-		const shared = [
-			{ name: "network", prefix: 48, limit: 40 },
-			{ name: "aggregate", key: () => "all", limit: 100 },
-		];
-		const limits = {
-			guard: { name: "creation", key: () => "all", limit: 1000 },
-			extra: shared,
-		};
-		const warm = managed(storage, { limits });
-		const cold = managed(storage, { limits });
-		shared.length = 0; // Extra policies are snapshotted too.
-		const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
-		try {
-			for (const phase of ["options", "verify"]) {
-				const path =
-					phase === "options"
-						? `/_passkey/options/${method}`
-						: `/auth/${method}`;
-				const data = new FormData();
-				data.set("bootstrap", "invalid");
-				data.set("email", "user@example.com");
-				for (let i = 0; i < 120; i++) {
-					const response = await (i % 2 ? warm : cold).post(
-						path,
-						data,
-						"",
-						first,
-					);
-					expect(response.status).toBe(
-						phase === "verify" ? 303 : i < limit ? 400 : 429,
-					);
-					if (phase === "verify")
-						expect(
-							new URL(response.headers.get("location")!).searchParams.has(
-								"_retry",
-							),
-						).toBe(i >= limit);
-				}
-				const response = await cold.post(path, data, "", other);
-				expect(response.status).toBe(phase === "options" ? 400 : 303);
-				if (phase === "verify")
-					expect(
-						new URL(response.headers.get("location")!).searchParams.has(
-							"_retry",
-						),
-					).toBe(false);
-				for (const name of ["network", "aggregate"])
-					expect(await spent(name, phase)).toBe(limit + 1);
-				expect(await spent("creation", phase)).toBe(121); // Client-denied attempts still reach the guard, but skip extras.
-			}
-			expect(await storage.size(db.ovr_challenges)).toBe(0);
-			expect(warm.create).not.toHaveBeenCalled();
-			expect(cold.create).not.toHaveBeenCalled();
-		} finally {
-			clock.mockRestore();
-		}
-	},
-);
-
-test("a generous guard bounds client-record creation before the default and extra policies", async () => {
+test("a failing limiter prevents challenge writes and preserves generic errors", async () => {
 	const storage = setup();
-	const check = vi.fn(() => "all");
 	const state = managed(storage, {
 		limits: {
-			guard: { name: "creation", key: () => "all", limit: 3 },
-			extra: [{ name: "aggregate", key: check, limit: 2 }],
-		},
-	});
-	for (let i = 0; i < 10; i++) {
-		const response = await state.post(
-			"/_passkey/options/login",
-			new FormData(),
-			"",
-			`192.0.2.${i + 1}`,
-		);
-		expect(response.status).toBe(i < 2 ? 400 : 429);
-	}
-	// one client bucket for each of the three admitted addresses
-	expect(
-		(await rows(db.ovr_limits)).filter(
-			(bucket) => JSON.parse(bucket.key)[0] === "auth:login:" + origin,
-		),
-	).toHaveLength(3);
-	expect(check).toHaveBeenCalledTimes(3);
-	expect(await storage.size(db.ovr_challenges)).toBe(0);
-	const buckets = await rows(db.ovr_limits);
-	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
-	expect(await rows(db.ovr_limits)).toEqual(buckets);
-});
-
-test("a failed creation guard stops backend access and extra checks but leaves logout available", async () => {
-	const storage = setup();
-	const check = vi.fn(() => "all");
-	const state = managed(storage, {
-		limits: {
-			guard: {
+			login: {
 				key: () => {
-					throw new Error("private creation guard failure");
+					throw new Error("private backend failure");
 				},
 			},
-			extra: [{ key: check }],
-		},
-	});
-	const response = await state.post("/_passkey/options/login", new FormData());
-	expect(response.status).toBe(503);
-	expect(await response.text()).not.toContain("private creation");
-	expect(state.error).toHaveBeenCalledOnce();
-	expect(await storage.size(db.ovr_limits)).toBe(0);
-	expect(check).not.toHaveBeenCalled();
-	expect(await storage.size(db.ovr_challenges)).toBe(0);
-	expect((await state.post("/auth/logout", new FormData())).status).toBe(303);
-});
-
-test("optional guard and extra policies are validated at startup", () => {
-	const storage = setup();
-	expect(() =>
-		// @ts-expect-error Auth creates its limiters, so a Limiter is rejected.
-		managed(storage, { limits: { guard: new Limiter({ database: db }) } }),
-	).toThrow("limits.guard must be rate limit options");
-	expect(() =>
-		// @ts-expect-error Runtime configuration must also reject non-object extra entries.
-		managed(storage, { limits: { extra: [null] } }),
-	).toThrow("limits.extra");
-	expect(() =>
-		managed(storage, { limits: { guard: {}, extra: [{}] } }),
-	).not.toThrow();
-	expect(() =>
-		managed(storage, { limits: { extra: Array<Auth.Limit>(1) } }),
-	).toThrow("limits.extra");
-	// invalid policies are rejected by the Limiter Auth creates
-	expect(() => managed(storage, { limits: { login: { limit: 0 } } })).toThrow(
-		"Invalid limiter",
-	);
-});
-
-test("layered policies stop prefix sweeping across instances and share an aggregate ceiling", async () => {
-	const storage = setup();
-	const calls = vi.fn(() => "all");
-	const stack = [
-		{ name: "network", limit: 2, prefix: 48 },
-		{ name: "aggregate", limit: 3, key: calls },
-	];
-	const limits = { extra: stack };
-	const first = managed(storage, { limits });
-	const second = managed(storage, { limits });
-	stack.length = 0; // The configured services own snapshots, not the caller's mutable array.
-	const start = await first.start("login", "", (path, data, cookie) =>
-		first.post(path, data, cookie, "2001:db8:1:1::1"),
-	);
-	expect(
-		(
-			await second.start("register", "", (path, data, cookie) =>
-				second.post(path, data, cookie, "2001:db8:1:2::1"),
-			)
-		).response.status,
-	).toBe(200);
-	const denied = await first.post(
-		start.endpoint,
-		new FormData(),
-		"",
-		"2001:db8:1:3::1",
-	);
-	expect(denied.status).toBe(429);
-	expect(calls).toHaveBeenCalledTimes(2);
-	const other = await second.start("login", "", (path, data, cookie) =>
-		second.post(path, data, cookie, "2001:db8:2:1::1"),
-	);
-	expect(other.response.status).toBe(200); // A denied /48 never consumes the later global budget.
-	expect(
-		(await first.post(start.endpoint, new FormData(), "", "2001:db8:3:1::1"))
-			.status,
-	).toBe(429);
-	expect(calls).toHaveBeenCalledTimes(4);
-	expect(await storage.size(db.ovr_challenges)).toBe(3);
-	expect(first.create).not.toHaveBeenCalled();
-	expect(second.create).not.toHaveBeenCalled();
-	expect((await first.post("/auth/logout", new FormData())).status).toBe(303);
-});
-
-test("a failing layer prevents challenge writes and preserves generic errors", async () => {
-	const storage = setup();
-	const check = vi.fn(() => "all");
-	const state = managed(storage, {
-		limits: {
-			extra: [
-				{
-					key: () => {
-						throw new Error("private backend failure");
-					},
-				},
-				{ name: "later", key: check },
-			],
 		},
 	});
 	const response = await state.post("/_passkey/options/login", new FormData());
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private backend");
 	expect(state.error).toHaveBeenCalledOnce();
-	expect(check).not.toHaveBeenCalled();
-	expect(await storage.size(db.ovr_challenges)).toBe(0);
+	expect(await storage.size(db.auth_challenges)).toBe(0);
 });
 
 test("limiter errors cannot prevent logout", async () => {
@@ -1758,7 +1533,7 @@ test("configured logout reports storage failure without claiming success", async
 	expect(result.status).toBe(503);
 	expect(await result.text()).toBe("Could not log out. Try again.");
 	expect(result.headers.getSetCookie()).toHaveLength(0);
-	expect(await state.storage.size(db.ovr_sessions)).toBe(1);
+	expect(await state.storage.size(db.auth_sessions)).toBe(1);
 });
 
 test("configured options reject substituted operations and oversized bodies before storage", async () => {
@@ -1800,7 +1575,7 @@ test("a zero-counter credential requires a matched snapshot even when its values
 		"/auth/login",
 	);
 	expect(failure.headers.get("location")).toBe(origin + "/login?_auth=login");
-	expect(await storage.size(db.ovr_sessions)).toBe(0);
+	expect(await storage.size(db.auth_sessions)).toBe(0);
 	const accepted = await state.start("login");
 	const success = await state.submit(
 		accepted,
@@ -1813,7 +1588,7 @@ test("a zero-counter credential requires a matched snapshot even when its values
 	expect(update).toHaveBeenCalledTimes(2);
 	expect(update.mock.calls[0]?.[0]).toEqual(update.mock.calls[0]?.[1]);
 	expect((await storage.record(id))?.counter).toBe(0);
-	expect(await storage.size(db.ovr_sessions)).toBe(1);
+	expect(await storage.size(db.auth_sessions)).toBe(1);
 });
 
 test("account persistence may complete before session storage fails; normal login can recover", async () => {
@@ -1829,8 +1604,8 @@ test("account persistence may complete before session storage fails; normal logi
 	);
 	expect(failed.headers.get("location")).toBe(origin + "/login?_auth=register");
 	expect(failed.headers.getSetCookie()).toHaveLength(0);
-	expect(await state.storage.size(db.ovr_credentials)).toBe(1);
-	expect(await state.storage.size(db.ovr_sessions)).toBe(0);
+	expect(await state.storage.size(db.auth_credentials)).toBe(1);
+	expect(await state.storage.size(db.auth_sessions)).toBe(0);
 	const page = await state.app.fetch(failed.headers.get("location")!);
 	expect(await page.text()).toContain("If you already registered, sign in");
 	const login = await state.start("login", start.cookie);
@@ -1843,7 +1618,7 @@ test("account persistence may complete before session storage fails; normal logi
 	);
 	expect(result.headers.get("location")).toBe("/account");
 	expect(state.create).toHaveBeenCalledOnce();
-	expect(await state.storage.size(db.ovr_sessions)).toBe(1);
+	expect(await state.storage.size(db.auth_sessions)).toBe(1);
 });
 
 test.each(["register", "login"] as const)(
@@ -1877,7 +1652,7 @@ test.each(["register", "login"] as const)(
 		]);
 		expect(take).not.toHaveBeenCalled();
 		expect(state.create).not.toHaveBeenCalled();
-		expect(await state.storage.size(db.ovr_sessions)).toBe(0);
+		expect(await state.storage.size(db.auth_sessions)).toBe(0);
 	},
 );
 
@@ -1950,7 +1725,7 @@ test.each(["register", "login"])(
 			expect(denied.headers.get("retry-after")).toBe("3600");
 			expect(check).toHaveBeenCalledTimes(2);
 			expect(state.create).not.toHaveBeenCalled();
-			expect(await state.storage.size(db.ovr_challenges)).toBe(0);
+			expect(await state.storage.size(db.auth_challenges)).toBe(0);
 		} finally {
 			time.mockRestore();
 		}
@@ -2024,7 +1799,7 @@ test("the database retains the built-in auth policies across service instances",
 	expect(response.headers.get("location")).toBe("/account");
 	// verification has its own bucket
 	expect(
-		(await rows(db.ovr_limits)).map((bucket) =>
+		(await rows(db.rate_limits)).map((bucket) =>
 			JSON.parse(bucket.key).slice(0, 4),
 		),
 	).toEqual(
@@ -2149,7 +1924,7 @@ test("registration rejects changed application fields before account or session 
 	expect(result.headers.get("location")).toBe(origin + "/login?_auth=register");
 	expect(result.headers.getSetCookie()).toHaveLength(0);
 	expect(state.create).not.toHaveBeenCalled();
-	expect(await state.storage.size(db.ovr_sessions)).toBe(0);
+	expect(await state.storage.size(db.auth_sessions)).toBe(0);
 	expect(await state.storage.challenge(start.ceremony)).toBeUndefined();
 });
 
@@ -2180,20 +1955,12 @@ test("revoking an unrelated session leaves an invalid incoming cookie alone", as
 	expect(read.headers.get("set-cookie")).toContain("Max-Age=0");
 });
 
-test("invalid registration options spend only the guard budget before a valid signup", async () => {
+test("invalid registration options do not spend the signup budget", async () => {
 	const storage = setup();
-	const order: string[] = [];
-	const key = (name: string) => () => (order.push(name), "all");
-	const state = managed(storage, {
-		limits: {
-			guard: { name: "guard", limit: 20, key: key("guard") },
-			extra: [{ name: "extra", limit: 10, key: key("extra") }],
-		},
-	});
+	const state = managed(storage);
 	const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
 	const start = await state.start("register");
 	const register = "auth:register:" + origin;
-	order.length = 0;
 	for (let i = 0; i < 8; i++) {
 		const data = new FormData();
 		data.set("bootstrap", start.bootstrap);
@@ -2202,7 +1969,6 @@ test("invalid registration options spend only the guard budget before a valid si
 			422,
 		);
 	}
-	expect(order).toEqual(Array(8).fill("guard"));
 	expect(await spent(register, "options")).toBe(1);
 	const data = new FormData();
 	data.set("bootstrap", start.bootstrap);
@@ -2210,8 +1976,6 @@ test("invalid registration options spend only the guard budget before a valid si
 	expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
 		200,
 	);
-	// the client policy runs between the guard and the extra policy
-	expect(order.slice(-2)).toEqual(["guard", "extra"]);
 	expect(await spent(register, "options")).toBe(2);
 	clock.mockRestore();
 });
@@ -2304,34 +2068,24 @@ test.each(["expired", "browser"])(
 	},
 );
 
-test("registration guard admission precedes parsing and rejects oversized bodies without client tokens", async () => {
+test("oversized registration bodies are rejected without spending the signup budget", async () => {
 	const storage = setup();
-	const check = vi.fn(() => "all");
-	const state = managed(storage, {
-		limits: { guard: { name: "guard", limit: 1, key: check } },
-	});
+	const state = managed(storage);
 	const data = new FormData();
 	data.set("email", "x".repeat(129 * 1024));
 	data.set("bootstrap", "invalid");
 	const response = await state.post("/_passkey/options/register", data);
 	expect(response.status).toBe(400);
-	// only the guard, the client policy runs after parsing
-	expect(
-		(await rows(db.ovr_limits)).map((bucket) => JSON.parse(bucket.key)[0]),
-	).toEqual(["guard"]);
-	// the exhausted guard denies before the oversized body is read
-	expect((await state.post("/_passkey/options/register", data)).status).toBe(
-		429,
-	);
-	expect(check).toHaveBeenCalledTimes(2);
-	expect(await storage.size(db.ovr_challenges)).toBe(0);
+	// the client policy runs after parsing
+	expect(await rows(db.rate_limits)).toEqual([]);
+	expect(await storage.size(db.auth_challenges)).toBe(0);
 });
 
 /** Checksums of the shipped migrations: never update them, add a new version instead. */
 const checksums = {
-	auth: "a4d5f0d1412b317cec0679a8b5400c5114354b6f3bf464630991a92e6bfc79e4",
-	agents: "eb4ce917272254a7a441b8faf589fedcf65880c354dd416bf8fa38ad3f6d2acc",
-	limiter: "4cd3ada37ed2f7208ddbf1728780c485de42a5424f126772582c165e54022f1a",
+	auth: "b4b7af4c0e069a2c87239fcdf2d58e0896fdea9ec7294a80a9f0e3a297c97c99",
+	agents: "a6c10a9a55133d44e1aa98e6019bad9cb8d6874052c1d4131b473ff6653987f1",
+	limiter: "8ab4ac3ad8e79de0dc9621e8bf80b386f579c3096cfe6e4c2677e65200e88696",
 };
 
 describe("migration SQL", () => {
@@ -2369,7 +2123,7 @@ describe("Postgres storage", () => {
 			expect(await storage.challenges.set(`a${i}`, challenge("a"))).toBe(true);
 		expect(await storage.challenges.set("a10", challenge("a"))).toBe(false);
 		expect(await storage.challenges.set("b0", challenge("b"))).toBe(true);
-		expect(await inspect.size(db.ovr_challenges)).toBe(11);
+		expect(await inspect.size(db.auth_challenges)).toBe(11);
 	});
 
 	test("takes a challenge once, even concurrently, preserving optional fields", async () => {
@@ -2398,7 +2152,7 @@ describe("Postgres storage", () => {
 			eligible: true,
 			backedUp: false,
 		};
-		await db.sql`INSERT INTO ${db.ovr_credentials} ${db.sql.values(db.ovr_credentials, credential)}`;
+		await db.sql`INSERT INTO ${db.auth_credentials} ${db.sql.values(db.auth_credentials, credential)}`;
 		const next = { ...credential, counter: 2, backedUp: true };
 		expect(await storage.credentials.update(next, credential)).toBe(true);
 		// the stored counter has moved on, so the stale snapshot loses
@@ -2406,9 +2160,9 @@ describe("Postgres storage", () => {
 			await storage.credentials.update({ ...next, counter: 3 }, credential),
 		).toBe(false);
 		expect(await storage.credentials.get("credential")).toEqual(next);
-		await db.sql`DELETE FROM ${db.ovr_credentials}`;
+		await db.sql`DELETE FROM ${db.auth_credentials}`;
 		expect(await storage.credentials.update(next, next)).toBe(false);
-		expect(await inspect.size(db.ovr_credentials)).toBe(0);
+		expect(await inspect.size(db.auth_credentials)).toBe(0);
 	});
 
 	test("registers the account and credential together or not at all", async () => {
@@ -2437,7 +2191,7 @@ describe("Postgres storage", () => {
 			),
 		).rejects.toThrow("account failed");
 		expect(await rows(users)).toEqual([{ id: "u", email: "a@example.com" }]);
-		expect(await rows(db.ovr_credentials)).toEqual([credential]);
+		expect(await rows(db.auth_credentials)).toEqual([credential]);
 	});
 
 	test("prunes expired sessions and challenges", async () => {
@@ -2458,10 +2212,10 @@ describe("Postgres storage", () => {
 			user: "u",
 			expiration: now + Time.hour,
 		});
-		expect((await rows(db.ovr_sessions)).map((session) => session.id)).toEqual([
-			"new",
-		]);
-		expect(await inspect.size(db.ovr_challenges)).toBe(0);
+		expect((await rows(db.auth_sessions)).map((session) => session.id)).toEqual(
+			["new"],
+		);
+		expect(await inspect.size(db.auth_challenges)).toBe(0);
 	});
 });
 
@@ -2900,14 +2654,14 @@ describe("agents", () => {
 			});
 		// Fail only the write of the replacement refresh token.
 		await engine.exec(
-			"ALTER TABLE ovr_tokens ADD CONSTRAINT fail_refresh CHECK (kind <> 'refresh') NOT VALID",
+			"ALTER TABLE auth_tokens ADD CONSTRAINT fail_refresh CHECK (kind <> 'refresh') NOT VALID",
 		);
 		try {
 			await refresh().catch(() => undefined);
 		} finally {
-			await engine.exec("ALTER TABLE ovr_tokens DROP CONSTRAINT fail_refresh");
+			await engine.exec("ALTER TABLE auth_tokens DROP CONSTRAINT fail_refresh");
 		}
-		expect((await rows(db.ovr_tokens)).map((row) => row.kind)).toEqual([
+		expect((await rows(db.auth_tokens)).map((row) => row.kind)).toEqual([
 			"refresh",
 		]);
 		expect((await refresh()).status).toBe(200);

@@ -113,10 +113,8 @@ const page = Route.get("/").use(() => {
 
 There is also a `Route.post` function that will create a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route and corresponding `Form` and `Button` elements. Anytime you need to handle a form submission, use the generated `Form` component. These components also automatically set the `enctype=multipart/form-data` attribute.
 
-For `Route.post`, ovr will automatically generate a unique pathname for the route based on a hash of its middleware.
-
 ```tsx
-const login = Route.post().use(async (c) => {
+const login = Route.post("/login").use(async (c) => {
 	const data = await c.req.formData();
 	// ...
 	c.redirect("/", 303);
@@ -125,10 +123,10 @@ const login = Route.post().use(async (c) => {
 const page = Route.get("/").use(() => {
 	return (
 		<main>
-			{/* <form method="POST" action="/_p/generated-hash" enctype="multipart/form-data"> */}
+			{/* <form method="POST" action="/login" enctype="multipart/form-data"> */}
 			<login.Form>...</login.Form>
 
-			{/* <button formmethod="POST" formaction="/_p/generated-hash" formenctype="multipart/form-data"> */}
+			{/* <button formmethod="POST" formaction="/login" formenctype="multipart/form-data"> */}
 			<login.Button>Submit</login.Button>
 		</main>
 	);
@@ -155,8 +153,7 @@ const remove = Route.post("/posts/:id/delete")
 	});
 ```
 
-- `name` - tool name, generated from the method and pattern by default, for example `post_posts_id_delete`.
-- `destructive` - the route deletes or overwrites data, so agents should confirm with the user first.
+`destructive: true` marks a route that deletes or overwrites data, so agents confirm with the user first. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
 
 `describe(false)` also hides a page from agents, which can otherwise read it as Markdown. Auth's routes are hidden this way.
 

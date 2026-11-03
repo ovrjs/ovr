@@ -219,7 +219,7 @@ export class Context<
 	 * ```ts
 	 * import { Route } from "ovr";
 	 *
-	 * const post = Route.post().use(async (c) => {
+	 * const post = Route.post("/posts").use(async (c) => {
 	 * 	for await (const part of c.form()) {
 	 * 		if (part.name === "email") {
 	 * 			// ...

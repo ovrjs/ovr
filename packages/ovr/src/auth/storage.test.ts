@@ -31,8 +31,8 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 			await pool.query(`CREATE SCHEMA ${schema}`);
 			await pool.query(Auth.sql[2]);
 			await pool.query(`
-			CREATE TABLE ovr_sessions (id text PRIMARY KEY, expiration bigint NOT NULL);
-			CREATE TABLE ovr_challenges (
+			CREATE TABLE auth_sessions (id text PRIMARY KEY, expiration bigint NOT NULL);
+			CREATE TABLE auth_challenges (
 				id text PRIMARY KEY, challenge text NOT NULL, browser text NOT NULL,
 				method text NOT NULL, action text NOT NULL, origin text NOT NULL,
 				expiration bigint NOT NULL, "user" text, fields text
@@ -42,7 +42,7 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				IF NEW.id LIKE 'race-%' THEN PERFORM pg_sleep(0.05); END IF;
 				RETURN NEW;
 			END $$;
-			CREATE TRIGGER overlap BEFORE INSERT ON ovr_challenges
+			CREATE TRIGGER overlap BEFORE INSERT ON auth_challenges
 				FOR EACH ROW EXECUTE FUNCTION overlap();
 		`);
 			// Establish all connections before racing, so connection startup does not serialize requests.
@@ -62,7 +62,7 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 			}
 		});
 
-		beforeEach(() => pool.query("TRUNCATE ovr_challenges, ovr_sessions"));
+		beforeEach(() => pool.query("TRUNCATE auth_challenges, auth_sessions"));
 
 		test("replay revokes tokens being issued concurrently in the same family", async () => {
 			const row: Storage.Token = {
@@ -130,7 +130,7 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				await storage.challenges.set("warmup", challenge);
 				await storage.challenges.take("warmup");
 				await db.sql`
-			INSERT INTO ovr_challenges (id, challenge, browser, method, action, origin, expiration)
+			INSERT INTO auth_challenges (id, challenge, browser, method, action, origin, expiration)
 			SELECT 'seed-' || i, 'challenge',
 				CASE WHEN ${scope} = 'browser' THEN 'browser' ELSE 'browser-' || i END,
 				'login', '/auth/login', 'https://example.com', ${challenge.expiration}
@@ -150,7 +150,7 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				expect(
 					(
 						await pool.query(
-							"SELECT count(*)::int AS count FROM ovr_challenges",
+							"SELECT count(*)::int AS count FROM auth_challenges",
 						)
 					).rows,
 				).toEqual([{ count: capacity }]);

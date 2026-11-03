@@ -202,7 +202,7 @@ await auth.logout(c); // Current session.
 await auth.revoke(c, id); // A selected session ID.
 ```
 
-To revoke all sessions for a user, delete their rows: ``db.sql`DELETE FROM ${db.ovr_sessions} WHERE ${db.ovr_sessions.columns.user} = ${user}` ``. `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
+To revoke all sessions for a user, delete their rows: ``db.sql`DELETE FROM ${db.auth_sessions} WHERE ${db.auth_sessions.columns.user} = ${user}` ``. `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
 
 Resolve sessions and prepare forms before returning JSX. Doing this inside an async component is too late to reliably set cookies, redirects, or response status.
 
@@ -220,28 +220,28 @@ await db.migrate([
 
 A version's SQL never changes, so its checksum stays valid. Changes ship as a new version for you to add as a new migration: `Auth.sql[2]` adds the table for [agents](#agents).
 
-| Table             | Contents                                                      |
-| ----------------- | ------------------------------------------------------------- |
-| `ovr_credentials` | Passkeys, with their owner, public key, counter, backup flags |
-| `ovr_sessions`    | Revocable sessions                                            |
-| `ovr_challenges`  | Outstanding ceremonies, each used once                        |
-| `ovr_limits`      | [Rate limit](/05-middleware#rate-limiting) buckets            |
-| `ovr_tokens`      | Agents' authorization codes and tokens, stored as hashes      |
+| Table              | Contents                                                      |
+| ------------------ | ------------------------------------------------------------- |
+| `auth_credentials` | Passkeys, with their owner, public key, counter, backup flags |
+| `auth_sessions`    | Revocable sessions                                            |
+| `auth_challenges`  | Outstanding ceremonies, each used once                        |
+| `rate_limits`      | [Rate limit](/05-middleware#rate-limiting) buckets            |
+| `auth_tokens`      | Agents' authorization codes and tokens, stored as hashes      |
 
 Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. To delete an account's passkeys and sessions with it, give your `users` table a `text` ID and reference it in your own migration:
 
 ```sql
 -- migrations/0003_auth_users.sql
-ALTER TABLE ovr_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
-ALTER TABLE ovr_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+ALTER TABLE auth_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+ALTER TABLE auth_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 ```
 
 The tables are available on your database by name, for example to list an account's passkeys:
 
 ```ts
 const passkeys = await db.sql`
-	SELECT * FROM ${db.ovr_credentials} WHERE ${db.ovr_credentials.columns.user} = ${user}
-`.parse(db.ovr_credentials);
+	SELECT * FROM ${db.auth_credentials} WHERE ${db.auth_credentials.columns.user} = ${user}
+`.parse(db.auth_credentials);
 ```
 
 `register.create(t, data, user)` receives your validated fields and the new account's ID. Insert the account with `t`: it runs in the transaction that stores the first credential, so both are saved or neither is. Never upsert an existing account. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
@@ -250,14 +250,14 @@ Challenges are taken with one `DELETE ... RETURNING`, so each is used once even 
 
 ## Rate limiting
 
-ovr supplies the per-client policies, stored in the `ovr_limits` table.
+ovr supplies the per-client policies, stored in the `rate_limits` table.
 
 | Operation    | Burst and refill rate |
 | ------------ | --------------------- |
 | Registration | 5 per 10 minutes      |
 | Login        | 20 per minute         |
 
-The default identity is the trusted client IP, with IPv6 grouped by `/64`. A ceremony makes two requests: options and verification have separate budgets. The optional guard runs before parsing the bounded 128 KB body. Registration options validate application fields before the client and extra policies, so field errors do not spend signup attempts. Other admission checks run before parsing; all run before challenge writes. Logout bypasses these policies, including limiter failures.
+The default identity is the trusted client IP, with IPv6 grouped by `/64`. A ceremony makes two requests: options and verification have separate budgets. Registration options validate application fields, within a bounded 128 KB body, before the client policy, so field errors do not spend signup attempts. Other admission checks run before parsing; all run before challenge writes. Logout bypasses these policies, including limiter failures.
 
 Every worker shares the database, so a fresh instance does not receive a fresh budget. See [Limiter](/05-middleware#rate-limiting) for middleware and custom identities.
 
@@ -271,46 +271,41 @@ A Fetch `Request` does not expose the socket peer. Use your server's connection 
 
 ### Additional limits
 
-**Public deployments need aggregate admission ceilings to protect shared challenge capacity.** Per-client limits alone do not contain distributed callers or clients rotating through larger IPv6 allocations. Add shared policies with `limits.extra`, or enforce equivalent limits at the edge.
+`limits.register` and `limits.login` change the built-in client policies, for example `login: { limit: 10 }`; options you leave out keep their defaults. They take the same options as [`Limiter`](/05-middleware#rate-limiting), except `database`, which is Auth's.
 
-Policies take the same options as [`Limiter`](/05-middleware#rate-limiting), except `database` and `error`: Auth stores them in its database and reports failures through its own `error` option.
+**Public deployments need an aggregate ceiling to protect shared challenge capacity.** Per-client limits alone do not contain distributed callers. Enforce one at your edge, or check a shared [`Limiter`](/05-middleware#rate-limiting) on Auth's endpoints, `/auth/*` and `/_passkey/*`, before mounting `auth`:
 
 ```ts
-new Auth({
-	...options,
-	limits: {
-		extra: [
-			{
-				name: `auth:all:${options.origin}`,
-				limit: 100,
-				interval: 60000,
-				key: () => "all",
-			},
-		],
-	},
+const ceiling = new Limiter({
+	database: db,
+	name: "auth:all",
+	limit: 100,
+	key: () => "all",
 });
+
+app.use((c, next) => {
+	const { pathname } = c.url;
+	if (pathname.startsWith("/auth/") || pathname.startsWith("/_passkey/"))
+		return ceiling.middleware(c, next);
+	return next();
+}, auth);
 ```
 
-These numbers are an example. Size the combined burst and refill over the two-minute challenge lifetime against the challenge capacity and expected traffic. Shared quotas combine legitimate users too.
-
-Extra policies run after the client policy, in array order, and preserve its defaults. Earlier checks keep their consumed tokens when a later check denies. `limits.register` and `limits.login` change the built-in client policies, for example `login: { limit: 10 }`; options you leave out keep their defaults. An optional `limits.guard` runs first to bound bucket creation; it counts rejected attempts too and can lock out everyone if exhausted. Keep it well above normal traffic, or use edge protection for that purpose.
+These numbers are an example. Size the burst and refill over the two-minute challenge lifetime against the challenge capacity and expected traffic. A shared ceiling counts legitimate users too, and it runs before the client policy, so a client that the client policy would block still spends shared tokens.
 
 ## Options
 
 `Auth.Options<Shape>` describes the complete configuration. `database` and `register` are shown above, and `limits` under [rate limiting](#rate-limiting); these remaining options customize normal application behavior:
 
-| Option            | Default          | Purpose                                           |
-| ----------------- | ---------------- | ------------------------------------------------- |
-| `page`            | `/login`         | Your authentication page; failures redirect here. |
-| `redirect`        | `/`              | Destination after registration or login.          |
-| `duration`        | Seven days       | Fixed session lifetime in milliseconds.           |
-| `paths.register`  | `/auth/register` | Registration POST endpoint.                       |
-| `paths.login`     | `/auth/login`    | Login POST endpoint.                              |
-| `paths.logout`    | `/auth/logout`   | Logout POST endpoint.                             |
-| `consent`         | None             | Page where users approve [agents](#agents).       |
-| `error(error, c)` | `console.error`  | Detailed server-side error logging.               |
+| Option            | Default         | Purpose                                           |
+| ----------------- | --------------- | ------------------------------------------------- |
+| `page`            | `/login`        | Your authentication page; failures redirect here. |
+| `redirect`        | `/`             | Destination after registration or login.          |
+| `duration`        | Seven days      | Fixed session lifetime in milliseconds.           |
+| `consent`         | None            | Page where users approve [agents](#agents).       |
+| `error(error, c)` | `console.error` | Detailed server-side error logging.               |
 
-Paths must be distinct local paths. The options endpoints and browser module are fixed under `/_passkey/`; `app.use(auth)` mounts them. The relying-party name shown by the browser comes from your origin's hostname.
+`page` and `redirect` must be local paths. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
 
 Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Other failures use generic messages, with guidance to log in if registration already completed. Detailed errors stay on the server; protocol validation failures are `Auth.Issue` instances. Rate-limit denials include a retry hint, and the client waits before retrying.
 
@@ -365,13 +360,13 @@ To list and disconnect an account's agents, query its refresh tokens:
 
 ```ts
 const agents = await db.sql`
-	SELECT DISTINCT ${db.ovr_tokens.columns.client} FROM ${db.ovr_tokens}
-	WHERE ${db.ovr_tokens.columns.user} = ${user} AND kind = 'refresh'
+	SELECT DISTINCT ${db.auth_tokens.columns.client} FROM ${db.auth_tokens}
+	WHERE ${db.auth_tokens.columns.user} = ${user} AND kind = 'refresh'
 `;
 
 await db.sql`
-	DELETE FROM ${db.ovr_tokens}
-	WHERE ${db.ovr_tokens.columns.user} = ${user} AND ${db.ovr_tokens.columns.client} = ${client}
+	DELETE FROM ${db.auth_tokens}
+	WHERE ${db.auth_tokens.columns.user} = ${user} AND ${db.auth_tokens.columns.client} = ${client}
 `;
 ```
 

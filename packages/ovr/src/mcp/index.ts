@@ -54,16 +54,9 @@ export namespace Mcp {
 		/**
 		 * Server name shown in clients.
 		 *
-		 * @default "ovr"
+		 * @default The app's host
 		 */
 		readonly name?: string;
-
-		/**
-		 * Server version shown in clients.
-		 *
-		 * @default "1.0.0"
-		 */
-		readonly version?: string;
 
 		/** Guidance for agents on how to use the app */
 		readonly instructions?: string;
@@ -163,7 +156,7 @@ export class Mcp {
 					resource: new URL(path, c.url).href,
 					authorization_servers: [auth.origin],
 					bearer_methods_supported: ["header"],
-					resource_name: this.#options.name ?? "ovr",
+					resource_name: this.#options.name ?? c.url.host,
 				});
 			};
 
@@ -215,7 +208,7 @@ export class Mcp {
 				result: {
 					resultType: "complete",
 					...result,
-					_meta: { [`${Mcp.#meta}serverInfo`]: this.#info() },
+					_meta: { [`${Mcp.#meta}serverInfo`]: this.#info(c) },
 				},
 			});
 		} catch (error) {
@@ -353,11 +346,15 @@ export class Mcp {
 		}
 	}
 
-	/** @returns Server name and version */
-	#info() {
+	/**
+	 * @param c Request context
+	 * @returns Server name and version
+	 */
+	#info(c: Context) {
 		return {
-			name: this.#options.name ?? "ovr",
-			version: this.#options.version ?? "1.0.0",
+			name: this.#options.name ?? c.url.host,
+			// required by the protocol, and only shown in clients
+			version: "1.0.0",
 		};
 	}
 
@@ -474,7 +471,7 @@ export class Mcp {
 			// the same name in the browser's WebMCP forms and here
 			if (tools.has(name))
 				throw new TypeError(
-					`Tool name "${name}" is used by more than one route, name one with describe().`,
+					`Tool name "${name}" is used by more than one route, change one of their patterns.`,
 				);
 
 			const params = route.pattern

@@ -466,7 +466,7 @@ describe.each(drivers)("$name", (driver) => {
 
 	beforeEach(async () => {
 		await pool.query(
-			"DROP TABLE IF EXISTS posts, users, ovr_migrations, other CASCADE",
+			"DROP TABLE IF EXISTS posts, users, migrations, other CASCADE",
 		);
 	});
 
@@ -643,7 +643,7 @@ describe.each(drivers)("$name", (driver) => {
 			).rejects.toThrow();
 			// the history table was created in the same rolled back transaction
 			expect(
-				await db.sql`SELECT to_regclass('other')::text AS a, to_regclass('ovr_migrations')::text AS b`,
+				await db.sql`SELECT to_regclass('other')::text AS a, to_regclass('migrations')::text AS b`,
 			).toEqual([{ a: null, b: null }]);
 		},
 	);
@@ -658,7 +658,7 @@ describe.each(drivers)("$name", (driver) => {
 					return {
 						query: async (text, values) => {
 							const result = await client.query(text, values);
-							if (/\bFROM\s+ovr_migrations\b/i.test(text))
+							if (/\bFROM\s+migrations\b/i.test(text))
 								scanned += result.rows.length;
 							return result;
 						},

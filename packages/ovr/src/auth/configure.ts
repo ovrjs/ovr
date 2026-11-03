@@ -32,40 +32,23 @@ export function configure<Shape extends Form.Shape>(
 			throw new TypeError(`Auth ${label} must be rate limit options`);
 		return new Limiter({ ...defaults, ...policy, database: options.database });
 	};
-	if (configured.extra !== undefined && !Array.isArray(configured.extra))
-		throw new TypeError(
-			"Auth limits.extra must be an array of rate limit options",
-		);
 	// Built at startup, so later changes to the options cannot disable admission.
-	const extra = Array.from(configured.extra ?? [], (policy) =>
-		limiter("limits.extra", policy),
-	);
-	const ceiling =
-		configured.guard === undefined
-			? []
-			: [limiter("limits.guard", configured.guard)];
 	const limits = {
-		register: [
-			limiter("limits.register", configured.register ?? {}, {
-				name: "auth:register:" + options.origin,
-				limit: 5,
-				interval: 600000,
-			}),
-			...extra,
-		],
-		login: [
-			limiter("limits.login", configured.login ?? {}, {
-				name: "auth:login:" + options.origin,
-				limit: 20,
-				interval: 60000,
-			}),
-			...extra,
-		],
+		register: limiter("limits.register", configured.register ?? {}, {
+			name: "auth:register:" + options.origin,
+			limit: 5,
+			interval: 600000,
+		}),
+		login: limiter("limits.login", configured.login ?? {}, {
+			name: "auth:login:" + options.origin,
+			limit: 20,
+			interval: 60000,
+		}),
 	};
 	const paths = {
-		register: options.paths?.register ?? "/auth/register",
-		login: options.paths?.login ?? "/auth/login",
-		logout: options.paths?.logout ?? "/auth/logout",
+		register: "/auth/register",
+		login: "/auth/login",
+		logout: "/auth/logout",
 		options: "/_passkey/options",
 		client: "/_passkey/client.js",
 	};
@@ -126,37 +109,29 @@ export function configure<Shape extends Form.Shape>(
 		c: Limiter.Context & Pick<Context, "text" | "redirect">,
 		method: "register" | "login",
 		prompt: boolean,
-		policies: readonly Limiter[],
 	) => {
-		for (const limiter of policies) {
-			const admission = await limiter
-				.check(c, prompt ? "options" : "verify")
-				.catch((cause: unknown) => {
-					throw new LimitIssue("Authentication rate limit unavailable", {
-						cause,
-					});
+		const admission = await limits[method]
+			.check(c, prompt ? "options" : "verify")
+			.catch((cause: unknown) => {
+				throw new LimitIssue("Authentication rate limit unavailable", {
+					cause,
 				});
-			if (admission !== true) {
-				if (!(admission instanceof Date))
-					throw new TypeError("Invalid auth admission result");
-				const now = Date.now();
-				const deadline = admission.getTime();
-				if (!Number.isSafeInteger(deadline))
-					throw new TypeError("Invalid auth retry deadline");
-				const retry = Math.min(now + 3600000, Math.max(now + 1000, deadline));
-				if (!prompt) {
-					back(c, method, retry);
-					return false;
-				}
-				c.res.headers.set(
-					"retry-after",
-					String(Math.ceil((retry - now) / 1000)),
-				);
-				c.text("Too many authentication requests. Try again later.", 429);
-				return false;
-			}
+			});
+		if (admission === true) return true;
+		if (!(admission instanceof Date))
+			throw new TypeError("Invalid auth admission result");
+		const now = Date.now();
+		const deadline = admission.getTime();
+		if (!Number.isSafeInteger(deadline))
+			throw new TypeError("Invalid auth retry deadline");
+		const retry = Math.min(now + 3600000, Math.max(now + 1000, deadline));
+		if (!prompt) {
+			back(c, method, retry);
+			return false;
 		}
-		return true;
+		c.res.headers.set("retry-after", String(Math.ceil((retry - now) / 1000)));
+		c.text("Too many authentication requests. Try again later.", 429);
+		return false;
 	};
 	const guard =
 		(method: "register" | "login" | "logout", prompt = false) =>
@@ -177,14 +152,12 @@ export function configure<Shape extends Form.Shape>(
 					return back(c, method);
 				}
 				// Network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header.
-				if (method !== "logout") {
-					if (!(await admit(c, method, prompt, ceiling))) return;
-					if (
-						!(prompt && method === "register") &&
-						!(await admit(c, method, prompt, limits[method]!))
-					)
-						return;
-				}
+				if (
+					method !== "logout" &&
+					!(prompt && method === "register") &&
+					!(await admit(c, method, prompt))
+				)
+					return;
 				await next();
 			} catch (error) {
 				try {
@@ -255,7 +228,7 @@ export function configure<Shape extends Form.Shape>(
 				if (!invalid.length) throw input;
 				return c.json({ fields: invalid }, 422);
 			}
-			if (!(await admit(c, "register", true, limits.register!))) return;
+			if (!(await admit(c, "register", true))) return;
 			// The reserved bootstrap field is added to the validated application shape above.
 			const data = input.data as Form.Parse.Data<Shape> & { bootstrap: string };
 			await Passkey.issue(

@@ -94,9 +94,9 @@ export function routes(db: Store, service: ReturnType<typeof configure>) {
 		const { Logout } = service.forms(c);
 		const Layout = createLayout(c);
 		const credentials = await db.sql`
-			SELECT * FROM ${db.ovr_credentials}
-			WHERE ${db.ovr_credentials.columns.user} = ${user.id} ORDER BY id
-		`.parse(db.ovr_credentials);
+			SELECT * FROM ${db.auth_credentials}
+			WHERE ${db.auth_credentials.columns.user} = ${user.id} ORDER BY id
+		`.parse(db.auth_credentials);
 
 		return (
 			<Layout head={<Meta {...content.frontmatter} />}>

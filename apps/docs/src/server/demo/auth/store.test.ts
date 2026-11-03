@@ -38,11 +38,11 @@ describe("demo database", () => {
 		const id = crypto.randomUUID();
 		await db.transaction(async (t) => {
 			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id, email: "a@example.com" })}`;
-			await t.sql`INSERT INTO ${db.ovr_credentials} ${t.sql.values(db.ovr_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
-			await t.sql`INSERT INTO ${db.ovr_sessions} ${t.sql.values(db.ovr_sessions, { id: "s", user: id, expiration: Date.now() + 60000 })}`;
+			await t.sql`INSERT INTO ${db.auth_credentials} ${t.sql.values(db.auth_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
+			await t.sql`INSERT INTO ${db.auth_sessions} ${t.sql.values(db.auth_sessions, { id: "s", user: id, expiration: Date.now() + 60000 })}`;
 		});
 		await db.sql`DELETE FROM ${users}`;
-		expect(await db.sql`SELECT * FROM ${db.ovr_credentials}`).toEqual([]);
-		expect(await db.sql`SELECT * FROM ${db.ovr_sessions}`).toEqual([]);
+		expect(await db.sql`SELECT * FROM ${db.auth_credentials}`).toEqual([]);
+		expect(await db.sql`SELECT * FROM ${db.auth_sessions}`).toEqual([]);
 	});
 });

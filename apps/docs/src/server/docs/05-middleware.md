@@ -150,9 +150,9 @@ app.fetch(request, { ip });
 
 The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Missing/invalid identity or limiter storage failures return HTTP 503; exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`.
 
-`database` is required. Optional settings are `limit`, `interval` (milliseconds), `name`, `prefix`, `key`, and `error`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. `prefix` sets the IPv6 grouping from 1 to 128 bits, defaulting to 64, without changing IPv4. For example, use an additional `/48` policy to limit callers rotating through multiple `/64` networks. NAT64 and other translated addresses may share a prefix; choose a suitable prefix or custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
+`database` is required. Optional settings are `limit`, `interval` (milliseconds), `name`, and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
-Buckets are stored in `Limiter.table`, named `ovr_limits`. Include it in your database's tables and add `Limiter.sql[1]` to your migrations. `Auth.tables` and `Auth.sql[1]` already include both, so an app using Auth adds nothing.
+Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables and add `Limiter.sql[1]` to your migrations. `Auth.tables` and `Auth.sql[1]` already include both, so an app using Auth adds nothing.
 
 ```ts
 await db.migrate([...files, { id: "0002_limits", sql: Limiter.sql[1] }]);
@@ -160,10 +160,10 @@ await db.migrate([...files, { id: "0002_limits", sql: Limiter.sql[1] }]);
 
 Each admitted request refills and consumes a token in one atomic statement, so every worker shares one budget and a fresh function instance does not receive a fresh budget. Expired buckets are deleted as new ones are written. Database failures fail closed. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. The default name is `requests`: identical policies with the same name, scope, and identity intentionally share a budget. Give independent route quotas distinct stable names. Changing a policy creates a fresh bucket.
 
-Middleware failures are reported through `error(error, c)`, defaulting to `console.error`. A failing error callback is logged too, and the response remains a generic 503. Direct `check()` calls throw failures for their caller to handle; Auth reports them through its own `error` callback.
+Middleware failures are logged with `console.error`, and the response is a generic 503. Direct `check()` calls throw failures for their caller to handle; Auth reports them through its own `error` callback.
 
 Network-level and distributed abuse protection still belong at your deployment edge.
 
 Use `app.use(limiter.middleware)` to apply a limiter globally. That includes auth routes and logout too; prefer selected routes when you want those requests to remain independent of a general application quota. The auth service's own policies always bypass logout.
 
-When composing client and aggregate middleware, check the client policy before tighter shared quotas. Every successful check consumes its token even if a later policy denies, so placing a tight aggregate quota first lets an already-blocked client drain shared capacity. Authentication's `limits.extra` automatically places additional quotas after its client policy. Its optional `limits.guard` is a separate, generous request ceiling before client record creation; it counts blocked attempts too and has a deliberate capacity-versus-availability tradeoff.
+When composing client and aggregate middleware, check the client policy before tighter shared quotas. Every successful check consumes its token even if a later policy denies, so placing a tight aggregate quota first lets an already-blocked client drain shared capacity.

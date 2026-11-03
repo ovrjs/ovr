@@ -65,7 +65,7 @@ export namespace Storage {
 /** Authentication persistence in the application's Postgres database. */
 export class Storage {
 	/** Registered passkeys. */
-	static readonly credentials = new Table("ovr_credentials", {
+	static readonly credentials = new Table("auth_credentials", {
 		id: Schema.string(),
 		user: Schema.string(),
 		publicKey: Schema.string(),
@@ -75,14 +75,14 @@ export class Storage {
 	});
 
 	/** Revocable sessions. */
-	static readonly sessions = new Table("ovr_sessions", {
+	static readonly sessions = new Table("auth_sessions", {
 		id: Schema.string(),
 		user: Schema.string(),
 		expiration: Schema.number().int(),
 	});
 
 	/** Outstanding WebAuthn ceremonies. */
-	static readonly challenges = new Table("ovr_challenges", {
+	static readonly challenges = new Table("auth_challenges", {
 		id: Schema.string(),
 		challenge: Schema.string(),
 		browser: Schema.string(),
@@ -95,7 +95,7 @@ export class Storage {
 	});
 
 	/** Authorization codes, access tokens, and refresh tokens, by hash. */
-	static readonly tokens = new Table("ovr_tokens", {
+	static readonly tokens = new Table("auth_tokens", {
 		id: Schema.string(),
 		// a used code or refresh token is kept as "spent" to detect replays
 		kind: Schema.enum(["code", "access", "refresh", "spent"]),
@@ -204,7 +204,7 @@ export class Storage {
 
 				// one exchange per family at a time, so a revocation waits for tokens
 				// being issued and its snapshot, taken after the lock, includes them
-				await t.sql`SELECT pg_advisory_xact_lock(hashtext('ovr_tokens'), hashtext(${family}))`;
+				await t.sql`SELECT pg_advisory_xact_lock(hashtext('auth_tokens'), hashtext(${family}))`;
 
 				const [row] = await t.sql`
 					UPDATE ${Storage.tokens} SET kind = 'spent'
@@ -288,7 +288,7 @@ export class Storage {
 			return this.#db.transaction(async (t) => {
 				// one writer at a time, so concurrent requests cannot share the last
 				// slot; the insert's snapshot is taken after the lock
-				await t.sql`SELECT pg_advisory_xact_lock(hashtext('ovr_challenges'))`;
+				await t.sql`SELECT pg_advisory_xact_lock(hashtext('auth_challenges'))`;
 
 				const rows = await t.sql`
 					INSERT INTO ${table} (id, challenge, browser, method, action, origin, expiration, "user", fields)

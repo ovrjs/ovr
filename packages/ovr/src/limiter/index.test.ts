@@ -45,13 +45,18 @@ const broken = (failure: Error) =>
 // only Date, PGlite needs real timers
 beforeEach(async () => {
 	vi.useFakeTimers({ toFake: ["Date"] });
-	await engine.exec("TRUNCATE ovr_limits");
+	// failures are logged
+	vi.spyOn(console, "error").mockImplementation(() => {});
+	await engine.exec("TRUNCATE rate_limits");
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+	vi.useRealTimers();
+	vi.restoreAllMocks();
+});
 afterAll(() => engine.close());
 
 function setup(options: Partial<Limiter.Options> = {}) {
-	const limiter = new Limiter({ database: db, error: vi.fn(), ...options });
+	const limiter = new Limiter({ database: db, ...options });
 	const hit = vi.fn();
 	const app = new App().use(
 		Route.get("/limited").use(limiter.middleware, (c) => {
@@ -66,7 +71,7 @@ function setup(options: Partial<Limiter.Options> = {}) {
 }
 
 const buckets = () =>
-	db.sql`SELECT * FROM ${db.ovr_limits} ORDER BY key`.parse(db.ovr_limits);
+	db.sql`SELECT * FROM ${db.rate_limits} ORDER BY key`.parse(db.rate_limits);
 
 describe("token buckets", () => {
 	test("supplies the default policy and refills continuously", async () => {
@@ -150,9 +155,6 @@ describe("token buckets", () => {
 		{ interval: 0 },
 		{ interval: Infinity },
 		{ name: "" },
-		{ prefix: 0 },
-		{ prefix: 129 },
-		{ prefix: 48.5 },
 	])("rejects invalid policies: %j", (options) => {
 		expect(() => setup(options)).toThrow("Invalid limiter");
 	});
@@ -195,21 +197,11 @@ describe("trusted identities", () => {
 		expect((await state.fetch("::ffff:192.0.2.2")).status).toBe(200);
 	});
 
-	test.each([48, 53, 56, 128])("supports IPv6 /%i grouping", async (prefix) => {
-		const state = setup({ limit: 1, prefix });
+	test("groups IPv6 addresses by /64 network", async () => {
+		const state = setup({ limit: 1 });
 		expect((await state.fetch("2001:db8:1234:abcd::1")).status).toBe(200);
-		expect((await state.fetch("2001:0DB8:1234:ABCD::1")).status).toBe(429);
-		expect((await state.fetch("2001:db8:1234:abce::1")).status).toBe(
-			prefix === 128 ? 200 : 429,
-		);
-		expect((await state.fetch("2001:db8:1235:abcd::1")).status).toBe(200);
-	});
-
-	test("masks partial IPv6 groups at the exact prefix boundary", async () => {
-		const state = setup({ limit: 1, prefix: 53 });
-		expect((await state.fetch("2001:db8:1234:a800::1")).status).toBe(200);
-		expect((await state.fetch("2001:db8:1234:afff::2")).status).toBe(429);
-		expect((await state.fetch("2001:db8:1234:b000::1")).status).toBe(200);
+		expect((await state.fetch("2001:0DB8:1234:ABCD::2")).status).toBe(429);
+		expect((await state.fetch("2001:db8:1234:abce::1")).status).toBe(200);
 	});
 
 	test.each([
@@ -259,35 +251,14 @@ test("retry deadlines round up and stay between one second and one hour", async 
 	expect(slow.hit).toHaveBeenCalledOnce();
 });
 
-test("middleware reports failures without exposing them or admitting requests", async () => {
-	const error = vi.fn();
+test("middleware logs failures without exposing them or admitting requests", async () => {
 	const failure = new Error("private storage details");
-	const state = setup({ database: broken(failure), error });
+	const state = setup({ database: broken(failure) });
 	const response = await state.fetch();
 	expect(response.status).toBe(503);
 	expect(await response.text()).not.toContain("private storage");
-	expect(error).toHaveBeenCalledWith(
-		failure,
-		expect.objectContaining({ ip: "192.0.2.1" }),
-	);
+	expect(console.error).toHaveBeenCalledWith(failure);
 	expect(state.hit).not.toHaveBeenCalled();
-	const log = vi.spyOn(console, "error").mockImplementation(() => {});
-	try {
-		const fallback = new App().use(
-			new Limiter({ database: broken(failure) }).middleware,
-		);
-		expect(
-			(await fallback.fetch("https://example.com", { ip: "192.0.2.1" })).status,
-		).toBe(503);
-		expect(log).toHaveBeenCalledWith(failure);
-		error.mockRejectedValue(new Error("logger unavailable"));
-		expect((await state.fetch()).status).toBe(503);
-		expect(log).toHaveBeenCalledWith(
-			expect.objectContaining({ message: "logger unavailable" }),
-		);
-	} finally {
-		log.mockRestore();
-	}
 });
 
 test("separate workers share buckets through the database", async () => {

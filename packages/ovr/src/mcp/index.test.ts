@@ -88,7 +88,7 @@ function setup() {
 		});
 
 	const remove = Route.post("/posts/:id/delete")
-		.describe("Delete a post", { name: "delete_post", destructive: true })
+		.describe("Delete a post", { destructive: true })
 		.use((c) => {
 			if (!posts.delete(c.params.id)) return c.text("Not Found", 404);
 			return c.redirect(list, 303);
@@ -99,7 +99,7 @@ function setup() {
 		.use(() => "secret");
 
 	const app = new App().use(
-		new Mcp({ name: "posts", version: "2.0.0", instructions: "Manage posts." }),
+		new Mcp({ name: "posts", instructions: "Manage posts." }),
 		list,
 		show,
 		search,
@@ -135,14 +135,14 @@ describe("Mcp", () => {
 		const origins: string[] = [];
 		app.use(
 			Route.post("/*")
-				.describe("Catch all", { name: "catch_all" })
+				.describe("Catch all")
 				.use((c) => {
 					origins.push(c.url.origin);
 					return "ok";
 				}),
 		);
 		await rpc("tools/call", {
-			name: "catch_all",
+			name: "post_wildcard",
 			arguments: { wildcard: "/other.example/private" },
 		});
 		expect(origins).not.toContain("http://other.example");
@@ -207,7 +207,7 @@ describe("Mcp", () => {
 			let called = false;
 			app.use(
 				Route.post("/edit/:id")
-					.describe("Edit one item", { name: "edit_item" })
+					.describe("Edit one item")
 					.use(() => "edited"),
 				Route.post("/edit/private")
 					.describe(false)
@@ -220,7 +220,7 @@ describe("Mcp", () => {
 						called = true;
 					}),
 			);
-			await rpc("tools/call", { name: "edit_item", arguments: { id } });
+			await rpc("tools/call", { name: "post_edit_id", arguments: { id } });
 			expect(called).toBe(false);
 		},
 	);
@@ -301,7 +301,7 @@ describe("Mcp", () => {
 			_meta: {
 				"io.modelcontextprotocol/serverInfo": {
 					name: "posts",
-					version: "2.0.0",
+					version: "1.0.0",
 				},
 			},
 		});
@@ -316,7 +316,7 @@ describe("Mcp", () => {
 			"get_posts",
 			"get_search",
 			"post_posts",
-			"delete_post",
+			"post_posts_id_delete",
 		]);
 		expect(body.result).toMatchObject({ ttlMs: 60000, cacheScope: "public" });
 
@@ -390,7 +390,7 @@ describe("Mcp", () => {
 		const { rpc, posts } = setup();
 
 		const missing = await rpc("tools/call", {
-			name: "delete_post",
+			name: "post_posts_id_delete",
 			arguments: {},
 		});
 		expect(missing.body.result).toMatchObject({
@@ -399,13 +399,16 @@ describe("Mcp", () => {
 		});
 
 		const gone = await rpc("tools/call", {
-			name: "delete_post",
+			name: "post_posts_id_delete",
 			arguments: { id: "9" },
 		});
 		expect(gone.body.result.isError).toBe(true);
 		expect(gone.body.result.content[0].text).toContain("404");
 
-		await rpc("tools/call", { name: "delete_post", arguments: { id: "1" } });
+		await rpc("tools/call", {
+			name: "post_posts_id_delete",
+			arguments: { id: "1" },
+		});
 		expect(posts.has("1")).toBe(false);
 
 		const search = await rpc("tools/call", {
@@ -555,9 +558,10 @@ describe("Mcp", () => {
 	test("two routes cannot share a tool name", async () => {
 		const { app, rpc } = setup();
 		app.use(
-			Route.post("/archive").describe("Archive", { name: "delete_post" }),
+			Route.post("/posts.new").describe("Draft a post"),
+			Route.post("/posts_new").describe("Create a post"),
 		);
-		await expect(rpc("tools/list")).rejects.toThrow(/"delete_post"/);
+		await expect(rpc("tools/list")).rejects.toThrow(/"post_posts_new"/);
 	});
 
 	test("rejects other origins, other methods, and malformed requests", async () => {
