@@ -56,22 +56,14 @@ export namespace Route {
 		| "PATCH"
 		| (string & {});
 
-	/** Agent options from `route.describe()`. */
-	export type Describe = {
-		/** The route deletes or overwrites data, so agents should confirm first */
-		readonly destructive?: boolean | undefined;
-	};
-
 	/** How agents call a route, from `route.tool`. */
 	export type Tool = {
 		/** Tool name, for example `post_posts_id_delete` */
 		readonly name: string;
 		/** What the tool does */
 		readonly description: string;
-		/** Only reads, a GET */
+		/** Only reads, a GET; other tools may change data, so agents can confirm them */
 		readonly read: boolean;
-		/** Deletes or overwrites data */
-		readonly destructive: boolean;
 	};
 
 	/**
@@ -337,9 +329,6 @@ export class Route<
 	/** Description for agents, `false` hides the route from them */
 	description?: string | false;
 
-	/** Agent options from `describe` */
-	agent: Route.Describe = {};
-
 	/** Schemas that check and convert pattern parameters */
 	paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
 
@@ -420,12 +409,7 @@ export class Route<
 					56,
 				)}_${Checksum.djb2(`${this.method} ${this.pattern}`).slice(0, 7)}`;
 
-		return {
-			name,
-			description: this.description,
-			read,
-			destructive: !read && Boolean(this.agent.destructive),
-		};
+		return { name, description: this.description, read };
 	}
 
 	/**
@@ -433,12 +417,10 @@ export class Route<
 	 * `false` hides the route from agents.
 	 *
 	 * @param description What the route does, written for an agent
-	 * @param options Hints for agents
 	 * @returns The route
 	 */
-	describe(description: string | false, options: Route.Describe = {}) {
+	describe(description: string | false) {
 		this.description = description;
-		this.agent = options;
 		return this;
 	}
 
@@ -633,8 +615,8 @@ export class Route<
 						!/[:*]/.test(route.pattern) && {
 							toolname: tool.name,
 							tooldescription: tool.description,
-							// the user confirms destructive changes by submitting
-							toolautosubmit: !tool.destructive,
+							// a form that may change data waits for the user to submit it
+							toolautosubmit: tool.read,
 						}),
 					...rest,
 				});

@@ -60,7 +60,7 @@ const create = Route.post("/posts")
 	.use(handler);
 
 const remove = Route.post("/posts/:id/delete")
-	.describe("Delete a post permanently", { destructive: true })
+	.describe("Delete a post permanently")
 	.params({ id: Schema.string().uuid() })
 	.use(handler);
 ```
@@ -122,10 +122,9 @@ The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specifi
 	method="POST"
 	toolname="post_posts"
 	tooldescription="Create a blog post"
-	toolautosubmit
 ></form>
 ```
 
-With `toolautosubmit`, the agent submits the form itself, and sees the page it redirects to. Destructive routes leave it out, so the user confirms by clicking. Forms of routes with parameters, like a delete button in each row, would repeat the name, so they are not annotated; when one is the only form on its page, pass `toolname` and `tooldescription` yourself. Undescribed and hidden routes are never annotated, so an agent cannot sign in or approve itself.
+A form that may change data waits for the user to submit it, after the agent fills it in. GET forms, such as a search, add `toolautosubmit`, so the agent submits them itself and sees the results. Forms of routes with parameters, like a delete button in each row, would repeat the name, so they are not annotated; when one is the only form on its page, pass `toolname` and `tooldescription` yourself. Undescribed and hidden routes are never annotated, so an agent cannot sign in or approve itself.
 
 Browsers without WebMCP ignore the attributes. It is in a Chrome origin trial, so add your trial token to pages to enable it for users.

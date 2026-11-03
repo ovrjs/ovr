@@ -210,7 +210,6 @@ export function configure<U extends Auth.Users>(
 		};
 	const register = Passkey.prepare(
 		Route.post(paths.register)
-			.describe(false)
 			.fields(shape)
 			.use(guard("register"), async (c) => {
 				// the users table's fields, only known at runtime
@@ -232,7 +231,6 @@ export function configure<U extends Auth.Users>(
 	);
 	const login = Passkey.prepare(
 		Route.post(paths.login)
-			.describe(false)
 			.fields({})
 			.use(guard("login"), async (c) => {
 				// Bound the body before verification.
@@ -244,14 +242,11 @@ export function configure<U extends Auth.Users>(
 				c.redirect(state(c).resume(redirect), 303);
 			}),
 	);
-	const logout = Route.post(paths.logout)
-		.describe(false)
-		.use(guard("logout"), async (c) => {
-			await state(c).logout();
-			c.redirect(page, 303);
-		});
+	const logout = Route.post(paths.logout).use(guard("logout"), async (c) => {
+		await state(c).logout();
+		c.redirect(page, 303);
+	});
 	const registration = Route.post(`${paths.options}/register`)
-		.describe(false)
 		.fields({ ...shape, bootstrap: Field.hidden() })
 		.use(guard("register", true), async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });
@@ -279,7 +274,6 @@ export function configure<U extends Auth.Users>(
 			);
 		});
 	const assertion = Route.post(`${paths.options}/login`)
-		.describe(false)
 		.fields({ bootstrap: Field.hidden() })
 		.use(guard("login", true), async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });

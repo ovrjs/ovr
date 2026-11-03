@@ -44,7 +44,7 @@ recovery are separate product choices.
 ## Agents
 
 The described routes are MCP tools: `post_bookmarks` saves, `post_bookmarks_id`
-edits, and `post_bookmarks_id_delete` deletes, marked destructive. The list and
+edits, and `post_bookmarks_id_delete` deletes; agents' clients can confirm each with the user. The list and
 edit pages are read-only tools, and every page is a Markdown resource. An agent
 connecting to `/mcp` signs in through OAuth: the user logs in with their passkey
 and approves it on `/connect`, and its tool calls run the same handlers as that

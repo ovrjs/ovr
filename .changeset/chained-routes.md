@@ -12,6 +12,6 @@ const create = Route.post("/posts", { title }, handler);
 const create = Route.post("/posts").fields({ title }).use(handler);
 ```
 
-Each step returns the route. `route.params(schemas)` checks and converts pattern parameters before the middleware runs, types `c.params` with the converted values, and responds 404 when one fails. `route.describe(text, { destructive })` describes the route for AI agents, and `describe(false)` hides it. `Route.post(pattern)` requires a pattern, the generated hash patterns are removed.
+Each step returns the route. `route.params(schemas)` checks and converts pattern parameters before the middleware runs, types `c.params` with the converted values, and responds 404 when one fails. `route.describe(text)` describes the route for AI agents, and `describe(false)` hides it. `Route.post(pattern)` requires a pattern, the generated hash patterns are removed.
 
 `route.middleware` is read-only; add middleware with `use`. A route with fields renders its fields and submit button in `Form` by default whenever `fields` is called.

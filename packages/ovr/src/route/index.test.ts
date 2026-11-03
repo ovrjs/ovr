@@ -705,20 +705,23 @@ describe("chained routes", () => {
 		const render = (element: unknown) =>
 			new Render(null).string(element as Parameters<Render["string"]>[0]);
 
+		// a form that may change data waits for the user to submit it
 		const create = Route.post("/posts")
 			.describe("Create a post")
 			.fields({ title: Field.text() });
-		expect(await render(create.Form({}))).toContain(
-			'toolname="post_posts" tooldescription="Create a post" toolautosubmit',
+		const created = await render(create.Form({}));
+		expect(created).toContain(
+			'toolname="post_posts" tooldescription="Create a post"',
 		);
+		expect(created).not.toContain("toolautosubmit");
 
-		// the user confirms destructive changes
-		const clear = Route.post("/posts/clear").describe("Delete every post", {
-			destructive: true,
-		});
-		const cleared = await render(clear.Form({}));
-		expect(cleared).toContain('toolname="post_posts_clear"');
-		expect(cleared).not.toContain("toolautosubmit");
+		// a search the agent submits itself
+		const search = Route.get("/search")
+			.describe("Search posts")
+			.fields({ q: Field.search() });
+		expect(await render(search.Form({}))).toContain(
+			'toolname="get_search" tooldescription="Search posts" toolautosubmit',
+		);
 
 		// a form per record would repeat the name, and only described routes are tools
 		const remove = Route.post("/posts/:id/delete").describe("Delete a post");
@@ -752,13 +755,16 @@ describe("chained routes", () => {
 		expect(route.description).toBe("List posts");
 	});
 
-	test("describe stores agent options, and false hides the route", () => {
-		const remove = Route.post("/posts/:id/delete").describe("Delete a post", {
-			destructive: true,
-		});
+	test("describe stores the description, and false hides the route", () => {
+		const remove = Route.post("/posts/:id/delete").describe("Delete a post");
 		const hidden = Route.post("/internal").describe(false);
 
-		expect(remove.agent).toEqual({ destructive: true });
+		expect(remove.description).toBe("Delete a post");
+		expect(remove.tool).toEqual({
+			name: "post_posts_id_delete",
+			description: "Delete a post",
+			read: false,
+		});
 		expect(hidden.description).toBe(false);
 	});
 

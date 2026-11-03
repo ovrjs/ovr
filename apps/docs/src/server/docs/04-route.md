@@ -152,15 +152,15 @@ const remove = Route.post("/posts/:id/delete").use((c) => {
 
 ```ts
 const remove = Route.post("/posts/:id/delete")
-	.describe("Delete a post permanently", { destructive: true })
+	.describe("Delete a post permanently")
 	.use(async (c) => {
 		// ...
 	});
 ```
 
-`destructive: true` marks a route that deletes or overwrites data, so agents confirm with the user first. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
+GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
 
-`describe(false)` also hides a page from agents, which can otherwise read it as Markdown. Auth's routes are hidden this way.
+`describe(false)` also hides a page from agents, which can otherwise read it as Markdown. Auth hides its pages, such as its browser script, this way.
 
 ## Props
 

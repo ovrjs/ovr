@@ -98,7 +98,7 @@ const update = Route.post("/bookmarks/:id")
 	});
 
 const remove = Route.post("/bookmarks/:id/delete")
-	.describe("Delete a bookmark", { destructive: true })
+	.describe("Delete a bookmark")
 	.params({ id })
 	.use(async (c) => {
 		const session = await c.session();

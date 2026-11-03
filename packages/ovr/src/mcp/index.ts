@@ -140,9 +140,7 @@ export class Mcp {
 		const { path, auth } = this.#options;
 
 		const routes: Route[] = [
-			Route.post(path)
-				.describe(false)
-				.use((c) => this.#handle(c)),
+			Route.post(path).use((c) => this.#handle(c)),
 			// only POST is used, there are no streams to open or sessions to end
 			...[Method.get, "DELETE"].map((method) =>
 				new Route(method, path).describe(false).use((c) => {
@@ -512,11 +510,9 @@ export class Mcp {
 						properties,
 						...(required.size ? { required: [...required] } : {}),
 					},
-					annotations: {
-						readOnlyHint: read,
-						...(read ? {} : { destructiveHint: tool.destructive }),
-						openWorldHint: false,
-					},
+					// no destructiveHint, so clients treat any tool that writes as one
+					// that may need confirming
+					annotations: { readOnlyHint: read, openWorldHint: false },
 				},
 			});
 		}

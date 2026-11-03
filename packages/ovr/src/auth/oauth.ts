@@ -213,10 +213,7 @@ export function oauth(
 
 	const cross = (route: Route) => {
 		crossOrigin.add(route);
-		routes.push(
-			route,
-			new Route("OPTIONS", route.pattern).describe(false).use(cors),
-		);
+		routes.push(route, new Route("OPTIONS", route.pattern).use(cors));
 		return route;
 	};
 
@@ -270,7 +267,6 @@ export function oauth(
 
 	/** Starts the passkey prompt for allowing an agent */
 	const prompt = Route.post(paths.prompt)
-		.describe(false)
 		// the consent form's fields, the request is the one the passkey confirms
 		.fields({ request: Field.hidden(), bootstrap: Field.hidden() })
 		.use(async (c) => {
@@ -307,7 +303,6 @@ export function oauth(
 	 */
 	const approve = Passkey.prepare(
 		Route.post(paths.approve)
-			.describe(false)
 			.fields({ request: Field.hidden() })
 			.use(async (c) => {
 				c.res.headers.set(Header.name.cache, "no-store");
@@ -352,7 +347,6 @@ export function oauth(
 
 	/** Denies the agent, which needs no passkey */
 	const deny = Route.post(paths.deny)
-		.describe(false)
 		// the consent form's fields, the passkey inputs are empty
 		.fields({
 			request: Field.hidden(),
@@ -491,77 +485,75 @@ export function oauth(
 	);
 
 	cross(
-		Route.post(paths.token)
-			.describe(false)
-			.use(cors, async (c) => {
-				if (!(await admit(c, limiter))) return;
+		Route.post(paths.token).use(cors, async (c) => {
+			if (!(await admit(c, limiter))) return;
 
-				const text = await body(c);
-				if (text === undefined) return fail(c, "invalid_request");
-				const params = new URLSearchParams(text);
-				const grant = params.get("grant_type");
-				const client = params.get("client_id");
-				const resource = params.get("resource");
+			const text = await body(c);
+			if (text === undefined) return fail(c, "invalid_request");
+			const params = new URLSearchParams(text);
+			const grant = params.get("grant_type");
+			const client = params.get("client_id");
+			const resource = params.get("resource");
 
-				const code = grant === "authorization_code";
-				if (!code && grant !== "refresh_token")
-					return fail(c, "unsupported_grant_type");
+			const code = grant === "authorization_code";
+			if (!code && grant !== "refresh_token")
+				return fail(c, "unsupported_grant_type");
 
-				const access = random();
-				const refresh = random();
-				let error = "invalid_grant";
+			const access = random();
+			const refresh = random();
+			let error = "invalid_grant";
 
-				// codes and refresh tokens are used once, refresh tokens rotate
-				const issued = await storage.tokens.exchange(
-					params.get(code ? "code" : "refresh_token") ?? "",
-					code ? "code" : "refresh",
-					async (token) => {
-						if (token.client !== client) return;
-						if (code) {
-							const verifier = params.get("code_verifier") ?? "";
-							if (
-								token.redirect !== params.get("redirect_uri") ||
-								!/^[\w.~-]{43,128}$/.test(verifier) ||
-								(await hash(verifier)) !== token.challenge
-							)
-								return;
-						}
-						if (resource !== token.resource) {
-							error = "invalid_target";
+			// codes and refresh tokens are used once, refresh tokens rotate
+			const issued = await storage.tokens.exchange(
+				params.get(code ? "code" : "refresh_token") ?? "",
+				code ? "code" : "refresh",
+				async (token) => {
+					if (token.client !== client) return;
+					if (code) {
+						const verifier = params.get("code_verifier") ?? "";
+						if (
+							token.redirect !== params.get("redirect_uri") ||
+							!/^[\w.~-]{43,128}$/.test(verifier) ||
+							(await hash(verifier)) !== token.challenge
+						)
 							return;
-						}
+					}
+					if (resource !== token.resource) {
+						error = "invalid_target";
+						return;
+					}
 
-						const now = Date.now();
-						const row = {
-							user: token.user,
-							client: token.client,
-							resource: token.resource,
-							scope: token.scope,
-						};
+					const now = Date.now();
+					const row = {
+						user: token.user,
+						client: token.client,
+						resource: token.resource,
+						scope: token.scope,
+					};
 
-						return {
-							[access]: {
-								...row,
-								kind: "access",
-								expiration: now + lifetime.access,
-							},
-							[refresh]: {
-								...row,
-								kind: "refresh",
-								expiration: now + lifetime.refresh,
-							},
-						};
-					},
-				);
-				if (!issued) return fail(c, error);
+					return {
+						[access]: {
+							...row,
+							kind: "access",
+							expiration: now + lifetime.access,
+						},
+						[refresh]: {
+							...row,
+							kind: "refresh",
+							expiration: now + lifetime.refresh,
+						},
+					};
+				},
+			);
+			if (!issued) return fail(c, error);
 
-				c.json({
-					access_token: access,
-					token_type: "Bearer",
-					expires_in: lifetime.access / Time.second,
-					refresh_token: refresh,
-				});
-			}),
+			c.json({
+				access_token: access,
+				token_type: "Bearer",
+				expires_in: lifetime.access / Time.second,
+				refresh_token: refresh,
+			});
+		}),
 	);
 
 	return {

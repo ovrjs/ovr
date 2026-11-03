@@ -88,7 +88,7 @@ function setup() {
 		});
 
 	const remove = Route.post("/posts/:id/delete")
-		.describe("Delete a post", { destructive: true })
+		.describe("Delete a post")
 		.use((c) => {
 			if (!posts.delete(c.params.id)) return c.text("Not Found", 404);
 			return c.redirect(list, 303);
@@ -367,9 +367,9 @@ describe("Mcp", () => {
 		expect(search.description).toBe("Search posts");
 		expect(Object.keys(search.inputSchema.properties)).toEqual(["q"]);
 		expect(create.inputSchema.properties.title).toMatchObject({ minLength: 3 });
+		// writes claim nothing more, so clients treat them as possibly destructive
 		expect(create.annotations).toEqual({
 			readOnlyHint: false,
-			destructiveHint: false,
 			openWorldHint: false,
 		});
 		expect(remove.inputSchema).toEqual({
@@ -377,7 +377,7 @@ describe("Mcp", () => {
 			properties: { id: { type: "string" } },
 			required: ["id"],
 		});
-		expect(remove.annotations.destructiveHint).toBe(true);
+		expect(remove.annotations).not.toHaveProperty("destructiveHint");
 	});
 
 	test("tools call the route and follow its redirect", async () => {
