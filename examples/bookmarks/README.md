@@ -5,7 +5,7 @@ A small application written against the current `next` branch. Start with
 
 | File                                                                 | Responsibility                                                    |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [db.ts](./db.ts)                                                     | Account and bookmark schemas, reusable form fields, Postgres pool |
+| [database.ts](./database.ts)                                         | Account and bookmark schemas, reusable form fields, Postgres pool |
 | [auth.ts](./auth.ts)                                                 | Passkey configuration and transactional account creation          |
 | [app.tsx](./app.tsx)                                                 | Login, list, edit, create, update, delete, and logout UI          |
 | [migrations/0001_init.sql](./migrations/0001_init.sql)               | Application tables, constraints, indexes                          |
@@ -75,7 +75,7 @@ Set `DATABASE_URL`, `AUTH_ORIGIN` (an exact HTTPS origin, no trailing slash), an
 `AUTH_SECRET` (a stable random server secret containing at least 32 bytes). Run
 `migrate.ts` in the release step with a direct database connection; use the
 application's pooled connection for requests. Migrations are written SQL, and
-`db.check()` checks table compatibility without generating changes.
+`database.check()` checks table compatibility without generating changes.
 
 Connect `app` to your HTTPS server's Fetch adapter:
 
@@ -102,7 +102,7 @@ form state strategy that does not expose those values in URLs. `no-store` and
 A `Table` validates rows, its `shape` supplies form fields, and `sql.values` and
 `sql.set` handle validated writes. Raw SQL keeps ownership checks, unique
 constraints, and conflict handling visible. SQL migrations, with the
-versioned migrations Auth's tables bring, plus `db.check()` fit an AI-authored workflow without a
+versioned migrations Auth's tables bring, plus `database.check()` fit an AI-authored workflow without a
 schema diff engine or query builder.
 
 Writing this example led to `submit` labels on route forms, `Database.unique`

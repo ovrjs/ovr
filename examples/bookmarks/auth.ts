@@ -1,4 +1,4 @@
-import { db } from "./db.js";
+import { database } from "./database.js";
 import { Auth } from "ovr";
 
 if (!process.env.AUTH_SECRET || !process.env.AUTH_ORIGIN)
@@ -10,7 +10,7 @@ export const auth = new Auth({
 	origin: process.env.AUTH_ORIGIN,
 	page: "/login",
 	redirect: "/bookmarks",
-	database: db,
+	database,
 	// registering inserts the email, the table's form field
-	users: db.users,
+	users: database.users,
 });

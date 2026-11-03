@@ -134,10 +134,10 @@ const signup = Route.post("/signup")
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
 
-		const [user] = await db.sql`
-		INSERT INTO ${db.users} ${db.sql.values(db.users, result.data)}
+		const [user] = await database.sql`
+		INSERT INTO ${database.users} ${database.sql.values(database.users, result.data)}
 		ON CONFLICT (email) DO NOTHING RETURNING *
-	`.parse(db.users);
+	`.parse(database.users);
 		if (!user) {
 			const invalid = result.invalid({ email: "Already registered" });
 			return c.redirect(invalid.url, 303);

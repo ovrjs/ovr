@@ -1,4 +1,4 @@
-import { db, pool } from "./db.js";
+import { database, pool } from "./database.js";
 import { readFile, readdir } from "node:fs/promises";
 
 try {
@@ -11,9 +11,9 @@ try {
 				sql: await readFile(new URL(id, directory), "utf8"),
 			})),
 	);
-	// Auth's tables are listed in db.ts, so their migrations are applied first
-	const applied = await db.migrate(files);
-	const differences = await db.check();
+	// Auth's tables are listed in database.ts, so their migrations are applied first
+	const applied = await database.migrate(files);
+	const differences = await database.check();
 	if (differences.length) throw new Error(differences.join("\n"));
 	console.log({ applied });
 } finally {

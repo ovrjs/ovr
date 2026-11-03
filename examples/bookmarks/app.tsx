@@ -1,8 +1,8 @@
 import { auth } from "./auth.js";
-import { db } from "./db.js";
+import { database } from "./database.js";
 import { App, Database, type JSX, Mcp, Route } from "ovr";
 
-const { bookmarks } = db;
+const { bookmarks } = database;
 const { id, title, url } = bookmarks.shape;
 
 /** Short, public values, so these forms refill them after an error */
@@ -52,9 +52,9 @@ const create = Route.post("/bookmarks")
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
 
-		const [bookmark] = await db.sql`
+		const [bookmark] = await database.sql`
 			INSERT INTO ${bookmarks}
-			${db.sql.values(bookmarks, { ...result.data, owner: session.user })}
+			${database.sql.values(bookmarks, { ...result.data, owner: session.user })}
 			ON CONFLICT (owner, url) DO NOTHING
 			RETURNING *
 		`.parse(bookmarks);
@@ -78,8 +78,8 @@ const update = Route.post("/bookmarks/:id")
 		if (result.issues) return c.redirect(result.url, 303);
 
 		try {
-			const [bookmark] = await db.sql`
-				UPDATE ${bookmarks} SET ${db.sql.set(bookmarks, result.data)}
+			const [bookmark] = await database.sql`
+				UPDATE ${bookmarks} SET ${database.sql.set(bookmarks, result.data)}
 				WHERE id = ${c.params.id} AND owner = ${session.user}
 				RETURNING *
 			`.parse(bookmarks);
@@ -103,7 +103,7 @@ const remove = Route.post("/bookmarks/:id/delete")
 	.use(async (c) => {
 		const session = await c.session();
 		if (!session) return c.redirect(login, 303);
-		const [bookmark] = await db.sql`
+		const [bookmark] = await database.sql`
 			DELETE FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
 			RETURNING *
@@ -119,7 +119,7 @@ const list = Route.get("/bookmarks")
 		const session = await c.session();
 		if (!session) return c.redirect(login, 303);
 		const { Logout } = auth.forms(c);
-		const rows = await db.sql`
+		const rows = await database.sql`
 			SELECT * FROM ${bookmarks} WHERE owner = ${session.user}
 			ORDER BY created DESC, id DESC LIMIT 50
 		`.parse(bookmarks);
@@ -155,7 +155,7 @@ const edit = Route.get("/bookmarks/:id/edit")
 	.use(async (c) => {
 		const session = await c.session();
 		if (!session) return c.redirect(login, 303);
-		const [bookmark] = await db.sql`
+		const [bookmark] = await database.sql`
 			SELECT * FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
 		`.parse(bookmarks);

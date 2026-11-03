@@ -136,7 +136,7 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 
 	/**
 	 * Tables Auth stores its data in, include them in the database's tables.
-	 * `db.migrate` then creates them, and `db.check` checks them.
+	 * `database.migrate` then creates them, and `database.check` checks them.
 	 */
 	static readonly tables = [
 		Storage.credentials,

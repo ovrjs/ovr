@@ -32,4 +32,4 @@ export const pool = new Pool({
 });
 
 /** Tables describe row validation; constraints and indexes live in SQL. */
-export const db = new Database(pool, [users, bookmarks, ...Auth.tables]);
+export const database = new Database(pool, [users, bookmarks, ...Auth.tables]);

@@ -36,7 +36,7 @@ export class LimitIssue extends Error {}
 export class Limiter {
 	/**
 	 * Token buckets shared by every limiter, include it in the database's
-	 * tables. `db.migrate` then creates it, `Auth.tables` already includes it.
+	 * tables. `database.migrate` then creates it, `Auth.tables` already includes it.
 	 */
 	static readonly table = new Table("rate_limits", {
 		key: Schema.string(),

@@ -112,7 +112,7 @@ export class Storage {
 	/**
 	 * Migrations creating Auth's tables, by version. A version never changes,
 	 * so its checksum stays valid; later changes ship as new versions.
-	 * `db.migrate` applies them for a database with `Auth.tables`. User IDs
+	 * `database.migrate` applies them for a database with `Auth.tables`. User IDs
 	 * are text, so they hold any ID `auth.login` accepts.
 	 */
 	static readonly #migrations = [

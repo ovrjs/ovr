@@ -18,7 +18,7 @@ const users = new Table("users", {
 	email: Field.email({ label: "Email" }),
 });
 
-const db = new Database(
+const database = new Database(
 	new Pool({ connectionString: process.env.DATABASE_URL }),
 	[users, ...Auth.tables],
 );
@@ -26,7 +26,7 @@ const db = new Database(
 const auth = new Auth({
 	secret,
 	origin: "https://example.com",
-	database: db,
+	database,
 	users,
 });
 
@@ -197,21 +197,21 @@ await auth.logout(c); // Current session.
 await auth.revoke(c, id); // A selected session ID.
 ```
 
-To revoke all sessions for a user, delete their rows: ``db.sql`DELETE FROM ${db.auth_sessions} WHERE ${db.auth_sessions.columns.user} = ${user}` ``. `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
+To revoke all sessions for a user, delete their rows: ``database.sql`DELETE FROM ${database.auth_sessions} WHERE ${database.auth_sessions.columns.user} = ${user}` ``. `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
 
 Resolve sessions and prepare forms before returning JSX. Doing this inside an async component is too late to reliably set cookies, redirects, or response status.
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`db.migrate()`](/09-database#migrate) applies them, as `auth:1`, `auth:2`, and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`db.check()`](/09-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
+`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/09-database#migrate) applies them, as `auth:1`, `auth:2`, and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/09-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
 
 ```ts
-const db = new Database(pool, [users, posts, ...Auth.tables]);
+const database = new Database(pool, [users, posts, ...Auth.tables]);
 
-await db.migrate(files); // Auth's migrations, then your migrations/*.sql
+await database.migrate(files); // Auth's migrations, then your migrations/*.sql
 ```
 
-A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, which the next `db.migrate()` applies: `auth:2` added the table for [agents](#agents).
+A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, which the next `database.migrate()` applies: `auth:2` added the table for [agents](#agents).
 
 | Table              | Contents                                                      |
 | ------------------ | ------------------------------------------------------------- |
@@ -232,9 +232,9 @@ ALTER TABLE auth_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CA
 The tables are available on your database by name, for example to list an account's passkeys:
 
 ```ts
-const passkeys = await db.sql`
-	SELECT * FROM ${db.auth_credentials} WHERE ${db.auth_credentials.columns.user} = ${user}
-`.parse(db.auth_credentials);
+const passkeys = await database.sql`
+	SELECT * FROM ${database.auth_credentials} WHERE ${database.auth_credentials.columns.user} = ${user}
+`.parse(database.auth_credentials);
 ```
 
 The users table's form fields, other than `id`, are the registration form. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
@@ -270,7 +270,7 @@ A Fetch `Request` does not expose the socket peer. Use your server's connection 
 
 ```ts
 const ceiling = new Limiter({
-	database: db,
+	database,
 	name: "auth:all",
 	limit: 100,
 	key: () => "all",
@@ -353,14 +353,14 @@ In a tool call, `c.session()` returns the session of the user who approved the a
 To list and disconnect an account's agents, query its refresh tokens:
 
 ```ts
-const agents = await db.sql`
-	SELECT DISTINCT ${db.auth_tokens.columns.client} FROM ${db.auth_tokens}
-	WHERE ${db.auth_tokens.columns.user} = ${user} AND kind = 'refresh'
+const agents = await database.sql`
+	SELECT DISTINCT ${database.auth_tokens.columns.client} FROM ${database.auth_tokens}
+	WHERE ${database.auth_tokens.columns.user} = ${user} AND kind = 'refresh'
 `;
 
-await db.sql`
-	DELETE FROM ${db.auth_tokens}
-	WHERE ${db.auth_tokens.columns.user} = ${user} AND ${db.auth_tokens.columns.client} = ${client}
+await database.sql`
+	DELETE FROM ${database.auth_tokens}
+	WHERE ${database.auth_tokens.columns.user} = ${user} AND ${database.auth_tokens.columns.client} = ${client}
 `;
 ```
 

@@ -6,14 +6,14 @@ import { Auth, Render, Route } from "ovr";
 
 /** Auth stores its data in the demo database; the application creates accounts. */
 export function configure(
-	db: Store,
+	database: Store,
 	secret: string,
 	origin = "https://localhost:5173",
 ) {
 	return new Auth({
 		secret,
 		origin,
-		database: db,
+		database,
 		page: "/demo/auth",
 		redirect: "/demo/auth/admin",
 		users,
@@ -21,25 +21,25 @@ export function configure(
 }
 
 /**
- * @param db Demo database
+ * @param database Demo database
  * @param id User ID
  * @returns The account, if it exists
  */
-async function account(db: Store, id: string) {
-	const [user] = await db.sql`
-		SELECT * FROM ${db.users} WHERE ${db.users.columns.id} = ${id}
-	`.parse(db.users);
+async function account(database: Store, id: string) {
+	const [user] = await database.sql`
+		SELECT * FROM ${database.users} WHERE ${database.users.columns.id} = ${id}
+	`.parse(database.users);
 
 	return user;
 }
 
 /** Build the demo UI; ovr supplies the protocol and session handlers. */
-export function routes(db: Store, service: ReturnType<typeof configure>) {
+export function routes(database: Store, service: ReturnType<typeof configure>) {
 	/** Landing page for register/login passkey flows. */
 	const auth = Route.get("/demo/auth").use(async (c) => {
 		const Layout = createLayout(c);
 		const session = await c.session();
-		const user = session ? await account(db, session.user) : null;
+		const user = session ? await account(database, session.user) : null;
 
 		const { Register, Login } = service.forms(c);
 
@@ -81,17 +81,17 @@ export function routes(db: Store, service: ReturnType<typeof configure>) {
 	const admin = Route.get("/demo/auth/admin").use(async (c) => {
 		const session = await c.session();
 		if (!session) return c.redirect(auth, 303);
-		const user = await account(db, session.user);
+		const user = await account(database, session.user);
 		if (!user) {
 			await service.logout(c);
 			return c.redirect(auth, 303);
 		}
 		const { Logout } = service.forms(c);
 		const Layout = createLayout(c);
-		const credentials = await db.sql`
-			SELECT * FROM ${db.auth_credentials}
-			WHERE ${db.auth_credentials.columns.user} = ${user.id} ORDER BY id
-		`.parse(db.auth_credentials);
+		const credentials = await database.sql`
+			SELECT * FROM ${database.auth_credentials}
+			WHERE ${database.auth_credentials.columns.user} = ${user.id} ORDER BY id
+		`.parse(database.auth_credentials);
 
 		return (
 			<Layout head={<Meta {...content.frontmatter} />}>

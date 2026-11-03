@@ -476,7 +476,7 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 
 /**
  * Migrations a library's tables bring, by table. Tables of one library share
- * one list, applied by `db.migrate` in its own ID order before the application's.
+ * one list, applied by `database.migrate` in its own ID order before the application's.
  */
 export const owned = new WeakMap<Table.Any, readonly Database.Migration[]>();
 
@@ -994,9 +994,9 @@ class Base<T extends readonly Table.Any[]> {
  * pg-compatible pool.
  *
  * ```ts
- * const db = new Database(pool, [users, posts]);
+ * const database = new Database(pool, [users, posts]);
  *
- * const rows = await db.sql`SELECT * FROM ${db.users}`.parse(db.users);
+ * const rows = await database.sql`SELECT * FROM ${database.users}`.parse(database.users);
  * ```
  */
 export const Database = Base as Omit<typeof Base, "prototype"> &

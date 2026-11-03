@@ -35,7 +35,7 @@ const posts = new Table(
 	{ default: ["id", "published"] },
 );
 
-export const db = new Database(
+export const database = new Database(
 	new Pool({
 		connectionString: process.env.DATABASE_URL,
 		allowExitOnIdle: true,
@@ -49,12 +49,12 @@ export const db = new Database(
 | `default` | Columns the database supplies, with a `DEFAULT`, identity, or generated column  |
 | `schema`  | Postgres schema containing the table, the connection's search path when omitted |
 
-Tables are available on the database by name, so a module only needs to export `db`. A table can't be named `sql`, `transaction`, `migrate`, or `check`.
+Tables are available on the database by name, so a module only needs to export `database`. A table can't be named `sql`, `transaction`, `migrate`, or `check`.
 
 A table is a schema of its rows:
 
 ```ts
-type User = Schema.Infer<typeof db.users>;
+type User = Schema.Infer<typeof database.users>;
 // { id: string; email: string; name: string | null; created: Date }
 ```
 
@@ -84,23 +84,23 @@ Use your provider's pooled connection string for the application, and a direct c
 
 ## Query
 
-`db.sql` builds a query that runs when awaited. A query is a lazy promise: it runs once, the first time it's awaited or `then`, `catch`, or `finally` is called, and never when it's nested in another query. Tables and columns become quoted identifiers, nested queries are inlined, and every other value is a bound parameter.
+`database.sql` builds a query that runs when awaited. A query is a lazy promise: it runs once, the first time it's awaited or `then`, `catch`, or `finally` is called, and never when it's nested in another query. Tables and columns become quoted identifiers, nested queries are inlined, and every other value is a bound parameter.
 
 ```ts
 const rows =
-	await db.sql`SELECT * FROM ${db.users} WHERE ${db.users.columns.email} = ${email}`;
+	await database.sql`SELECT * FROM ${database.users} WHERE ${database.users.columns.email} = ${email}`;
 // unknown[]
 ```
 
 `.parse()` parses each row with a schema and returns typed rows, throwing a `Schema.AggregateIssue` if any row fails. Pass the table for whole rows, or a schema describing a join or projection. `.parse()` shares the query's single run, so awaiting a query and then `query.parse(schema)` doesn't run it twice.
 
 ```ts
-const [user] = await db.sql`
-	SELECT * FROM ${db.users} WHERE ${db.users.columns.id} = ${id}
-`.parse(db.users);
+const [user] = await database.sql`
+	SELECT * FROM ${database.users} WHERE ${database.users.columns.id} = ${id}
+`.parse(database.users);
 
-const feed = await db.sql`
-	SELECT p.title, u.name FROM ${db.posts} p JOIN ${db.users} u ON u.id = p.author
+const feed = await database.sql`
+	SELECT p.title, u.name FROM ${database.posts} p JOIN ${database.users} u ON u.id = p.author
 	WHERE p.published AND u.name IS NOT NULL
 `.parse(Schema.object({ title: Schema.string(), name: Schema.string() }));
 ```
@@ -108,31 +108,31 @@ const feed = await db.sql`
 Write conditions in SQL. For optional filters, nest a query when the filter applies and an empty query when it doesn't:
 
 ```ts
-const posts = await db.sql`
-	SELECT * FROM ${db.posts} WHERE true
-	${author ? db.sql`AND ${db.posts.columns.author} = ${author}` : db.sql``}
-`.parse(db.posts);
+const posts = await database.sql`
+	SELECT * FROM ${database.posts} WHERE true
+	${author ? database.sql`AND ${database.posts.columns.author} = ${author}` : database.sql``}
+`.parse(database.posts);
 ```
 
-`db.sql.values()` validates rows and builds an insert. Columns that are nullable or listed in `default` may be omitted, except `Schema.unknown()` columns, which accept any value and must be given unless they're in `default`. `db.sql.set()` validates the supplied columns of an update.
+`database.sql.values()` validates rows and builds an insert. Columns that are nullable or listed in `default` may be omitted, except `Schema.unknown()` columns, which accept any value and must be given unless they're in `default`. `database.sql.set()` validates the supplied columns of an update.
 
 ```ts
-const [post] = await db.sql`
-	INSERT INTO ${db.posts} ${db.sql.values(db.posts, { author: user.id, title })}
+const [post] = await database.sql`
+	INSERT INTO ${database.posts} ${database.sql.values(database.posts, { author: user.id, title })}
 	RETURNING *
-`.parse(db.posts);
+`.parse(database.posts);
 
-await db.sql`
-	UPDATE ${db.posts} SET ${db.sql.set(db.posts, { published: true })}
-	WHERE ${db.posts.columns.id} = ${post.id}
+await database.sql`
+	UPDATE ${database.posts} SET ${database.sql.set(database.posts, { published: true })}
+	WHERE ${database.posts.columns.id} = ${post.id}
 `;
 ```
 
-| Helper                    | Builds                                               |
-| ------------------------- | ---------------------------------------------------- |
-| `db.sql.values(table, r)` | `(columns) VALUES (...)` for one row or several      |
-| `db.sql.set(table, v)`    | `column = value, ...`                                |
-| `db.sql.id(...names)`     | A quoted identifier, such as `db.sql.id("app", "x")` |
+| Helper                          | Builds                                                     |
+| ------------------------------- | ---------------------------------------------------------- |
+| `database.sql.values(table, r)` | `(columns) VALUES (...)` for one row or several            |
+| `database.sql.set(table, v)`    | `column = value, ...`                                      |
+| `database.sql.id(...names)`     | A quoted identifier, such as `database.sql.id("app", "x")` |
 
 Column references are qualified with their table name, so write aliased columns like `p.title` directly. A function that returns a query from an `async` function runs it, because awaiting resolves the query.
 
@@ -142,7 +142,7 @@ A unique constraint is the reliable way to prevent duplicates. `INSERT … ON CO
 
 ```ts
 try {
-	await db.sql`UPDATE ${db.posts} SET ${db.sql.set(db.posts, result.data)} WHERE ...`;
+	await database.sql`UPDATE ${database.posts} SET ${database.sql.set(database.posts, result.data)} WHERE ...`;
 } catch (error) {
 	if (Database.unique(error, "posts_author_title_key")) {
 		const invalid = result.invalid({ title: "Already used" });
@@ -154,22 +154,22 @@ try {
 
 ## Transact
 
-`db.transaction()` checks out one connection, commits when the callback resolves, and rolls back when it throws. The connection is always released.
+`database.transaction()` checks out one connection, commits when the callback resolves, and rolls back when it throws. The connection is always released.
 
 ```ts
-await db.transaction(async (t) => {
-	await t.sql`DELETE FROM ${db.posts} WHERE ${db.posts.columns.author} = ${user.id}`;
-	await t.sql`DELETE FROM ${db.users} WHERE ${db.users.columns.id} = ${user.id}`;
+await database.transaction(async (t) => {
+	await t.sql`DELETE FROM ${database.posts} WHERE ${database.posts.columns.author} = ${user.id}`;
+	await t.sql`DELETE FROM ${database.users} WHERE ${database.users.columns.id} = ${user.id}`;
 });
 ```
 
-Use `t.sql` for every query in the transaction. `db.sql` would run on another connection, and `t.sql` queries can't run after the transaction ends.
+Use `t.sql` for every query in the transaction. `database.sql` would run on another connection, and `t.sql` queries can't run after the transaction ends.
 
 A failed query aborts the transaction in Postgres, so catching its error doesn't save the transaction: it rolls back and rethrows the error. To recover from an expected error, roll back to a `SAVEPOINT`.
 
 ## Migrate
 
-Schema changes are SQL migration files, including keys, constraints, indexes, and defaults. `db.migrate()` applies pending migrations in ID order and records each with a checksum.
+Schema changes are SQL migration files, including keys, constraints, indexes, and defaults. `database.migrate()` applies pending migrations in ID order and records each with a checksum.
 
 ```sql
 -- migrations/0001_init.sql
@@ -193,13 +193,13 @@ CREATE INDEX ON posts (author, published);
 Run them with a script, for example in a release step, then [check](#check) the tables:
 
 ```ts
-// scripts/db.ts
-import { db } from "../src/db.ts";
+// scripts/database.ts
+import { database } from "../src/database.ts";
 import { readFile, readdir } from "node:fs/promises";
 
 const dir = new URL("../migrations/", import.meta.url);
 
-const applied = await db.migrate(
+const applied = await database.migrate(
 	await Promise.all(
 		(await readdir(dir))
 			.filter((file) => file.endsWith(".sql"))
@@ -209,7 +209,7 @@ const applied = await db.migrate(
 			})),
 	),
 );
-const differences = await db.check();
+const differences = await database.check();
 
 console.log({ applied, differences });
 ```
@@ -236,10 +236,10 @@ New databases build the index in the migration, and the production database skip
 
 ## Check
 
-`db.check()` is a basic compatibility check between the live database and your tables. It returns one line per difference without changing anything.
+`database.check()` is a basic compatibility check between the live database and your tables. It returns one line per difference without changing anything.
 
 ```ts
-await db.check();
+await database.check();
 // ["users.avatar: missing column (text NULL)"]
 ```
 

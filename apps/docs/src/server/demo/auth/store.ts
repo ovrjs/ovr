@@ -44,7 +44,7 @@ export async function open(path = ".auth-pglite"): Promise<Store> {
 		values?.length
 			? engine.query(text, values)
 			: ((await engine.exec(text)).at(-1) ?? { rows: [] });
-	const db = new Database(
+	const database = new Database(
 		{
 			async query(text, values) {
 				const release = await acquire();
@@ -61,15 +61,15 @@ export async function open(path = ".auth-pglite"): Promise<Store> {
 		[users, ...Auth.tables],
 	);
 
-	await db.migrate(migrations);
+	await database.migrate(migrations);
 
-	const differences = await db.check();
+	const differences = await database.check();
 	if (differences.length)
 		throw new Error(
 			`Database does not match its tables:\n${differences.join("\n")}`,
 		);
 
-	return Object.assign(db, { close: () => engine.close() });
+	return Object.assign(database, { close: () => engine.close() });
 }
 
 /** The demo database, closed when the dev server stops. */

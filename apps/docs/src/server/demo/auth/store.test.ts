@@ -33,16 +33,20 @@ describe("demo database", () => {
 	});
 
 	test("deleting an account removes its credentials and sessions", async () => {
-		const db = await open("memory://");
-		stores.push(db);
+		const database = await open("memory://");
+		stores.push(database);
 		const id = crypto.randomUUID();
-		await db.transaction(async (t) => {
+		await database.transaction(async (t) => {
 			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id, email: "a@example.com" })}`;
-			await t.sql`INSERT INTO ${db.auth_credentials} ${t.sql.values(db.auth_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
-			await t.sql`INSERT INTO ${db.auth_sessions} ${t.sql.values(db.auth_sessions, { id: "s", user: id, expiration: Date.now() + 60000 })}`;
+			await t.sql`INSERT INTO ${database.auth_credentials} ${t.sql.values(database.auth_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
+			await t.sql`INSERT INTO ${database.auth_sessions} ${t.sql.values(database.auth_sessions, { id: "s", user: id, expiration: Date.now() + 60000 })}`;
 		});
-		await db.sql`DELETE FROM ${users}`;
-		expect(await db.sql`SELECT * FROM ${db.auth_credentials}`).toEqual([]);
-		expect(await db.sql`SELECT * FROM ${db.auth_sessions}`).toEqual([]);
+		await database.sql`DELETE FROM ${users}`;
+		expect(
+			await database.sql`SELECT * FROM ${database.auth_credentials}`,
+		).toEqual([]);
+		expect(await database.sql`SELECT * FROM ${database.auth_sessions}`).toEqual(
+			[],
+		);
 	});
 });
