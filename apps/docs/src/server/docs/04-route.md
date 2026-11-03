@@ -33,7 +33,7 @@ const update = Route.post("/posts/:id")
 
 Create a parameter for a route by prefixing a segment with a colon `:`.
 
-The pattern `/api/:id` sets `Context.params.id` to the actual path segment requested, for example `/api/123`. The name of the parameter is extracted from the pattern using TypeScript to ensure `Context.params` always has the correct type.
+The pattern `/api/:id` sets `Context.params.id` to the actual path segment requested, for example `/api/123`, decoded, so `/api/a%20b` gives `"a b"`. The name of the parameter is extracted from the pattern using TypeScript to ensure `Context.params` always has the correct type.
 
 ```ts
 new Route("GET", "/api/:id").use((c) => {
@@ -66,6 +66,8 @@ new Route("GET", "/files/*").use((c) => {
 	c.params["*"]; // matched wildcard path (ex: "images/logo.png")
 });
 ```
+
+The wildcard is decoded too, except for encoded `/` and `\`, so a request cannot add segments to the path: `/files/..%2Fsecret` gives `"..%2Fsecret"`, not `"../secret"`.
 
 ## Prioritization
 
@@ -231,7 +233,7 @@ page.pattern; // "/hello/:name"
 
 ### Pathname
 
-The `pathname` method inserts params into the pattern. It provides type safety to ensure you always pass the correct params (or no params) to create the pathname.
+The `pathname` method inserts params into the pattern, encoded so a value stays in its own segment: `{ name: "a/b" }` gives `/hello/a%2Fb`, and the route decodes it back to `"a/b"`. A wildcard keeps its slashes. It provides type safety to ensure you always pass the correct params (or no params) to create the pathname.
 
 In this case, given the pattern `/hello/:name`, the `name` property must be passed in on the `params` object.
 

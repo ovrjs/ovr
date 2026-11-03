@@ -531,14 +531,22 @@ export class Route<
 	): InsertParams<Pattern, P> {
 		if (!params) return this.pattern as InsertParams<Pattern, P>;
 
+		// encoded, so a value such as "a/b?c" stays in its own segment
 		return this.pattern
 			.split("/")
 			.map((part) => {
 				if (part.startsWith(":")) {
-					return params[part.slice(1) as keyof typeof params];
+					return encodeURIComponent(
+						params[part.slice(1) as keyof typeof params] as string,
+					);
 				}
 
-				if (part === "*") return params[part as keyof typeof params];
+				// the wildcard keeps its slashes, each of its segments is encoded
+				if (part === "*")
+					return (params[part as keyof typeof params] as string)
+						.split("/")
+						.map(encodeURIComponent)
+						.join("/");
 
 				return part;
 			})

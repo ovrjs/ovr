@@ -189,15 +189,38 @@ export class App {
 			options?.ip,
 		);
 
+		const match = this.#trie.find(App.#match(c.req.method) + c.url.pathname);
+		if (match)
+			for (const name in match.params)
+				match.params[name] = App.#decode(match.params[name]!, name === "*");
+
 		return Context.compose(
-			Object.assign(
-				c,
-				// match
-				this.#trie.find(App.#match(c.req.method) + c.url.pathname),
-			),
+			Object.assign(c, match),
 			this.#global.concat(c.route?.middleware ?? []),
 		);
 	};
+
+	/**
+	 * @param value Matched parameter, as the URL encodes it
+	 * @param wildcard The value is a wildcard's path
+	 * @returns The decoded value, or the value as sent when it is malformed
+	 */
+	static #decode(value: string, wildcard: boolean) {
+		if (!value.includes("%")) return value;
+
+		try {
+			if (!wildcard) return decodeURIComponent(value);
+
+			// a wildcard is a path, so encoded separators stay encoded and a
+			// request cannot add segments to it, such as `..%2Fsecret`
+			return value
+				.split(/(%2F|%5C)/i)
+				.map((part, i) => (i % 2 ? part : decodeURIComponent(part)))
+				.join("");
+		} catch {
+			return value;
+		}
+	}
 
 	/**
 	 * @param method Request method

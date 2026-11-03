@@ -746,6 +746,49 @@ describe("chained routes", () => {
 		).toContain('toolname="delete_post" tooldescription="Delete this post"');
 	});
 
+	test("links encode parameter values", async () => {
+		const page = Route.get("/hello/:name");
+		// a value cannot add segments, a query, or a fragment
+		expect(page.pathname({ name: "a/b?admin=1#x" })).toBe(
+			"/hello/a%2Fb%3Fadmin%3D1%23x",
+		);
+		expect(page.pathname({ name: "Zoë" })).toBe("/hello/Zo%C3%AB");
+		expect(page.url({ params: { name: "a b" }, search: { q: "1" } })).toBe(
+			"/hello/a%20b?q=1",
+		);
+
+		// the wildcard keeps its slashes
+		const files = Route.get("/files/*");
+		expect(files.pathname({ "*": "images/my logo?.png" })).toBe(
+			"/files/images/my%20logo%3F.png",
+		);
+
+		// components build their URLs the same way
+		const html = await new Render(null).string(
+			page.Anchor({ params: { name: "a/b" }, children: "Hi" }) as Parameters<
+				Render["string"]
+			>[0],
+		);
+		expect(html).toContain('href="/hello/a%2Fb"');
+
+		// the route matches it, with the original value
+		const app = new App().use(
+			Route.get("/hello/:name").use((c) => c.text(c.params.name)),
+			Route.get("/files/*").use((c) => c.text(c.params["*"])),
+		);
+		const text = async (path: string) =>
+			(await app.fetch("http://localhost" + path)).text();
+		expect(await text(page.pathname({ name: "a/b?c" }))).toBe("a/b?c");
+		expect(await text(files.pathname({ "*": "images/my logo?.png" }))).toBe(
+			"images/my logo?.png",
+		);
+		// a wildcard keeps encoded separators, so it cannot gain segments
+		expect(await text("/files/..%2Fsecret")).toBe("..%2Fsecret");
+		expect(await text("/files/..%5Csecret")).toBe("..%5Csecret");
+		// a malformed escape is left as sent
+		expect(await text("/hello/100%")).toBe("100%");
+	});
+
 	test("each step returns the same route", () => {
 		const route = Route.get("/posts");
 		const handler = () => "posts";
