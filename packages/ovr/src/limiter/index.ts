@@ -1,5 +1,5 @@
 import type { Context as ContextType } from "../context/index.js";
-import type { Database } from "../database/index.js";
+import { type Database, owned } from "../database/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
@@ -35,32 +35,31 @@ export class LimitIssue extends Error {}
 /** Token buckets stored in Postgres, usable by authentication and ordinary route middleware. */
 export class Limiter {
 	/**
-	 * Migration SQL creating `Limiter.table`, by version. A version never
-	 * changes, so its checksum stays valid; later changes ship as new versions.
-	 * `Auth.sql` already includes it.
-	 *
-	 * ```ts
-	 * await db.migrate([{ id: "0002_limits", sql: Limiter.sql[1] }, ...]);
-	 * ```
+	 * Token buckets shared by every limiter, include it in the database's
+	 * tables. `db.migrate` then creates it, `Auth.tables` already includes it.
 	 */
-	static readonly sql = {
-		1: `CREATE TABLE rate_limits (
-	key text PRIMARY KEY,
-	tokens double precision NOT NULL,
-	time bigint NOT NULL,
-	expiration bigint NOT NULL
-);
-CREATE INDEX rate_limits_expiration ON rate_limits (expiration);
-`,
-	} as const;
-
-	/** Token buckets shared by every limiter, include it in the database's tables. */
 	static readonly table = new Table("rate_limits", {
 		key: Schema.string(),
 		tokens: Schema.number(),
 		time: Schema.number().int(),
 		expiration: Schema.number().int(),
 	});
+
+	static {
+		// a version never changes, later changes ship as new versions
+		owned.set(Limiter.table, [
+			{
+				id: "rate_limits:1",
+				sql: `CREATE TABLE rate_limits (
+	key text PRIMARY KEY,
+	tokens double precision NOT NULL,
+	time bigint NOT NULL,
+	expiration bigint NOT NULL
+);
+CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
+			},
+		]);
+	}
 
 	readonly #options;
 	#pruned = 0;
@@ -69,6 +68,10 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);
 	constructor(options: Limiter.Options) {
 		if (typeof options?.database?.sql !== "function")
 			throw new TypeError("Limiter requires a database");
+		if (Reflect.get(options.database, Limiter.table.name) !== Limiter.table)
+			throw new TypeError(
+				"Limiter's table is missing from the database, add Limiter.table to its tables",
+			);
 		this.#options = {
 			limit: 60,
 			interval: 60000,

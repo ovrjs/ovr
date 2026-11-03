@@ -44,7 +44,20 @@ class PreparedResponse {
 	headers = new Headers();
 }
 
+/** Reads a request's session, set by a mounted `Auth` */
+export const sessions = Symbol("sessions");
+
 export namespace Context {
+	/** A signed-in user's revocable session, with a fixed lifetime. */
+	export interface Session {
+		/** Opaque session ID, usable with `auth.revoke()`. */
+		readonly id: string;
+		/** User ID. */
+		readonly user: string;
+		/** Absolute expiration time in milliseconds. */
+		readonly expiration: number;
+	}
+
 	/**
 	 * Context.data return type.
 	 *
@@ -110,6 +123,9 @@ export class Context<
 
 	/** Cached result from `data()` to avoid re-reading request bodies. */
 	#parsed?: Promise<Context.Result<Shape>>;
+
+	/** Session reader, set by `app.use(auth)` */
+	[sessions]?: () => Promise<Context.Session | null>;
 
 	/**
 	 * Creates a new `Context` with the current `Request`.
@@ -230,6 +246,24 @@ export class Context<
 	 */
 	form(options?: Multipart.Options) {
 		return new Multipart(this.req, { ...this.#options.form, ...options });
+	}
+
+	/**
+	 * Read the signed-in user's session before returning JSX, or `null` when
+	 * nobody is signed in. In an agent's tool call, it is the session of the
+	 * user who approved the agent. Requires `app.use(auth)`.
+	 *
+	 * ```ts
+	 * const session = await c.session();
+	 * if (!session) return c.redirect("/login", 303);
+	 * ```
+	 *
+	 * @returns The session, or `null`
+	 */
+	session() {
+		if (!this[sessions])
+			throw new TypeError("Mount Auth with app.use(auth) to read sessions");
+		return this[sessions]();
 	}
 
 	/**

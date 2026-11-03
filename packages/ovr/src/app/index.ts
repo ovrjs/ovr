@@ -8,6 +8,9 @@ import { Header, Method, type Util } from "../util/index.js";
 /** Internal protocol for services that `app.use` mounts, such as `Auth`. */
 export const mount = Symbol("mount");
 
+/** Asks an authorization service for the routes agents sign in with, see `Mcp` */
+export const agents = Symbol("agents");
+
 /** Routes that accept cross-origin requests without cookies, such as OAuth endpoints. */
 export const crossOrigin = new WeakSet<Route>();
 

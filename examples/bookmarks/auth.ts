@@ -10,16 +10,7 @@ export const auth = new Auth({
 	origin: process.env.AUTH_ORIGIN,
 	page: "/login",
 	redirect: "/bookmarks",
-	// agents connect through MCP after the user approves them here
-	consent: "/connect",
 	database: db,
-	register: {
-		fields: { email: db.users.shape.email },
-		name: ({ email }) => email,
-		create: async (t, { email }, id) => {
-			await t.sql`
-				INSERT INTO ${db.users} ${t.sql.values(db.users, { id, email })}
-			`;
-		},
-	},
+	// registering inserts the email, the table's form field
+	users: db.users,
 });

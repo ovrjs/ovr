@@ -84,13 +84,13 @@ GET routes are resources. Routes without parameters are listed; routes with para
 
 ### Sign in
 
-Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `auth.session(c)` returns their session.
+Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `c.session()` returns their session.
 
 ```ts
 const mcp = new Mcp({ instructions: "...", auth });
 ```
 
-The endpoint serves the protected resource metadata agents use to find Auth's authorization server. See [Auth agents](/08-auth#agents) for the consent page.
+The endpoint also mounts Auth's OAuth endpoints, and serves the protected resource metadata agents use to find them. Write the page where users approve agents at `/connect`, see [Auth agents](/08-auth#agents).
 
 ### Connect an agent
 

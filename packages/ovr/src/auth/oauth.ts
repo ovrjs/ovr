@@ -5,10 +5,11 @@ import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field } from "../schema/index.js";
-import { Codec, Header, Time } from "../util/index.js";
+import { Codec, Header, Size, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import { Metadata } from "./metadata.js";
+import { Passkey } from "./passkey.js";
 import type { State } from "./state.js";
 import { Storage } from "./storage.js";
 import { Token } from "./token.js";
@@ -37,6 +38,8 @@ const paths = {
 	metadata: "/.well-known/oauth-authorization-server",
 	authorize: "/oauth/authorize",
 	approve: "/oauth/approve",
+	deny: "/oauth/deny",
+	prompt: "/_passkey/options/approve",
 	token: "/oauth/token",
 } as const;
 
@@ -77,20 +80,14 @@ export function oauth(
 ) {
 	const { origin } = options;
 	const page = options.page ?? "/login";
-	const consent = options.consent;
+	const consent = options.consent ?? "/connect";
 
 	if (
-		consent !== undefined &&
-		(!consent.startsWith("/") ||
-			consent.startsWith("//") ||
-			new URL(consent, origin).pathname !== consent)
+		!consent.startsWith("/") ||
+		consent.startsWith("//") ||
+		new URL(consent, origin).pathname !== consent
 	)
 		throw new TypeError("Auth consent must be a literal local path");
-
-	if (consent !== undefined && !Metadata.supported)
-		throw new TypeError(
-			"Connecting agents requires Node.js or Bun to fetch client ID metadata documents safely",
-		);
 
 	const limiter = new Limiter({
 		name: `auth:tokens:${origin}`,
@@ -223,30 +220,116 @@ export function oauth(
 		return route;
 	};
 
-	/** The user's decision from the consent page */
-	const approve = Route.post(paths.approve)
+	/** @returns `true` for a request from the app's own pages */
+	const same = (c: Pick<Context, "req">) =>
+		c.req.headers.get(Header.name.fetch) === "same-origin" ||
+		c.req.headers.get(Header.name.origin) === origin;
+
+	/** @returns `true` for a passkey or form that could not be verified */
+	const unverified = (error: unknown) =>
+		error instanceof Issue ||
+		(typeof error === "object" && error !== null && "issues" in error);
+
+	/**
+	 * @param c Request context
+	 * @param request Sealed authorization request
+	 * @returns The request, or `undefined` after responding when it expired or another user decides
+	 */
+	const asked = async (
+		c: State.Context & Pick<Context, "text">,
+		request: string | null,
+	) => {
+		const pending = await open(request);
+		if (!pending)
+			return void c.text("The request expired. Try connecting again.", 400);
+
+		const session = await state(c).session();
+		if (!session || session.user !== pending.user)
+			return void c.text("Forbidden", 403);
+
+		return pending;
+	};
+
+	/**
+	 * @param c Request context
+	 * @param pending The request
+	 * @param params Code or error for the agent
+	 */
+	const back = (
+		c: Pick<Context, "redirect">,
+		pending: Pending,
+		params: Record<string, string>,
+	) => {
+		const url = new URL(pending.redirect);
+		for (const [name, value] of Object.entries(params))
+			url.searchParams.set(name, value);
+		if (pending.state !== null) url.searchParams.set("state", pending.state);
+		url.searchParams.set("iss", origin);
+		return c.redirect(url, 303);
+	};
+
+	/** Starts the passkey prompt for allowing an agent */
+	const prompt = Route.post(paths.prompt)
 		.describe(false)
-		.fields({ request: Field.hidden(), decision: Field.hidden() })
+		.fields({ bootstrap: Field.hidden() })
 		.use(async (c) => {
 			c.res.headers.set(Header.name.cache, "no-store");
-			if (
-				c.req.headers.get(Header.name.fetch) !== "same-origin" &&
-				c.req.headers.get(Header.name.origin) !== origin
-			)
-				return c.text("Forbidden", 403);
+			if (!same(c)) return c.text("Forbidden", 403);
 
-			const result = await c.data();
-			const pending = !result.issues && (await open(result.data.request));
-			if (!pending)
-				return c.text("The request expired. Try connecting again.", 400);
+			const admission = await authorizations
+				.check(c, "approve")
+				.catch(() => false as const);
+			if (admission !== true)
+				return c.text(
+					"Too many requests. Try again later.",
+					admission ? 429 : 503,
+				);
 
-			const session = await state(c).session();
-			if (!session || session.user !== pending.user)
-				return c.text("Forbidden", 403);
+			const input = await c.data({ payload: 128 * Size.kb });
+			if (input.issues) return c.text("Authentication failed. Try again.", 400);
 
-			const url = new URL(pending.redirect);
+			try {
+				await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
+					method: "login",
+					action: paths.approve,
+				});
+			} catch (error) {
+				if (!unverified(error)) throw error;
+				return c.text("Authentication failed. Try again.", 400);
+			}
+		});
 
-			if (result.data.decision === "allow") {
+	/**
+	 * Allows the agent. The user confirms with their passkey, so a script or
+	 * agent driving a signed-in browser cannot allow it for them.
+	 */
+	const approve = Passkey.prepare(
+		Route.post(paths.approve)
+			.describe(false)
+			.fields({ request: Field.hidden() })
+			.use(async (c) => {
+				c.res.headers.set(Header.name.cache, "no-store");
+				if (!same(c)) return c.text("Forbidden", 403);
+
+				const result = await c.data({ payload: 128 * Size.kb });
+				if (result.issues)
+					return c.text("Your passkey could not be verified. Try again.", 400);
+
+				const pending = await asked(c, result.data.request);
+				if (!pending) return;
+
+				let credential;
+				try {
+					credential = await new Passkey(c, state(c)).login(
+						storage.credentials,
+					);
+				} catch (error) {
+					if (!unverified(error)) throw error;
+					return c.text("Your passkey could not be verified. Try again.", 400);
+				}
+				// the passkey of the user who was asked
+				if (credential.user !== pending.user) return c.text("Forbidden", 403);
+
 				const code = random();
 				await storage.tokens.set(code, {
 					kind: "code",
@@ -258,208 +341,219 @@ export function oauth(
 					challenge: pending.challenge,
 					expiration: Date.now() + lifetime.code,
 				});
-				url.searchParams.set("code", code);
-			} else {
-				url.searchParams.set("error", "access_denied");
-			}
 
-			if (pending.state !== null) url.searchParams.set("state", pending.state);
-			url.searchParams.set("iss", origin);
+				return back(c, pending, { code });
+			}),
+	);
 
-			return c.redirect(url, 303);
+	/** Denies the agent, which needs no passkey */
+	const deny = Route.post(paths.deny)
+		.describe(false)
+		.fields({ request: Field.hidden() })
+		.use(async (c) => {
+			c.res.headers.set(Header.name.cache, "no-store");
+			if (!same(c)) return c.text("Forbidden", 403);
+
+			const result = await c.data({ payload: 128 * Size.kb });
+			const pending = await asked(
+				c,
+				result.issues ? null : result.data.request,
+			);
+			if (!pending) return;
+
+			return back(c, pending, { error: "access_denied" });
 		});
 
-	if (consent !== undefined) {
-		// authorization server metadata, RFC 8414
-		cross(
-			Route.get(paths.metadata)
-				.describe(false)
-				.use(cors, (c) =>
-					c.json({
-						issuer: origin,
-						authorization_endpoint: origin + paths.authorize,
-						token_endpoint: origin + paths.token,
-						response_types_supported: ["code"],
-						grant_types_supported: ["authorization_code", "refresh_token"],
-						code_challenge_methods_supported: ["S256"],
-						token_endpoint_auth_methods_supported: ["none"],
-						client_id_metadata_document_supported: true,
-						authorization_response_iss_parameter_supported: true,
-					}),
-				),
-		);
+	// authorization server metadata, RFC 8414
+	cross(
+		Route.get(paths.metadata)
+			.describe(false)
+			.use(cors, (c) =>
+				c.json({
+					issuer: origin,
+					authorization_endpoint: origin + paths.authorize,
+					token_endpoint: origin + paths.token,
+					response_types_supported: ["code"],
+					grant_types_supported: ["authorization_code", "refresh_token"],
+					code_challenge_methods_supported: ["S256"],
+					token_endpoint_auth_methods_supported: ["none"],
+					client_id_metadata_document_supported: true,
+					authorization_response_iss_parameter_supported: true,
+				}),
+			),
+	);
 
-		routes.push(
-			Route.get(paths.authorize)
-				.describe(false)
-				.use(async (c) => {
-					c.res.headers.set(Header.name.cache, "no-store");
-					const query = c.url.searchParams;
+	routes.push(
+		Route.get(paths.authorize)
+			.describe(false)
+			.use(async (c) => {
+				c.res.headers.set(Header.name.cache, "no-store");
+				const query = c.url.searchParams;
 
-					const admission = await authorizations
-						.check(c)
-						.catch(() => false as const);
-					if (admission !== true)
-						return c.text(
-							"Too many requests. Try again later.",
-							admission ? 429 : 503,
-						);
-
-					const client = await agent(c, query.get("client_id"));
-					if (client === null)
-						return c.text(
-							"Too many agents are connecting. Try again later.",
-							503,
-						);
-					if (!client) return c.text("Unknown client.", 400);
-
-					const redirect = match(client.redirects, query.get("redirect_uri"));
-					if (!redirect) return c.text("Invalid redirect URI.", 400);
-
-					// the client is known, so other errors go back to it
-					const error = (code: string, description: string) => {
-						const url = new URL(redirect);
-						url.searchParams.set("error", code);
-						url.searchParams.set("error_description", description);
-						if (query.has("state"))
-							url.searchParams.set("state", query.get("state")!);
-						url.searchParams.set("iss", origin);
-						return c.redirect(url, 303);
-					};
-
-					if (query.get("response_type") !== "code")
-						return error("unsupported_response_type", "Use the code flow.");
-
-					const challenge = query.get("code_challenge");
-					if (
-						query.get("code_challenge_method") !== "S256" ||
-						!challenge ||
-						!/^[\w-]{43}$/.test(challenge)
-					)
-						return error("invalid_request", "PKCE with S256 is required.");
-
-					// tokens are bound to the resource the agent will use them with
-					const resource = query.get("resource");
-					if (!resource)
-						return error("invalid_target", "Resource is required.");
-					let target: URL;
-					try {
-						target = new URL(resource);
-					} catch {
-						return error("invalid_target", "Invalid resource.");
-					}
-					if (target.origin !== origin || target.hash)
-						return error("invalid_target", "Unknown resource.");
-
-					// a token grants everything the user can do, there are no narrower scopes
-					if (query.get("scope"))
-						return error("invalid_scope", "Scopes are not supported.");
-
-					const session = await state(c).session();
-					if (!session) {
-						// come back here after logging in
-						state(c).remember(c.url.pathname + c.url.search);
-						return c.redirect(page, 303);
-					}
-
-					const url = new URL(consent, origin);
-					url.searchParams.set(
-						"request",
-						await Token.seal(
-							options.secret,
-							"consent",
-							JSON.stringify({
-								client: client.id,
-								name: client.name,
-								redirect,
-								challenge,
-								resource,
-								state: query.get("state"),
-								user: session.user,
-								expiration: Date.now() + lifetime.consent,
-							} satisfies Pending),
-						),
+				const admission = await authorizations
+					.check(c)
+					.catch(() => false as const);
+				if (admission !== true)
+					return c.text(
+						"Too many requests. Try again later.",
+						admission ? 429 : 503,
 					);
 
+				const client = await agent(c, query.get("client_id"));
+				if (client === null)
+					return c.text(
+						"Too many agents are connecting. Try again later.",
+						503,
+					);
+				if (!client) return c.text("Unknown client.", 400);
+
+				const redirect = match(client.redirects, query.get("redirect_uri"));
+				if (!redirect) return c.text("Invalid redirect URI.", 400);
+
+				// the client is known, so other errors go back to it
+				const error = (code: string, description: string) => {
+					const url = new URL(redirect);
+					url.searchParams.set("error", code);
+					url.searchParams.set("error_description", description);
+					if (query.has("state"))
+						url.searchParams.set("state", query.get("state")!);
+					url.searchParams.set("iss", origin);
 					return c.redirect(url, 303);
-				}),
-			approve,
-		);
+				};
 
-		cross(
-			Route.post(paths.token)
-				.describe(false)
-				.use(cors, async (c) => {
-					if (!(await admit(c, limiter))) return;
+				if (query.get("response_type") !== "code")
+					return error("unsupported_response_type", "Use the code flow.");
 
-					const text = await body(c);
-					if (text === undefined) return fail(c, "invalid_request");
-					const params = new URLSearchParams(text);
-					const grant = params.get("grant_type");
-					const client = params.get("client_id");
-					const resource = params.get("resource");
+				const challenge = query.get("code_challenge");
+				if (
+					query.get("code_challenge_method") !== "S256" ||
+					!challenge ||
+					!/^[\w-]{43}$/.test(challenge)
+				)
+					return error("invalid_request", "PKCE with S256 is required.");
 
-					const code = grant === "authorization_code";
-					if (!code && grant !== "refresh_token")
-						return fail(c, "unsupported_grant_type");
+				// tokens are bound to the resource the agent will use them with
+				const resource = query.get("resource");
+				if (!resource) return error("invalid_target", "Resource is required.");
+				let target: URL;
+				try {
+					target = new URL(resource);
+				} catch {
+					return error("invalid_target", "Invalid resource.");
+				}
+				if (target.origin !== origin || target.hash)
+					return error("invalid_target", "Unknown resource.");
 
-					const access = random();
-					const refresh = random();
-					let error = "invalid_grant";
+				// a token grants everything the user can do, there are no narrower scopes
+				if (query.get("scope"))
+					return error("invalid_scope", "Scopes are not supported.");
 
-					// codes and refresh tokens are used once, refresh tokens rotate
-					const issued = await storage.tokens.exchange(
-						params.get(code ? "code" : "refresh_token") ?? "",
-						code ? "code" : "refresh",
-						async (token) => {
-							if (token.client !== client) return;
-							if (code) {
-								const verifier = params.get("code_verifier") ?? "";
-								if (
-									token.redirect !== params.get("redirect_uri") ||
-									!/^[\w.~-]{43,128}$/.test(verifier) ||
-									(await hash(verifier)) !== token.challenge
-								)
-									return;
-							}
-							if (resource !== token.resource) {
-								error = "invalid_target";
+				const session = await state(c).session();
+				if (!session) {
+					// come back here after logging in
+					state(c).remember(c.url.pathname + c.url.search);
+					return c.redirect(page, 303);
+				}
+
+				const url = new URL(consent, origin);
+				url.searchParams.set(
+					"request",
+					await Token.seal(
+						options.secret,
+						"consent",
+						JSON.stringify({
+							client: client.id,
+							name: client.name,
+							redirect,
+							challenge,
+							resource,
+							state: query.get("state"),
+							user: session.user,
+							expiration: Date.now() + lifetime.consent,
+						} satisfies Pending),
+					),
+				);
+
+				return c.redirect(url, 303);
+			}),
+		prompt,
+		approve,
+		deny,
+	);
+
+	cross(
+		Route.post(paths.token)
+			.describe(false)
+			.use(cors, async (c) => {
+				if (!(await admit(c, limiter))) return;
+
+				const text = await body(c);
+				if (text === undefined) return fail(c, "invalid_request");
+				const params = new URLSearchParams(text);
+				const grant = params.get("grant_type");
+				const client = params.get("client_id");
+				const resource = params.get("resource");
+
+				const code = grant === "authorization_code";
+				if (!code && grant !== "refresh_token")
+					return fail(c, "unsupported_grant_type");
+
+				const access = random();
+				const refresh = random();
+				let error = "invalid_grant";
+
+				// codes and refresh tokens are used once, refresh tokens rotate
+				const issued = await storage.tokens.exchange(
+					params.get(code ? "code" : "refresh_token") ?? "",
+					code ? "code" : "refresh",
+					async (token) => {
+						if (token.client !== client) return;
+						if (code) {
+							const verifier = params.get("code_verifier") ?? "";
+							if (
+								token.redirect !== params.get("redirect_uri") ||
+								!/^[\w.~-]{43,128}$/.test(verifier) ||
+								(await hash(verifier)) !== token.challenge
+							)
 								return;
-							}
+						}
+						if (resource !== token.resource) {
+							error = "invalid_target";
+							return;
+						}
 
-							const now = Date.now();
-							const row = {
-								user: token.user,
-								client: token.client,
-								resource: token.resource,
-								scope: token.scope,
-							};
+						const now = Date.now();
+						const row = {
+							user: token.user,
+							client: token.client,
+							resource: token.resource,
+							scope: token.scope,
+						};
 
-							return {
-								[access]: {
-									...row,
-									kind: "access",
-									expiration: now + lifetime.access,
-								},
-								[refresh]: {
-									...row,
-									kind: "refresh",
-									expiration: now + lifetime.refresh,
-								},
-							};
-						},
-					);
-					if (!issued) return fail(c, error);
+						return {
+							[access]: {
+								...row,
+								kind: "access",
+								expiration: now + lifetime.access,
+							},
+							[refresh]: {
+								...row,
+								kind: "refresh",
+								expiration: now + lifetime.refresh,
+							},
+						};
+					},
+				);
+				if (!issued) return fail(c, error);
 
-					c.json({
-						access_token: access,
-						token_type: "Bearer",
-						expires_in: lifetime.access / Time.second,
-						refresh_token: refresh,
-					});
-				}),
-		);
-	}
+				c.json({
+					access_token: access,
+					token_type: "Bearer",
+					expires_in: lifetime.access / Time.second,
+					refresh_token: refresh,
+				});
+			}),
+	);
 
 	return {
 		routes,
@@ -468,7 +562,7 @@ export function oauth(
 		 * @param c Request context
 		 * @returns The authorization request on the consent page, with its form
 		 */
-		async consent(c: State.Context): Promise<Auth.Consent | null> {
+		async consent(c: Auth.Context): Promise<Auth.Consent | null> {
 			// the page grants access, so other sites cannot frame it to trick a click
 			c.res.headers.set("x-frame-options", "DENY");
 			c.res.headers.append("content-security-policy", "frame-ancestors 'none'");
@@ -480,6 +574,9 @@ export function oauth(
 			if (!session || session.user !== pending.user) return null;
 
 			const request = c.url.searchParams.get("request")!;
+			const Form = new Passkey(c, state(c)).form(approve, "login", {
+				endpoint: prompt.pathname(),
+			});
 
 			return {
 				client: {
@@ -488,19 +585,14 @@ export function oauth(
 				},
 				redirect: new URL(pending.redirect).host || pending.redirect,
 				Form: (props) =>
-					approve.Form({
+					Form({
 						...props,
 						children: [
 							jsx("input", { type: "hidden", name: "request", value: request }),
 							props.children ?? [
+								jsx("button", { children: "Allow" }),
 								jsx("button", {
-									name: "decision",
-									value: "allow",
-									children: "Allow",
-								}),
-								jsx("button", {
-									name: "decision",
-									value: "deny",
+									formaction: deny.pathname(),
 									children: "Deny",
 								}),
 							],
@@ -518,9 +610,6 @@ export function oauth(
 			c: Pick<Context, "req">,
 			resource: string,
 		): Promise<Auth.Session | null> {
-			if (consent === undefined)
-				throw new TypeError("Set the Auth consent option to connect agents");
-
 			const token = /^Bearer\s+([\w.~+/-]+=*)$/i.exec(
 				c.req.headers.get("authorization") ?? "",
 			)?.[1];

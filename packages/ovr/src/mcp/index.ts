@@ -1,4 +1,4 @@
-import { type App, mount } from "../app/index.js";
+import { type App, agents, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
@@ -69,8 +69,9 @@ export namespace Mcp {
 		readonly path?: string;
 
 		/**
-		 * Requires agents to sign in. The user approves the agent in the
-		 * browser, and the agent acts as that user.
+		 * Requires agents to sign in, and mounts the OAuth endpoints they sign
+		 * in with. The user approves the agent on Auth's `consent` page, and the
+		 * agent acts as that user.
 		 */
 		readonly auth?: Mcp.Auth;
 	};
@@ -86,6 +87,9 @@ export namespace Mcp {
 
 		/** Origin of the authorization server */
 		readonly origin: string;
+
+		/** @returns The endpoints agents sign in with, mounted with the MCP endpoint */
+		[agents](): ReturnType<App.Service[typeof mount]>;
 	}
 }
 
@@ -127,9 +131,9 @@ export class Mcp {
 	 * Mounted by `app.use(mcp)`.
 	 *
 	 * @param app App to serve
-	 * @returns The MCP endpoint routes
+	 * @returns The MCP endpoint routes, and the endpoints agents sign in with
 	 */
-	[mount](app: App.Mount) {
+	[mount](app: App.Mount): ReturnType<App.Service[typeof mount]> {
 		if (this.#app)
 			throw new TypeError("An Mcp endpoint can only be mounted on one app.");
 		this.#app = app;
@@ -165,6 +169,8 @@ export class Mcp {
 					.describe(false)
 					.use(metadata),
 			);
+
+			return [...routes, auth[agents]()];
 		}
 
 		return routes;

@@ -3,15 +3,15 @@
 A small application written against the current `next` branch. Start with
 [app.tsx](./app.tsx): it contains all the page and CRUD handlers.
 
-| File                                                                 | Responsibility                                                           |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [db.ts](./db.ts)                                                     | Account and bookmark schemas, reusable form fields, Postgres pool        |
-| [auth.ts](./auth.ts)                                                 | Passkey configuration and transactional account creation                 |
-| [app.tsx](./app.tsx)                                                 | Login, list, edit, create, update, delete, and logout UI                 |
-| [migrations/0001_init.sql](./migrations/0001_init.sql)               | Application tables, constraints, indexes                                 |
-| [migrations/0003_auth_users.sql](./migrations/0003_auth_users.sql)   | Delete an account's passkeys and sessions with it                        |
-| [migrations/0005_auth_tokens.sql](./migrations/0005_auth_tokens.sql) | Disconnect an account's agents with it                                   |
-| [migrate.ts](./migrate.ts)                                           | Apply the migrations, with `Auth.sql[1]` and `[2]`, and check the tables |
+| File                                                                 | Responsibility                                                    |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [db.ts](./db.ts)                                                     | Account and bookmark schemas, reusable form fields, Postgres pool |
+| [auth.ts](./auth.ts)                                                 | Passkey configuration and transactional account creation          |
+| [app.tsx](./app.tsx)                                                 | Login, list, edit, create, update, delete, and logout UI          |
+| [migrations/0001_init.sql](./migrations/0001_init.sql)               | Application tables, constraints, indexes                          |
+| [migrations/0002_auth_users.sql](./migrations/0002_auth_users.sql)   | Delete an account's passkeys and sessions with it                 |
+| [migrations/0003_auth_tokens.sql](./migrations/0003_auth_tokens.sql) | Disconnect an account's agents with it                            |
+| [migrate.ts](./migrate.ts)                                           | Apply the migrations, after Auth's own, and check the tables      |
 
 ## Routes
 
@@ -62,8 +62,8 @@ compatibility, login-page rendering, authentication redirects, CRUD, initial edi
 values, duplicate create/update errors, cross-account access rejection, invalid
 UUIDs, unsafe URLs, and logout/revocation. Sessions were established through a
 private test harness using `auth.login`; the browser passkey ceremony was not
-exercised by this check. The migrations, including `Auth.sql[2]`, were applied
-and checked on Postgres 18. The MCP and OAuth flows are covered by ovr's own
+exercised by this check. The migrations were applied and checked on Postgres 18
+before Auth's tables brought their own. The MCP and OAuth flows are covered by ovr's own
 tests; they were not exercised against this example.
 
 Use the repository's TSX build setup with `jsxImportSource: "ovr"`. The included
@@ -101,12 +101,12 @@ form state strategy that does not expose those values in URLs. `no-store` and
 
 A `Table` validates rows, its `shape` supplies form fields, and `sql.values` and
 `sql.set` handle validated writes. Raw SQL keeps ownership checks, unique
-constraints, and conflict handling visible. SQL migrations, with ovr's
-versioned `Auth.sql`, plus `db.check()` fit an AI-authored workflow without a
+constraints, and conflict handling visible. SQL migrations, with the
+versioned migrations Auth's tables bring, plus `db.check()` fit an AI-authored workflow without a
 schema diff engine or query builder.
 
 Writing this example led to `submit` labels on route forms, `Database.unique`
-for constraint errors, and the versioned `Auth.sql`. Chained routes let
+for constraint errors, and versioned Auth migrations. Chained routes let
 `.params({ id })` check IDs with the table's own column schema before the
 handler runs, so an invalid UUID is a 404. A parse-or-redirect helper was left
 out on purpose: it would save one line per handler but add a second way to read

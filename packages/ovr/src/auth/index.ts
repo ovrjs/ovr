@@ -1,13 +1,15 @@
-import { type App, mount } from "../app/index.js";
-import type { Context as ContextType } from "../context/index.js";
+import { type App, agents, mount } from "../app/index.js";
+import { type Context as ContextType, sessions } from "../context/index.js";
 import type { Database } from "../database/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Route } from "../route/index.js";
-import type { Form } from "../schema/index.js";
+import type { Field, Form, Schema } from "../schema/index.js";
+import type { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
 import { configure } from "./configure.js";
 import { Issue } from "./issue.js";
+import { Metadata } from "./metadata.js";
 import { oauth } from "./oauth.js";
 import { State } from "./state.js";
 import { Storage } from "./storage.js";
@@ -38,18 +40,27 @@ export namespace Auth {
 	/** Rate limit policy, Auth creates the `Limiter` with its database. */
 	export type Limit = Omit<Limiter.Options, "database">;
 
-	/** A revocable session with a fixed lifetime. */
-	export interface Session {
-		/** Opaque session ID, usable with `auth.revoke()`. */
-		readonly id: string;
-		/** User ID. */
-		readonly user: string;
-		/** Absolute expiration time in milliseconds. */
-		readonly expiration: number;
-	}
+	/** A revocable session with a fixed lifetime, from `c.session()`. */
+	export type Session = ContextType.Session;
+
+	/** A users table with a text `id`, which Auth creates accounts in. */
+	export type Users = Table<string, any, any> & {
+		readonly shape: { readonly id: Schema<string> };
+	};
+
+	/** Registration fields of a users table, its form fields except `id`. */
+	export type Fields<U extends Users> = {
+		[
+			K in keyof U["shape"] as K extends "id"
+				? never
+				: U["shape"][K] extends Field.Any
+					? K
+					: never
+		]: Extract<U["shape"][K], Field.Any>;
+	};
 
 	/** Authentication configuration; all instances share the database. */
-	export interface Options<Shape extends Form.Shape = Form.Shape> {
+	export interface Options<U extends Users = Users> {
 		/** Signing secret(s), each at least 32 UTF-8 bytes. Seal with the first; accept all during rotation. */
 		readonly secret: string | readonly [string, ...string[]];
 		/** Trusted HTTPS origin, for example `https://example.com`. */
@@ -58,27 +69,21 @@ export namespace Auth {
 		readonly database: Database;
 		/** Session lifetime in milliseconds; defaults to one week, without sliding refresh. */
 		readonly duration?: number;
-		/** Registration fields, provider labels, and account creation. */
-		readonly register: {
-			/** Application fields, validated before prompting and again before saving. */
-			readonly fields: Shape;
-			/** Human-readable account label, independent of the opaque user handle. */
-			readonly name: (data: Form.Parse.Data<Shape>) => Result<string>;
-			/** Insert the account with `t`, in the transaction that stores its first credential. Never upsert an existing user. */
-			readonly create: (
-				t: Database.Transaction,
-				data: Form.Parse.Data<Shape>,
-				user: string,
-			) => Result<void>;
-		};
+		/**
+		 * Users table in `database`. Its form fields, other than `id`, are the
+		 * registration form, and registering inserts the row in the transaction
+		 * that stores the first passkey. Its other columns need defaults. The
+		 * first field, such as an email, names the passkey.
+		 */
+		readonly users: U;
 		/** Authentication page, also used for generic failure redirects. Defaults to /login. */
 		readonly page?: string;
 		/** Destination after registration or login. Defaults to /. */
 		readonly redirect?: string;
 		/**
-		 * Page where users approve agents that connect through MCP, such as
-		 * `/connect`. Setting it enables OAuth for agents. The page calls
-		 * `auth.consent(c)` for the request and its form.
+		 * Page where users approve agents, which sign in when an MCP endpoint is
+		 * given this `auth`. The page calls `auth.consent(c)` for the request and
+		 * its form. Defaults to /connect.
 		 */
 		readonly consent?: string;
 		/** Change the built-in signup and sign-in rate limits, stored in `database`. */
@@ -106,7 +111,7 @@ export namespace Auth {
 		};
 		/** Host the user returns to after deciding */
 		readonly redirect: string;
-		/** Form with Allow and Deny buttons, or custom `children` buttons named `decision` */
+		/** Form with Allow, confirmed with the user's passkey, and Deny buttons; custom `children` deny with `formaction="/oauth/deny"` */
 		readonly Form: (props: JSX.IntrinsicElements["form"]) => JSX.Element;
 	}
 
@@ -125,74 +130,14 @@ export namespace Auth {
 }
 
 /** Complete passkey authentication stored in the application's Postgres database. */
-export class Auth<Shape extends Form.Shape = Form.Shape> {
+export class Auth<U extends Auth.Users = Auth.Users> {
 	/** Validation issue shared by authentication and passkey verification. */
 	static readonly Issue = Issue;
 
 	/**
-	 * Migration SQL creating `Auth.tables`, by version. A version never
-	 * changes, so its checksum stays valid; later changes ship as new versions.
-	 * User IDs are text, so they hold any ID `auth.login` accepts.
-	 *
-	 * ```ts
-	 * await db.migrate([
-	 * 	{ id: "0002_auth", sql: Auth.sql[1] },
-	 * 	{ id: "0003_auth_agents", sql: Auth.sql[2] },
-	 * ]);
-	 * ```
+	 * Tables Auth stores its data in, include them in the database's tables.
+	 * `db.migrate` then creates them, and `db.check` checks them.
 	 */
-	static readonly sql = {
-		1: `CREATE TABLE auth_credentials (
-	id text PRIMARY KEY,
-	"user" text NOT NULL,
-	"publicKey" text NOT NULL,
-	counter bigint NOT NULL,
-	eligible boolean NOT NULL,
-	"backedUp" boolean NOT NULL
-);
-CREATE INDEX auth_credentials_user ON auth_credentials ("user");
-
-CREATE TABLE auth_sessions (
-	id text PRIMARY KEY,
-	"user" text NOT NULL,
-	expiration bigint NOT NULL
-);
-CREATE INDEX auth_sessions_user ON auth_sessions ("user");
-CREATE INDEX auth_sessions_expiration ON auth_sessions (expiration);
-
-CREATE TABLE auth_challenges (
-	id text PRIMARY KEY,
-	challenge text NOT NULL,
-	browser text NOT NULL,
-	method text NOT NULL,
-	action text NOT NULL,
-	origin text NOT NULL,
-	expiration bigint NOT NULL,
-	"user" text,
-	fields text
-);
-CREATE INDEX auth_challenges_expiration ON auth_challenges (expiration);
-CREATE INDEX auth_challenges_browser ON auth_challenges (browser, expiration);
-
-${Limiter.sql[1]}`,
-		2: `CREATE TABLE auth_tokens (
-	id text PRIMARY KEY,
-	kind text NOT NULL,
-	"user" text NOT NULL,
-	client text NOT NULL,
-	resource text NOT NULL,
-	scope text NOT NULL,
-	redirect text,
-	challenge text,
-	family text NOT NULL,
-	expiration bigint NOT NULL
-);
-CREATE INDEX auth_tokens_family ON auth_tokens (family);
-CREATE INDEX auth_tokens_user ON auth_tokens ("user");
-CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
-	} as const;
-
-	/** Tables Auth stores its data in, include them in the database's tables. */
 	static readonly tables = [
 		Storage.credentials,
 		Storage.sessions,
@@ -203,6 +148,10 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 
 	readonly #options: State.Options;
 	readonly #states = new WeakMap<object, State>();
+	/** OAuth endpoints for agents */
+	readonly #oauth: readonly Route[];
+	/** The OAuth endpoints are mounted */
+	#mounted = false;
 
 	/** Generated endpoints, mounted with `app.use(auth)`. */
 	readonly routes: readonly Route[];
@@ -223,10 +172,10 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 	readonly forms: (
 		c: Auth.Context,
 		props?: { nonce?: string },
-	) => Auth.Forms<Shape>;
+	) => Auth.Forms<Auth.Fields<U>>;
 
 	/** Configure passkeys, session helpers, and automatic authentication rate limits. */
-	constructor(options: Auth.Options<Shape>) {
+	constructor(options: Auth.Options<U>) {
 		const origin = new URL(options.origin);
 		if (origin.protocol !== "https:" || origin.origin !== options.origin)
 			throw new TypeError("Auth origin must be an HTTPS origin without a path");
@@ -253,6 +202,18 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			);
 		if (typeof options.database?.transaction !== "function")
 			throw new TypeError("Auth requires a database");
+		if (
+			Auth.tables.some(
+				(table) => Reflect.get(options.database, table.name) !== table,
+			)
+		)
+			throw new TypeError(
+				"Auth's tables are missing from the database, add ...Auth.tables to its tables",
+			);
+		if (Reflect.get(options.database, options.users?.name) !== options.users)
+			throw new TypeError(
+				"Auth's users table is missing from the database, add it to its tables",
+			);
 		const storage = Storage.of(options.database);
 		this.#options = {
 			origin: options.origin,
@@ -265,19 +226,47 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			sessions: storage.sessions,
 		};
 		const service = configure(options, storage, (c) => this.#state(c));
-		const agents = oauth(options, storage, (c) => this.#state(c));
-		this.routes = [...service.routes, ...agents.routes];
+		const signin = oauth(options, storage, (c) => this.#state(c));
+		this.routes = service.routes;
+		this.#oauth = signin.routes;
 		this.forms = service.forms;
-		this.consent = agents.consent;
-		this.bearer = agents.bearer;
+		this.consent = signin.consent;
+		this.bearer = signin.bearer;
+	}
+
+	/** Mounted by `app.use(auth)`, and lets every request read its session. */
+	[mount](): ReturnType<App.Service[typeof mount]> {
+		return [
+			(c: ContextType, next: () => Promise<void>) => {
+				c[sessions] = () => this.#state(c).session();
+				return next();
+			},
+			this.#host(this.routes),
+		];
 	}
 
 	/**
-	 * Mounted by `app.use(auth)`. Generated endpoints reject alternate hosts
-	 * before their handlers run.
+	 * Mounted by an MCP endpoint given this `auth`, the OAuth endpoints agents
+	 * sign in with. Once, when several endpoints share it.
 	 */
-	[mount](): ReturnType<App.Service[typeof mount]> {
-		const routes = new Set<Route>(this.routes);
+	[agents](): ReturnType<App.Service[typeof mount]> {
+		if (this.#mounted) return [];
+		this.#mounted = true;
+
+		if (!Metadata.supported)
+			throw new TypeError(
+				"Connecting agents requires Node.js or Bun to fetch client ID metadata documents safely",
+			);
+
+		return this.#host(this.#oauth);
+	}
+
+	/**
+	 * @param endpoints Generated endpoints
+	 * @returns The endpoints, which reject alternate hosts before their handlers run
+	 */
+	#host(endpoints: readonly Route[]) {
+		const routes = new Set<Route>(endpoints);
 
 		return [
 			(c: ContextType, next: () => Promise<void>) => {
@@ -287,7 +276,7 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 				}
 				return next();
 			},
-			...this.routes,
+			...endpoints,
 		];
 	}
 
@@ -301,19 +290,6 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			c,
 			() => new State(c, this.#options),
 		);
-	}
-
-	/**
-	 * Read the session in the handler before returning streamed JSX, `null`
-	 * when nobody is signed in. Does not extend its lifetime.
-	 *
-	 * ```ts
-	 * const session = await auth.session(c);
-	 * if (!session) return c.redirect("/login", 303);
-	 * ```
-	 */
-	session(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
-		return this.#state(c).session();
 	}
 
 	/** Establish a session for an already-authorized user with a non-blank ID of at most 1024 UTF-8 bytes. Built-in passkey handlers do this automatically. */

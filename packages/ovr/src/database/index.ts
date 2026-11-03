@@ -474,6 +474,12 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 	}
 }
 
+/**
+ * Migrations a library's tables bring, by table. Tables of one library share
+ * one list, applied by `db.migrate` in its own ID order before the application's.
+ */
+export const owned = new WeakMap<Table.Any, readonly Database.Migration[]>();
+
 /** Database members, tables are added by name. */
 class Base<T extends readonly Table.Any[]> {
 	/** Names database members use. */
@@ -612,18 +618,26 @@ class Base<T extends readonly Table.Any[]> {
 	}
 
 	/**
-	 * Apply pending migrations in ID order.
+	 * Apply pending migrations in ID order. Libraries' tables, such as
+	 * `Auth.tables`, bring their own migrations, applied first in their own
+	 * order, so a migration of yours can reference their tables.
 	 *
 	 * Each migration and its history record commit together while holding a
 	 * transaction-level advisory lock, so concurrent runs apply each once.
 	 *
-	 * @param migrations Every migration, including applied ones
+	 * @param migrations Every migration of yours, including applied ones
 	 * @returns IDs applied by this call
 	 */
 	readonly migrate = async (migrations: readonly Database.Migration[]) => {
+		// each library's migrations, in the order their tables are listed, then yours
+		const groups = [
+			...new Set(this.#tables.map((table) => owned.get(table))),
+		].filter((group) => group !== undefined);
+		groups.push(migrations);
+
 		const checksums = new Map<string, string>();
 
-		for (const { id, sql } of migrations) {
+		for (const { id, sql } of groups.flat()) {
 			if (!id || checksums.has(id))
 				throw new TypeError(`Invalid or duplicate migration ID: ${id}`);
 
@@ -635,12 +649,12 @@ class Base<T extends readonly Table.Any[]> {
 			);
 		}
 
-		const pending = [...migrations].sort((a, b) =>
-			a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+		const sorted = groups.map((group) =>
+			[...group].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
 		);
 		const applied: string[] = [];
 		const done = new Set<string>();
-		let last: string | undefined;
+		let last = 0;
 
 		// one migration per transaction, history added since the last read is verified every time
 		while (
@@ -648,14 +662,18 @@ class Base<T extends readonly Table.Any[]> {
 				const sql = Base.#tag(client);
 
 				await sql`SELECT pg_advisory_xact_lock(hashtext('migrations'))`;
-				await sql`CREATE TABLE IF NOT EXISTS migrations (id text PRIMARY KEY, checksum text NOT NULL, applied timestamptz NOT NULL DEFAULT now())`;
+				// applied in order under the lock, so `n` follows the history
+				await sql`CREATE TABLE IF NOT EXISTS migrations (n bigint GENERATED ALWAYS AS IDENTITY, id text PRIMARY KEY, checksum text NOT NULL, applied timestamptz NOT NULL DEFAULT now())`;
 
-				// "C" collation orders IDs like JavaScript string comparison
 				const history = await sql`
-					SELECT id, checksum FROM migrations
-					${last === undefined ? sql`` : sql`WHERE id COLLATE "C" > ${last}`}
-					ORDER BY id COLLATE "C"
-				`.parse(Schema.object({ id: Schema.string(), checksum: Schema.string() }));
+					SELECT n, id, checksum FROM migrations WHERE n > ${last} ORDER BY n
+				`.parse(
+					Schema.object({
+						n: Schema.number().int(),
+						id: Schema.string(),
+						checksum: Schema.string(),
+					}),
+				);
 
 				for (const row of history) {
 					if (!checksums.has(row.id))
@@ -664,24 +682,32 @@ class Base<T extends readonly Table.Any[]> {
 						throw new Error(`Applied migration ${row.id} has changed`);
 
 					done.add(row.id);
-					last = row.id;
+					last = row.n;
 				}
 
-				const next = pending.find((migration) => !done.has(migration.id));
-				if (!next) return false;
+				for (const group of sorted) {
+					const next = group.find((migration) => !done.has(migration.id));
+					if (!next) continue;
 
-				if (last !== undefined && last > next.id)
-					throw new Error(
-						`Migration ${next.id} sorts before applied migration ${last}`,
-					);
+					const later = group.findLast((migration) => done.has(migration.id));
+					if (later && later.id > next.id)
+						throw new Error(
+							`Migration ${next.id} sorts before applied migration ${later.id}`,
+						);
 
-				await new Sql([next.sql], [], client);
-				await sql`INSERT INTO migrations (id, checksum) VALUES (${next.id}, ${checksums.get(next.id)})`;
-				applied.push(next.id);
-				done.add(next.id);
-				last = next.id;
+					await new Sql([next.sql], [], client);
+					const [row] = await sql`
+						INSERT INTO migrations (id, checksum) VALUES (${next.id}, ${checksums.get(next.id)})
+						RETURNING n
+					`.parse(Schema.object({ n: Schema.number().int() }));
+					applied.push(next.id);
+					done.add(next.id);
+					last = row!.n;
 
-				return true;
+					return true;
+				}
+
+				return false;
 			})
 		);
 

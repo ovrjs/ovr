@@ -1,5 +1,4 @@
-import { Database } from "../database/index.js";
-import { Auth } from "./index.js";
+import { Database, owned } from "../database/index.js";
 import { Storage } from "./storage.js";
 import pg from "pg";
 import {
@@ -29,7 +28,7 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				max: 12,
 			});
 			await pool.query(`CREATE SCHEMA ${schema}`);
-			await pool.query(Auth.sql[2]);
+			await pool.query(owned.get(Storage.tokens)![1]!.sql);
 			await pool.query(`
 			CREATE TABLE auth_sessions (id text PRIMARY KEY, expiration bigint NOT NULL);
 			CREATE TABLE auth_challenges (

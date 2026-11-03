@@ -1,23 +1,21 @@
 import { PGlite } from "@electric-sql/pglite";
-import { Auth, Database, Schema, Table } from "ovr";
+import { Auth, Database, Field, Schema, Table } from "ovr";
 
 /** Demo accounts; Auth stores credentials and sessions in its own tables. */
 export const users = new Table("users", {
 	id: Schema.string().uuid(),
-	email: Schema.string().email(),
+	email: Field.email({ label: "Email" }),
 });
 
-/** Migrations an application keeps as SQL files, with ovr's Auth tables in its order. */
+/** Migrations an application keeps as SQL files, applied after Auth's own. */
 export const migrations: Database.Migration[] = [
 	{
 		id: "0001_users",
 		// text, like Auth's user IDs, so Auth's tables can reference it
 		sql: "CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);",
 	},
-	{ id: "0002_auth", sql: Auth.sql[1] },
-	{ id: "0002_auth_agents", sql: Auth.sql[2] },
 	{
-		id: "0003_auth_users",
+		id: "0002_auth_users",
 		sql: `
 			ALTER TABLE auth_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 			ALTER TABLE auth_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;

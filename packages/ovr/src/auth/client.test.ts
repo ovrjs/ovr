@@ -224,7 +224,7 @@ describe("passkey browser runtime", () => {
 
 	test("preserves the original submitter, native validation, and the final submit event", async () => {
 		const state = setup();
-		const button = {};
+		const button = { hasAttribute: () => false };
 		state.init("first", "bootstrap", "/options", "login");
 		await state.first.fire(button);
 		expect(state.first.submissions).toEqual([button]);
@@ -237,6 +237,16 @@ describe("passkey browser runtime", () => {
 		).toBe("BA");
 		expect(state.get).toHaveBeenCalledOnce();
 		expect(state.first.attributes.has("aria-busy")).toBe(true);
+	});
+
+	test("a button that submits elsewhere needs no passkey", async () => {
+		const state = setup();
+		const deny = { hasAttribute: (name: string) => name === "formaction" };
+		state.init("first", "bootstrap", "/options", "login");
+		await state.first.fire(deny);
+		expect(state.first.events[0]?.preventDefault).not.toHaveBeenCalled();
+		expect(state.fetcher).not.toHaveBeenCalled();
+		expect(state.get).not.toHaveBeenCalled();
 	});
 
 	test("announces cancellation, clears stale fields, and permits a fresh retry", async () => {

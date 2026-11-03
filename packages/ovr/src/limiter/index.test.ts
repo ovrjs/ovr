@@ -1,5 +1,5 @@
 import { App } from "../app/index.js";
-import { Database } from "../database/index.js";
+import { Database, owned } from "../database/index.js";
 import { Route } from "../route/index.js";
 import { Limiter } from "./index.js";
 import { PGlite } from "@electric-sql/pglite";
@@ -26,7 +26,7 @@ const db = new Database(
 	},
 	[Limiter.table],
 );
-await engine.exec(Limiter.sql[1]);
+await engine.exec(owned.get(Limiter.table)![0]!.sql);
 
 /** Database whose queries fail, as when Postgres is unavailable. */
 const broken = (failure: Error) =>
@@ -39,7 +39,7 @@ const broken = (failure: Error) =>
 				throw failure;
 			},
 		},
-		[],
+		[Limiter.table],
 	);
 
 // only Date, PGlite needs real timers

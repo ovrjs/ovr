@@ -2,7 +2,7 @@ import { type Store, users } from "./store";
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Auth, Field, Render, Route } from "ovr";
+import { Auth, Render, Route } from "ovr";
 
 /** Auth stores its data in the demo database; the application creates accounts. */
 export function configure(
@@ -16,13 +16,7 @@ export function configure(
 		database: db,
 		page: "/demo/auth",
 		redirect: "/demo/auth/admin",
-		register: {
-			fields: { email: Field.email({ label: "Email" }) },
-			name: (data) => data.email,
-			create: async (t, data, user) => {
-				await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id: user, email: data.email })}`;
-			},
-		},
+		users,
 	});
 }
 
@@ -44,7 +38,7 @@ export function routes(db: Store, service: ReturnType<typeof configure>) {
 	/** Landing page for register/login passkey flows. */
 	const auth = Route.get("/demo/auth").use(async (c) => {
 		const Layout = createLayout(c);
-		const session = await service.session(c);
+		const session = await c.session();
 		const user = session ? await account(db, session.user) : null;
 
 		const { Register, Login } = service.forms(c);
@@ -85,7 +79,7 @@ export function routes(db: Store, service: ReturnType<typeof configure>) {
 
 	/** Protected dashboard route for demo session/credential output. */
 	const admin = Route.get("/demo/auth/admin").use(async (c) => {
-		const session = await service.session(c);
+		const session = await c.session();
 		if (!session) return c.redirect(auth, 303);
 		const user = await account(db, session.user);
 		if (!user) {

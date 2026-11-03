@@ -3,11 +3,11 @@ title: Auth
 description: Passkey authentication with customizable forms, stored in your Postgres database.
 ---
 
-`Auth` handles passkey registration, login, logout, and sessions. It stores its data in your Postgres [database](/09-database), and your application creates the accounts. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
+`Auth` handles passkey registration, login, logout, and sessions. It stores its data in your Postgres [database](/09-database), and creates accounts in your users table. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
 
 ## Create
 
-Create one `Auth` instance and add it to the app with `app.use(auth)`. This mounts the authentication endpoints.
+Create one `Auth` instance with your users table, and add it to the app with `app.use(auth)`. This mounts the authentication endpoints, and lets handlers read the session with `c.session()`.
 
 ```ts
 import { App, Auth, Database, Field, Schema, Table } from "ovr";
@@ -15,7 +15,7 @@ import { Pool } from "pg";
 
 const users = new Table("users", {
 	id: Schema.string(),
-	email: Schema.string().email(),
+	email: Field.email({ label: "Email" }),
 });
 
 const db = new Database(
@@ -27,13 +27,7 @@ const auth = new Auth({
 	secret,
 	origin: "https://example.com",
 	database: db,
-	register: {
-		fields: { email: Field.email({ label: "Email" }) },
-		name: ({ email }) => email,
-		create: async (t, { email }, id) => {
-			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id, email })}`;
-		},
-	},
+	users,
 });
 
 const app = new App().use(auth);
@@ -156,7 +150,7 @@ Supply children to control the markup and styling:
 
 The browser script updates this status element and hides the default fallback when you supply your own. With custom form children, it also adds missing protocol inputs, so you only need to render your application fields and submit button.
 
-Use field schemas for format checks. Enforce uniqueness with database constraints, where errors stay generic. `Field.email()` checks syntax; it does not verify ownership of an email address. `register.name` provides a display label for the passkey provider, not a verified identity.
+Use field schemas for format checks. Enforce uniqueness with database constraints, where errors stay generic. `Field.email()` checks syntax; it does not verify ownership of an email address. The first field, here the email, labels the passkey in the user's password manager; it is not a verified identity.
 
 ## Sessions
 
@@ -165,7 +159,7 @@ Check the session before rendering a protected page:
 ```tsx
 app.use(
 	Route.get("/account").use(async (c) => {
-		const session = await auth.session(c);
+		const session = await c.session();
 		if (!session) return c.redirect("/login", 303);
 
 		const { Logout } = auth.forms(c);
@@ -180,7 +174,7 @@ app.use(
 );
 ```
 
-`auth.session(c)` returns the session, or `null` when nobody is signed in. Check it before anything private, and return a redirect to your authentication `page`; pages that are public but change for signed-in users render either way.
+`c.session()` returns the session, or `null` when nobody is signed in. Check it before anything private, and return a redirect to your authentication `page`; pages that are public but change for signed-in users render either way.
 
 A session is `{ id, user, expiration }`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 
@@ -209,17 +203,15 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. `Auth.sql[1]` is the SQL that creates them: add it to your migrations, under an ID you choose, so it runs in your order. [`db.check()`](/09-database#check) reports any table that is missing or different.
+`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`db.migrate()`](/09-database#migrate) applies them, as `auth:1`, `auth:2`, and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`db.check()`](/09-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
 
 ```ts
-await db.migrate([
-	...files, // your migrations/*.sql
-	{ id: "0002_auth", sql: Auth.sql[1] },
-	{ id: "0004_auth_agents", sql: Auth.sql[2] },
-]);
+const db = new Database(pool, [users, posts, ...Auth.tables]);
+
+await db.migrate(files); // Auth's migrations, then your migrations/*.sql
 ```
 
-A version's SQL never changes, so its checksum stays valid. Changes ship as a new version for you to add as a new migration: `Auth.sql[2]` adds the table for [agents](#agents).
+A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, which the next `db.migrate()` applies: `auth:2` added the table for [agents](#agents).
 
 | Table              | Contents                                                      |
 | ------------------ | ------------------------------------------------------------- |
@@ -245,7 +237,7 @@ const passkeys = await db.sql`
 `.parse(db.auth_credentials);
 ```
 
-`register.create(t, data, user)` receives your validated fields and the new account's ID. Insert the account with `t`: it runs in the transaction that stores the first credential, so both are saved or neither is. Never upsert an existing account. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
+The users table's form fields, other than `id`, are the registration form. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
 
 Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, and all browsers together 10,000; [aggregate rate limits](#additional-limits) protect that capacity from abuse.
 
@@ -303,7 +295,7 @@ These numbers are an example. Size the burst and refill over the two-minute chal
 | `page`            | `/login`        | Your authentication page; failures redirect here. |
 | `redirect`        | `/`             | Destination after registration or login.          |
 | `duration`        | Seven days      | Fixed session lifetime in milliseconds.           |
-| `consent`         | None            | Page where users approve [agents](#agents).       |
+| `consent`         | `/connect`      | Page where users approve [agents](#agents).       |
 | `error(error, c)` | `console.error` | Detailed server-side error logging.               |
 
 `page` and `redirect` must be local paths. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
@@ -312,17 +304,17 @@ Validation failures mark the affected fields. Expired or browser-mismatched form
 
 ## Agents
 
-Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/10-agents) and act as a user. The user signs in with their passkey in the browser and approves the agent; the agent receives OAuth tokens, never the passkey or a session cookie. Connecting agents requires Node.js or Bun, see below.
+Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/10-agents) and act as a user. The user signs in with their passkey in the browser and approves the agent with it; the agent receives OAuth tokens, never the passkey or a session cookie. Connecting agents requires Node.js or Bun, see below.
 
-Set `consent` to the page where users approve agents, and create the page:
+Pass `auth` to the [MCP endpoint](/10-agents#sign-in), which mounts the OAuth endpoints agents sign in with, and create the page where users approve them, `/connect` unless you set `consent`:
 
 ```tsx
-const auth = new Auth({ ...options, consent: "/connect" });
+const auth = new Auth(options);
 
 const connect = Route.get("/connect")
 	.describe(false)
 	.use(async (c) => {
-		if (!(await auth.session(c))) return c.redirect("/login", 303);
+		if (!(await c.session())) return c.redirect("/login", 303);
 		const request = await auth.consent(c);
 		if (!request) return c.text("This request expired. Connect again.", 400);
 
@@ -338,15 +330,16 @@ const connect = Route.get("/connect")
 app.use(auth, new Mcp({ auth }), connect);
 ```
 
-`request.Form` renders Allow and Deny buttons. Pass your own buttons as `children`, named `decision` with the values `allow` and `deny`. The client name is chosen by the agent and not verified, so the page shows where the user will return. `auth.consent(c)` also sets headers that stop other sites from framing the page.
+`request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified, so the page shows where the user will return. `auth.consent(c)` also sets headers that stop other sites from framing the page.
 
-Auth then serves an OAuth 2.1 authorization server:
+Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint given `auth` have none of these endpoints.
 
 | Endpoint                                  | Purpose                                                     |
 | ----------------------------------------- | ----------------------------------------------------------- |
 | `/.well-known/oauth-authorization-server` | Metadata agents discover the endpoints with                 |
 | `/oauth/authorize`                        | Signs the user in if needed, then shows your `consent` page |
-| `/oauth/approve`                          | The consent form's decision                                 |
+| `/oauth/approve`                          | Allows the agent, confirmed with the user's passkey         |
+| `/oauth/deny`                             | Denies the agent                                            |
 | `/oauth/token`                            | Exchanges codes for tokens, and refreshes them              |
 
 An agent's client ID is the HTTPS URL of its [client ID metadata document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-id-metadata-documents), a JSON file with its name and the addresses to return the user to. Auth fetches it when the user connects, so the name shown on the consent page is tied to the agent's website, and there is nothing to register or store. The fetch never follows redirects, reads at most 5 KB, and refuses private and other special-use addresses. The address is checked when the connection looks the name up, so a domain cannot pass the check and then point at your network. Node.js and Bun can check the connection, so `consent` throws in other runtimes.
@@ -355,7 +348,7 @@ Anyone can send a client ID, so downloads are limited: each IP can make 30 autho
 
 Agents send the `resource` they will use the token with, such as the MCP endpoint URL, when they authorize and when they request tokens. Authorization requires PKCE with S256. Codes last a minute and are used once, access tokens last an hour, and refresh tokens last 30 days and are replaced each time they are used. Using a code or refresh token a second time revokes every token issued from it, since one of the two parties stole it. A token grants what the user can do, so requests with a `scope` are refused. Tokens are bound to the resource they were requested for, such as the MCP endpoint, and stored as SHA-256 hashes.
 
-In a tool call, `auth.session(c)` returns the session of the user who approved the agent, so the same handlers serve people and agents. `auth.bearer(c, resource)` reads a bearer token's session directly.
+In a tool call, `c.session()` returns the session of the user who approved the agent, so the same handlers serve people and agents. `auth.bearer(c, resource)` reads a bearer token's session directly.
 
 To list and disconnect an account's agents, query its refresh tokens:
 

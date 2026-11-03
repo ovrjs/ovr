@@ -2893,6 +2893,13 @@ class FieldSchema<
 	}
 }
 
+/**
+ * @param value Schema
+ * @returns `true` for a form field, such as a table column made with `Field`
+ */
+export const field = (value: unknown): value is Field.Any =>
+	value instanceof FieldSchema;
+
 export namespace Field {
 	/**
 	 * Base options to create a Field.

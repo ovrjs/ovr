@@ -152,10 +152,10 @@ The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv
 
 `database` is required. Optional settings are `limit`, `interval` (milliseconds), `name`, and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
-Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables and add `Limiter.sql[1]` to your migrations. `Auth.tables` and `Auth.sql[1]` already include both, so an app using Auth adds nothing.
+Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`db.migrate()`](/09-database#migrate) creates it before your own migrations; `new Limiter()` throws when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
 
 ```ts
-await db.migrate([...files, { id: "0002_limits", sql: Limiter.sql[1] }]);
+const db = new Database(pool, [posts, Limiter.table]);
 ```
 
 Each admitted request refills and consumes a token in one atomic statement, so every worker shares one budget and a fresh function instance does not receive a fresh budget. Expired buckets are deleted as new ones are written. Database failures fail closed. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. The default name is `requests`: identical policies with the same name, scope, and identity intentionally share a budget. Give independent route quotas distinct stable names. Changing a policy creates a fresh bucket.

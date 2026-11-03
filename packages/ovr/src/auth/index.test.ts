@@ -1,8 +1,9 @@
-import { App } from "../app/index.js";
-import { Database } from "../database/index.js";
+import { App, mount } from "../app/index.js";
+import { Database, owned } from "../database/index.js";
 import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import { Mcp } from "../mcp/index.js";
+import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field, Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
@@ -200,10 +201,7 @@ const run = async (text: string, values?: unknown[]) =>
 	values?.length
 		? engine.query(text, values)
 		: ((await engine.exec(text)).at(-1) ?? { rows: [] });
-const users = new Table("users", {
-	id: Schema.string(),
-	email: Schema.string(),
-});
+const users = new Table("users", { id: Schema.string(), email: Field.email() });
 const db = new Database(
 	{
 		async query(text, values) {
@@ -220,10 +218,13 @@ const db = new Database(
 	},
 	[users, ...Auth.tables],
 );
-// the shipped migration, so these tests cover it too
-await engine.exec(
-	`CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL);\n${Auth.sql[1]}\n${Auth.sql[2]}`,
-);
+/** The app's own migration, after Auth's */
+const own = {
+	id: "0001_users",
+	sql: "CREATE TABLE users (id text PRIMARY KEY, email text NOT NULL)",
+};
+// the shipped migrations, so these tests cover them too
+const applied = await db.migrate([own]);
 const storage = Storage.of(db);
 
 beforeEach(() =>
@@ -269,15 +270,17 @@ function setup(extra: Partial<State.Options> = {}) {
 		sessions: storage.sessions,
 		...extra,
 	};
-	const settings: Auth.Options = {
+	const settings: Auth.Options<typeof users> = {
 		secret: options.secret,
 		origin: options.origin,
 		...(options.duration === undefined ? {} : { duration: options.duration }),
 		database: db,
-		register: { fields: {}, name: () => "User", create: () => {} },
+		users,
 	};
 	const auth = new Auth(settings);
 	const app = new App();
+	// reads sessions for c.session(), as app.use(auth) does
+	app.use((auth[mount]() as [Middleware])[0]);
 	// Internal protocol tests compose their own routes; applications use new Auth().
 	const issue = (method: "register" | "login") =>
 		Route.post(method === "register" ? endpoint : `${endpoint}/login`)
@@ -329,7 +332,7 @@ function setup(extra: Partial<State.Options> = {}) {
 				{},
 			),
 		),
-		Route.get("/session").use(async (c) => c.json(await auth.session(c))),
+		Route.get("/session").use(async (c) => c.json(await c.session())),
 		Route.post("/session").use(async (c) => c.json(await auth.login(c, user))),
 		Route.post("/logout").use(async (c) => c.json(await auth.logout(c))),
 		Route.post("/revoke/:id").use(async (c) => {
@@ -717,8 +720,8 @@ describe("revocable sessions", () => {
 		const get = vi.spyOn(state.options.sessions, "get");
 		state.app.use(
 			Route.get("/cached").use(async (c) => {
-				const first = state.auth.session(c);
-				expect(state.auth.session(c)).toBe(first);
+				const first = c.session();
+				expect(c.session()).toBe(first);
 				c.json(await first);
 			}),
 		);
@@ -741,7 +744,7 @@ describe("revocable sessions", () => {
 		state.app.use(
 			Route.get("/revoke-current").use(async (c) => {
 				await state.auth.revoke(c, session.id);
-				expect(await state.auth.session(c)).toBeNull();
+				expect(await c.session()).toBeNull();
 				c.text("revoked");
 			}),
 		);
@@ -777,10 +780,10 @@ describe("revocable sessions", () => {
 			const get = vi.spyOn(state.options.sessions, "get");
 			state.app.use(
 				Route.get("/direct-revoke").use(async (c) => {
-					if (cached) await state.auth.session(c);
+					if (cached) await c.session();
 					get.mockRejectedValue(new Error("reads unavailable"));
 					await state.auth.revoke(c, session.id);
-					expect(await state.auth.session(c)).toBeNull();
+					expect(await c.session()).toBeNull();
 					c.text("revoked");
 				}),
 			);
@@ -803,7 +806,7 @@ describe("revocable sessions", () => {
 			Route.get("/rotate-revoke").use(async (c) => {
 				const session = await state.auth.login(c, "next-user");
 				await state.auth.revoke(c, previous.id);
-				expect(await state.auth.session(c)).toEqual(session);
+				expect(await c.session()).toEqual(session);
 				c.json(session);
 			}),
 		);
@@ -929,9 +932,6 @@ describe("form contracts", () => {
 				| "auth_tokens"
 			)[]
 		>();
-		expectTypeOf<Parameters<Auth["session"]>[0]>().toEqualTypeOf<
-			Pick<Auth.Context, "url" | "cookie" | "res">
-		>();
 		if (false) {
 			// @ts-expect-error The promise helper is internal.
 			const result: Auth.Result<string> = "";
@@ -1052,24 +1052,15 @@ describe("cryptographic input validation", () => {
 
 function managed(
 	storage = setup(),
-	extra: Partial<Auth.Options<{ email: ReturnType<typeof Field.email> }>> = {},
+	extra: Partial<Auth.Options<typeof users>> = {},
 ) {
-	const create = vi.fn(
-		async (t: Database.Transaction, data: { email: string }, user: string) => {
-			expect(data).toEqual({ email: "user@example.com" });
-			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id: user, ...data })}`;
-		},
-	);
+	/** @returns The accounts registration created */
+	const created = () => rows(users);
 	const error = vi.fn();
 	const service = new Auth({
 		...storage.settings,
 		redirect: "/account",
 		error,
-		register: {
-			fields: { email: Field.email() },
-			name: (data) => data.email,
-			create,
-		},
 		...extra,
 	});
 	const app = new App().use(service);
@@ -1094,7 +1085,7 @@ function managed(
 				jsx(Login, {}),
 			];
 		}),
-		Route.get("/whoami").use(async (c) => c.json(await service.session(c))),
+		Route.get("/whoami").use(async (c) => c.json(await c.session())),
 	);
 	const post = (path: string, data: FormData, cookie = "", ip = "192.0.2.1") =>
 		app.fetch(origin + path, {
@@ -1144,7 +1135,7 @@ function managed(
 		if (path.includes("register")) data.set("email", "user@example.com");
 		return post(path, data, start.cookie);
 	};
-	return { app, service, storage, create, error, post, start, submit };
+	return { app, service, storage, created, error, post, start, submit };
 }
 
 /** Tokens a policy has spent, by bucket name and scope; freeze the clock so none refill. */
@@ -1173,8 +1164,9 @@ describe("configured passkey callbacks", () => {
 		const registered = await cold.submit(start, credential);
 		expect(registered.status).toBe(303);
 		expect(registered.headers.get("location")).toBe("/account");
-		expect(cold.create).toHaveBeenCalledOnce();
-		expect(warm.create).not.toHaveBeenCalled();
+		expect(await cold.created()).toEqual([
+			{ id: expect.any(String), email: "user@example.com" },
+		]);
 		const cookie =
 			start.cookie +
 			"; " +
@@ -1234,7 +1226,7 @@ describe("configured passkey callbacks", () => {
 					)
 				).status,
 			).toBe(303);
-			expect(state.create).toHaveBeenCalledOnce();
+			expect(await state.created()).toHaveLength(1);
 		} finally {
 			vi.restoreAllMocks();
 		}
@@ -1242,9 +1234,9 @@ describe("configured passkey callbacks", () => {
 
 	test("does not issue a session when account persistence fails and keeps details out of HTTP responses", async () => {
 		const state = managed();
-		state.create.mockImplementationOnce(() => {
-			throw new Error("private database details");
-		});
+		vi.spyOn(Storage.of(db), "register").mockRejectedValueOnce(
+			new Error("private database details"),
+		);
 		const start = await state.start("register");
 		const result = await state.submit(
 			start,
@@ -1357,7 +1349,7 @@ test("a protected page checks the session and redirects when signed out", async 
 	const after = vi.fn();
 	state.app.use(
 		Route.get("/private").use(async (c) => {
-			const session = await state.service.session(c);
+			const session = await c.session();
 			if (!session) return c.redirect("/login", 303);
 			after();
 			return c.json(session);
@@ -1504,14 +1496,15 @@ test("every generated auth endpoint rejects an alternate host before admission o
 	}
 	expect(check).not.toHaveBeenCalled();
 	expect(set).not.toHaveBeenCalled();
-	expect(state.create).not.toHaveBeenCalled();
+	expect(await state.created()).toHaveLength(0);
 });
 
-test("auth helpers enforce their origin even without App auth integration", async () => {
+test("reading a session enforces Auth's origin", async () => {
 	const state = setup();
 	const app = new App();
 	app.use(
-		Route.get("/private").use(async (c) => c.json(await state.auth.session(c))),
+		(state.auth[mount]() as [Middleware])[0],
+		Route.get("/private").use(async (c) => c.json(await c.session())),
 	);
 	const response = await app.fetch("https://wrong.example/private");
 	expect(response.status).toBe(421);
@@ -1617,7 +1610,7 @@ test("account persistence may complete before session storage fails; normal logi
 		"/auth/login",
 	);
 	expect(result.headers.get("location")).toBe("/account");
-	expect(state.create).toHaveBeenCalledOnce();
+	expect(await state.created()).toHaveLength(1);
 	expect(await state.storage.size(db.auth_sessions)).toBe(1);
 });
 
@@ -1651,7 +1644,7 @@ test.each(["register", "login"] as const)(
 			"verify",
 		]);
 		expect(take).not.toHaveBeenCalled();
-		expect(state.create).not.toHaveBeenCalled();
+		expect(await state.created()).toHaveLength(0);
 		expect(await state.storage.size(db.auth_sessions)).toBe(0);
 	},
 );
@@ -1724,7 +1717,7 @@ test.each(["register", "login"])(
 			expect(denied.status).toBe(429);
 			expect(denied.headers.get("retry-after")).toBe("3600");
 			expect(check).toHaveBeenCalledTimes(2);
-			expect(state.create).not.toHaveBeenCalled();
+			expect(await state.created()).toHaveLength(0);
 			expect(await state.storage.size(db.auth_challenges)).toBe(0);
 		} finally {
 			time.mockRestore();
@@ -1771,7 +1764,7 @@ test("signup options and verification have independent default budgets", async (
 			await registration(start.options.challenge, await pair()),
 		);
 		expect(response.headers.get("location")).toBe("/account");
-		expect(state.create).toHaveBeenCalledOnce();
+		expect(await state.created()).toHaveLength(1);
 	} finally {
 		time.mockRestore();
 	}
@@ -1923,7 +1916,7 @@ test("registration rejects changed application fields before account or session 
 	const result = await state.post("/auth/register", data, start.cookie);
 	expect(result.headers.get("location")).toBe(origin + "/login?_auth=register");
 	expect(result.headers.getSetCookie()).toHaveLength(0);
-	expect(state.create).not.toHaveBeenCalled();
+	expect(await state.created()).toHaveLength(0);
 	expect(await state.storage.size(db.auth_sessions)).toBe(0);
 	expect(await state.storage.challenge(start.ceremony)).toBeUndefined();
 });
@@ -2024,7 +2017,8 @@ test("every rotation secret is validated and the configured list is snapshotted"
 	const auth = new Auth({ ...state.settings, secret: secrets });
 	secrets[0] = "replacement-secret-with-at-least-32-bytes";
 	const app = new App().use(
-		Route.get("/session").use(async (c) => c.json(await auth.session(c))),
+		(auth[mount]() as [Middleware])[0],
+		Route.get("/session").use(async (c) => c.json(await c.session())),
 	);
 	const login = await state.post("/session", new FormData());
 	expect(
@@ -2061,7 +2055,7 @@ test.each(["expired", "browser"])(
 			);
 			expect(response.headers.getSetCookie()).toHaveLength(0);
 			expect(set).not.toHaveBeenCalled();
-			expect(state.create).not.toHaveBeenCalled();
+			expect(await state.created()).toHaveLength(0);
 		} finally {
 			time.mockRestore();
 		}
@@ -2083,9 +2077,9 @@ test("oversized registration bodies are rejected without spending the signup bud
 
 /** Checksums of the shipped migrations: never update them, add a new version instead. */
 const checksums = {
-	auth: "b4b7af4c0e069a2c87239fcdf2d58e0896fdea9ec7294a80a9f0e3a297c97c99",
+	auth: "1dd0bbe5a91a90cc6532753e04695d3fd488ef08202a63d70fea508f11a201ec",
 	agents: "a6c10a9a55133d44e1aa98e6019bad9cb8d6874052c1d4131b473ff6653987f1",
-	limiter: "8ab4ac3ad8e79de0dc9621e8bf80b386f579c3096cfe6e4c2677e65200e88696",
+	limiter: "94fd469e8c2caa7331e532b764ae872352804a28527febb3decf5b09cf40ca70",
 };
 
 describe("migration SQL", () => {
@@ -2093,11 +2087,94 @@ describe("migration SQL", () => {
 		expect(await db.check()).toEqual([]);
 	});
 
+	test("Auth's tables bring their migrations, applied before the app's", async () => {
+		expect(applied).toEqual([
+			"auth:1",
+			"auth:2",
+			"rate_limits:1",
+			"0001_users",
+		]);
+		// applied, so nothing runs again
+		expect(await db.migrate([own])).toEqual([]);
+	});
+
+	test("Auth and Limiter need their tables in the database", () => {
+		const bare = new Database(
+			{
+				query: async () => ({ rows: [] }),
+				connect: async () => {
+					throw new Error("Not connected");
+				},
+			},
+			[users],
+		);
+		expect(
+			() =>
+				new Auth({
+					secret: "test-secret-with-at-least-32-bytes",
+					origin,
+					database: bare,
+					users,
+				}),
+		).toThrow("...Auth.tables");
+		expect(() => new Limiter({ database: bare })).toThrow("Limiter.table");
+	});
+
+	test("Auth creates accounts in a users table it can insert into", () => {
+		const settings = { secret: "test-secret-with-at-least-32-bytes", origin };
+		const pool = {
+			query: async () => ({ rows: [] }),
+			connect: async () => {
+				throw new Error("Not connected");
+			},
+		};
+		const table = (shape: Table.Shape, options = {}) => {
+			const people = new Table("people", shape, options);
+			return new Auth({
+				...settings,
+				database: new Database(pool, [people, ...Auth.tables]),
+				users: people as Auth.Users,
+			});
+		};
+
+		expect(() => table({ email: Field.email() })).toThrow("id column");
+		// registration only fills fields, so other columns need defaults
+		expect(() =>
+			table({
+				id: Schema.string(),
+				email: Field.email(),
+				plan: Schema.string(),
+			}),
+		).toThrow("plan column needs a default");
+		table(
+			{ id: Schema.string(), email: Field.email(), plan: Schema.string() },
+			{ default: ["plan"] },
+		);
+		expect(
+			() =>
+				new Auth({
+					...settings,
+					database: new Database(pool, [...Auth.tables]),
+					users,
+				}),
+		).toThrow("users table is missing");
+	});
+
+	test("reading a session needs app.use(auth)", async () => {
+		const app = new App().use(
+			Route.get("/").use(async (c) => c.json(await c.session())),
+		);
+		await expect(app.fetch(`${origin}/`)).rejects.toThrow("app.use(auth)");
+	});
+
+	const [auth, agents] = owned.get(Storage.credentials)!;
+	const [limiter] = owned.get(Limiter.table)!;
+
 	// an applied migration's checksum must never change, new SQL ships as a new version
 	test.each([
-		["Auth.sql[1]", Auth.sql[1], checksums.auth],
-		["Auth.sql[2]", Auth.sql[2], checksums.agents],
-		["Limiter.sql[1]", Limiter.sql[1], checksums.limiter],
+		["auth:1", auth!.sql, checksums.auth],
+		["auth:2", agents!.sql, checksums.agents],
+		["rate_limits:1", limiter!.sql, checksums.limiter],
 	])("%s never changes", async (_, sql, checksum) => {
 		expect(
 			new Uint8Array(
@@ -2256,13 +2333,13 @@ describe("agents", () => {
 			origin,
 			database: db,
 			consent: "/connect",
-			register: { fields: {}, name: () => "User", create: () => {} },
+			users,
 		});
 		const notes = Route.post("/notes")
 			.describe("Write a note")
 			.fields({ text: Field.text() })
 			.use(async (c) => {
-				const session = await auth.session(c);
+				const session = await c.session();
 				if (!session) return c.text("Unauthorized", 401);
 				const result = await c.data();
 				if (result.issues) return;
@@ -2322,6 +2399,82 @@ describe("agents", () => {
 			),
 		);
 
+	/** @returns An HTML attribute's value, unescaped */
+	const attribute = (html: string, name: string) =>
+		new RegExp(`${name}="([^"]+)"`)
+			.exec(html)![1]!
+			.replaceAll("&quot;", '"')
+			.replaceAll("&amp;", "&");
+
+	const form = (values: Record<string, string>) => {
+		const data = new FormData();
+		for (const [name, value] of Object.entries(values)) data.set(name, value);
+		return data;
+	};
+
+	/**
+	 * Stores a passkey for a user.
+	 *
+	 * @param owner User the passkey belongs to
+	 * @returns Its keys
+	 */
+	const enroll = async (owner: string) => {
+		const keys = await pair();
+		// one test passkey at a time
+		await db.sql`DELETE FROM ${db.auth_credentials} WHERE id = ${id}`;
+		await db.sql`INSERT INTO ${db.auth_credentials} ${db.sql.values(
+			db.auth_credentials,
+			{
+				id,
+				user: owner,
+				publicKey: Codec.Base64Url.encode(
+					new Uint8Array(await crypto.subtle.exportKey("spki", keys.publicKey)),
+				),
+				counter: 0,
+				eligible: false,
+				backedUp: false,
+			},
+		)}`;
+		return { keys, owner };
+	};
+
+	/**
+	 * Allows the request on a consent page with a passkey.
+	 *
+	 * @param browser Browser with the user's cookies
+	 * @param html Consent page
+	 * @param passkey Passkey to sign with, `null` to submit without one
+	 */
+	const allow = async (
+		browser: (url: string, init?: RequestInit) => Promise<Response>,
+		html: string,
+		passkey: { keys: CryptoKeyPair; owner: string } | null,
+	) => {
+		const request = attribute(html, 'name="request" value');
+		if (!passkey)
+			return browser("/oauth/approve", {
+				method: "POST",
+				body: form({ request, credential: "", ceremony: "" }),
+				headers: { origin },
+			});
+
+		const started = await browser(attribute(html, "data-endpoint"), {
+			method: "POST",
+			body: form({ bootstrap: attribute(html, "data-bootstrap") }),
+			headers: { origin },
+		});
+		expect(started.status).toBe(200);
+		const { ceremony, options } = await started.json();
+		const credential = await assertion(options.challenge, passkey.keys, {
+			handle: passkey.owner,
+		});
+		return browser("/oauth/approve", {
+			method: "POST",
+			body: form({ request, credential: JSON.stringify(credential), ceremony }),
+			headers: { origin },
+		});
+	};
+
 	/** Registers a client, signs in, approves it, and exchanges the code */
 	async function connect(decision = "allow") {
 		const state = agents();
@@ -2352,19 +2505,16 @@ describe("agents", () => {
 		const html = await consentPage.text();
 		expect(html).toContain("Allow Test Agent?");
 		expect(html).toContain("127.0.0.1:5123");
-		const request = /name="request" value="([^"]+)"/
-			.exec(html)![1]!
-			.replaceAll("&quot;", '"')
-			.replaceAll("&amp;", "&");
+		const request = attribute(html, 'name="request" value');
 
-		const form = new FormData();
-		form.set("request", request);
-		form.set("decision", decision);
-		const approved = await browser("/oauth/approve", {
-			method: "POST",
-			body: form,
-			headers: { origin },
-		});
+		const approved =
+			decision === "allow"
+				? await allow(browser, html, await enroll(user))
+				: await browser("/oauth/deny", {
+						method: "POST",
+						body: form({ request }),
+						headers: { origin },
+					});
 		const redirect = new URL(approved.headers.get("location")!);
 		expect(redirect.origin + redirect.pathname).toBe(
 			"http://127.0.0.1:5123/callback",
@@ -2780,6 +2930,35 @@ describe("agents", () => {
 		void app;
 	});
 
+	test("allowing an agent needs the asked user's passkey", async () => {
+		const { browser } = agents();
+		const authorize = new URL(`${origin}/oauth/authorize`);
+		authorize.search = new URLSearchParams({
+			response_type: "code",
+			client_id: agent,
+			redirect_uri: callback,
+			code_challenge: await challenge(),
+			code_challenge_method: "S256",
+			resource: mcp,
+		}).toString();
+		await browser("/sign-in");
+		const consent = await browser(authorize.href);
+		const html = await (await browser(consent.headers.get("location")!)).text();
+		expect(html).toContain(`formaction="/oauth/deny"`);
+
+		// a script driving the signed-in browser cannot press Allow
+		const unsigned = await allow(browser, html, null);
+		expect(unsigned.status).toBe(400);
+
+		// another user's passkey cannot allow it either
+		const other = await allow(browser, html, await enroll("user-2"));
+		expect(other.status).toBe(403);
+
+		expect(
+			await db.sql`SELECT * FROM ${db.auth_tokens} WHERE kind = 'code'`,
+		).toEqual([]);
+	});
+
 	test("denying returns an error to the agent", async () => {
 		const { redirect } = await connect("deny");
 
@@ -2862,17 +3041,43 @@ describe("agents", () => {
 		] as const) {
 			vi.spyOn(navigator, "userAgent", "get").mockReturnValue(agent);
 			expect(Metadata.supported).toBe(supported);
-			const auth = () =>
-				new Auth({
-					secret: "test-secret-with-at-least-32-bytes",
-					origin,
-					database: db,
-					consent: "/connect",
-					register: { fields: {}, name: () => "User", create: () => {} },
-				});
-			if (supported) auth();
-			else expect(auth).toThrow(/Node\.js or Bun/);
+			const auth = new Auth({
+				secret: "test-secret-with-at-least-32-bytes",
+				origin,
+				database: db,
+				users,
+			});
+			// passkeys work everywhere, only agents need the safe download
+			new App().use(auth);
+			const connect = () => new App().use(auth, new Mcp({ auth }));
+			if (supported) connect();
+			else expect(connect).toThrow(/Node\.js or Bun/);
 		}
+	});
+
+	test("agents sign in only through an MCP endpoint given auth", async () => {
+		const auth = new Auth({
+			secret: "test-secret-with-at-least-32-bytes",
+			origin,
+			database: db,
+			users,
+		});
+		const metadata = `${origin}/.well-known/oauth-authorization-server`;
+		const issuer = async (app: App) => (await app.fetch(metadata)).text();
+
+		// unmatched paths have an empty body
+		expect(await issuer(new App().use(auth))).toBe("");
+		expect(await issuer(new App().use(auth, new Mcp()))).toBe("");
+
+		// two endpoints share one sign-in
+		const app = new App().use(
+			auth,
+			new Mcp({ auth }),
+			new Mcp({ auth, path: "/admin/mcp" }),
+		);
+		expect(JSON.parse(await issuer(app))).toMatchObject({ issuer: origin });
+		const authorize = await app.fetch(`${origin}/oauth/authorize`, { ip });
+		expect(authorize.status).toBe(400);
 	});
 
 	describe("metadata document downloads", () => {

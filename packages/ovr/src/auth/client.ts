@@ -55,6 +55,8 @@ export function listen(
 	form.addEventListener("change", clear);
 
 	form.addEventListener("submit", async (e) => {
+		// a button that submits elsewhere, such as Deny, needs no passkey
+		if (e.submitter?.hasAttribute("formaction")) return;
 		if (submitting) {
 			if (finalizing) submitted = e;
 			else e.preventDefault();

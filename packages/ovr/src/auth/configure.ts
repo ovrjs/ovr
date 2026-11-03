@@ -3,7 +3,7 @@ import { jsx } from "../jsx/index.js";
 import { LimitIssue, Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
-import { Field, Form } from "../schema/index.js";
+import { Field, Form, field } from "../schema/index.js";
 import { Header, Size } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Passkey } from "./passkey.js";
@@ -11,11 +11,31 @@ import type { State } from "./state.js";
 import type { Storage } from "./storage.js";
 
 /** Construct startup-complete handlers and request-scoped UI components. */
-export function configure<Shape extends Form.Shape>(
-	options: Auth.Options<Shape>,
+export function configure<U extends Auth.Users>(
+	options: Auth.Options<U>,
 	storage: Storage,
 	state: (c: State.Context) => State,
 ) {
+	type Shape = Form.Shape;
+	const { users } = options;
+	if (!("id" in users.shape))
+		throw new TypeError("Auth's users table needs an id column");
+	for (const [name, column] of Object.entries(users.columns))
+		if (
+			name !== "id" &&
+			!field(users.shape[name]) &&
+			!column.nullable &&
+			!(users.options.default as readonly string[] | undefined)?.includes(name)
+		)
+			throw new TypeError(
+				`Auth creates users, so the users table's ${name} column needs a default`,
+			);
+	/** The table's form fields, other than `id` */
+	const shape = Object.fromEntries(
+		Object.entries(users.shape).filter(
+			([name, schema]) => name !== "id" && field(schema),
+		),
+	) as Shape;
 	const configured = options.limits ?? {};
 	/** Build a limiter on Auth's database from policy options over `defaults`. */
 	const limiter = (
@@ -79,7 +99,7 @@ export function configure<Shape extends Form.Shape>(
 		throw new TypeError(
 			"Auth endpoint paths must be distinct from each other and the page",
 		);
-	const fields = new Form(options.register.fields);
+	const fields = new Form(shape);
 	if (
 		fields.names.some((name) =>
 			["credential", "ceremony", "bootstrap"].includes(name),
@@ -88,6 +108,14 @@ export function configure<Shape extends Form.Shape>(
 		throw new TypeError(
 			"Passkey forms reserve credential, ceremony, and bootstrap fields",
 		);
+
+	/** @returns The first field, such as an email, or the host, naming the passkey */
+	const name = (data: Form.Parse.Data<Shape>) => {
+		const value = fields.names[0] && Reflect.get(data, fields.names[0]);
+		return typeof value === "string" && value.trim()
+			? value.trim().slice(0, 256)
+			: new URL(options.origin).hostname;
+	};
 
 	const values = (data: unknown) => {
 		if (!data || typeof data !== "object")
@@ -178,19 +206,21 @@ export function configure<Shape extends Form.Shape>(
 	const register = Passkey.prepare(
 		Route.post(paths.register)
 			.describe(false)
-			.fields(options.register.fields)
+			.fields(shape)
 			.use(guard("register"), async (c) => {
-				const input = await c.data({ payload: 128 * Size.kb });
+				// the users table's fields, only known at runtime
+				const input = (await c.data({
+					payload: 128 * Size.kb,
+				})) as Form.Parse.Result<Shape> | null;
 				if (!input || input.issues) throw input;
 				const data = values(input.data);
 				const credential = await new Passkey(c, state(c)).register(
 					await Passkey.fields(data),
 				);
-				// Pass only application fields, never protocol fields, into the persistence callback.
-				await storage.register(
-					(t, user) => options.register.create(t, data, user),
-					credential,
-				);
+				// only the table's fields, never protocol fields
+				await storage.register(async (t, user) => {
+					await t.sql`INSERT INTO ${users} ${t.sql.values(users, { ...data, id: user } as never)}`;
+				}, credential);
 				await state(c).login(credential.user);
 				c.redirect(state(c).resume(redirect), 303);
 			}),
@@ -217,7 +247,7 @@ export function configure<Shape extends Form.Shape>(
 		});
 	const registration = Route.post(`${paths.options}/register`)
 		.describe(false)
-		.fields({ ...options.register.fields, bootstrap: Field.hidden() })
+		.fields({ ...shape, bootstrap: Field.hidden() })
 		.use(guard("register", true), async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });
 			if (!input) throw new TypeError("Missing registration schema");
@@ -235,7 +265,7 @@ export function configure<Shape extends Form.Shape>(
 				c,
 				state(c),
 				data.bootstrap,
-				() => options.register.name(values(data)),
+				() => name(values(data)),
 				{
 					method: "register",
 					action: paths.register,
@@ -257,7 +287,10 @@ export function configure<Shape extends Form.Shape>(
 	return {
 		routes: [register, login, logout, registration, assertion, Passkey.client],
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */
-		forms(c: Auth.Context, props: { nonce?: string } = {}): Auth.Forms<Shape> {
+		forms(
+			c: Auth.Context,
+			props: { nonce?: string } = {},
+		): Auth.Forms<Auth.Fields<U>> {
 			const passkey = new Passkey(c, state(c));
 			const Register = passkey.form(register, "register", {
 				...props,

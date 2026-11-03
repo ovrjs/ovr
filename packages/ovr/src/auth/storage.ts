@@ -1,4 +1,4 @@
-import type { Database } from "../database/index.js";
+import { type Database, owned } from "../database/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
@@ -108,6 +108,77 @@ export class Storage {
 		family: Schema.string(),
 		expiration: Schema.number().int(),
 	});
+
+	/**
+	 * Migrations creating Auth's tables, by version. A version never changes,
+	 * so its checksum stays valid; later changes ship as new versions.
+	 * `db.migrate` applies them for a database with `Auth.tables`. User IDs
+	 * are text, so they hold any ID `auth.login` accepts.
+	 */
+	static readonly #migrations = [
+		{
+			id: "auth:1",
+			sql: `CREATE TABLE auth_credentials (
+	id text PRIMARY KEY,
+	"user" text NOT NULL,
+	"publicKey" text NOT NULL,
+	counter bigint NOT NULL,
+	eligible boolean NOT NULL,
+	"backedUp" boolean NOT NULL
+);
+CREATE INDEX auth_credentials_user ON auth_credentials ("user");
+
+CREATE TABLE auth_sessions (
+	id text PRIMARY KEY,
+	"user" text NOT NULL,
+	expiration bigint NOT NULL
+);
+CREATE INDEX auth_sessions_user ON auth_sessions ("user");
+CREATE INDEX auth_sessions_expiration ON auth_sessions (expiration);
+
+CREATE TABLE auth_challenges (
+	id text PRIMARY KEY,
+	challenge text NOT NULL,
+	browser text NOT NULL,
+	method text NOT NULL,
+	action text NOT NULL,
+	origin text NOT NULL,
+	expiration bigint NOT NULL,
+	"user" text,
+	fields text
+);
+CREATE INDEX auth_challenges_expiration ON auth_challenges (expiration);
+CREATE INDEX auth_challenges_browser ON auth_challenges (browser, expiration);`,
+		},
+		{
+			id: "auth:2",
+			sql: `CREATE TABLE auth_tokens (
+	id text PRIMARY KEY,
+	kind text NOT NULL,
+	"user" text NOT NULL,
+	client text NOT NULL,
+	resource text NOT NULL,
+	scope text NOT NULL,
+	redirect text,
+	challenge text,
+	family text NOT NULL,
+	expiration bigint NOT NULL
+);
+CREATE INDEX auth_tokens_family ON auth_tokens (family);
+CREATE INDEX auth_tokens_user ON auth_tokens ("user");
+CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
+		},
+	] as const;
+
+	static {
+		for (const table of [
+			Storage.credentials,
+			Storage.sessions,
+			Storage.challenges,
+			Storage.tokens,
+		])
+			owned.set(table, Storage.#migrations);
+	}
 
 	/** Outstanding ceremonies across all browsers, and for one browser. */
 	static readonly #capacity = { total: 10000, browser: 10 };
