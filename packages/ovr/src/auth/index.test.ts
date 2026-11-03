@@ -1352,12 +1352,13 @@ test("automatic policies ignore cookie rotation, isolate clients, and leave logo
 	}
 });
 
-test("require returns the session, or redirects to the page and ends the request", async () => {
+test("a protected page checks the session and redirects when signed out", async () => {
 	const state = managed();
 	const after = vi.fn();
 	state.app.use(
 		Route.get("/private").use(async (c) => {
-			const session = await state.service.require(c);
+			const session = await state.service.session(c);
+			if (!session) return c.redirect("/login", 303);
 			after();
 			return c.json(session);
 		}),
@@ -1366,7 +1367,6 @@ test("require returns the session, or redirects to the page and ends the request
 	const anonymous = await state.app.fetch(origin + "/private");
 	expect(anonymous.status).toBe(303);
 	expect(anonymous.headers.get("location")).toBe("/login");
-	expect(anonymous.headers.get("cache-control")).toBe("no-store");
 	expect(after).not.toHaveBeenCalled();
 
 	const login = await state.storage.post("/session", new FormData());
@@ -2262,7 +2262,8 @@ describe("agents", () => {
 			.describe("Write a note")
 			.fields({ text: Field.text() })
 			.use(async (c) => {
-				const session = await auth.require(c);
+				const session = await auth.session(c);
+				if (!session) return c.text("Unauthorized", 401);
 				const result = await c.data();
 				if (result.issues) return;
 				return c.text(`${session.user} wrote ${result.data.text}`);

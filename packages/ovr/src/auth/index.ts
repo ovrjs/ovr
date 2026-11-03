@@ -1,5 +1,5 @@
 import { type App, mount } from "../app/index.js";
-import { type Context as ContextType, Halt } from "../context/index.js";
+import type { Context as ContextType } from "../context/index.js";
 import type { Database } from "../database/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
@@ -202,7 +202,6 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 	] as const;
 
 	readonly #options: State.Options;
-	readonly #page: string;
 	readonly #states = new WeakMap<object, State>();
 
 	/** Generated endpoints, mounted with `app.use(auth)`. */
@@ -265,7 +264,6 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			challenges: storage.challenges,
 			sessions: storage.sessions,
 		};
-		this.#page = options.page ?? "/login";
 		const service = configure(options, storage, (c) => this.#state(c));
 		const agents = oauth(options, storage, (c) => this.#state(c));
 		this.routes = [...service.routes, ...agents.routes];
@@ -305,28 +303,17 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		);
 	}
 
-	/** Read a session in the handler before returning streamed JSX. Does not extend its lifetime. */
-	session(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
-		return this.#state(c).session();
-	}
-
 	/**
-	 * Read the session of a protected page, or redirect to the authentication
-	 * page and end the request. Call it in the handler before returning JSX.
+	 * Read the session in the handler before returning streamed JSX, `null`
+	 * when nobody is signed in. Does not extend its lifetime.
 	 *
 	 * ```ts
-	 * const session = await auth.require(c);
+	 * const session = await auth.session(c);
+	 * if (!session) return c.redirect("/login", 303);
 	 * ```
 	 */
-	async require(
-		c: Pick<ContextType, "url" | "cookie" | "res" | "redirect">,
-	): Promise<Auth.Session> {
-		const session = await this.session(c);
-
-		if (session) return session;
-
-		c.redirect(this.#page, 303);
-		throw new Halt("Authentication required");
+	session(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
+		return this.#state(c).session();
 	}
 
 	/** Establish a session for an already-authorized user with a non-blank ID of at most 1024 UTF-8 bytes. Built-in passkey handlers do this automatically. */

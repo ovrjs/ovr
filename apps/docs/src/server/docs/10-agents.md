@@ -84,7 +84,7 @@ GET routes are resources. Routes without parameters are listed; routes with para
 
 ### Sign in
 
-Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `auth.require(c)` returns their session.
+Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `auth.session(c)` returns their session.
 
 ```ts
 const mcp = new Mcp({ instructions: "...", auth });

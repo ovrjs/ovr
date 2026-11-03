@@ -23,7 +23,8 @@ const update = Route.post("/posts/:id")
 	.params({ id: Schema.string().uuid() }) // checked before the middleware
 	.fields({ title, body }) // parsed by c.data()
 	.use(async (c) => {
-		const session = await auth.require(c);
+		const session = await auth.session(c);
+		if (!session) return c.redirect("/login", 303);
 		// ...
 	});
 ```

@@ -160,12 +160,13 @@ Use field schemas for format checks. Enforce uniqueness with database constraint
 
 ## Sessions
 
-Require a session before rendering a protected page:
+Check the session before rendering a protected page:
 
 ```tsx
 app.use(
 	Route.get("/account").use(async (c) => {
-		const session = await auth.require(c);
+		const session = await auth.session(c);
+		if (!session) return c.redirect("/login", 303);
 
 		const { Logout } = auth.forms(c);
 
@@ -179,7 +180,7 @@ app.use(
 );
 ```
 
-`auth.require(c)` returns the session, or redirects to your authentication `page` and ends the request, so the rest of the handler only runs for signed-in users. On pages that are public but change for signed-in users, `auth.session(c)` returns the session or `null`.
+`auth.session(c)` returns the session, or `null` when nobody is signed in. Check it before anything private, and return a redirect to your authentication `page`; pages that are public but change for signed-in users render either way.
 
 A session is `{ id, user, expiration }`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 
@@ -321,7 +322,7 @@ const auth = new Auth({ ...options, consent: "/connect" });
 const connect = Route.get("/connect")
 	.describe(false)
 	.use(async (c) => {
-		await auth.require(c);
+		if (!(await auth.session(c))) return c.redirect("/login", 303);
 		const request = await auth.consent(c);
 		if (!request) return c.text("This request expired. Connect again.", 400);
 
@@ -354,7 +355,7 @@ Anyone can send a client ID, so downloads are limited: each IP can make 30 autho
 
 Agents send the `resource` they will use the token with, such as the MCP endpoint URL, when they authorize and when they request tokens. Authorization requires PKCE with S256. Codes last a minute and are used once, access tokens last an hour, and refresh tokens last 30 days and are replaced each time they are used. Using a code or refresh token a second time revokes every token issued from it, since one of the two parties stole it. A token grants what the user can do, so requests with a `scope` are refused. Tokens are bound to the resource they were requested for, such as the MCP endpoint, and stored as SHA-256 hashes.
 
-In a tool call, `auth.session(c)` and `auth.require(c)` return the session of the user who approved the agent, so the same handlers serve people and agents. `auth.bearer(c, resource)` reads a bearer token's session directly.
+In a tool call, `auth.session(c)` returns the session of the user who approved the agent, so the same handlers serve people and agents. `auth.bearer(c, resource)` reads a bearer token's session directly.
 
 To list and disconnect an account's agents, query its refresh tokens:
 

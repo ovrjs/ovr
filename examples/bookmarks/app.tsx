@@ -47,7 +47,8 @@ const create = Route.post("/bookmarks")
 	.describe("Save a bookmark")
 	.fields(editable)
 	.use(async (c) => {
-		const session = await auth.require(c);
+		const session = await auth.session(c);
+		if (!session) return c.redirect(login, 303);
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
 
@@ -71,7 +72,8 @@ const update = Route.post("/bookmarks/:id")
 	.params({ id })
 	.fields(editable)
 	.use(async (c) => {
-		const session = await auth.require(c);
+		const session = await auth.session(c);
+		if (!session) return c.redirect(login, 303);
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
 
@@ -99,7 +101,8 @@ const remove = Route.post("/bookmarks/:id/delete")
 	.describe("Delete a bookmark", { destructive: true })
 	.params({ id })
 	.use(async (c) => {
-		const session = await auth.require(c);
+		const session = await auth.session(c);
+		if (!session) return c.redirect(login, 303);
 		const [bookmark] = await db.sql`
 			DELETE FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
@@ -113,7 +116,8 @@ const remove = Route.post("/bookmarks/:id/delete")
 const list = Route.get("/bookmarks")
 	.describe("The latest 50 bookmarks")
 	.use(async (c) => {
-		const session = await auth.require(c);
+		const session = await auth.session(c);
+		if (!session) return c.redirect(login, 303);
 		const { Logout } = auth.forms(c);
 		const rows = await db.sql`
 			SELECT * FROM ${bookmarks} WHERE owner = ${session.user}
@@ -149,7 +153,8 @@ const edit = Route.get("/bookmarks/:id/edit")
 	.describe("A bookmark with its edit form")
 	.params({ id })
 	.use(async (c) => {
-		const session = await auth.require(c);
+		const session = await auth.session(c);
+		if (!session) return c.redirect(login, 303);
 		const [bookmark] = await db.sql`
 			SELECT * FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
@@ -173,7 +178,7 @@ const edit = Route.get("/bookmarks/:id/edit")
 const connect = Route.get("/connect")
 	.describe(false)
 	.use(async (c) => {
-		await auth.require(c);
+		if (!(await auth.session(c))) return c.redirect(login, 303);
 		const request = await auth.consent(c);
 		if (!request) return c.text("This request expired. Connect again.", 400);
 
