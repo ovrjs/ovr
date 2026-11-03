@@ -1617,7 +1617,7 @@ test("configured options reject substituted operations and oversized bodies befo
 	data.set("email", "user@example.com");
 	data.set("bootstrap", "x".repeat(129 * 1024));
 	const oversized = await state.post(start.endpoint, data, start.cookie);
-	expect(oversized.status).toBe(400);
+	expect(oversized.status).toBe(413);
 	expect(set).not.toHaveBeenCalled();
 });
 
@@ -2137,7 +2137,7 @@ test("oversized registration bodies are rejected without spending the signup bud
 	data.set("email", "x".repeat(129 * 1024));
 	data.set("bootstrap", "invalid");
 	const response = await state.post("/_passkey/options/register", data);
-	expect(response.status).toBe(400);
+	expect(response.status).toBe(413);
 	// the client policy runs after parsing
 	expect(await rows(db.rate_limits)).toEqual([]);
 	expect(await storage.size(db.auth_challenges)).toBe(0);
@@ -3101,6 +3101,59 @@ describe("agents", () => {
 		).toEqual([]);
 	});
 
+	test("a consent page bootstrap cannot start approval for another client's request", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const shown = await consentPage(browser, agent);
+		const other = await consentPage(
+			browser,
+			"https://agent.example/web.json",
+			await Storage.hash("different-verifier-".repeat(3)),
+		);
+		const request = attribute(other, 'name="request" value');
+		const passkey = await enroll(user);
+		const started = await browser(attribute(shown, "data-endpoint"), {
+			method: "POST",
+			headers: { origin },
+			body: form({ bootstrap: attribute(shown, "data-bootstrap"), request }),
+		});
+		if (started.ok) {
+			const { ceremony, options } = await started.json();
+			const credential = await assertion(options.challenge, passkey.keys, {
+				handle: passkey.owner,
+			});
+			await browser("/oauth/approve", {
+				method: "POST",
+				headers: { origin },
+				body: form({
+					request,
+					ceremony,
+					credential: JSON.stringify(credential),
+				}),
+			});
+		} else {
+			expect(started.status).toBeGreaterThanOrEqual(400);
+			expect(started.status).toBeLessThan(500);
+		}
+		expect(
+			await db.sql`SELECT client FROM auth_tokens WHERE kind = 'code'`,
+		).toEqual([]);
+	});
+
+	test.each(["/_passkey/options/approve", "/oauth/approve", "/oauth/deny"])(
+		"%s returns a client error for an oversized multipart field count",
+		async (path) => {
+			const { browser } = agents();
+			const response = await browser(path, {
+				method: "POST",
+				headers: { origin },
+				body: form({ a: "1", b: "2", c: "3", d: "4" }),
+			});
+			expect(response.status).toBeGreaterThanOrEqual(400);
+			expect(response.status).toBeLessThan(500);
+		},
+	);
+
 	test("sharing Auth across apps mounts OAuth in each app", async () => {
 		const { auth } = agents();
 		const app = new App().use(auth, new Mcp({ auth }));
@@ -3110,6 +3163,17 @@ describe("agents", () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get("content-type")).toContain("application/json");
 		expect(await res.json()).toHaveProperty("issuer", origin);
+	});
+
+	test("retrying an unsupported OAuth mount cannot silently skip the runtime check", () => {
+		const { auth } = agents();
+		vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+			"Cloudflare-Workers",
+		);
+		const app = new App().use(auth);
+		const mountEndpoint = () => app.use(new Mcp({ auth }));
+		expect(mountEndpoint).toThrow(/Node.js or Bun/);
+		expect(mountEndpoint).toThrow(/Node.js or Bun/);
 	});
 
 	test("denying returns an error to the agent", async () => {

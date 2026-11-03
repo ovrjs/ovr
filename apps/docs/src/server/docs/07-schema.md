@@ -241,5 +241,6 @@ const submit = Route.post("/submit")
 
 - `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and multiselects count by their max cardinality, and `Field.files()` uses `Infinity`.
 - You can still override the parser per request with `Context.data({ parts, memory, payload })`.
+- A body over a limit, such as more parts than the form has fields, is answered with 413 and the handler stops, so it never needs to catch the error. Iterating `c.form()` yourself throws it instead.
 - App-wide multipart defaults can be set with `new App({ form: { memory, payload, parts } })`.
 - Unexpected names in `FormData` or multipart requests become validation issues instead of being silently accepted.

@@ -98,6 +98,9 @@ export class App {
 	/** Global middleware */
 	readonly #global: Middleware[] = [];
 
+	/** Routes by tool name, agents call each by its own */
+	readonly #tools = new Map<string, Route>();
+
 	/** App options */
 	readonly #options;
 
@@ -127,6 +130,16 @@ export class App {
 	) {
 		for (const route of routes) {
 			if (route instanceof Route) {
+				const { tool } = route;
+				if (tool) {
+					const other = this.#tools.get(tool.name);
+					if (other && other !== route)
+						throw new TypeError(
+							`Tool name "${tool.name}" is used by ${other.method} ${other.pattern} and ${route.method} ${route.pattern}, change one of their patterns.`,
+						);
+					this.#tools.set(tool.name, route);
+				}
+
 				this.#trie.add(route);
 				this.#routes.push(route);
 			} else if (mount in route) {

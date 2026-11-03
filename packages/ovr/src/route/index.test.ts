@@ -408,18 +408,15 @@ describe("Route schema helpers", () => {
 		const submit = Route.post("/limit")
 			.fields({ a: Field.text(), b: Field.text() })
 			.use(async (c) => {
-				try {
-					const result = await c.data({ parts: 1 });
+				// a body over a limit is answered with 413 for the handler
+				const result = await c.data({ parts: 1 });
 
-					if (result.issues) {
-						c.text("invalid", 400);
-						return;
-					}
-
-					c.json(result.data);
-				} catch (error) {
-					c.text(error instanceof Error ? error.message : String(error), 413);
+				if (result.issues) {
+					c.text("invalid", 400);
+					return;
 				}
+
+				c.json(result.data);
 			});
 		const app = new App().use(submit);
 		const data = new FormData();
@@ -455,18 +452,14 @@ describe("Route schema helpers", () => {
 		const submit = Route.post("/auto-limit")
 			.fields({ a: Field.text(), b: Field.text() })
 			.use(async (c) => {
-				try {
-					const result = await c.data();
+				const result = await c.data();
 
-					if (result.issues) {
-						c.text("invalid", 400);
-						return;
-					}
-
-					c.text("ok");
-				} catch (error) {
-					c.text(error instanceof Error ? error.message : String(error), 413);
+				if (result.issues) {
+					c.text("invalid", 400);
+					return;
 				}
+
+				c.text("ok");
 			});
 		const app = new App().use(submit);
 		const data = new FormData();

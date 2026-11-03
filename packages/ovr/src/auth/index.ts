@@ -265,12 +265,14 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	 */
 	[agents](app: App.Mount): ReturnType<App.Service[typeof mount]> {
 		if (this.#mounted.has(app.routes)) return [];
-		this.#mounted.add(app.routes);
 
 		if (!Metadata.supported)
 			throw new TypeError(
 				"Connecting agents requires Node.js or Bun to fetch client ID metadata documents safely",
 			);
+
+		// only once mounting succeeds, so a failed attempt is not skipped next time
+		this.#mounted.add(app.routes);
 
 		return this.#host(this.#oauth);
 	}

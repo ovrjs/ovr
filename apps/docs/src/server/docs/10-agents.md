@@ -76,7 +76,7 @@ A tool's input schema combines the pattern's parameters, converted by `params` s
 
 A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown, following redirects within the app. When `c.data()` finds issues, the agent receives them as an error with each field's message, instead of a redirect back to the form. Your handlers do not change.
 
-`route.tool` is the name, description, and hints a route is called with, or `undefined` when it is not a tool. Names of patterns with `_` or other punctuation, or longer than 64 characters, end with a short hash of the pattern, so `/a/b` and `/a_b` get different names. Two routes cannot share a name, so a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, throw.
+`route.tool` is the name, description, and hints a route is called with, or `undefined` when it is not a tool. Names of patterns with `_` or other punctuation, or longer than 64 characters, end with a short hash of the pattern, so `/a/b` and `/a_b` get different names. Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, so you find out when the app starts.
 
 ### Resources
 

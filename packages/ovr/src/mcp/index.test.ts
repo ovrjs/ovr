@@ -130,6 +130,24 @@ function setup() {
 }
 
 describe("Mcp", () => {
+	test.each([
+		["/", "/index"],
+		["/items/:id", "/items/id"],
+		["/files/*", "/files/wildcard"],
+	])("%s and %s clash when the app starts", (first, second) => {
+		const { app } = setup();
+		// before any agent lists the tools, so discovery never breaks
+		expect(() =>
+			app.use(
+				Route.post(first)
+					.describe("First")
+					.use(() => "one"),
+				Route.post(second)
+					.describe("Second")
+					.use(() => "two"),
+			),
+		).toThrow(`change one of their patterns`);
+	});
 	test("distinct route patterns can expose tools without taking down discovery", async () => {
 		const { app, rpc } = setup();
 		app.use(
@@ -573,14 +591,17 @@ describe("Mcp", () => {
 		});
 	});
 
-	test("two routes cannot share a tool name", async () => {
-		const { app, rpc } = setup();
-		app.use(
-			// a parameter and a literal segment with the same text
-			Route.post("/drafts/:id").describe("Edit a draft"),
-			Route.post("/drafts/id").describe("Make an ID"),
+	test("two routes cannot share a tool name", () => {
+		const { app } = setup();
+		expect(() =>
+			app.use(
+				// a parameter and a literal segment with the same text
+				Route.post("/drafts/:id").describe("Edit a draft"),
+				Route.post("/drafts/id").describe("Make an ID"),
+			),
+		).toThrow(
+			'Tool name "post_drafts_id" is used by POST /drafts/:id and POST /drafts/id',
 		);
-		await expect(rpc("tools/list")).rejects.toThrow(/"post_drafts_id"/);
 	});
 
 	test("rejects other origins, other methods, and malformed requests", async () => {

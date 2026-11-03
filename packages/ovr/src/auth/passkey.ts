@@ -34,6 +34,8 @@ export namespace Passkey {
 		readonly endpoint: string;
 		/** CSP nonce for strict nonce policies. */
 		readonly nonce?: string;
+		/** Form fields the ceremony is for, from `Passkey.fields`, checked when it starts. */
+		readonly fields?: string;
 	}
 }
 
@@ -55,6 +57,7 @@ export class Passkey {
 		browser: Schema.string(),
 		expiration: Schema.number().int(),
 		user: Schema.string().optional(),
+		fields: Schema.string().optional(),
 	});
 	static readonly #credential = Schema.object({
 		type: Schema.literal("public-key"),
@@ -148,6 +151,7 @@ export class Passkey {
 										browser,
 										expiration: Date.now() + Time.hour,
 										user,
+										fields: options.fields,
 									}),
 								),
 							}),
@@ -225,7 +229,9 @@ export class Passkey {
 			return c.text("This page has expired. Reload and try again.", 410);
 		if (
 			bootstrap.method !== expected.method ||
-			bootstrap.action !== expected.action
+			bootstrap.action !== expected.action ||
+			// a page made for some fields, such as one consent request, starts only their ceremony
+			(bootstrap.fields !== undefined && bootstrap.fields !== expected.fields)
 		)
 			throw new Issue("bootstrap binding");
 		if (

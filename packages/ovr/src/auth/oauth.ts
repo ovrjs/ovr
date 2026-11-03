@@ -583,8 +583,10 @@ export function oauth(
 			if (!session || session.user !== pending.user) return null;
 
 			const request = c.url.searchParams.get("request")!;
+			// the page's passkey prompt is for this request only
 			const Form = new Passkey(c, state(c)).form(approve, "login", {
 				endpoint: prompt.pathname(),
+				fields: await Passkey.fields({ request }),
 			});
 
 			return {

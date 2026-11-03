@@ -1,7 +1,7 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Multipart } from "../multipart/index.js";
+import { Limit, Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { Form as FormSchema } from "../schema/index.js";
@@ -279,11 +279,19 @@ export class Context<
 
 			if (!form?.parse) return null as Context.Result<Shape>;
 
-			const result = await form.parse(
-				post
-					? this.form({ parts: form.parts, ...options })
-					: this.url.searchParams,
-			);
+			let result;
+			try {
+				result = await form.parse(
+					post
+						? this.form({ parts: form.parts, ...options })
+						: this.url.searchParams,
+				);
+			} catch (error) {
+				// too large or too many fields is the client's error, not the handler's
+				if (!(error instanceof Limit)) throw error;
+				this.text(error.message, 413);
+				throw new Halt();
+			}
 
 			/** Add the URL to return to with the encoded invalid state. */
 			const invalid = <R extends { search: FormSchema.Parse.Result.Search }>(

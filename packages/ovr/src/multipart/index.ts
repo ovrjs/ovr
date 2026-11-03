@@ -1,6 +1,9 @@
 import { Codec, Header, Mime, Size } from "../util/index.js";
 
 /** Sequence of bytes to find within the stream */
+/** A request body over one of the parser's limits. */
+export class Limit extends RangeError {}
+
 class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
@@ -272,13 +275,13 @@ export class Multipart extends Request {
 		if (next.done) return true;
 		const nextLength = next.value.length;
 		if ((this.#payloadSize += nextLength) > this.#options.payload) {
-			throw new RangeError("Payload Too Large");
+			throw new Limit("Payload Too Large");
 		}
 		if (append) {
 			const length = this.#valid - this.#offset;
 			const required = length + nextLength;
 			if (required > this.#scratch.buffer.maxByteLength) {
-				throw new RangeError("Multipart buffer limit exceeded");
+				throw new Limit("Multipart buffer limit exceeded");
 			}
 			if (length || !borrow) {
 				this.#retain();
@@ -474,7 +477,7 @@ export class Multipart extends Request {
 				(headers = await this.#findConcat(Multipart.#newLine));
 				i++
 			) {
-				if (i === this.#options.parts) throw new RangeError("Too Many Parts");
+				if (i === this.#options.parts) throw new Limit("Too Many Parts");
 
 				const part = new Part(this, this.#findStream(this.#boundary), headers);
 				yield part;
