@@ -89,7 +89,7 @@ export namespace Mcp {
 		readonly origin: string;
 
 		/** @returns The endpoints agents sign in with, mounted with the MCP endpoint */
-		[agents](): ReturnType<App.Service[typeof mount]>;
+		[agents](app: App.Mount): ReturnType<App.Service[typeof mount]>;
 	}
 }
 
@@ -170,7 +170,7 @@ export class Mcp {
 					.use(metadata),
 			);
 
-			return [...routes, auth[agents]()];
+			return [...routes, auth[agents](app)];
 		}
 
 		return routes;

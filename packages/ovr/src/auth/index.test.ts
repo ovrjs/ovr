@@ -1148,6 +1148,74 @@ const spent = async (name: string, scope?: string) =>
 		.reduce((sum, { key, tokens }) => sum + key[1] - tokens, 0);
 
 describe("configured passkey callbacks", () => {
+	test("public signup cannot override a server-default role used by an admin edit form", async () => {
+		const accounts = new Table(
+			"signup_accounts",
+			{
+				id: Schema.string(),
+				email: Field.email(),
+				role: Field.select(["member", "admin"]),
+			},
+			{ default: ["role"] },
+		);
+		const database = new Database(
+			{ query: run, connect: async () => ({ query: run, release() {} }) },
+			[accounts, ...Auth.tables],
+		);
+		const auth = new Auth({ ...setup().settings, database, users: accounts });
+		const app = new App().use(
+			auth,
+			Route.get("/signup").use((c) => {
+				const { Register } = auth.forms(c);
+				return Register({ children: Register.Field({ name: "email" }) });
+			}),
+		);
+		const page = await app.fetch(origin + "/signup");
+		const html = await page.text();
+		const cookie = page.headers
+			.getSetCookie()
+			.map((v) => v.split(";")[0])
+			.join("; ");
+		expect(html).not.toContain('name="role"');
+		const post = (path: string, body: FormData) =>
+			app.fetch(origin + path, {
+				method: "POST",
+				headers: { origin, cookie },
+				ip: "192.0.2.1",
+				body,
+			});
+		await engine.exec(
+			"CREATE TABLE signup_accounts (id text PRIMARY KEY, email text NOT NULL, role text NOT NULL DEFAULT 'member')",
+		);
+		try {
+			const body = new FormData();
+			body.set("email", "member@example.com");
+			body.set("role", "admin");
+			body.set(
+				"bootstrap",
+				/data-bootstrap="([^"]+)"/
+					.exec(html)![1]!
+					.replaceAll("&quot;", '"')
+					.replaceAll("&amp;", "&"),
+			);
+			const start = await post("/_passkey/options/register", body);
+			if (start.ok) {
+				const { ceremony, options } = await start.json();
+				body.delete("bootstrap");
+				body.set("ceremony", ceremony);
+				body.set(
+					"credential",
+					JSON.stringify(await registration(options.challenge, await pair())),
+				);
+				await post("/auth/register", body);
+			}
+			expect(
+				await database.sql`SELECT id FROM signup_accounts WHERE role = 'admin'`,
+			).toEqual([]);
+		} finally {
+			await engine.exec("DROP TABLE signup_accounts");
+		}
+	});
 	test("registers on a cold instance and handles sessions, login, rotation, and logout automatically", async () => {
 		const warm = managed();
 		const cold = managed(warm.storage);
@@ -2458,9 +2526,10 @@ describe("agents", () => {
 				headers: { origin },
 			});
 
+		// the browser module sends the form's fields with the bootstrap
 		const started = await browser(attribute(html, "data-endpoint"), {
 			method: "POST",
-			body: form({ bootstrap: attribute(html, "data-bootstrap") }),
+			body: form({ request, bootstrap: attribute(html, "data-bootstrap") }),
 			headers: { origin },
 		});
 		expect(started.status).toBe(200);
@@ -2957,6 +3026,90 @@ describe("agents", () => {
 		expect(
 			await db.sql`SELECT * FROM ${db.auth_tokens} WHERE kind = 'code'`,
 		).toEqual([]);
+	});
+
+	/** The consent form a signed-in browser receives for a particular client. */
+	async function consentPage(
+		browser: ReturnType<typeof agents>["browser"],
+		client: string,
+		proof?: string,
+	) {
+		const query = new URLSearchParams({
+			response_type: "code",
+			client_id: client,
+			code_challenge: proof ?? (await challenge()),
+			code_challenge_method: "S256",
+			resource: mcp,
+		});
+		const redirect = await browser("/oauth/authorize?" + query);
+		return (await browser(redirect.headers.get("location")!)).text();
+	}
+
+	test("the approval prompt accepts the fields sent by the consent form", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const html = await consentPage(browser, agent);
+		// listen() serializes the form, deletes ceremony and credential, then adds bootstrap.
+		const response = await browser(attribute(html, "data-endpoint"), {
+			method: "POST",
+			headers: { origin },
+			body: form({
+				request: attribute(html, 'name="request" value'),
+				bootstrap: attribute(html, "data-bootstrap"),
+			}),
+		});
+		expect(response.status).toBe(200);
+		expect(await response.json()).toHaveProperty("options.challenge");
+	});
+
+	test("native Deny works after the browser module adds passkey inputs", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const html = await consentPage(browser, agent);
+		const response = await browser(attribute(html, "formaction"), {
+			method: "POST",
+			headers: { origin },
+			body: form({
+				request: attribute(html, 'name="request" value'),
+				credential: "",
+				ceremony: "",
+			}),
+		});
+		expect(response.status).toBe(303);
+		expect(
+			new URL(response.headers.get("location")!).searchParams.get("error"),
+		).toBe("access_denied");
+	});
+
+	test("a passkey assertion for one grant cannot approve a different client's grant", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const first = await consentPage(browser, agent);
+		const second = await consentPage(
+			browser,
+			"https://agent.example/web.json",
+			await Storage.hash("independent-verifier-".repeat(3)),
+		);
+		const swap: typeof browser = (url, init = {}) => {
+			if (url === "/oauth/approve" && init.body instanceof FormData)
+				init.body.set("request", attribute(second, 'name="request" value'));
+			return browser(url, init);
+		};
+		await allow(swap, first, await enroll(user));
+		expect(
+			await db.sql`SELECT client FROM auth_tokens WHERE kind = 'code'`,
+		).toEqual([]);
+	});
+
+	test("sharing Auth across apps mounts OAuth in each app", async () => {
+		const { auth } = agents();
+		const app = new App().use(auth, new Mcp({ auth }));
+		const res = await app.fetch(
+			origin + "/.well-known/oauth-authorization-server",
+		);
+		expect(res.status).toBe(200);
+		expect(res.headers.get("content-type")).toContain("application/json");
+		expect(await res.json()).toHaveProperty("issuer", origin);
 	});
 
 	test("denying returns an error to the agent", async () => {

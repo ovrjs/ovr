@@ -2,7 +2,7 @@ import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Form as FormSchema, Schema as ValueSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
-import { Method, Mime } from "../util/index.js";
+import { Checksum, Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";
 
 /**
@@ -404,11 +404,24 @@ export class Route<
 				segment === "*" ? "wildcard" : segment.replace(/^:/, ""),
 			);
 
-		return {
-			name: `${this.method.toLowerCase()}_${segments.join("_") || "index"}`
+		let name = `${this.method.toLowerCase()}_${segments.join("_") || "index"}`;
+
+		// `_` and other punctuation could make two patterns' names the same,
+		// such as `/a/b` and `/a_b`, so those names end with the pattern's hash
+		if (
+			!segments.every((segment) => /^[A-Za-z0-9-]+$/.test(segment)) ||
+			name.length > 64
+		)
+			name = `${name
 				.replace(/[^\w-]+/g, "_")
 				.replace(/_+/g, "_")
-				.slice(0, 64),
+				.slice(
+					0,
+					56,
+				)}_${Checksum.djb2(`${this.method} ${this.pattern}`).slice(0, 7)}`;
+
+		return {
+			name,
 			description: this.description,
 			read,
 			destructive: !read && Boolean(this.agent.destructive),

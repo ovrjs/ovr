@@ -271,7 +271,8 @@ export function oauth(
 	/** Starts the passkey prompt for allowing an agent */
 	const prompt = Route.post(paths.prompt)
 		.describe(false)
-		.fields({ bootstrap: Field.hidden() })
+		// the consent form's fields, the request is the one the passkey confirms
+		.fields({ request: Field.hidden(), bootstrap: Field.hidden() })
 		.use(async (c) => {
 			c.res.headers.set(Header.name.cache, "no-store");
 			if (!same(c)) return c.text("Forbidden", 403);
@@ -292,6 +293,7 @@ export function oauth(
 				await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
 					method: "login",
 					action: paths.approve,
+					fields: await Passkey.fields({ request: input.data.request }),
 				});
 			} catch (error) {
 				if (!unverified(error)) throw error;
@@ -320,8 +322,10 @@ export function oauth(
 
 				let credential;
 				try {
+					// a passkey confirms the request it was asked for, not another
 					credential = await new Passkey(c, state(c)).login(
 						storage.credentials,
+						await Passkey.fields({ request: result.data.request }),
 					);
 				} catch (error) {
 					if (!unverified(error)) throw error;
@@ -349,7 +353,12 @@ export function oauth(
 	/** Denies the agent, which needs no passkey */
 	const deny = Route.post(paths.deny)
 		.describe(false)
-		.fields({ request: Field.hidden() })
+		// the consent form's fields, the passkey inputs are empty
+		.fields({
+			request: Field.hidden(),
+			credential: Field.hidden().optional(),
+			ceremony: Field.hidden().optional(),
+		})
 		.use(async (c) => {
 			c.res.headers.set(Header.name.cache, "no-store");
 			if (!same(c)) return c.text("Forbidden", 403);

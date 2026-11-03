@@ -437,9 +437,16 @@ export class Passkey {
 		};
 	}
 
-	/** Verify login and atomically update the credential. */
-	async login(credentials: Storage.Credentials) {
+	/**
+	 * Verify login and atomically update the credential.
+	 *
+	 * @param credentials Stored credentials
+	 * @param fields Form fields the ceremony was issued for, from `Passkey.fields`
+	 * @returns The updated credential
+	 */
+	async login(credentials: Storage.Credentials, fields?: string) {
 		const { state, credential } = await this.#consume("login");
+		if (state.fields !== fields) throw new Issue("login fields");
 		const result = Passkey.#assertion.parse(credential);
 		if (result.issues) throw result;
 		this.#client(result.data.response.clientDataJSON, state);

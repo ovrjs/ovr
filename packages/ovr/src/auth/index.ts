@@ -48,10 +48,20 @@ export namespace Auth {
 		readonly shape: { readonly id: Schema<string> };
 	};
 
-	/** Registration fields of a users table, its form fields except `id`. */
+	/** Columns of a users table the server sets with defaults, such as a role. */
+	export type Defaulted<U extends Users> = U["options"] extends {
+		readonly default: readonly (infer K)[];
+	}
+		? K
+		: never;
+
+	/**
+	 * Registration fields of a users table, its form fields except `id` and
+	 * columns with defaults.
+	 */
 	export type Fields<U extends Users> = {
 		[
-			K in keyof U["shape"] as K extends "id"
+			K in keyof U["shape"] as K extends "id" | Defaulted<U>
 				? never
 				: U["shape"][K] extends Field.Any
 					? K
@@ -70,10 +80,12 @@ export namespace Auth {
 		/** Session lifetime in milliseconds; defaults to one week, without sliding refresh. */
 		readonly duration?: number;
 		/**
-		 * Users table in `database`. Its form fields, other than `id`, are the
-		 * registration form, and registering inserts the row in the transaction
-		 * that stores the first passkey. Its other columns need defaults. The
-		 * first field, such as an email, names the passkey.
+		 * Users table in `database`. Its form fields, other than `id` and
+		 * columns with defaults, are the registration form, and registering
+		 * inserts the row in the transaction that stores the first passkey.
+		 * Columns with defaults, such as a role, are set by the server, so a
+		 * signup cannot choose them. Its other columns need defaults. The first
+		 * field, such as an email, names the passkey.
 		 */
 		readonly users: U;
 		/** Authentication page, also used for generic failure redirects. Defaults to /login. */
@@ -151,7 +163,7 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	/** OAuth endpoints for agents */
 	readonly #oauth: readonly Route[];
 	/** The OAuth endpoints are mounted */
-	#mounted = false;
+	readonly #mounted = new WeakSet<object>();
 
 	/** Generated endpoints, mounted with `app.use(auth)`. */
 	readonly routes: readonly Route[];
@@ -247,11 +259,13 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 
 	/**
 	 * Mounted by an MCP endpoint given this `auth`, the OAuth endpoints agents
-	 * sign in with. Once, when several endpoints share it.
+	 * sign in with. Once per app, when several endpoints share it.
+	 *
+	 * @param app App the endpoint is mounted on
 	 */
-	[agents](): ReturnType<App.Service[typeof mount]> {
-		if (this.#mounted) return [];
-		this.#mounted = true;
+	[agents](app: App.Mount): ReturnType<App.Service[typeof mount]> {
+		if (this.#mounted.has(app.routes)) return [];
+		this.#mounted.add(app.routes);
 
 		if (!Metadata.supported)
 			throw new TypeError(

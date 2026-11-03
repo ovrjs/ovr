@@ -237,7 +237,7 @@ const passkeys = await database.sql`
 `.parse(database.auth_credentials);
 ```
 
-The users table's form fields, other than `id`, are the registration form. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
+The users table's form fields, other than `id` and columns with defaults, are the registration form. Columns with defaults, such as a `role` an admin form edits, are set by the server, so a signup cannot choose them. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
 
 Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, and all browsers together 10,000; [aggregate rate limits](#additional-limits) protect that capacity from abuse.
 

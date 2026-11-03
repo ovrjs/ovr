@@ -130,6 +130,24 @@ function setup() {
 }
 
 describe("Mcp", () => {
+	test("distinct route patterns can expose tools without taking down discovery", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Route.post("/a/b")
+				.describe("Nested")
+				.use(() => "nested"),
+			Route.post("/a_b")
+				.describe("Flat")
+				.use(() => "flat"),
+		);
+		const { body } = await rpc("tools/list");
+		const tools = body.result.tools.filter((tool: { description: string }) =>
+			["Nested", "Flat"].includes(tool.description),
+		);
+		expect(new Set(tools.map((tool: { name: string }) => tool.name)).size).toBe(
+			2,
+		);
+	});
 	test("a wildcard argument cannot change the request's origin", async () => {
 		const { app, rpc } = setup();
 		const origins: string[] = [];
@@ -558,10 +576,11 @@ describe("Mcp", () => {
 	test("two routes cannot share a tool name", async () => {
 		const { app, rpc } = setup();
 		app.use(
-			Route.post("/posts.new").describe("Draft a post"),
-			Route.post("/posts_new").describe("Create a post"),
+			// a parameter and a literal segment with the same text
+			Route.post("/drafts/:id").describe("Edit a draft"),
+			Route.post("/drafts/id").describe("Make an ID"),
 		);
-		await expect(rpc("tools/list")).rejects.toThrow(/"post_posts_new"/);
+		await expect(rpc("tools/list")).rejects.toThrow(/"post_drafts_id"/);
 	});
 
 	test("rejects other origins, other methods, and malformed requests", async () => {

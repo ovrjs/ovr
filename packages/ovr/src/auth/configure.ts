@@ -30,10 +30,15 @@ export function configure<U extends Auth.Users>(
 			throw new TypeError(
 				`Auth creates users, so the users table's ${name} column needs a default`,
 			);
-	/** The table's form fields, other than `id` */
+	const defaults = (users.options.default ?? []) as readonly string[];
+	/**
+	 * The table's form fields, other than `id` and columns with defaults,
+	 * which the server sets, such as a role
+	 */
 	const shape = Object.fromEntries(
 		Object.entries(users.shape).filter(
-			([name, schema]) => name !== "id" && field(schema),
+			([name, schema]) =>
+				name !== "id" && field(schema) && !defaults.includes(name),
 		),
 	) as Shape;
 	const configured = options.limits ?? {};
