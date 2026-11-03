@@ -6,10 +6,10 @@ Routes are defined with a chain. `Route.get(pattern)`, `Route.post(pattern?)` an
 
 ```ts
 // before
-const create = Route.post("/posts", { title }, auth.require, handler);
+const create = Route.post("/posts", { title }, handler);
 
 // after
-const create = Route.post("/posts").fields({ title }).use(auth.require, handler);
+const create = Route.post("/posts").fields({ title }).use(handler);
 ```
 
 Each step returns the route. `route.params(schemas)` checks and converts pattern parameters before the middleware runs, types `c.params` with the converted values, and responds 404 when one fails. `route.describe(text, { name, destructive })` describes the route for AI agents, and `describe(false)` hides it. Generated `Route.post()` patterns hash the route's final middleware.
