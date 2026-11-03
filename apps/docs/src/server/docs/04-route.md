@@ -134,12 +134,16 @@ const page = Route.get("/").use(() => {
 });
 ```
 
-You can set the pattern manually if you need a stable pattern or if you are using parameters.
+Patterns can have parameters, like any route, and the route's `Form` and `Button` take their values with `params`.
 
 ```tsx
-const custom = Route.post("/custom/:pattern").use((c) => {
+const remove = Route.post("/posts/:id/delete").use((c) => {
 	// ...
 });
+
+<remove.Form params={{ id: post.id }}>
+	<button>Delete</button>
+</remove.Form>;
 ```
 
 ## Describe
