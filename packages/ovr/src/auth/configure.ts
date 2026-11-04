@@ -1,11 +1,13 @@
 import type { Context } from "../context/index.js";
+import { Database } from "../database/index.js";
 import { jsx } from "../jsx/index.js";
-import { LimitIssue, Limiter } from "../limiter/index.js";
+import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form, field } from "../schema/index.js";
 import { Header, Size } from "../util/index.js";
 import type { Auth } from "./index.js";
+import { Issue } from "./issue.js";
 import { Passkey } from "./passkey.js";
 import type { State } from "./state.js";
 import type { Storage } from "./storage.js";
@@ -150,13 +152,10 @@ export function configure<U extends Auth.Users>(
 		method: "register" | "login",
 		prompt: boolean,
 	) => {
-		const admission = await limits[method]
-			.check(c, prompt ? "options" : "verify")
-			.catch((cause: unknown) => {
-				throw new LimitIssue("Authentication rate limit unavailable", {
-					cause,
-				});
-			});
+		const admission = await limits[method].check(
+			c,
+			prompt ? "options" : "verify",
+		);
 		if (admission === true) return true;
 		if (!(admission instanceof Date))
 			throw new TypeError("Invalid auth admission result");
@@ -200,18 +199,9 @@ export function configure<U extends Auth.Users>(
 					return;
 				await next();
 			} catch (error) {
-				try {
-					if (options.error) await options.error(error, c);
-					else console.error(error);
-				} catch (failure) {
-					console.error(failure);
-				}
-				if (method === "logout") c.text("Could not log out. Try again.", 503);
-				else if (prompt)
-					c.text(
-						"Authentication failed. Try again.",
-						error instanceof LimitIssue ? 503 : 400,
-					);
+				// a failure the client caused is answered, anything else reaches the app
+				if (!(error instanceof Issue)) throw error;
+				if (prompt) c.text("Authentication failed. Try again.", 400);
 				else back(c, method);
 			}
 		};
@@ -223,15 +213,21 @@ export function configure<U extends Auth.Users>(
 				const input = (await c.data({
 					payload: 128 * Size.kb,
 				})) as Form.Parse.Result<Shape> | null;
-				if (!input || input.issues) throw input;
+				if (!input || input.issues) throw new Issue("registration fields");
 				const data = values(input.data);
 				const credential = await new Passkey(c, state(c)).register(
 					await Passkey.fields(data),
 				);
 				// only the table's fields, never protocol fields
-				await storage.register(async (t, user) => {
-					await t.sql`INSERT INTO ${users} ${t.sql.values(users, { ...data, id: user } as never)}`;
-				}, credential);
+				await storage
+					.register(async (t, user) => {
+						await t.sql`INSERT INTO ${users} ${t.sql.values(users, { ...data, id: user } as never)}`;
+					}, credential)
+					.catch((error: unknown) => {
+						// an account or passkey that already exists
+						if (Database.unique(error)) throw new Issue("account");
+						throw error;
+					});
 				await state(c).login(credential.user);
 				c.redirect(state(c).resume(redirect), 303);
 			}),
@@ -262,7 +258,7 @@ export function configure<U extends Auth.Users>(
 				const invalid = fields.names.filter((name) =>
 					input.issues.some((issue) => issue.path[0] === name),
 				);
-				if (!invalid.length) throw input;
+				if (!invalid.length) throw new Issue("registration request");
 				return c.json({ fields: invalid }, 422);
 			}
 			if (!(await admit(c, "register", true))) return;
@@ -284,7 +280,7 @@ export function configure<U extends Auth.Users>(
 		.fields({ bootstrap: Field.hidden() })
 		.use(guard("login", true), async (c) => {
 			const input = await c.data({ payload: 128 * Size.kb });
-			if (!input || input.issues) throw input;
+			if (!input || input.issues) throw new Issue("login request");
 			await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
 				method: "login",
 				action: paths.login,

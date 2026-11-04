@@ -1,7 +1,7 @@
 import { App } from "../app/index.js";
 import { Database, owned } from "../database/index.js";
 import { Route } from "../route/index.js";
-import { Limiter } from "./index.js";
+import { LimitIssue, Limiter } from "./index.js";
 import { PGlite } from "@electric-sql/pglite";
 import {
 	afterAll,
@@ -45,8 +45,6 @@ const broken = (failure: Error) =>
 // only Date, PGlite needs real timers
 beforeEach(async () => {
 	vi.useFakeTimers({ toFake: ["Date"] });
-	// failures are logged
-	vi.spyOn(console, "error").mockImplementation(() => {});
 	await engine.exec("TRUNCATE rate_limits");
 });
 afterEach(() => {
@@ -171,15 +169,16 @@ test("a missing database fails at startup instead of allocating local counters",
 });
 
 describe("trusted identities", () => {
-	test("missing metadata fails closed even when the request supplies IP headers", async () => {
+	test("missing metadata throws even when the request supplies IP headers", async () => {
 		const state = setup();
-		const response = await state.app.fetch("https://example.com/limited", {
-			headers: {
-				"x-forwarded-for": "192.0.2.1",
-				"cf-connecting-ip": "192.0.2.1",
-			},
-		});
-		expect(response.status).toBe(503);
+		await expect(
+			state.app.fetch("https://example.com/limited", {
+				headers: {
+					"x-forwarded-for": "192.0.2.1",
+					"cf-connecting-ip": "192.0.2.1",
+				},
+			}),
+		).rejects.toThrow(LimitIssue);
 		expect(state.hit).not.toHaveBeenCalled();
 	});
 
@@ -218,7 +217,7 @@ describe("trusted identities", () => {
 		"192.0.02.1",
 		"127.1",
 	])("rejects malformed peer metadata: %s", async (ip) => {
-		expect((await setup().fetch(ip)).status).toBe(503);
+		await expect(setup().fetch(ip)).rejects.toThrow(LimitIssue);
 	});
 
 	test("authenticated keys can replace IP identity", async () => {
@@ -254,13 +253,10 @@ test("retry deadlines round up and stay between one second and one hour", async 
 	expect(slow.hit).toHaveBeenCalledOnce();
 });
 
-test("middleware logs failures without exposing them or admitting requests", async () => {
+test("middleware throws storage failures to the app without admitting requests", async () => {
 	const failure = new Error("private storage details");
 	const state = setup({ database: broken(failure) });
-	const response = await state.fetch();
-	expect(response.status).toBe(503);
-	expect(await response.text()).not.toContain("private storage");
-	expect(console.error).toHaveBeenCalledWith(failure);
+	await expect(state.fetch()).rejects.toBe(failure);
 	expect(state.hit).not.toHaveBeenCalled();
 });
 

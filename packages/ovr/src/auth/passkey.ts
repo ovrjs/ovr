@@ -214,7 +214,7 @@ export class Passkey {
 		const result = Schema.string()
 			.json(Passkey.#bootstrap)
 			.parse(await Token.open(auth.options.secret, "passkey", token));
-		if (result.issues) throw result;
+		if (result.issues) throw new Issue("bootstrap");
 		const bootstrap = result.data;
 		if (
 			c.url.origin !== auth.options.origin ||
@@ -336,7 +336,7 @@ export class Passkey {
 				? parsed.data
 				: undefined,
 		);
-		if (result.issues) throw result;
+		if (result.issues) throw new Issue("passkey request");
 		const state = await this.#auth.options.challenges.take(
 			result.data.ceremony,
 		);
@@ -366,7 +366,7 @@ export class Passkey {
 				}),
 			)
 			.parse(Codec.decode(Passkey.#decode(value)));
-		if (result.issues) throw result;
+		if (result.issues) throw new Issue("client data");
 	}
 
 	async #data(data: AuthData.Data) {
@@ -414,7 +414,7 @@ export class Passkey {
 		const { state, credential } = await this.#consume("register");
 		if (state.fields !== fields) throw new Issue("registration fields");
 		const result = Passkey.#registration.parse(credential);
-		if (result.issues) throw result;
+		if (result.issues) throw new Issue("registration");
 		this.#client(result.data.response.clientDataJSON, state);
 		const data = AuthData.parse(
 			new CBOR(
@@ -454,7 +454,7 @@ export class Passkey {
 		const { state, credential } = await this.#consume("login");
 		if (state.fields !== fields) throw new Issue("login fields");
 		const result = Passkey.#assertion.parse(credential);
-		if (result.issues) throw result;
+		if (result.issues) throw new Issue("assertion");
 		this.#client(result.data.response.clientDataJSON, state);
 		if (
 			!Passkey.#equal(

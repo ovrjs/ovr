@@ -260,7 +260,7 @@ Your server must supply the real client IP:
 app.fetch(request, { ip });
 ```
 
-A Fetch `Request` does not expose the socket peer. Use your server's connection metadata or a verified edge identity; do not trust arbitrary forwarded headers. See [client IP examples](/03-app#client-ip). Missing identity or unavailable storage denies authentication; it never disables limiting.
+A Fetch `Request` does not expose the socket peer. Use your server's connection metadata or a verified edge identity; do not trust arbitrary forwarded headers. See [client IP examples](/03-app#client-ip). Missing identity or unavailable storage throws to your app; it never skips the limit.
 
 ### Additional limits
 
@@ -289,17 +289,16 @@ These numbers are an example. Size the burst and refill over the two-minute chal
 
 `Auth.Options` describes the complete configuration. `secret`, `origin`, `database`, and `users` are shown [above](#create), and `limits` under [rate limiting](#rate-limiting); these remaining options customize normal application behavior:
 
-| Option            | Default         | Purpose                                           |
-| ----------------- | --------------- | ------------------------------------------------- |
-| `page`            | `/login`        | Your authentication page; failures redirect here. |
-| `redirect`        | `/`             | Destination after registration or login.          |
-| `duration`        | Seven days      | Fixed session lifetime in milliseconds.           |
-| `consent`         | `/connect`      | Page where users approve [agents](#agents).       |
-| `error(error, c)` | `console.error` | Detailed server-side error logging.               |
+| Option     | Default    | Purpose                                           |
+| ---------- | ---------- | ------------------------------------------------- |
+| `page`     | `/login`   | Your authentication page; failures redirect here. |
+| `redirect` | `/`        | Destination after registration or login.          |
+| `duration` | Seven days | Fixed session lifetime in milliseconds.           |
+| `consent`  | `/connect` | Page where users approve [agents](#agents).       |
 
 `page` and `redirect` must be local paths. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
 
-Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Other failures use generic messages, with guidance to log in if registration already completed. Detailed errors stay on the server; protocol validation failures are `Auth.Issue` instances. Rate-limit denials include a retry hint, and the client waits before retrying.
+Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Failures the client caused, such as an expired challenge, an invalid passkey, or an account that already exists, are `Auth.Issue` instances: they return to the form with a generic message, with guidance to log in if registration already completed. Anything else, such as an unavailable database, is thrown to your app like an error from your own handler. Auth doesn't log. Rate-limit denials include a retry hint, and the client waits before retrying.
 
 ## Agents
 

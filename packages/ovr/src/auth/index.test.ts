@@ -1056,11 +1056,9 @@ function managed(
 ) {
 	/** @returns The accounts registration created */
 	const created = () => rows(users);
-	const error = vi.fn();
 	const service = new Auth({
 		...storage.settings,
 		redirect: "/account",
-		error,
 		...extra,
 	});
 	const app = new App().use(service);
@@ -1135,7 +1133,7 @@ function managed(
 		if (path.includes("register")) data.set("email", "user@example.com");
 		return post(path, data, start.cookie);
 	};
-	return { app, service, storage, created, error, post, start, submit };
+	return { app, service, storage, created, post, start, submit };
 }
 
 /** Tokens a policy has spent, by bucket name and scope; freeze the clock so none refill. */
@@ -1300,10 +1298,25 @@ describe("configured passkey callbacks", () => {
 		}
 	});
 
-	test("does not issue a session when account persistence fails and keeps details out of HTTP responses", async () => {
+	test("throws account persistence failures to the app without issuing a session", async () => {
 		const state = managed();
 		vi.spyOn(Storage.of(db), "register").mockRejectedValueOnce(
 			new Error("private database details"),
+		);
+		const start = await state.start("register");
+		await expect(
+			state.submit(
+				start,
+				await registration(start.options.challenge, await pair()),
+			),
+		).rejects.toThrow("private database details");
+		expect(await state.storage.size(db.auth_sessions)).toBe(0);
+	});
+
+	test("an account that already exists returns to the form", async () => {
+		const state = managed();
+		vi.spyOn(Storage.of(db), "register").mockRejectedValueOnce(
+			Object.assign(new Error("duplicate key"), { code: "23505" }),
 		);
 		const start = await state.start("register");
 		const result = await state.submit(
@@ -1314,15 +1327,8 @@ describe("configured passkey callbacks", () => {
 			origin + "/login?_auth=register",
 		);
 		expect(result.headers.getSetCookie()).toHaveLength(0);
-		expect(await state.storage.size(db.auth_sessions)).toBe(0);
-		expect(state.error).toHaveBeenCalledWith(
-			expect.objectContaining({ message: "private database details" }),
-			expect.anything(),
-		);
 		const page = await state.app.fetch(result.headers.get("location")!);
-		const html = await page.text();
-		expect(html).toContain("If you already registered, sign in");
-		expect(html).not.toContain("private database");
+		expect(await page.text()).toContain("If you already registered, sign in");
 	});
 
 	test("validates registration fields before prompting and supports distributed request limits", async () => {
@@ -1460,7 +1466,7 @@ test("auth rejects client limiter arrays at startup", () => {
 	}
 });
 
-test("a failing limiter prevents challenge writes and preserves generic errors", async () => {
+test("a failing limiter prevents challenge writes and throws to the app", async () => {
 	const storage = setup();
 	const state = managed(storage, {
 		limits: {
@@ -1471,10 +1477,9 @@ test("a failing limiter prevents challenge writes and preserves generic errors",
 			},
 		},
 	});
-	const response = await state.post("/_passkey/options/login", new FormData());
-	expect(response.status).toBe(503);
-	expect(await response.text()).not.toContain("private backend");
-	expect(state.error).toHaveBeenCalledOnce();
+	await expect(
+		state.post("/_passkey/options/login", new FormData()),
+	).rejects.toThrow("private backend failure");
 	expect(await storage.size(db.auth_challenges)).toBe(0);
 });
 
@@ -1490,19 +1495,18 @@ test("limiter errors cannot prevent logout", async () => {
 test("auth fails closed without trusted peer information and ignores spoofed IP headers", async () => {
 	const state = managed();
 	const set = vi.spyOn(state.storage.options.challenges, "set");
-	const response = await state.app.fetch(origin + "/_passkey/options/login", {
-		method: "POST",
-		headers: {
-			origin,
-			"x-forwarded-for": "192.0.2.1",
-			"cf-connecting-ip": "192.0.2.1",
-		},
-		body: new FormData(),
-	});
-	expect(response.status).toBe(503);
-	expect(await response.text()).not.toContain("trusted client IP");
+	await expect(
+		state.app.fetch(origin + "/_passkey/options/login", {
+			method: "POST",
+			headers: {
+				origin,
+				"x-forwarded-for": "192.0.2.1",
+				"cf-connecting-ip": "192.0.2.1",
+			},
+			body: new FormData(),
+		}),
+	).rejects.toThrow("trusted client IP");
 	expect(set).not.toHaveBeenCalled();
-	expect(state.error).toHaveBeenCalledOnce();
 });
 
 test("host mismatches return a controlled status before session reads or callbacks", async () => {
@@ -1579,7 +1583,7 @@ test("reading a session enforces Auth's origin", async () => {
 	expect(await response.text()).toBe("Misdirected Request");
 });
 
-test("configured logout reports storage failure without claiming success", async () => {
+test("configured logout throws storage failures without claiming success", async () => {
 	const state = managed();
 	const start = await state.start("register");
 	const registered = await state.submit(
@@ -1590,10 +1594,9 @@ test("configured logout reports storage failure without claiming success", async
 	vi.spyOn(state.storage.options.sessions, "delete").mockRejectedValueOnce(
 		new Error("private revocation failure"),
 	);
-	const result = await state.post("/auth/logout", new FormData(), cookie);
-	expect(result.status).toBe(503);
-	expect(await result.text()).toBe("Could not log out. Try again.");
-	expect(result.headers.getSetCookie()).toHaveLength(0);
+	await expect(
+		state.post("/auth/logout", new FormData(), cookie),
+	).rejects.toThrow("private revocation failure");
 	expect(await state.storage.size(db.auth_sessions)).toBe(1);
 });
 
@@ -1609,11 +1612,6 @@ test("configured options reject substituted operations and oversized bodies befo
 		start.cookie,
 	);
 	expect(switched.status).toBe(400);
-	expect(state.error.mock.calls[0]?.[0]).toBeInstanceOf(Auth.Issue);
-	expect(state.error).toHaveBeenCalledWith(
-		expect.objectContaining({ message: "Invalid bootstrap binding" }),
-		expect.anything(),
-	);
 	data.set("email", "user@example.com");
 	data.set("bootstrap", "x".repeat(129 * 1024));
 	const oversized = await state.post(start.endpoint, data, start.cookie);
@@ -1659,16 +1657,11 @@ test("account persistence may complete before session storage fails; normal logi
 		new Error("session unavailable"),
 	);
 	const start = await state.start("register");
-	const failed = await state.submit(
-		start,
-		await registration(start.options.challenge, keys),
-	);
-	expect(failed.headers.get("location")).toBe(origin + "/login?_auth=register");
-	expect(failed.headers.getSetCookie()).toHaveLength(0);
+	await expect(
+		state.submit(start, await registration(start.options.challenge, keys)),
+	).rejects.toThrow("session unavailable");
 	expect(await state.storage.size(db.auth_credentials)).toBe(1);
 	expect(await state.storage.size(db.auth_sessions)).toBe(0);
-	const page = await state.app.fetch(failed.headers.get("location")!);
-	expect(await page.text()).toContain("If you already registered, sign in");
 	const login = await state.start("login", start.cookie);
 	const result = await state.submit(
 		login,
@@ -1747,16 +1740,13 @@ test.each([
 				new Date(now + value),
 			);
 			const state = managed(setup());
-			const response = await state.post(
-				"/_passkey/options/login",
-				new FormData(),
-			);
-			expect(response.status).toBe(retry === null ? 400 : 429);
-			expect(response.headers.get("retry-after")).toBe(retry);
+			const response = state.post("/_passkey/options/login", new FormData());
 			if (retry === null) {
-				expect(await response.text()).toBe("Authentication failed. Try again.");
-				expect(state.error).toHaveBeenCalledOnce();
+				await expect(response).rejects.toThrow("Invalid auth retry deadline");
+				return;
 			}
+			expect((await response).status).toBe(429);
+			expect((await response).headers.get("retry-after")).toBe(retry);
 		} finally {
 			time.mockRestore();
 		}

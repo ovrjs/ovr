@@ -14,8 +14,6 @@ import { oauth } from "./oauth.js";
 import { State } from "./state.js";
 import { Storage } from "./storage.js";
 
-type Result<T> = T | Promise<T>;
-
 export namespace Auth {
 	/** Authentication validation issue. */
 	export type Issue = InstanceType<typeof Auth.Issue>;
@@ -105,11 +103,6 @@ export namespace Auth {
 			/** Change the built-in login client policy, 20 per minute. */
 			readonly login?: Auth.Limit;
 		};
-		/** Receive detailed failures for server-side logging. Details are never sent to the browser. */
-		readonly error?: (
-			error: unknown,
-			c: Pick<ContextType, "req" | "url" | "cookie" | "ip">,
-		) => Result<void>;
 	}
 
 	/** An agent's request to act for the user, shown on the consent page. */

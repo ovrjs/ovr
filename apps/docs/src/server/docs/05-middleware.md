@@ -149,7 +149,7 @@ app.use(
 app.fetch(request, { ip });
 ```
 
-The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Missing/invalid identity or limiter storage failures return HTTP 503; exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`.
+The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`. A missing or invalid identity, or a storage failure, throws: the request is not admitted, and your app's error handling sees the error like one from your own handler.
 
 The first argument names the limiter's buckets. Name each limiter: two with the same name and policy share their buckets, which is how separate servers using one database count together, but two limiters stacked on one route would then spend a request's tokens twice. Keep the name when you deploy, since a new name starts every client with a full budget.
 
@@ -161,9 +161,7 @@ Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your d
 const database = new Database(pool, [posts, Limiter.table]);
 ```
 
-Each admitted request refills and consumes a token in one atomic statement, so every worker shares one budget and a fresh function instance does not receive a fresh budget. Expired buckets are deleted as new ones are written. Database failures fail closed. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. The default name is `requests`: identical policies with the same name, scope, and identity intentionally share a budget. Give independent route quotas distinct stable names. Changing a policy creates a fresh bucket.
-
-Middleware failures are logged with `console.error`, and the response is a generic 503. Direct `check()` calls throw failures for their caller to handle; Auth reports them through its own `error` callback.
+Each admitted request refills and consumes a token in one atomic statement, so every worker shares one budget and a fresh function instance does not receive a fresh budget. Expired buckets are deleted as new ones are written. Database failures fail closed. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. Identical policies with the same name, scope, and identity intentionally share a budget, so give independent route quotas distinct names. Changing a policy creates a fresh bucket.
 
 Network-level and distributed abuse protection still belong at your deployment edge.
 

@@ -113,17 +113,13 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 		);
 	}
 
-	/** Mount globally with app.use(), or on selected routes. Missing identity/storage failures return 503. */
+	/**
+	 * Mount globally with app.use(), or on selected routes. A missing identity
+	 * or storage failure throws, so the app's error handling sees it and the
+	 * request is not admitted.
+	 */
 	readonly middleware: Middleware = async (c, next) => {
-		let result: true | Date;
-		try {
-			result = await this.check(c);
-		} catch (error) {
-			console.error(error);
-			c.res.headers.set("cache-control", "no-store");
-			c.text("Service temporarily unavailable. Try again later.", 503);
-			return;
-		}
+		const result = await this.check(c);
 		if (result === true) return next();
 		c.res.headers.set("cache-control", "no-store");
 		c.res.headers.set(
