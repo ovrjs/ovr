@@ -152,6 +152,8 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	readonly #states = new WeakMap<object, State>();
 	/** Auth's tables in its database */
 	readonly #storage: Storage;
+	/** The users table its tables reference */
+	readonly #users: U;
 	/** The OAuth endpoints are mounted */
 	readonly #mounted = new WeakSet<object>();
 
@@ -215,6 +217,7 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			);
 		const storage = Storage.of(options.database);
 		this.#storage = storage;
+		this.#users = options.users;
 		this.#options = {
 			origin: options.origin,
 			secret:
@@ -317,6 +320,6 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	) {
 		const session = await this.#state(c).session();
 		if (!session) throw new Error("Sign in to disconnect an agent");
-		await this.#storage.tokens.revoke(session.user, client);
+		await this.#storage.tokens.revoke(session.user, client, this.#users);
 	}
 }

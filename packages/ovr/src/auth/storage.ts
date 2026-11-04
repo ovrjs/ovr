@@ -70,6 +70,9 @@ export namespace Storage {
 	}
 }
 
+/** An exchange refused after it started writing, rolled back. */
+class Refused extends Error {}
+
 /** Authentication persistence in the application's Postgres database. */
 export class Storage {
 	/** Registered passkeys. */
@@ -286,44 +289,54 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 			return this.#db
 				.sql(async (t) => {
 					const [found] = await t.sql`
-					SELECT * FROM ${Storage.tokens} WHERE id = ${id}
-				`.parse(Storage.tokens);
+						SELECT * FROM ${Storage.tokens} WHERE id = ${id}
+					`.parse(Storage.tokens);
 					if (!found) return false;
-					const { family } = found;
 
 					// one exchange per user at a time, so a replay or a disconnection
 					// waits for tokens being issued, and its snapshot, taken after the
 					// lock, includes them
 					await Storage.#lock(t.sql, found.user);
 
+					// read again under the lock, an exchange before it may have used it
 					const [row] = await t.sql`
-					UPDATE ${Storage.tokens} SET kind = 'spent'
-					WHERE id = ${id} AND kind = ${kind}
-					RETURNING *
-				`.parse(Storage.tokens);
+						SELECT * FROM ${Storage.tokens} WHERE id = ${id}
+					`.parse(Storage.tokens);
+					if (!row) return false;
 
-					if (!row) {
+					if (row.kind !== kind) {
 						// stolen and used by someone else, so neither party keeps access
-						await t.sql`
-						DELETE FROM ${Storage.tokens} WHERE family = ${family} AND EXISTS (
-							SELECT 1 FROM ${Storage.tokens} WHERE id = ${id} AND kind = 'spent'
-						)
-					`;
+						if (row.kind === "spent")
+							await t.sql`DELETE FROM ${Storage.tokens} WHERE family = ${row.family}`;
 						return false;
 					}
 
-					const used = Storage.#token([{ ...row, kind }]);
+					const used = Storage.#token([row]);
 					const issued = used && (await exchange(used));
 					if (!issued) return false;
 
+					// insert before spending: the foreign key to the account takes its
+					// row first, the order an account deletion takes rows in, so the
+					// two wait for each other instead of deadlocking
 					for (const [value, issue] of Object.entries(issued))
 						await this.#insert(t.sql, value, { ...issue, family: row.family });
+
+					const spent = await t.sql`
+						UPDATE ${Storage.tokens} SET kind = 'spent'
+						WHERE id = ${id} AND kind = ${kind}
+						RETURNING id
+					`;
+					// deleted meanwhile, outside Auth, so nothing is issued
+					if (!spent.length) throw new Refused();
 
 					return true;
 				})
 				.catch((error: unknown) => {
-					// the account was deleted meanwhile, its tokens cascade with it
-					if ((error as { code?: unknown } | null)?.code === "23503")
+					if (
+						error instanceof Refused ||
+						// the account was deleted meanwhile, its tokens cascade with it
+						(error as { code?: unknown } | null)?.code === "23503"
+					)
 						return false;
 					throw error;
 				});
@@ -334,11 +347,18 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 		 *
 		 * @param user User ID
 		 * @param client Agent's client ID
+		 * @param users Users table, whose row is locked before the tokens
 		 */
-		revoke: async (user: string, client: string) => {
+		revoke: async (user: string, client: string, users?: Table.Any) => {
 			await this.#db.sql(async (t) => {
 				// waits for an exchange issuing this user's tokens, so the delete sees them
 				await Storage.#lock(t.sql, user);
+				// the account's row before its tokens, the order an account deletion
+				// takes them in, so the two cannot deadlock
+				if (users)
+					await t.sql`
+						SELECT 1 FROM ${users} WHERE ${users.columns.id} = ${user} FOR KEY SHARE
+					`;
 				await t.sql`
 					DELETE FROM ${Storage.tokens}
 					WHERE ${Storage.tokens.columns.user} = ${user}

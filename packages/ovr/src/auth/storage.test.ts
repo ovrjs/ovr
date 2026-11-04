@@ -171,6 +171,127 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				.toBe(false);
 		});
 
+		test("account deletion completes while a refresh is issuing tokens", async () => {
+			await pool.query("TRUNCATE auth_tokens");
+			await pool.query("CREATE TABLE deletion_users (id text PRIMARY KEY)");
+			await pool.query(`ALTER TABLE auth_tokens ADD CONSTRAINT deletion_tokens
+				FOREIGN KEY ("user") REFERENCES deletion_users ON DELETE CASCADE`);
+			try {
+				const row: Storage.Token = {
+					kind: "refresh",
+					user: "deletion-user",
+					client: "deletion-agent",
+					scope: "",
+					resource: "https://example.com/mcp",
+					expiration: Date.now() + 60_000,
+				};
+				await pool.query("INSERT INTO deletion_users (id) VALUES ($1)", [
+					row.user,
+				]);
+				await storage.tokens.set("deletion-first", row);
+				const entered = Promise.withResolvers<void>();
+				const release = Promise.withResolvers<void>();
+				const rotation = storage.tokens.exchange(
+					"deletion-first",
+					"refresh",
+					async () => {
+						entered.resolve();
+						await release.promise;
+						return { "deletion-access": { ...row, kind: "access" } };
+					},
+				);
+				await entered.promise;
+				// the refresh holds no row yet, so the deletion completes without waiting
+				try {
+					await pool.query("DELETE FROM deletion_users WHERE id = $1", [
+						row.user,
+					]);
+				} finally {
+					release.resolve();
+				}
+				// and the refresh, finding the account gone, issues nothing
+				expect(await rotation).toBe(false);
+				expect(
+					(await pool.query("SELECT id FROM deletion_users")).rows,
+				).toEqual([]);
+				expect(await storage.tokens.get("deletion-access")).toBeUndefined();
+			} finally {
+				await pool.query(
+					"ALTER TABLE auth_tokens DROP CONSTRAINT deletion_tokens",
+				);
+				await pool.query("DROP TABLE deletion_users");
+			}
+		});
+
+		test("account deletion waits for a refresh that holds the account, then removes its tokens", async () => {
+			await pool.query("TRUNCATE auth_tokens");
+			await pool.query("CREATE TABLE deletion_users (id text PRIMARY KEY)");
+			await pool.query(`ALTER TABLE auth_tokens ADD CONSTRAINT deletion_tokens
+				FOREIGN KEY ("user") REFERENCES deletion_users ON DELETE CASCADE`);
+			// runs after the foreign key check, which sorts first, so the refresh
+			// holds the account's row while it pauses, the order that deadlocked
+			await pool.query(`
+				CREATE FUNCTION pause() RETURNS trigger LANGUAGE plpgsql AS $$
+				BEGIN
+					IF NEW.client = 'holding-agent' AND NEW.kind = 'access' THEN PERFORM pg_sleep(0.5); END IF;
+					RETURN NULL;
+				END $$;
+				CREATE CONSTRAINT TRIGGER zz_pause AFTER INSERT ON auth_tokens
+					FOR EACH ROW EXECUTE FUNCTION pause();
+			`);
+			try {
+				const row: Storage.Token = {
+					kind: "refresh",
+					user: "holding-user",
+					client: "holding-agent",
+					scope: "",
+					resource: "https://example.com/mcp",
+					expiration: Date.now() + 60_000,
+				};
+				await pool.query("INSERT INTO deletion_users (id) VALUES ($1)", [
+					row.user,
+				]);
+				await storage.tokens.set("holding-first", row);
+				const rotation = storage.tokens.exchange(
+					"holding-first",
+					"refresh",
+					async () => ({ "holding-access": { ...row, kind: "access" } }),
+				);
+				const deletion = (async () => {
+					// once the refresh is paused inside its insert
+					await vi.waitFor(
+						async () => {
+							const sleeping = await pool.query(
+								"SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND query LIKE '%INSERT INTO%auth_tokens%' AND wait_event = 'PgSleep'",
+								[schema],
+							);
+							expect(sleeping.rows.length).toBeGreaterThan(0);
+						},
+						{ timeout: 3000, interval: 10 },
+					);
+					await pool.query("DELETE FROM deletion_users WHERE id = $1", [
+						row.user,
+					]);
+				})();
+
+				// both complete, neither is aborted as a deadlock
+				const [issued] = await Promise.all([rotation, deletion]);
+				expect(issued).toBe(true);
+				expect(
+					(await pool.query("SELECT id FROM deletion_users")).rows,
+				).toEqual([]);
+				// the deletion waited, then removed the tokens the refresh issued
+				expect(await storage.tokens.get("holding-access")).toBeUndefined();
+			} finally {
+				await pool.query("DROP TRIGGER zz_pause ON auth_tokens");
+				await pool.query("DROP FUNCTION pause()");
+				await pool.query(
+					"ALTER TABLE auth_tokens DROP CONSTRAINT deletion_tokens",
+				);
+				await pool.query("DROP TABLE deletion_users");
+			}
+		});
+
 		test.each(["browser", "total"])(
 			"enforces the %s capacity across concurrent requests",
 			async (scope) => {
