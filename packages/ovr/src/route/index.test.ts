@@ -816,20 +816,53 @@ describe("chained routes", () => {
 		).toContain('toolname="delete_post" tooldescription="Delete this post"');
 	});
 
+	test("url is typed by the path it builds", () => {
+		const page = Route.get("/hello/:name");
+		const home = Route.get("/");
+		const name: string = "world";
+
+		expectTypeOf(home.url()).toEqualTypeOf<"/">();
+		expectTypeOf(
+			page.url({ params: { name: "world" } as const }),
+		).toEqualTypeOf<"/hello/world">();
+		expectTypeOf(
+			page.url({ params: { name } }),
+		).toEqualTypeOf<`/hello/${string}`>();
+		// search and hash make it any string
+		expectTypeOf(
+			page.url({ params: { name }, search: { q: "1" } }),
+		).toEqualTypeOf<string>();
+		expectTypeOf(home.url({ hash: "top" })).toEqualTypeOf<string>();
+
+		// a list of exact paths
+		const names = [
+			{ name: "world" },
+			{ name: "ross" },
+		] as const satisfies Route.Params<typeof page>[];
+		expectTypeOf(names.map((params) => page.url({ params }))).toEqualTypeOf<
+			("/hello/world" | "/hello/ross")[]
+		>();
+
+		// @ts-expect-error the pattern's parameters are required
+		page.url();
+		// @ts-expect-error and only those
+		page.url({ params: { id: "1" } });
+	});
+
 	test("links encode parameter values", async () => {
 		const page = Route.get("/hello/:name");
 		// a value cannot add segments, a query, or a fragment
-		expect(page.pathname({ name: "a/b?admin=1#x" })).toBe(
+		expect(page.url({ params: { name: "a/b?admin=1#x" } })).toBe(
 			"/hello/a%2Fb%3Fadmin%3D1%23x",
 		);
-		expect(page.pathname({ name: "Zoë" })).toBe("/hello/Zo%C3%AB");
+		expect(page.url({ params: { name: "Zoë" } })).toBe("/hello/Zo%C3%AB");
 		expect(page.url({ params: { name: "a b" }, search: { q: "1" } })).toBe(
 			"/hello/a%20b?q=1",
 		);
 
 		// the wildcard keeps its slashes
 		const files = Route.get("/files/*");
-		expect(files.pathname({ "*": "images/my logo?.png" })).toBe(
+		expect(files.url({ params: { "*": "images/my logo?.png" } })).toBe(
 			"/files/images/my%20logo%3F.png",
 		);
 
@@ -848,10 +881,10 @@ describe("chained routes", () => {
 		);
 		const text = async (path: string) =>
 			(await app.fetch("http://localhost" + path)).text();
-		expect(await text(page.pathname({ name: "a/b?c" }))).toBe("a/b?c");
-		expect(await text(files.pathname({ "*": "images/my logo?.png" }))).toBe(
-			"images/my logo?.png",
-		);
+		expect(await text(page.url({ params: { name: "a/b?c" } }))).toBe("a/b?c");
+		expect(
+			await text(files.url({ params: { "*": "images/my logo?.png" } })),
+		).toBe("images/my logo?.png");
 		// a wildcard keeps encoded separators, so it cannot gain segments
 		expect(await text("/files/..%2Fsecret")).toBe("..%2Fsecret");
 		expect(await text("/files/..%5Csecret")).toBe("..%5Csecret");

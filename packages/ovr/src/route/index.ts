@@ -5,6 +5,9 @@ import type { Trie } from "../trie/index.js";
 import { Checksum, Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";
 
+/** Finishes a route's configuration, `app.use(route)` calls it */
+export const freeze = Symbol("freeze");
+
 /**
  * Helper type to extract the route params (`:slug`) into a record.
  *
@@ -250,6 +253,28 @@ export namespace Route {
 			});
 
 	/**
+	 * Type of `route.url(options)`: the exact path with the given `params`,
+	 * or a `string` once `search` or `hash` is added.
+	 *
+	 * @template Pattern Route pattern
+	 * @template O URL options
+	 */
+	export type Href<Pattern extends string, O> = [
+		Present<O, "search">,
+		Present<O, "hash">,
+	] extends [never, never]
+		? InsertParams<
+				Pattern,
+				O extends { readonly params: infer P extends Trie.Params } ? P : {}
+			>
+		: string;
+
+	/** A given option's value, `never` when it is missing or `undefined`. */
+	type Present<O, K extends string> = K extends keyof O
+		? NonNullable<O[K]>
+		: never;
+
+	/**
 	 * `<Anchor>` route component type
 	 *
 	 * @template Pattern Route pattern
@@ -327,10 +352,13 @@ export class Route<
 	readonly method: Route.Method;
 
 	/** Description for agents, `false` hides the route from them */
-	description?: string | false;
+	#description?: string | false;
 
 	/** Schemas that check and convert pattern parameters */
-	paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
+	#paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
+
+	/** Mounted, so its configuration is final */
+	#frozen = false;
 
 	/** Route pattern */
 	readonly #pattern: Pattern;
@@ -347,6 +375,16 @@ export class Route<
 	constructor(method: Route.Method, pattern: Pattern) {
 		this.method = method;
 		this.#pattern = pattern;
+	}
+
+	/** Description for agents, `false` hides the route from them */
+	get description() {
+		return this.#description;
+	}
+
+	/** Schemas that check and convert pattern parameters */
+	get paramSchemas() {
+		return this.#paramSchemas;
 	}
 
 	/** Route pattern */
@@ -420,7 +458,8 @@ export class Route<
 	 * @returns The route
 	 */
 	describe(description: string | false) {
-		this.description = description;
+		this.#configure("describe");
+		this.#description = description;
 		return this;
 	}
 
@@ -434,6 +473,7 @@ export class Route<
 	params<P extends Route.ParamSchemas<Pattern>>(
 		schemas: P,
 	): Route.Of<Kind, Pattern, Route.Converted<Params, P>, Shape> {
+		this.#configure("params");
 		this.#before("params");
 
 		for (const name in schemas) {
@@ -444,7 +484,7 @@ export class Route<
 			}
 		}
 
-		this.paramSchemas = { ...this.paramSchemas, ...schemas } as Record<
+		this.#paramSchemas = { ...this.#paramSchemas, ...schemas } as Record<
 			string,
 			ValueSchema<unknown>
 		>;
@@ -462,8 +502,27 @@ export class Route<
 	fields<S extends FormSchema.Shape>(
 		fields: S | FormSchema<S>,
 	): Route.Of<Kind, Pattern, Params, S> {
+		this.#configure("fields");
 		this.#before("fields");
 		return Object.assign(this, FormSchema.from(fields)) as any;
+	}
+
+	/**
+	 * A mounted route is final, so the app's tools and middleware stay as
+	 * they were when it was mounted.
+	 *
+	 * @param method Method that changes the route
+	 */
+	#configure(method: string) {
+		if (this.#frozen)
+			throw new TypeError(
+				`Call .${method}() before app.use() on route "${this.pattern}".`,
+			);
+	}
+
+	/** Finish the configuration, when an app mounts the route. */
+	[freeze]() {
+		this.#frozen = true;
 	}
 
 	/**
@@ -486,71 +545,57 @@ export class Route<
 	 * @returns The route
 	 */
 	use(...middleware: Middleware<Params, Shape>[]) {
+		this.#configure("use");
 		this.#stack.push(...middleware);
 		return this;
 	}
 
 	/**
-	 * Constructs a _relative_ URL for the route.
+	 * Construct a _relative_ URL for the route. Parameter values are encoded,
+	 * so each stays in its own segment, and a wildcard keeps its slashes.
 	 *
-	 * @param [options] Options with type safe pathname parameters
+	 * @template O Options, the exact path type when only `params` are given
+	 * @param [options] Parameters, search, and hash
 	 * @returns `pathname` + `search` + `hash`
 	 */
-	url(
+	url<O extends object = {}>(
 		...[options]: keyof ExtractParams<Pattern> extends never
-			? [Route.URLOptions<ExtractParams<Pattern>>] | []
-			: [Route.URLOptions<ExtractParams<Pattern>>]
-	) {
-		return (
-			this.pathname(
-				// @ts-expect-error - do not have to pass in {} if no params
-				options?.params,
-			) +
-			(options?.search
+			? [(O & Route.URLOptions<ExtractParams<Pattern>>)?]
+			: [O & Route.URLOptions<ExtractParams<Pattern>>]
+	): Route.Href<Pattern, O> {
+		const params = options?.params as Record<string, string> | undefined;
+		const path = params
+			? this.pattern
+					.split("/")
+					.map((part) => {
+						if (part.startsWith(":"))
+							return encodeURIComponent(params[part.slice(1)]!);
+
+						// the wildcard keeps its slashes, each of its segments is encoded
+						if (part === "*")
+							return params[part]!.split("/").map(encodeURIComponent).join("/");
+
+						return part;
+					})
+					.join("/")
+			: this.pattern;
+		const { search, hash } = options ?? {};
+
+		return (path +
+			(search
 				? // use the value as the init
-					// @ts-expect-error - see type above
-					"?" + new URLSearchParams(options.search)
+					"?" +
+					new URLSearchParams(
+						search as ConstructorParameters<typeof URLSearchParams>[0],
+					)
 				: "") +
-			(options?.hash
+			(hash
 				? // adding # prefix if not present matches the URL setter:
 					// https://developer.mozilla.org/en-US/docs/Web/API/URL/hash
-					options.hash[0] === "#"
-					? options.hash
-					: "#" + options.hash
-				: "")
-		);
-	}
-
-	/**
-	 * @template Params Parameters to create the pathname with
-	 * @param [params] Parameters to insert
-	 * @returns Resolved `pathname` with params
-	 */
-	pathname<P extends ExtractParams<Pattern>>(
-		...[params]: keyof P extends never ? [] : [P]
-	): InsertParams<Pattern, P> {
-		if (!params) return this.pattern as InsertParams<Pattern, P>;
-
-		// encoded, so a value such as "a/b?c" stays in its own segment
-		return this.pattern
-			.split("/")
-			.map((part) => {
-				if (part.startsWith(":")) {
-					return encodeURIComponent(
-						params[part.slice(1) as keyof typeof params] as string,
-					);
-				}
-
-				// the wildcard keeps its slashes, each of its segments is encoded
-				if (part === "*")
-					return (params[part as keyof typeof params] as string)
-						.split("/")
-						.map(encodeURIComponent)
-						.join("/");
-
-				return part;
-			})
-			.join("/") as InsertParams<Pattern, P>;
+					hash[0] === "#"
+					? hash
+					: "#" + hash
+				: "")) as Route.Href<Pattern, O>;
 	}
 
 	/**

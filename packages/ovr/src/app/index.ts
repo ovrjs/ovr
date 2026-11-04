@@ -1,7 +1,7 @@
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import type { Multipart } from "../multipart/index.js";
-import { Route } from "../route/index.js";
+import { Route, freeze } from "../route/index.js";
 import { Trie } from "../trie/index.js";
 import { Header, Method, type Util } from "../util/index.js";
 
@@ -130,11 +130,12 @@ export class App {
 	) {
 		for (const route of routes) {
 			if (route instanceof Route) {
+				// final from here, so its tool name and middleware stay as checked
+				route[freeze]();
 				const { tool } = route;
 				if (tool) {
 					const other = this.#tools.get(tool.name);
-					// a route hidden or renamed since it was mounted no longer holds the name
-					if (other && other !== route && other.tool?.name === tool.name)
+					if (other && other !== route)
 						throw new TypeError(
 							`Tool name "${tool.name}" is used by ${other.method} ${other.pattern} and ${route.method} ${route.pattern}, change one of their patterns.`,
 						);

@@ -54,10 +54,10 @@ export default {
 		const docPrerender = content.slugs().map((slug) => "/" + slug);
 
 		return [
-			home.page.pathname(),
-			docs.llms.pathname(),
-			seo.robots.pathname(),
-			seo.sitemap.pathname(),
+			home.page.url(),
+			docs.llms.url(),
+			seo.robots.url(),
+			seo.sitemap.url(),
 			...docPrerender,
 			...docPrerender.map((p) => p + ".md"),
 		];

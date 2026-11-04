@@ -577,7 +577,7 @@ export function oauth(
 			const request = c.url.searchParams.get("request")!;
 			// the page's passkey prompt is for this request only
 			const Form = new Passkey(c, state(c)).form(approve, "login", {
-				endpoint: prompt.pathname(),
+				endpoint: prompt.url(),
 				fields: await Passkey.fields({ request }),
 			});
 
@@ -594,10 +594,7 @@ export function oauth(
 							jsx("input", { type: "hidden", name: "request", value: request }),
 							props.children ?? [
 								jsx("button", { children: "Allow" }),
-								jsx("button", {
-									formaction: deny.pathname(),
-									children: "Deny",
-								}),
+								jsx("button", { formaction: deny.url(), children: "Deny" }),
 							],
 						],
 					}),

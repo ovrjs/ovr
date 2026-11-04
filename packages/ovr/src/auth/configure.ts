@@ -274,11 +274,11 @@ export function configure<U extends Auth.Users>(
 			const passkey = new Passkey(c, state(c));
 			const Register = passkey.form(register, "register", {
 				...props,
-				endpoint: registration.pathname(),
+				endpoint: registration.url(),
 			});
 			const Login = passkey.form(login, "login", {
 				...props,
-				endpoint: assertion.pathname(),
+				endpoint: assertion.url(),
 			});
 			const failure = c.url.searchParams.get("_auth");
 			const retry = Number(c.url.searchParams.get("_retry"));

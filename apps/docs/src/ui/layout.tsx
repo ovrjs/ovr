@@ -178,7 +178,7 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 					.map((demo) => {
 						if (!("Anchor" in demo)) return;
 
-						const pathname = demo.pathname();
+						const pathname = demo.url();
 
 						if (!pathname.startsWith("/demo")) return;
 
@@ -205,7 +205,7 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 
 			<NavHeading>Resources</NavHeading>
 			<NavList>
-				<NavLink slug={docs.llms.pathname().slice(1)} c={c} />
+				<NavLink slug={docs.llms.url().slice(1)} c={c} />
 			</NavList>
 
 			<hr />

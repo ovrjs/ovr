@@ -6,11 +6,19 @@ import { describe, expect, test } from "vitest";
 
 const app = new App({ trailingSlash: "always" });
 
-test("hiding a mounted tool releases its name for another route", () => {
-	const first = Route.get("/").describe("Home");
-	const app = new App().use(first);
-	first.describe(false);
-	expect(() => app.use(Route.get("/index").describe("Index"))).not.toThrow();
+test("a mounted route's configuration is final", () => {
+	const route = Route.get("/items/:id").describe("Item");
+	new App().use(route);
+	expect(() => route.describe(false)).toThrow(
+		'Call .describe() before app.use() on route "/items/:id".',
+	);
+	expect(() => route.params({})).toThrow("before app.use()");
+	expect(() => route.fields({})).toThrow("before app.use()");
+	expect(() => route.use(() => {})).toThrow("before app.use()");
+	// so its tool name stays taken
+	expect(() =>
+		new App().use(route, Route.get("/items/id").describe("Other")),
+	).toThrow('Tool name "get_items_id"');
 });
 
 const notFound: Middleware = async (c, next) => {

@@ -37,7 +37,7 @@ export const sitemap = Route.get("/sitemap.xml").use((c) => {
 // allows all robots and points to the sitemap
 export const robots = Route.get("/robots.txt").use((c) =>
 	c.text(
-		`User-agent: *\nDisallow:\n\nSitemap: ${siteOrigin}${sitemap.pathname()}`,
+		`User-agent: *\nDisallow:\n\nSitemap: ${siteOrigin}${sitemap.url()}`,
 	),
 );
 

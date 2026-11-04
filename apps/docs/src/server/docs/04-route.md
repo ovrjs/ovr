@@ -15,7 +15,7 @@ import { Route } from "ovr";
 const route = new Route("GET", "/").use(() => "html");
 ```
 
-Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/07-schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`, which throws otherwise.
+Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/07-schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`, which throws otherwise. Once `app.use()` mounts a route, it is final: changing it throws, so its tool and middleware stay as they were mounted.
 
 ```ts
 const update = Route.post("/posts/:id")
@@ -231,25 +231,25 @@ The pattern the route was created with.
 page.pattern; // "/hello/:name"
 ```
 
-### Pathname
+### URL
 
-The `pathname` method inserts params into the pattern, encoded so a value stays in its own segment: `{ name: "a/b" }` gives `/hello/a%2Fb`, and the route decodes it back to `"a/b"`. A wildcard keeps its slashes. It provides type safety to ensure you always pass the correct params (or no params) to create the pathname.
+The `url` method creates a _relative_ URL (without the `origin`) for the route. It inserts params into the pattern, encoded so a value stays in its own segment: `{ name: "a/b" }` gives `/hello/a%2Fb`, and the route decodes it back to `"a/b"`. A wildcard keeps its slashes.
 
-In this case, given the pattern `/hello/:name`, the `name` property must be passed in on the `params` object.
+Given the pattern `/hello/:name`, the `name` param is required, and the result is typed by the path it builds:
 
 ```ts
-page.pathname({ name: "world" }); // `/hello/${string}`
-page.pathname({ name: "world" } as const); // "/hello/world"
+page.url({ params: { name: "world" } }); // `/hello/${string}`
+page.url({ params: { name: "world" } as const }); // "/hello/world"
 ```
 
 Using incorrect params results in a type error:
 
 ```ts
-page.pathname({ id: "world" });
+page.url({ params: { id: "world" } });
 // Error: 'id' does not exist in type '{ name: string; }'
 ```
 
-> You can create a list of exact pathnames for given params:
+> You can create a list of exact paths for given params:
 
 ```ts
 const params = [
@@ -257,14 +257,12 @@ const params = [
 	{ name: "ross" },
 ] as const satisfies Route.Params<typeof page>[];
 
-const pathnames = params.map((p) => page.pathname(p));
+const paths = params.map((params) => page.url({ params }));
 
 // ("/hello/world" | "/hello/ross")[]
 ```
 
-### Relative URL
-
-The `url` method creates a _relative_ URL (without the `origin`) for the route. This method is similar to `pathname`, but also provides the ability to also pass [`search`](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) and [`hash`](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) options to create the URL.
+It also takes [`search`](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) and [`hash`](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) options, which make the result a `string`:
 
 ```ts
 // /hello/world?search=param#hash

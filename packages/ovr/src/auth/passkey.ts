@@ -26,7 +26,6 @@ export namespace Passkey {
 		pattern: Pattern;
 		Form: Route.Form<Pattern>;
 		url: Route<Pattern>["url"];
-		pathname(params?: Record<string, string>): string;
 	}
 	/** Internal form configuration. */
 	export interface Options {
@@ -137,7 +136,7 @@ export class Passkey {
 							jsx("script", {
 								id: `passkey-${crypto.randomUUID()}`,
 								type: "module",
-								src: Passkey.client.pathname(),
+								src: Passkey.client.url(),
 								nonce: options.nonce,
 								"data-passkey": method,
 								"data-endpoint": options.endpoint,
@@ -146,7 +145,8 @@ export class Passkey {
 									"passkey",
 									JSON.stringify({
 										method,
-										action: route.pathname(props.params),
+										// the form's own params, checked by its props type
+										action: route.url({ params: props.params } as never),
 										origin: this.#auth.options.origin,
 										browser,
 										expiration: Date.now() + Time.hour,

@@ -183,19 +183,14 @@ describe("Mcp", () => {
 		});
 		expect(origins).not.toContain("http://other.example");
 	});
-	test("a cached tool cannot run after the route is hidden", async () => {
-		const { app, rpc } = setup();
-		let called = false;
+	test("a mounted tool cannot be hidden or changed later", async () => {
+		const { app } = setup();
 		const route = Route.post("/toggle")
 			.describe("Toggle")
-			.use(() => {
-				called = true;
-			});
+			.use(() => {});
 		app.use(route);
-		await rpc("tools/list");
-		route.describe(false);
-		await rpc("tools/call", { name: "post_toggle" });
-		expect(called).toBe(false);
+		expect(() => route.describe(false)).toThrow("before app.use()");
+		expect(() => route.use(() => {})).toThrow("before app.use()");
 	});
 	test("mounting a service twice cannot switch the first endpoint to another app", async () => {
 		const mcp = new Mcp();
