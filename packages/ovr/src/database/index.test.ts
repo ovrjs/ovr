@@ -313,12 +313,12 @@ describe("sql", () => {
 	});
 });
 
-describe("transaction", () => {
+describe("sql(fn)", () => {
 	test("runs on one client and commits", async () => {
 		const { pool, log, released } = mock();
 		const db = new Database(pool, []);
 
-		const result = await db.transaction(async (t) => {
+		const result = await db.sql(async (t) => {
 			await t.sql`SELECT ${1}`;
 			await t.sql`SELECT ${2}`;
 			return "done";
@@ -340,7 +340,7 @@ describe("transaction", () => {
 		const error = new Error("boom");
 
 		await expect(
-			db.transaction(async (t) => {
+			db.sql(async (t) => {
 				await t.sql`SELECT 1`;
 				throw error;
 			}),
@@ -359,7 +359,7 @@ describe("transaction", () => {
 		const error = new Error("boom");
 
 		await expect(
-			db.transaction(async () => {
+			db.sql(async () => {
 				throw error;
 			}),
 		).rejects.toBe(error);
@@ -370,11 +370,64 @@ describe("transaction", () => {
 		const { pool, log, released } = mock((text) => text === "COMMIT");
 		const db = new Database(pool, []);
 
-		await expect(db.transaction(async () => 1)).rejects.toThrow(
-			"failed COMMIT",
-		);
+		await expect(db.sql(async () => 1)).rejects.toThrow("failed COMMIT");
 		expect(log.at(-1)).toBe("client1: ROLLBACK");
 		expect(released).toEqual([undefined]);
+	});
+
+	test("nested callbacks are savepoints that roll back only their own queries", async () => {
+		const { pool, log, released } = mock();
+		const db = new Database(pool, []);
+		const error = new Error("boom");
+
+		const result = await db.sql(async (t) => {
+			await t.sql(async (s) => {
+				await s.sql`SELECT ${1}`;
+				await s.sql(async (n) => {
+					await n.sql`SELECT ${2}`;
+				});
+			});
+			await expect(
+				t.sql(async (s) => {
+					await s.sql`SELECT ${3}`;
+					throw error;
+				}),
+			).rejects.toBe(error);
+			return "kept";
+		});
+
+		expect(result).toBe("kept");
+		expect(log).toEqual([
+			"client1: BEGIN",
+			"client1: SAVEPOINT s1",
+			"client1: SELECT $1 [1]",
+			"client1: SAVEPOINT s2",
+			"client1: SELECT $1 [2]",
+			"client1: RELEASE SAVEPOINT s2",
+			"client1: RELEASE SAVEPOINT s1",
+			"client1: SAVEPOINT s1",
+			"client1: SELECT $1 [3]",
+			"client1: ROLLBACK TO SAVEPOINT s1",
+			"client1: COMMIT",
+		]);
+		expect(released).toEqual([undefined]);
+	});
+
+	test("a savepoint's tag cannot run after the savepoint ends", async () => {
+		const { pool } = mock();
+		const db = new Database(pool, []);
+
+		await db.sql(async (t) => {
+			const inner = await t.sql(async (s) => s.sql);
+			await expect(inner`SELECT 1`).rejects.toThrow("Transaction has ended");
+		});
+	});
+
+	test("rejects calls that are not a template or a callback", () => {
+		const db = new Database(mock().pool, []);
+
+		// @ts-expect-error A string would be sent as SQL without parameters.
+		expect(() => db.sql("SELECT 1")).toThrow("template tag");
 	});
 });
 
@@ -579,11 +632,11 @@ describe.each(drivers)("$name", (driver) => {
 				tags: [],
 			})}`;
 
-		await db.transaction(async (t) => {
+		await db.sql(async (t) => {
 			await insert(t.sql, "a@example.com");
 		});
 		await expect(
-			db.transaction(async (t) => {
+			db.sql(async (t) => {
 				await insert(t.sql, "b@example.com");
 				await insert(t.sql, "a@example.com");
 			}),
@@ -600,7 +653,7 @@ describe.each(drivers)("$name", (driver) => {
 			await db.sql`CREATE TABLE other (id integer)`;
 
 			await expect(
-				db.transaction(async (t) => {
+				db.sql(async (t) => {
 					await t.sql`INSERT INTO other VALUES (1)`;
 					try {
 						await t.sql`SELECT 1 / 0`;
@@ -614,9 +667,68 @@ describe.each(drivers)("$name", (driver) => {
 		},
 	);
 
+	test.skipIf(!driver.errors)(
+		"a savepoint recovers from an expected error and the transaction commits",
+		async () => {
+			await migrate();
+
+			const insert = (sql: Database.Tag, email: string) =>
+				sql`INSERT INTO ${db.users} ${sql.values(db.users, {
+					email,
+					visits: 0n,
+					meta: { theme: "" },
+					tags: [],
+				})}`;
+
+			await insert(db.sql, "a@example.com");
+			await db.sql(async (t) => {
+				await insert(t.sql, "b@example.com");
+				try {
+					await t.sql(async (s) => {
+						await insert(s.sql, "c@example.com");
+						await insert(s.sql, "a@example.com");
+					});
+				} catch (error) {
+					if (!Database.unique(error)) throw error;
+				}
+				await insert(t.sql, "d@example.com");
+			});
+
+			expect(
+				await db.sql`SELECT email FROM ${db.users} ORDER BY email`,
+			).toEqual([
+				{ email: "a@example.com" },
+				{ email: "b@example.com" },
+				{ email: "d@example.com" },
+			]);
+		},
+	);
+
+	test.skipIf(!driver.errors)(
+		"a caught error inside a savepoint still fails it",
+		async () => {
+			await db.sql`CREATE TABLE other (id integer)`;
+
+			await db.sql(async (t) => {
+				await t.sql`INSERT INTO other VALUES (1)`;
+				await expect(
+					t.sql(async (s) => {
+						await s.sql`INSERT INTO other VALUES (2)`;
+						try {
+							await s.sql`SELECT 1 / 0`;
+						} catch {
+							// Catching the statement error does not restore the savepoint.
+						}
+					}),
+				).rejects.toThrow();
+			});
+			expect(await db.sql`SELECT * FROM other`).toEqual([{ id: 1 }]);
+		},
+	);
+
 	test("a lazy query cannot execute after its transaction releases the connection", async () => {
 		await db.sql`CREATE TABLE other (id integer)`;
-		const result = await db.transaction(async (t) => ({
+		const result = await db.sql(async (t) => ({
 			query: t.sql`INSERT INTO other VALUES (1)`,
 		}));
 
@@ -626,9 +738,9 @@ describe.each(drivers)("$name", (driver) => {
 
 	test("an escaped transaction tag cannot execute inside a later transaction", async () => {
 		await db.sql`CREATE TABLE other (id integer)`;
-		const sql = await db.transaction(async (t) => t.sql);
+		const sql = await db.sql(async (t) => t.sql);
 
-		await db.transaction(async () => {
+		await db.sql(async () => {
 			await expect(sql`INSERT INTO other VALUES (1)`).rejects.toThrow();
 		});
 		expect(await db.sql`SELECT * FROM other`).toEqual([]);

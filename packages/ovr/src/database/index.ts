@@ -21,7 +21,7 @@ export namespace Database {
 		readonly dataTypeID: number;
 	}
 
-	/** pg-compatible pool; `connect` checks out one client for a transaction. */
+	/** pg-compatible pool; `connect` checks out one client for a transaction, `sql(fn)`. */
 	export interface Pool extends Client {
 		connect(): Promise<Client & { release(error?: Error | boolean): void }>;
 	}
@@ -42,7 +42,7 @@ export namespace Database {
 			: { readonly [K in T[number] as K["name"]]: K };
 
 	/** Names used by database members, tables cannot use them. */
-	export type Reserved = "sql" | "transaction" | "migrate" | "check";
+	export type Reserved = "sql" | "migrate" | "check";
 
 	/** Tables with reserved names are rejected. */
 	export type Valid<T extends readonly Table.Any[]> = {
@@ -58,6 +58,20 @@ export namespace Database {
 		 * inlined, and every other value becomes a bound parameter.
 		 */
 		(strings: TemplateStringsArray, ...values: unknown[]): Sql;
+
+		/**
+		 * Run a callback's queries as one group, on one connection: a
+		 * transaction, or a savepoint when `t.sql` is already in one.
+		 *
+		 * Commits when the callback resolves and rolls back when it throws. A
+		 * savepoint rolls back only its own queries, so the enclosing
+		 * transaction can catch the error and continue.
+		 *
+		 * @template R Callback result
+		 * @param fn Callback, query with `t.sql`
+		 * @returns Callback result
+		 */
+		<R>(fn: (t: Transaction) => Promise<R>): Promise<R>;
 
 		/**
 		 * Validate rows and build the `(columns) VALUES (...)` of an insert.
@@ -90,9 +104,9 @@ export namespace Database {
 	export type Update<T extends Table.Any> =
 		T extends Table<string, infer S, any> ? Table.Update<S> : never;
 
-	/** Scope passed to `transaction`. */
+	/** Scope passed to `sql(fn)`. */
 	export interface Transaction {
-		/** SQL tag that runs on the transaction's connection. */
+		/** SQL tag that runs in the transaction, `t.sql(fn)` starts a savepoint. */
 		readonly sql: Tag;
 	}
 }
@@ -477,12 +491,7 @@ export const owned = new WeakMap<Table.Any, readonly Database.Migration[]>();
 /** Database members, tables are added by name. */
 class Base<T extends readonly Table.Any[]> {
 	/** Names database members use. */
-	static readonly #reserved = new Set([
-		"sql",
-		"transaction",
-		"migrate",
-		"check",
-	]);
+	static readonly #reserved = new Set(["sql", "migrate", "check"]);
 
 	/** Postgres types able to store each kind of column value, preferred first. */
 	static readonly #types: Record<Table.Type, readonly string[]> = {
@@ -530,7 +539,7 @@ class Base<T extends readonly Table.Any[]> {
 	constructor(pool: Database.Pool, tables: T) {
 		this.#pool = pool;
 		this.#tables = tables;
-		this.sql = Base.#tag(pool);
+		this.sql = Base.#tag(pool, (fn) => this.#transaction(fn));
 
 		for (const table of tables) {
 			if (Base.#reserved.has(table.name) || Object.hasOwn(this, table.name))
@@ -546,29 +555,48 @@ class Base<T extends readonly Table.Any[]> {
 	}
 
 	/**
-	 * Run a callback in a transaction on one connection.
-	 *
-	 * Commits when the callback resolves and rolls back when it throws.
-	 *
 	 * @template R Callback result
-	 * @param fn Callback, query with `t.sql`
+	 * @param fn Callback receiving the transaction's client and depth
 	 * @returns Callback result
 	 */
-	readonly transaction = <R>(fn: (t: Database.Transaction) => Promise<R>) =>
-		this.#transaction((client) => fn({ sql: Base.#tag(client) }));
-
-	/**
-	 * @template R Callback result
-	 * @param fn Callback receiving the transaction's client
-	 * @returns Callback result
-	 */
-	async #transaction<R>(fn: (client: Database.Client) => Promise<R>) {
+	async #transaction<R>(
+		fn: (client: Database.Client, depth: number) => Promise<R>,
+	) {
 		const connection = await this.#pool.connect();
-		let open = true;
-		let failure: unknown;
 		let broken: Error | undefined;
 
-		// only valid until the transaction ends, the connection returns to the pool
+		try {
+			return await Base.#group(connection, 0, fn, (reason) => {
+				broken = reason;
+			});
+		} finally {
+			// a connection that cannot roll back is destroyed instead of reused
+			connection.release(broken);
+		}
+	}
+
+	/**
+	 * Run a callback as a transaction, or as a savepoint inside one.
+	 *
+	 * @template R Callback result
+	 * @param connection Connection, or the enclosing group's client
+	 * @param depth 0 for a transaction, savepoints are numbered by nesting
+	 * @param fn Callback receiving the group's client and depth
+	 * @param broken Called when rolling back fails
+	 * @returns Callback result
+	 */
+	static async #group<R>(
+		connection: Database.Client,
+		depth: number,
+		fn: (client: Database.Client, depth: number) => Promise<R>,
+		broken?: (reason: Error) => void,
+	) {
+		const savepoint = `s${depth}`;
+		let open = true;
+		let failure: unknown;
+
+		// only valid until the group ends; a savepoint's queries also pass
+		// through the enclosing group, which then sees their failures too
 		const client: Database.Client = {
 			query: async (text, values) => {
 				if (!open) throw new Error("Transaction has ended");
@@ -586,28 +614,32 @@ class Base<T extends readonly Table.Any[]> {
 		};
 
 		try {
-			await connection.query("BEGIN");
-			const result = await fn(client).finally(() => (open = false));
+			await connection.query(depth ? `SAVEPOINT ${savepoint}` : "BEGIN");
+			const result = await fn(client, depth).finally(() => (open = false));
 
-			// COMMIT of an aborted transaction rolls back without an error
+			// a caught error leaves the group aborted, unless a savepoint inside rolled it back,
+			// and COMMIT of an aborted transaction rolls back without an error
 			if (failure !== undefined)
 				await connection.query("SELECT 1").catch(() => {
 					throw failure;
 				});
 
-			await connection.query("COMMIT");
+			await connection.query(
+				depth ? `RELEASE SAVEPOINT ${savepoint}` : "COMMIT",
+			);
 
 			return result;
 		} catch (error) {
 			open = false;
-			await connection.query("ROLLBACK").catch((reason: unknown) => {
-				broken = reason instanceof Error ? reason : new Error(String(reason));
-			});
+			await connection
+				.query(depth ? `ROLLBACK TO SAVEPOINT ${savepoint}` : "ROLLBACK")
+				.catch((reason: unknown) => {
+					broken?.(
+						reason instanceof Error ? reason : new Error(String(reason)),
+					);
+				});
 
 			throw error;
-		} finally {
-			// a connection that cannot roll back is destroyed instead of reused
-			connection.release(broken);
 		}
 	}
 
@@ -652,8 +684,8 @@ class Base<T extends readonly Table.Any[]> {
 
 		// one migration per transaction, history added since the last read is verified every time
 		while (
-			await this.#transaction(async (client) => {
-				const sql = Base.#tag(client);
+			await this.#transaction(async (client, depth) => {
+				const sql = Base.#scope(client, depth);
 
 				await sql`SELECT pg_advisory_xact_lock(hashtext('migrations'))`;
 				// applied in order under the lock, so `n` follows the history
@@ -869,17 +901,51 @@ class Base<T extends readonly Table.Any[]> {
 	}
 
 	/**
+	 * @param client Client of a transaction or savepoint
+	 * @param depth Its depth
+	 * @returns SQL tag on the client, whose groups are savepoints
+	 */
+	static #scope(client: Database.Client, depth: number) {
+		return Base.#tag(client, (fn) => Base.#group(client, depth + 1, fn));
+	}
+
+	/**
 	 * @param client Client queries run on
+	 * @param group Runs a callback's queries as one group
 	 * @returns SQL tag bound to the client
 	 */
-	static #tag(client: Database.Client): Database.Tag {
+	static #tag(
+		client: Database.Client,
+		group: <R>(
+			fn: (client: Database.Client, depth: number) => Promise<R>,
+		) => Promise<R>,
+	): Database.Tag {
 		const fragment = (strings: readonly string[], values: readonly unknown[]) =>
 			new Sql(strings, values, client);
 		const raw = (text: string) => fragment([text], []);
 
 		return Object.assign(
-			(strings: TemplateStringsArray, ...values: unknown[]) =>
-				fragment(strings, values),
+			(
+				strings:
+					| TemplateStringsArray
+					| ((t: Database.Transaction) => Promise<unknown>),
+				...values: unknown[]
+			) => {
+				if (typeof strings === "function") {
+					const fn = strings;
+
+					return group((inner, depth) =>
+						fn({ sql: Base.#scope(inner, depth) }),
+					);
+				}
+
+				if (!Array.isArray(strings) || !Object.hasOwn(strings, "raw"))
+					throw new TypeError(
+						"sql is a template tag, write sql`...`, or pass a callback to run a transaction",
+					);
+
+				return fragment(strings, values);
+			},
 			{
 				values: (table: Table.Any, rows: unknown) => {
 					const list = (Array.isArray(rows) ? rows : [rows]).map((row, i) =>

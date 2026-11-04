@@ -266,7 +266,7 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			await this.#prune();
 			const id = await Storage.hash(token);
 
-			return this.#db.transaction(async (t) => {
+			return this.#db.sql(async (t) => {
 				const [found] = await t.sql`
 					SELECT * FROM ${Storage.tokens} WHERE id = ${id}
 				`.parse(Storage.tokens);
@@ -356,7 +356,7 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			const table = Storage.challenges;
 			const now = Date.now();
 
-			return this.#db.transaction(async (t) => {
+			return this.#db.sql(async (t) => {
 				// one writer at a time, so concurrent requests cannot share the last
 				// slot; the insert's snapshot is taken after the lock
 				await t.sql`SELECT pg_advisory_xact_lock(hashtext('auth_challenges'))`;
@@ -447,7 +447,7 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		create: (t: Database.Transaction, user: string) => Result<void>,
 		credential: Auth.Credential,
 	) {
-		return this.#db.transaction(async (t) => {
+		return this.#db.sql(async (t) => {
 			await create(t, credential.user);
 			await t.sql`
 				INSERT INTO ${Storage.credentials} ${t.sql.values(Storage.credentials, credential)}

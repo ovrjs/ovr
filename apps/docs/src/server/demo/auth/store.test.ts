@@ -36,7 +36,7 @@ describe("demo database", () => {
 		const database = await open("memory://");
 		stores.push(database);
 		const id = crypto.randomUUID();
-		await database.transaction(async (t) => {
+		await database.sql(async (t) => {
 			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id, email: "a@example.com" })}`;
 			await t.sql`INSERT INTO ${database.auth_credentials} ${t.sql.values(database.auth_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
 			await t.sql`INSERT INTO ${database.auth_sessions} ${t.sql.values(database.auth_sessions, { id: "s", user: id, expiration: Date.now() + 60000 })}`;

@@ -46,7 +46,7 @@ export const database = new Database(
 | `default` | Columns the database supplies, with a `DEFAULT`, identity, or generated column  |
 | `schema`  | Postgres schema containing the table, the connection's search path when omitted |
 
-Tables are available on the database by name, so a module only needs to export `database`. A table can't be named `sql`, `transaction`, `migrate`, or `check`.
+Tables are available on the database by name, so a module only needs to export `database`. A table can't be named `sql`, `migrate`, or `check`.
 
 A table is a schema of its rows:
 
@@ -150,18 +150,42 @@ try {
 
 ## Transact
 
-`database.transaction()` checks out one connection, commits when the callback resolves, and rolls back when it throws. The connection is always released.
+Pass `database.sql` a callback instead of a template to run its queries as one transaction. It checks out one connection, commits when the callback resolves, and rolls back when it throws. The connection is always released.
 
 ```ts
-await database.transaction(async (t) => {
+await database.sql(async (t) => {
 	await t.sql`DELETE FROM ${database.posts} WHERE ${database.posts.columns.author} = ${user.id}`;
 	await t.sql`DELETE FROM ${database.users} WHERE ${database.users.columns.id} = ${user.id}`;
 });
 ```
 
-Use `t.sql` for every query in the transaction. `database.sql` would run on another connection, and `t.sql` queries can't run after the transaction ends.
+Use `t.sql` for every query in the transaction. `database.sql` would run on another connection, outside the transaction, and `t.sql` queries can't run after the transaction ends.
 
-A failed query aborts the transaction in Postgres, so catching its error doesn't save the transaction: it rolls back and rethrows the error. To recover from an expected error, roll back to a `SAVEPOINT`.
+A single statement doesn't need a callback: Postgres runs each one atomically. Use one when several statements must succeed or fail together, for example when you read a row, decide in JavaScript, and then write.
+
+### Savepoints
+
+A failed query aborts the transaction in Postgres, so catching its error doesn't save the transaction: it rolls back and rethrows the error. To recover from an expected error, pass `t.sql` a callback. It runs as a savepoint, which rolls back only its own queries when it throws, and the transaction continues:
+
+```ts
+await database.sql(async (t) => {
+	for (const post of imported) {
+		try {
+			await t.sql(async (s) => {
+				await s.sql`
+					INSERT INTO ${database.posts} ${s.sql.values(database.posts, post)}
+				`;
+				// ...more queries for this post
+			});
+		} catch (error) {
+			if (!Database.unique(error, "posts_author_title_key")) throw error;
+			// this post's queries rolled back, the others are kept
+		}
+	}
+});
+```
+
+Savepoints can nest. As in a transaction, catching an error inside the callback doesn't save the savepoint.
 
 ## Migrate
 

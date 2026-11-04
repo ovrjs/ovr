@@ -212,7 +212,7 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			throw new TypeError(
 				"Auth duration must be a positive lifetime in milliseconds",
 			);
-		if (typeof options.database?.transaction !== "function")
+		if (typeof options.database?.sql !== "function")
 			throw new TypeError("Auth requires a database");
 		if (
 			Auth.tables.some(
