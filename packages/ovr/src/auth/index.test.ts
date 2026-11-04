@@ -248,8 +248,15 @@ const inspect = {
 		(await rows(table)).length,
 	record: async (id: string) =>
 		(await storage.credentials.get(id)) ?? undefined,
-	session: async (id: string) =>
-		(await rows(db.auth_sessions)).find((session) => session.id === id),
+	/** The stored session as `c.session()` returns it, without its start time. */
+	session: async (id: string) => {
+		const row = (await rows(db.auth_sessions)).find(
+			(session) => session.id === id,
+		);
+		if (!row) return;
+		const { started: _, ...session } = row;
+		return session;
+	},
 	challenge: async (id: string) =>
 		(await rows(db.auth_challenges)).find((challenge) => challenge.id === id),
 	/** Change a stored challenge, as another instance or an attacker could. */
@@ -273,7 +280,8 @@ function setup(extra: Partial<State.Options> = {}) {
 	const settings: Auth.Options<typeof users> = {
 		secret: options.secret,
 		origin: options.origin,
-		...(options.duration === undefined ? {} : { duration: options.duration }),
+		...(options.idle === undefined ? {} : { idle: options.idle }),
+		...(options.lifetime === undefined ? {} : { lifetime: options.lifetime }),
 		database: db,
 		users,
 	};
@@ -335,10 +343,6 @@ function setup(extra: Partial<State.Options> = {}) {
 		Route.get("/session").use(async (c) => c.json(await c.session())),
 		Route.post("/session").use(async (c) => c.json(await auth.login(c, user))),
 		Route.post("/logout").use(async (c) => c.json(await auth.logout(c))),
-		Route.post("/revoke/:id").use(async (c) => {
-			await auth.revoke(c, c.params.id);
-			c.text("revoked");
-		}),
 	);
 	const post = (path: string, data: FormData, cookie = "", ip = "192.0.2.1") =>
 		app.fetch(origin + path, {
@@ -672,18 +676,20 @@ describe("passkey ceremonies", () => {
 });
 
 describe("revocable sessions", () => {
-	test("uses the default session lifetime when duration is explicitly undefined", async () => {
+	test("uses the default idle timeout and lifetime when they are explicitly undefined", async () => {
 		// @ts-expect-error JavaScript callers can explicitly pass undefined.
-		const state = setup({ duration: undefined });
+		const state = setup({ idle: undefined, lifetime: undefined });
 		const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
 		try {
 			const response = await state.post("/session", new FormData());
 			const session: Auth.Session = await response.json();
 			const cookie = response.headers.getSetCookie().at(-1)!;
+			expect(session.expiration).toBe(Date.now() + Time.week);
 			expect((await state.session(session.id))?.expiration).toBe(
 				Date.now() + Time.week,
 			);
-			expect(cookie).toContain(`Max-Age=${Time.week / Time.second}`);
+			// the cookie lasts the lifetime, renewals only change the record
+			expect(cookie).toContain(`Max-Age=${(30 * Time.day) / Time.second}`);
 			expect(
 				await (
 					await state.app.fetch(origin + "/session", {
@@ -736,86 +742,23 @@ describe("revocable sessions", () => {
 		expect(get).toHaveBeenCalledTimes(2);
 	});
 
-	test("logout and revoke update the same request's cached session and cookie", async () => {
-		const state = setup();
-		const login = await state.post("/session", new FormData());
-		const session: Auth.Session = await login.json();
-		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
-		state.app.use(
-			Route.get("/revoke-current").use(async (c) => {
-				await state.auth.revoke(c, session.id);
-				expect(await c.session()).toBeNull();
-				c.text("revoked");
-			}),
-		);
-		const response = await state.app.fetch(origin + "/revoke-current", {
-			headers: { cookie },
-		});
-		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
-		expect(await state.size(db.auth_sessions)).toBe(0);
-	});
-
 	test("rejects a stored session whose ID differs from the signed cookie", async () => {
 		const state = setup();
 		const login = await state.post("/session", new FormData());
 		const session: Auth.Session = await login.json();
 		const get = vi
 			.spyOn(state.options.sessions, "get")
-			.mockReturnValueOnce({ ...session, id: session.user });
+			.mockReturnValueOnce({
+				...session,
+				id: session.user,
+				started: Date.now(),
+			});
 		const response = await state.app.fetch(origin + "/session", {
 			headers: { cookie: login.headers.getSetCookie().at(-1)!.split(";")[0]! },
 		});
 		expect(get).toHaveBeenCalledWith(session.id);
 		expect(await response.json()).toBeNull();
 		expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
-	});
-
-	test.each([false, true])(
-		"revokes the current session directly with cached=%s",
-		async (cached) => {
-			const state = setup();
-			const login = await state.post("/session", new FormData());
-			const session: Auth.Session = await login.json();
-			const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
-			const get = vi.spyOn(state.options.sessions, "get");
-			state.app.use(
-				Route.get("/direct-revoke").use(async (c) => {
-					if (cached) await c.session();
-					get.mockRejectedValue(new Error("reads unavailable"));
-					await state.auth.revoke(c, session.id);
-					expect(await c.session()).toBeNull();
-					c.text("revoked");
-				}),
-			);
-			const response = await state.app.fetch(origin + "/direct-revoke", {
-				headers: { cookie },
-			});
-			expect(response.status).toBe(200);
-			expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
-			expect(get).toHaveBeenCalledTimes(cached ? 1 : 0);
-			expect(await state.size(db.auth_sessions)).toBe(0);
-		},
-	);
-
-	test("revoking the incoming session after rotation preserves the new session", async () => {
-		const state = setup();
-		const login = await state.post("/session", new FormData());
-		const previous: Auth.Session = await login.json();
-		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
-		state.app.use(
-			Route.get("/rotate-revoke").use(async (c) => {
-				const session = await state.auth.login(c, "next-user");
-				await state.auth.revoke(c, previous.id);
-				expect(await c.session()).toEqual(session);
-				c.json(session);
-			}),
-		);
-		const response = await state.app.fetch(origin + "/rotate-revoke", {
-			headers: { cookie },
-		});
-		expect(response.status).toBe(200);
-		expect(response.headers.getSetCookie().at(-1)).not.toContain("Max-Age=0");
-		expect(await state.size(db.auth_sessions)).toBe(1);
 	});
 
 	test.each(["", " ", "x".repeat(1025), "é".repeat(513)])(
@@ -860,24 +803,65 @@ describe("revocable sessions", () => {
 		expect(await state.size(db.auth_sessions)).toBe(0);
 	});
 
-	test("rotates sessions and supports explicit revocation", async () => {
+	test("rotates sessions, and deleting a session's row signs it out", async () => {
 		const state = setup();
 		const first = await state.post("/session", new FormData());
 		const cookie = first.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const second = await state.post("/session", new FormData(), cookie);
 		const session: Auth.Session = await second.json();
+		const current = second.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		expect(await state.size(db.auth_sessions)).toBe(1);
 		expect(
 			await (
 				await state.app.fetch(origin + "/session", { headers: { cookie } })
 			).json(),
 		).toBeNull();
-		await state.post(`/revoke/${session.id}`, new FormData());
-		expect(await state.size(db.auth_sessions)).toBe(0);
+		await db.sql`DELETE FROM ${db.auth_sessions} WHERE ${db.auth_sessions.columns.id} = ${session.id}`;
+		const read = await state.app.fetch(origin + "/session", {
+			headers: { cookie: current },
+		});
+		expect(await read.json()).toBeNull();
+		expect(read.headers.get("set-cookie")).toContain("Max-Age=0");
 	});
 
-	test("expires sessions without sliding refresh and propagates storage errors", async () => {
-		const state = setup({ duration: Time.second });
+	test("renews sessions while used, at most once a day, until their lifetime", async () => {
+		const now = Date.now();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		const state = setup({ idle: 2 * Time.day, lifetime: 5 * Time.day });
+		const renew = vi.spyOn(state.options.sessions, "renew");
+		const login = await state.post("/session", new FormData());
+		const { id }: Auth.Session = await login.json();
+		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
+		const read = async () =>
+			(await (
+				await state.app.fetch(origin + "/session", { headers: { cookie } })
+			).json()) as Auth.Session | null;
+		try {
+			expect((await read())?.expiration).toBe(now + 2 * Time.day);
+			// under a day since the last renewal, nothing is written
+			clock.mockReturnValue(now + 12 * Time.hour);
+			expect((await read())?.expiration).toBe(now + 2 * Time.day);
+			expect(renew).not.toHaveBeenCalled();
+			// a day later, it renews for another idle timeout
+			clock.mockReturnValue(now + 1.5 * Time.day);
+			expect((await read())?.expiration).toBe(now + 3.5 * Time.day);
+			expect(renew).toHaveBeenCalledOnce();
+			// the stored record moves too, so other instances see it
+			expect((await state.session(id))?.expiration).toBe(now + 3.5 * Time.day);
+			// used regularly, it still ends at its lifetime
+			clock.mockReturnValue(now + 3 * Time.day);
+			expect((await read())?.expiration).toBe(now + 5 * Time.day);
+			clock.mockReturnValue(now + 4.5 * Time.day);
+			expect((await read())?.expiration).toBe(now + 5 * Time.day);
+			clock.mockReturnValue(now + 5 * Time.day);
+			expect(await read()).toBeNull();
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
+	test("expires sessions left unused for the idle timeout and propagates storage errors", async () => {
+		const state = setup({ idle: Time.second });
 		const login = await state.post("/session", new FormData());
 		const cookie = login.headers.getSetCookie().at(-1)!.split(";")[0]!;
 		const session: Auth.Session = await login.json();
@@ -1991,21 +1975,6 @@ test("registration field digests ignore object order and preserve array order an
 	);
 });
 
-test("revoking an unrelated session leaves an invalid incoming cookie alone", async () => {
-	const state = setup();
-	const remove = vi.spyOn(state.options.sessions, "delete");
-	const cookie = "__Host-auth-session=invalid";
-	const result = await state.post("/revoke/other", new FormData(), cookie);
-	expect(result.status).toBe(200);
-	expect(remove).toHaveBeenCalledExactlyOnceWith("other");
-	expect(result.headers.getSetCookie()).toHaveLength(0);
-	const read = await state.app.fetch(origin + "/session", {
-		headers: { cookie },
-	});
-	expect(await read.json()).toBeNull();
-	expect(read.headers.get("set-cookie")).toContain("Max-Age=0");
-});
-
 test("invalid registration options do not spend the signup budget", async () => {
 	const storage = setup();
 	const state = managed(storage);
@@ -2137,6 +2106,7 @@ test("oversized registration bodies are rejected without spending the signup bud
 const checksums = {
 	auth: "1dd0bbe5a91a90cc6532753e04695d3fd488ef08202a63d70fea508f11a201ec",
 	agents: "a6c10a9a55133d44e1aa98e6019bad9cb8d6874052c1d4131b473ff6653987f1",
+	sessions: "27d66a8bdd7dd5655d4242587343392dcb5790aa72ebca61705c3ebbc13dcbaf",
 	limiter: "94fd469e8c2caa7331e532b764ae872352804a28527febb3decf5b09cf40ca70",
 };
 
@@ -2149,6 +2119,7 @@ describe("migration SQL", () => {
 		expect(applied).toEqual([
 			"auth:1",
 			"auth:2",
+			"auth:3",
 			"rate_limits:1",
 			"0001_users",
 		]);
@@ -2227,13 +2198,14 @@ describe("migration SQL", () => {
 		await expect(app.fetch(`${origin}/`)).rejects.toThrow("app.use(auth)");
 	});
 
-	const [auth, agents] = owned.get(Storage.credentials)!;
+	const [auth, agents, sessions] = owned.get(Storage.credentials)!;
 	const [limiter] = owned.get(Limiter.table)!;
 
 	// an applied migration's checksum must never change, new SQL ships as a new version
 	test.each([
 		["auth:1", auth!.sql, checksums.auth],
 		["auth:2", agents!.sql, checksums.agents],
+		["auth:3", sessions!.sql, checksums.sessions],
 		["rate_limits:1", limiter!.sql, checksums.limiter],
 	])("%s never changes", async (_, sql, checksum) => {
 		expect(
@@ -2337,6 +2309,7 @@ describe("Postgres storage", () => {
 			id: "old",
 			user: "u",
 			expiration: now + 1,
+			started: now,
 		});
 		await storage.challenges.set("old", {
 			...challenge("a"),
@@ -2348,6 +2321,7 @@ describe("Postgres storage", () => {
 			id: "new",
 			user: "u",
 			expiration: now + Time.hour,
+			started: now,
 		});
 		expect((await rows(db.auth_sessions)).map((session) => session.id)).toEqual(
 			["new"],

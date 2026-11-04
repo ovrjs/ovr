@@ -75,8 +75,16 @@ export namespace Auth {
 		readonly origin: string;
 		/** Database containing `Auth.tables`, which stores challenges, sessions, credentials, and rate limits. */
 		readonly database: Database;
-		/** Session lifetime in milliseconds; defaults to one week, without sliding refresh. */
-		readonly duration?: number;
+		/**
+		 * Time in milliseconds a session lasts without being used; defaults to
+		 * one week. Using it renews it, at most once a day.
+		 */
+		readonly idle?: number;
+		/**
+		 * Time in milliseconds from sign-in after which a session ends, however
+		 * recently it was used; defaults to 30 days.
+		 */
+		readonly lifetime?: number;
 		/**
 		 * Users table in `database`. Its form fields, other than `id` and
 		 * columns with defaults, are the registration form, and registering
@@ -196,15 +204,18 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			)
 		)
 			throw new TypeError("Auth secret must contain at least 32 bytes");
-		if (
-			options.duration !== undefined &&
-			(!Number.isSafeInteger(options.duration) ||
-				options.duration < Time.second ||
-				options.duration > 365 * Time.day)
-		)
-			throw new TypeError(
-				"Auth duration must be a positive lifetime in milliseconds",
-			);
+		for (const name of ["idle", "lifetime"] as const) {
+			const value = options[name];
+			if (
+				value !== undefined &&
+				(!Number.isSafeInteger(value) ||
+					value < Time.second ||
+					value > 365 * Time.day)
+			)
+				throw new TypeError(
+					`Auth ${name} must be a time in milliseconds, from one second to a year`,
+				);
+		}
 		if (typeof options.database?.sql !== "function")
 			throw new TypeError("Auth requires a database");
 		if (
@@ -226,7 +237,8 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 				typeof options.secret === "string"
 					? options.secret
 					: [options.secret[0], ...options.secret.slice(1)],
-			...(options.duration === undefined ? {} : { duration: options.duration }),
+			...(options.idle === undefined ? {} : { idle: options.idle }),
+			...(options.lifetime === undefined ? {} : { lifetime: options.lifetime }),
 			challenges: storage.challenges,
 			sessions: storage.sessions,
 		};
@@ -309,10 +321,5 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	/** Revoke the current session and expire its cookie. Always await this method. */
 	logout(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
 		return this.#state(c).logout();
-	}
-
-	/** Revoke a selected session, also clearing this request's cookie when it matches. */
-	revoke(c: Pick<Auth.Context, "url" | "cookie" | "res">, id: string) {
-		return this.#state(c).revoke(id);
 	}
 }

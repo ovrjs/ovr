@@ -28,11 +28,19 @@ export namespace Storage {
 		take(id: string): Result<Challenge | null | undefined>;
 	}
 
+	/** A stored session, with the time it started for its lifetime. */
+	export interface Session extends Auth.Session {
+		/** Sign-in time in milliseconds. */
+		readonly started: number;
+	}
+
 	/** Revocable sessions shared by all instances. */
 	export interface Sessions {
-		set(id: string, session: Auth.Session): Result<void>;
+		set(id: string, session: Session): Result<void>;
 		/** Return a session, or nothing if it has expired or been revoked. */
-		get(id: string): Result<Auth.Session | null | undefined>;
+		get(id: string): Result<Session | null | undefined>;
+		/** Move a session's expiration later, never earlier. */
+		renew(id: string, expiration: number): Result<void>;
 		delete(id: string): Result<void>;
 	}
 
@@ -79,6 +87,7 @@ export class Storage {
 		id: Schema.string(),
 		user: Schema.string(),
 		expiration: Schema.number().int(),
+		started: Schema.number().int(),
 	});
 
 	/** Outstanding WebAuthn ceremonies. */
@@ -167,6 +176,14 @@ CREATE INDEX auth_challenges_browser ON auth_challenges (browser, expiration);`,
 CREATE INDEX auth_tokens_family ON auth_tokens (family);
 CREATE INDEX auth_tokens_user ON auth_tokens ("user");
 CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
+		},
+		{
+			id: "auth:3",
+			// sessions renew while used, up to a lifetime from sign-in;
+			// existing sessions count from when this runs
+			sql: `ALTER TABLE auth_sessions ADD COLUMN started bigint NOT NULL
+	DEFAULT (extract(epoch FROM now()) * 1000)::bigint;
+ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 		},
 	] as const;
 
@@ -407,6 +424,13 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 					SELECT * FROM ${Storage.sessions} WHERE id = ${id} AND expiration > ${Date.now()}
 				`.parse(Storage.sessions)
 			)[0],
+		renew: async (id, expiration) => {
+			const { columns } = Storage.sessions;
+			await this.#db.sql`
+				UPDATE ${Storage.sessions} SET ${this.#db.sql.set(Storage.sessions, { expiration })}
+				WHERE ${columns.id} = ${id} AND ${columns.expiration} < ${expiration}
+			`;
+		},
 		delete: async (id) => {
 			await this.#db.sql`DELETE FROM ${Storage.sessions} WHERE id = ${id}`;
 		},

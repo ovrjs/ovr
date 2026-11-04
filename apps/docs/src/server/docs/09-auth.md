@@ -41,7 +41,7 @@ node -e 'console.log(crypto.getRandomValues(new Uint8Array(32)).toHex())'
 
 Keep it stable across deployments and the same on every instance: a new secret signs everyone out. `origin` is your exact HTTPS origin, without a path or trailing slash.
 
-For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session duration; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
+For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session `lifetime`; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
 
 `database` is your application's [Database](/08-database). Include `Auth.tables` in its tables, and `database.migrate()` [creates them](#storage).
 
@@ -184,7 +184,7 @@ app.use(
 
 A session is `{ id, user, expiration }`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 
-Sessions last seven days by default, without extending on each request. Each request checks the database, so revocation applies across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.
+A session ends after a week without use, and renews while it is used: reading it moves its end out by another week, at most once a day. However often it is used, it ends 30 days after sign-in, and the user signs in again. Set these with `idle` and `lifetime`. Each request checks the database, so revocation and renewal apply across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.
 
 ### Logout
 
@@ -196,28 +196,30 @@ Sessions last seven days by default, without extending on each request. Each req
 </form>
 ```
 
-You can also call these methods in a handler:
+You can also sign out the current session in a handler with `await auth.logout(c)`.
 
-```ts
-await auth.logout(c); // Current session.
-await auth.revoke(c, id); // A selected session ID.
-```
+To sign out other sessions, such as from a list of the user's devices, or all of a user's sessions, delete their rows from `database.auth_sessions`. A deleted session ends on its next request:
 
-To revoke all sessions for a user, delete their rows: ``database.sql`DELETE FROM ${database.auth_sessions} WHERE ${database.auth_sessions.columns.user} = ${user}` ``. `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
+````ts
+await database.sql`
+	DELETE FROM ${database.auth_sessions}
+	WHERE ${database.auth_sessions.columns.user} = ${session.user}
+`;
+``` `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
 
 Resolve sessions and prepare forms before returning JSX. Doing this inside an async component is too late to reliably set cookies, redirects, or response status.
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1`, `auth:2`, and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
+`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1` to `auth:3` and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
 
 ```ts
 const database = new Database(pool, [users, posts, ...Auth.tables]);
 
 await database.migrate(files); // Auth's migrations, then your migrations/*.sql
-```
+````
 
-A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, which the next `database.migrate()` applies: `auth:2` added the table for [agents](#agents).
+A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, which the next `database.migrate()` applies: `auth:2` added the table for [agents](#agents), and `auth:3` the sign-in time that ends a session at its `lifetime`.
 
 | Table              | Contents                                                      |
 | ------------------ | ------------------------------------------------------------- |
@@ -297,7 +299,8 @@ These numbers are an example. Size the burst and refill over the two-minute chal
 | ---------- | ---------- | ------------------------------------------------- |
 | `page`     | `/login`   | Your authentication page; failures redirect here. |
 | `redirect` | `/`        | Destination after registration or login.          |
-| `duration` | Seven days | Fixed session lifetime in milliseconds.           |
+| `idle`     | Seven days | Time a session lasts unused, in milliseconds.     |
+| `lifetime` | 30 days    | Time from sign-in a session lasts, at most.       |
 | `consent`  | `/connect` | Page where users approve [agents](#agents).       |
 
 `page` and `redirect` must be local paths. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.

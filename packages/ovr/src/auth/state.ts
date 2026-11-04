@@ -7,7 +7,10 @@ import { Token } from "./token.js";
 
 export namespace State {
 	/** Session persistence and signing configuration used by internal request state. */
-	export type Options = Pick<Auth.Options, "secret" | "origin" | "duration"> &
+	export type Options = Pick<
+		Auth.Options,
+		"secret" | "origin" | "idle" | "lifetime"
+	> &
 		Pick<Storage, "challenges" | "sessions">;
 	/** Internal capabilities needed for request-local authentication state. */
 	export type Context = Pick<Auth.Context, "url" | "cookie" | "res">;
@@ -36,7 +39,13 @@ export class State {
 			throw new Halt("Authentication requires its configured origin");
 		}
 		this.#c = c;
-		this.options = { ...options, duration: options.duration ?? Time.week };
+		const lifetime = options.lifetime ?? 30 * Time.day;
+		this.options = {
+			...options,
+			lifetime,
+			// a session never outlives its lifetime, however recently it was used
+			idle: Math.min(options.idle ?? Time.week, lifetime),
+		};
 	}
 
 	/** Read a browser binding; create it only while preparing a form in the handler. */
@@ -77,13 +86,47 @@ export class State {
 		}
 		// Storage failures must propagate, rather than appear to be successful logouts.
 		const session = await this.options.sessions.get(id);
-		if (session && session.id === id && session.expiration > Date.now())
-			return session;
+		const now = Date.now();
+		if (
+			session &&
+			session.id === id &&
+			session.expiration > now &&
+			session.started + this.options.lifetime > now
+		)
+			return this.#renew(session, now);
 		this.#clear();
 		return null;
 	}
 
-	/** Read a non-expired, non-revoked session; does not extend its lifetime. */
+	/**
+	 * Extend a session that is being used, up to its lifetime. Only the record
+	 * changes: the cookie lasts the whole lifetime, so a renewal sets no header
+	 * and works after the response has started streaming.
+	 *
+	 * @param session Valid stored session
+	 * @param now Current time
+	 * @returns The session with its current expiration
+	 */
+	async #renew(session: Storage.Session, now: number): Promise<Auth.Session> {
+		const { idle, lifetime } = this.options;
+		const expiration = Math.min(now + idle, session.started + lifetime);
+		// at most once a day, or each half of a shorter idle timeout
+		const renewed = session.expiration - idle;
+		if (
+			now - renewed >= Math.min(Time.day, idle / 2) &&
+			expiration > session.expiration
+		) {
+			await this.options.sessions.renew(session.id, expiration);
+			return { id: session.id, user: session.user, expiration };
+		}
+		return {
+			id: session.id,
+			user: session.user,
+			expiration: session.expiration,
+		};
+	}
+
+	/** Read a non-expired, non-revoked session, renewing it while it is used. */
 	session() {
 		// an agent's tool call, authorized by its token
 		const { req } = this.#c as Partial<Pick<ContextType, "req">>;
@@ -141,12 +184,13 @@ export class State {
 			throw new TypeError("Auth user ID must contain 1 to 1024 UTF-8 bytes");
 		const previous = await this.session();
 		if (previous) await this.options.sessions.delete(previous.id);
+		const now = Date.now();
 		const session = {
 			id: crypto.randomUUID(),
 			user,
-			expiration: Date.now() + this.options.duration,
+			expiration: now + this.options.idle,
 		};
-		await this.options.sessions.set(session.id, session);
+		await this.options.sessions.set(session.id, { ...session, started: now });
 		this.#c.cookie.set(
 			State.#cookie,
 			await Token.seal(this.options.secret, "session", session.id),
@@ -154,35 +198,12 @@ export class State {
 				secure: true,
 				httpOnly: true,
 				sameSite: "Lax",
-				maxAge: Math.floor(this.options.duration / Time.second),
+				// renewals only change the record, so the cookie covers the lifetime
+				maxAge: Math.floor(this.options.lifetime / Time.second),
 			},
 		);
 		this.#session = Promise.resolve(session);
 		return session;
-	}
-
-	/** Revoke a session by its opaque ID. */
-	async revoke(id: string) {
-		await this.options.sessions.delete(id);
-		// A login earlier in this request may have replaced the incoming cookie's session.
-		if (this.#session) {
-			if ((await this.#session)?.id === id) {
-				this.#clear();
-				this.#session = Promise.resolve(null);
-			}
-			return;
-		}
-		const cookie = this.#c.cookie.get(State.#cookie);
-		if (!cookie) return;
-		try {
-			if ((await Token.open(this.options.secret, "session", cookie)) !== id)
-				return;
-		} catch (error) {
-			if (!(error instanceof Issue)) throw error;
-			return;
-		}
-		this.#clear();
-		this.#session = Promise.resolve(null);
 	}
 
 	/** Revoke the current session and expire its cookie. Always await this method. */

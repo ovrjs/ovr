@@ -48,13 +48,13 @@ class PreparedResponse {
 export const sessions = Symbol("sessions");
 
 export namespace Context {
-	/** A signed-in user's revocable session, with a fixed lifetime. */
+	/** A signed-in user's revocable session. */
 	export interface Session {
-		/** Opaque session ID, usable with `auth.revoke()`. */
+		/** Opaque session ID, the row's ID in `auth_sessions`. */
 		readonly id: string;
 		/** User ID. */
 		readonly user: string;
-		/** Absolute expiration time in milliseconds. */
+		/** Time in milliseconds the session ends unless it is used, which renews it. */
 		readonly expiration: number;
 	}
 
