@@ -125,11 +125,10 @@ await database.sql`
 `;
 ```
 
-| Helper                          | Builds                                                     |
-| ------------------------------- | ---------------------------------------------------------- |
-| `database.sql.values(table, r)` | `(columns) VALUES (...)` for one row or several            |
-| `database.sql.set(table, v)`    | `column = value, ...`                                      |
-| `database.sql.id(...names)`     | A quoted identifier, such as `database.sql.id("app", "x")` |
+| Helper                          | Builds                                          |
+| ------------------------------- | ----------------------------------------------- |
+| `database.sql.values(table, r)` | `(columns) VALUES (...)` for one row or several |
+| `database.sql.set(table, v)`    | `column = value, ...`                           |
 
 Column references are qualified with their table name, so write aliased columns like `p.title` directly. A function that returns a query from an `async` function runs it, because awaiting resolves the query.
 

@@ -60,12 +60,6 @@ export namespace Database {
 		(strings: TemplateStringsArray, ...values: unknown[]): Sql;
 
 		/**
-		 * @param names Identifier parts, for example a schema and table name
-		 * @returns Quoted identifier
-		 */
-		id(...names: readonly [string, ...string[]]): Sql;
-
-		/**
 		 * Validate rows and build the `(columns) VALUES (...)` of an insert.
 		 * Omitted columns use their SQL default.
 		 *
@@ -887,8 +881,6 @@ class Base<T extends readonly Table.Any[]> {
 			(strings: TemplateStringsArray, ...values: unknown[]) =>
 				fragment(strings, values),
 			{
-				id: (...names: readonly [string, ...string[]]) =>
-					raw(names.map(Identifier.quote).join(".")),
 				values: (table: Table.Any, rows: unknown) => {
 					const list = (Array.isArray(rows) ? rows : [rows]).map((row, i) =>
 						Base.#parse(

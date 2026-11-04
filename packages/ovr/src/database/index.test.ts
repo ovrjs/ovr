@@ -87,10 +87,11 @@ describe("sql", () => {
 	const db = new Database(mock().pool, [users, posts]);
 
 	test("binds values and quotes tables and columns", () => {
-		const fragment = db.sql`SELECT * FROM ${db.users} WHERE ${db.users.columns.email} = ${"a'b"} AND ${db.sql.id("x", 'we"ird')} > ${1n}`;
+		const weird = new Table('we"ird', { n: Schema.bigint() });
+		const fragment = db.sql`SELECT * FROM ${db.users} WHERE ${db.users.columns.email} = ${"a'b"} AND ${weird.columns.n} > ${1n}`;
 
 		expect(fragment.toQuery()).toEqual({
-			text: 'SELECT * FROM "users" WHERE "users"."email" = $1 AND "x"."we""ird" > $2',
+			text: 'SELECT * FROM "users" WHERE "users"."email" = $1 AND "we""ird"."n" > $2',
 			values: ["a'b", "1"],
 		});
 	});
@@ -124,8 +125,8 @@ describe("sql", () => {
 			text: "SELECT $1",
 			values: [evil],
 		});
-		expect(() => db.sql.id("")).toThrow(TypeError);
-		expect(() => db.sql.id("a\0b")).toThrow(TypeError);
+		const nul = new Table("a\0b", { n: Schema.bigint() });
+		expect(() => db.sql`SELECT * FROM ${nul}`.toQuery()).toThrow(TypeError);
 	});
 
 	test("values validates rows and uses DEFAULT for omitted columns", () => {
