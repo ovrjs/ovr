@@ -39,16 +39,19 @@ if (result.issues) {
 
 ```ts
 user.toJsonSchema();
-// {
-// 	$schema: "https://json-schema.org/draft/2020-12/schema",
-// 	type: "object",
-// 	properties: {
-// 		name: { type: "string", minLength: 2 },
-// 		age: { type: "integer", minimum: 13 },
-// 	},
-// 	required: ["name", "age"],
-// 	additionalProperties: false,
-// }
+```
+
+```json
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"name": { "type": "string", "minLength": 2 },
+		"age": { "type": "integer", "minimum": 13 }
+	},
+	"required": ["name", "age"],
+	"additionalProperties": false
+}
 ```
 
 - `target` selects `"draft-2020-12"` (default) or `"draft-07"`.
@@ -135,9 +138,10 @@ const signup = Route.post("/signup")
 		if (result.issues) return c.redirect(result.url, 303);
 
 		const [user] = await database.sql`
-		INSERT INTO ${database.users} ${database.sql.values(database.users, result.data)}
-		ON CONFLICT (email) DO NOTHING RETURNING *
-	`.parse(database.users);
+			INSERT INTO ${database.users} ${database.sql.values(database.users, result.data)}
+			ON CONFLICT (email) DO NOTHING
+			RETURNING *
+		`.parse(database.users);
 		if (!user) {
 			const invalid = result.invalid({ email: "Already registered" });
 			return c.redirect(invalid.url, 303);

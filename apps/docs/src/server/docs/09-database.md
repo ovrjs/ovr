@@ -36,10 +36,7 @@ const posts = new Table(
 );
 
 export const database = new Database(
-	new Pool({
-		connectionString: process.env.DATABASE_URL,
-		allowExitOnIdle: true,
-	}),
+	new Pool({ connectionString: process.env.DATABASE_URL }),
 	[users, posts],
 );
 ```
@@ -78,9 +75,9 @@ const create = Route.post("/posts").fields({ title, body }).use(handler);
 
 ## Connect
 
-`Database` accepts an application-owned, pg-compatible pool such as [`pg`](https://node-postgres.com/). ovr has no driver dependency and never ends the pool. `allowExitOnIdle` lets scripts exit when they finish.
+`Database` accepts an application-owned, pg-compatible pool such as [`pg`](https://node-postgres.com/). ovr has no driver dependency and never ends the pool: call `pool.end()` when a script such as a migration finishes, or the open connections keep it running.
 
-Use your provider's pooled connection string for the application, and a direct connection for migrations. ovr works with transaction-mode poolers such as Supabase's and PlanetScale's: it doesn't use named prepared statements or session state.
+Use your provider's pooled connection string for the application, and a direct connection for migrations. ovr doesn't use named prepared statements or session state, which transaction-mode poolers don't support.
 
 ## Query
 

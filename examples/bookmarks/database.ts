@@ -26,10 +26,7 @@ const bookmarks = new Table(
 if (!process.env.DATABASE_URL) throw new Error("Set DATABASE_URL");
 
 /** Application-owned connection pool; close it during server shutdown. */
-export const pool = new Pool({
-	connectionString: process.env.DATABASE_URL,
-	allowExitOnIdle: true,
-});
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 /** Tables describe row validation; constraints and indexes live in SQL. */
 export const database = new Database(pool, [users, bookmarks, ...Auth.tables]);
