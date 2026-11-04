@@ -33,7 +33,13 @@ const auth = new Auth({
 const app = new App().use(auth);
 ```
 
-`secret` is a server-side random secret containing at least 32 bytes. Keep it stable across deployments. `origin` is your exact HTTPS origin, without a path or trailing slash.
+`secret` is a server-side random secret containing at least 32 bytes. Generate it once and set it as an environment variable, such as `AUTH_SECRET`:
+
+```bash
+node -e 'console.log(crypto.getRandomValues(new Uint8Array(32)).toHex())'
+```
+
+Keep it stable across deployments and the same on every instance: a new secret signs everyone out. `origin` is your exact HTTPS origin, without a path or trailing slash.
 
 For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session duration; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
 

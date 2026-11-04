@@ -72,8 +72,14 @@ in a bundler, or build the local `ovr` package before running it. A tsconfig pat
 mapping alone does not change runtime imports.
 
 Set `DATABASE_URL`, `AUTH_ORIGIN` (an exact HTTPS origin, no trailing slash), and
-`AUTH_SECRET` (a stable random server secret containing at least 32 bytes). Run
-`migrate.ts` in the release step with a direct database connection; use the
+`AUTH_SECRET` (a stable random server secret containing at least 32 bytes),
+generated once with:
+
+```bash
+node -e 'console.log(crypto.getRandomValues(new Uint8Array(32)).toHex())'
+```
+
+Run `migrate.ts` in the release step with a direct database connection; use the
 application's pooled connection for requests. Migrations are written SQL, and
 `database.check()` checks table compatibility without generating changes.
 
