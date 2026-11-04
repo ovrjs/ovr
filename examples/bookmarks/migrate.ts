@@ -1,3 +1,5 @@
+// creates Auth with the database, so check() knows the users table its tables reference
+import "./auth.js";
 import { database, pool } from "./database.js";
 import { readFile, readdir } from "node:fs/promises";
 

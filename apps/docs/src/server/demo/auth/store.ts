@@ -21,6 +21,11 @@ export const migrations: Database.Migration[] = [
 			ALTER TABLE auth_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 		`,
 	},
+	{
+		id: "0003_auth_tokens",
+		// deleting an account disconnects its agents
+		sql: `ALTER TABLE auth_tokens ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;`,
+	},
 ];
 
 /**
@@ -62,12 +67,6 @@ export async function open(path = ".auth-pglite"): Promise<Store> {
 	);
 
 	await database.migrate(migrations);
-
-	const differences = await database.check();
-	if (differences.length)
-		throw new Error(
-			`Database does not match its tables:\n${differences.join("\n")}`,
-		);
 
 	return Object.assign(database, { close: () => engine.close() });
 }

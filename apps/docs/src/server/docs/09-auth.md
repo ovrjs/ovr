@@ -246,6 +246,8 @@ ALTER TABLE auth_tokens ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASC
 
 Then deleting the account deletes everything that signs in as it, whichever code deletes it: its passkeys, browser sessions, and agents' codes, access tokens, and refresh tokens. An agent refreshing its token at that moment cannot keep it.
 
+[`database.check()`](/08-database#check) verifies these keys: each from the table's `user` column to your users table's `id`, cascading deletes, validated and enforced. It needs to know which table is your users table, so create `Auth` with the database before checking, for example by importing your auth module in the migration script; until then, `check` reports that it needs `Auth`.
+
 ```ts
 await database.sql`
 	DELETE FROM ${database.users} WHERE ${database.users.columns.id} = ${session.user}

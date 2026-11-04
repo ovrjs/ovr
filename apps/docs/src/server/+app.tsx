@@ -18,6 +18,12 @@ if (import.meta.env.DEV && process.env.AUTH_SECRET) {
 		process.env.AUTH_SECRET,
 		process.env.AUTH_ORIGIN,
 	);
+	// after Auth, which tells the check the users table its tables reference
+	const differences = await database.check();
+	if (differences.length)
+		throw new Error(
+			`Database does not match its tables:\n${differences.join("\n")}`,
+		);
 	app = new o.App().use(service, auth.routes(database, service));
 } else app = new o.App();
 

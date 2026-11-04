@@ -208,8 +208,9 @@ const applied = await database.migrate(
 	),
 );
 const differences = await database.check();
+if (differences.length) throw new Error(differences.join("\n"));
 
-console.log({ applied, differences });
+console.log({ applied });
 ```
 
 - Tables from ovr, such as [`Auth.tables`](/09-auth#storage) and [`Limiter.table`](/05-middleware#rate-limiting), bring their own migrations. They are applied first, each library's in its own order, so yours can reference their tables.
@@ -248,6 +249,7 @@ To change a table, edit its definition, run `check` to see what differs, and wri
 - Nullability that differs from the schema
 - Columns in `default` the database doesn't supply
 - Other `NOT NULL` columns without a default, which inserts can't omit
+- Foreign keys the tables of ovr need, such as [Auth's](/09-auth#storage) to your users table
 
 Domains count their `NOT NULL` constraints and defaults. Keys, constraints, indexes, and other columns are left to your migrations.
 

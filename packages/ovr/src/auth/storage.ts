@@ -1,4 +1,4 @@
-import { type Database, owned } from "../database/index.js";
+import { type Database, owned, referenced } from "../database/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
@@ -198,7 +198,18 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 			Storage.tokens,
 		])
 			owned.set(table, Storage.#migrations);
+
+		// deleting an account deletes what signs in as it, `database.check` verifies it
+		for (const table of [Storage.credentials, Storage.sessions, Storage.tokens])
+			referenced.set(table, { column: "user", by: "Auth" });
 	}
+
+	/** Tables whose rows belong to a user, and must reference the users table. */
+	static readonly owners = [
+		Storage.credentials,
+		Storage.sessions,
+		Storage.tokens,
+	] as const;
 
 	/** Outstanding ceremonies across all browsers, and for one browser. */
 	static readonly #capacity = { total: 10000, browser: 10 };

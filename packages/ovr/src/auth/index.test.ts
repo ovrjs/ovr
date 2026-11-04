@@ -202,22 +202,21 @@ const run = async (text: string, values?: unknown[]) =>
 		? engine.query(text, values)
 		: ((await engine.exec(text)).at(-1) ?? { rows: [] });
 const users = new Table("users", { id: Schema.string(), email: Field.email() });
-const db = new Database(
-	{
-		async query(text, values) {
-			const release = await acquire();
-			try {
-				return await run(text, values);
-			} finally {
-				release();
-			}
-		},
-		async connect() {
-			return { query: run, release: await acquire() };
-		},
+/** The PGlite engine as a pool, for databases over it */
+const pool: Database.Pool = {
+	async query(text, values) {
+		const release = await acquire();
+		try {
+			return await run(text, values);
+		} finally {
+			release();
+		}
 	},
-	[users, ...Auth.tables],
-);
+	async connect() {
+		return { query: run, release: await acquire() };
+	},
+};
+const db = new Database(pool, [users, ...Auth.tables]);
 /** The app's own migration, after Auth's */
 const own = {
 	id: "0001_users",
@@ -2109,8 +2108,132 @@ const checksums = {
 };
 
 describe("migration SQL", () => {
-	test("creates the tables Auth uses", async () => {
-		expect(await db.check()).toEqual([]);
+	describe("check verifies Auth's foreign keys to the users table", () => {
+		const settings = { secret: "test-secret-with-at-least-32-bytes", origin };
+		const owners = ["auth_credentials", "auth_sessions", "auth_tokens"];
+		/** Add each table's key with this definition, until `drop` */
+		const add = async (definition: string) => {
+			for (const table of owners)
+				await run(
+					`ALTER TABLE ${table} ADD CONSTRAINT ${table}_owner FOREIGN KEY ("user") ${definition}`,
+				);
+		};
+		const drop = async () => {
+			for (const table of owners)
+				await run(
+					`ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${table}_owner`,
+				);
+		};
+		afterEach(drop);
+
+		test("asks for Auth when it has not been created with the database", async () => {
+			const database = new Database(pool, [users, ...Auth.tables]);
+			expect(await database.check()).toEqual(
+				owners.map(
+					(table) =>
+						`${table}.user: create Auth with this database before checking it, so it knows the table ${table} references`,
+				),
+			);
+		});
+
+		test("reports missing keys, and passes with the documented migration", async () => {
+			new Auth({ ...settings, database: db, users });
+			expect(await db.check()).toEqual(
+				owners.map(
+					(table) =>
+						`${table}.user: missing foreign key to users (id) ON DELETE CASCADE`,
+				),
+			);
+			// the auth guide's migration
+			await add("REFERENCES users ON DELETE CASCADE");
+			expect(await db.check()).toEqual([]);
+		});
+
+		test.each([
+			["REFERENCES users", "does not cascade deletes"],
+			[
+				"REFERENCES users ON DELETE CASCADE NOT VALID",
+				"is NOT VALID, validate it",
+			],
+			[
+				"REFERENCES users (email) ON DELETE CASCADE",
+				"references another table or column",
+			],
+			[
+				"REFERENCES others ON DELETE CASCADE",
+				"references another table or column",
+			],
+		])("reports a key %s", async (definition, problem) => {
+			new Auth({ ...settings, database: db, users });
+			await run(
+				"CREATE TABLE IF NOT EXISTS others (id text PRIMARY KEY); CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users (email)",
+			);
+			try {
+				await add(definition);
+				expect(await db.check()).toEqual(
+					owners.map(
+						(table) =>
+							`${table}.user: foreign key ${problem}, expected users (id) ON DELETE CASCADE`,
+					),
+				);
+			} finally {
+				await drop();
+				await run("DROP TABLE others; DROP INDEX users_email");
+			}
+		});
+
+		test("each database expects its own users table, and one database has one", async () => {
+			const members = new Table("members", {
+				id: Schema.string(),
+				email: Field.email(),
+			});
+			const other = new Database(pool, [members, ...Auth.tables]);
+			new Auth({ ...settings, database: other, users: members });
+			new Auth({ ...settings, database: db, users });
+			await run(
+				"CREATE TABLE members (id text PRIMARY KEY, email text NOT NULL)",
+			);
+			try {
+				await add("REFERENCES users ON DELETE CASCADE");
+				// the same keys satisfy one database and not the other
+				expect(await db.check()).toEqual([]);
+				expect(await other.check()).toEqual(
+					owners.map(
+						(table) =>
+							`${table}.user: foreign key references another table or column, expected members (id) ON DELETE CASCADE`,
+					),
+				);
+				// Auth's tables in one database reference one users table
+				const both = new Database(pool, [users, members, ...Auth.tables]);
+				new Auth({ ...settings, database: both, users });
+				expect(
+					() => new Auth({ ...settings, database: both, users: members }),
+				).toThrow("already belong to the users table");
+			} finally {
+				await drop();
+				await run("DROP TABLE members");
+			}
+		});
+
+		test("follows a users table in another Postgres schema", async () => {
+			const accounts = new Table(
+				"accounts",
+				{ id: Schema.string(), email: Field.email() },
+				{ schema: "app" },
+			);
+			const database = new Database(pool, [accounts, ...Auth.tables]);
+			new Auth({ ...settings, database, users: accounts });
+			await run(
+				"CREATE SCHEMA app; CREATE TABLE app.accounts (id text PRIMARY KEY, email text NOT NULL)",
+			);
+			try {
+				await add("REFERENCES app.accounts ON DELETE CASCADE");
+				expect(await database.check()).toEqual([]);
+			} finally {
+				await drop();
+				await run("DROP SCHEMA app CASCADE");
+			}
+		});
 	});
 
 	test("Auth's tables bring their migrations, applied before the app's", async () => {

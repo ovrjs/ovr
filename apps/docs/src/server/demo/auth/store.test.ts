@@ -2,6 +2,7 @@ import { type Store, migrations, open, users } from "./store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Auth } from "ovr";
 import { afterEach, describe, expect, test } from "vitest";
 
 const stores: Store[] = [];
@@ -26,13 +27,20 @@ describe("demo database", () => {
 		const second = await open(folder);
 		stores.push(second);
 		expect(await second.migrate(migrations)).toEqual([]);
+		// Auth tells the check which users table its tables reference
+		new Auth({
+			secret: "test-secret-with-at-least-32-bytes",
+			origin: "https://localhost:5173",
+			database: second,
+			users,
+		});
 		expect(await second.check()).toEqual([]);
 		expect(
 			await second.sql`SELECT * FROM ${second.users}`.parse(users),
 		).toEqual([{ id, email: "a@example.com" }]);
 	});
 
-	test("deleting an account removes its credentials and sessions", async () => {
+	test("deleting an account removes its credentials, sessions, and agents' tokens", async () => {
 		const database = await open("memory://");
 		stores.push(database);
 		const id = crypto.randomUUID();
@@ -40,12 +48,16 @@ describe("demo database", () => {
 			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id, email: "a@example.com" })}`;
 			await t.sql`INSERT INTO ${database.auth_credentials} ${t.sql.values(database.auth_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
 			await t.sql`INSERT INTO ${database.auth_sessions} ${t.sql.values(database.auth_sessions, { id: "s", user: id, expiration: Date.now() + 60000, started: Date.now() })}`;
+			await t.sql`INSERT INTO ${database.auth_tokens} ${t.sql.values(database.auth_tokens, { id: "t", kind: "access", user: id, client: "https://agent.example/client.json", resource: "https://localhost:5173/mcp", scope: "", redirect: null, challenge: null, family: "t", expiration: Date.now() + 60000 })}`;
 		});
 		await database.sql`DELETE FROM ${users}`;
 		expect(
 			await database.sql`SELECT * FROM ${database.auth_credentials}`,
 		).toEqual([]);
 		expect(await database.sql`SELECT * FROM ${database.auth_sessions}`).toEqual(
+			[],
+		);
+		expect(await database.sql`SELECT * FROM ${database.auth_tokens}`).toEqual(
 			[],
 		);
 	});

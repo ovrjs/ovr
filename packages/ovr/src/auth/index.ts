@@ -1,6 +1,6 @@
 import { type App, agents, mount } from "../app/index.js";
 import { type Context as ContextType, sessions } from "../context/index.js";
-import type { Database } from "../database/index.js";
+import { type Database, references } from "../database/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Mcp } from "../mcp/index.js";
@@ -215,6 +215,17 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			throw new TypeError(
 				"Auth's users table is missing from the database, add it to its tables",
 			);
+		// the users table Auth's tables reference in this database, for its check
+		const chosen = references.get(options.database) ?? new Map();
+		for (const table of Storage.owners) {
+			const other = chosen.get(table);
+			if (other && other !== options.users)
+				throw new TypeError(
+					`Auth's tables in this database already belong to the ${other.name} table`,
+				);
+			chosen.set(table, options.users);
+		}
+		references.set(options.database, chosen);
 		const storage = Storage.of(options.database);
 		this.#storage = storage;
 		this.#users = options.users;

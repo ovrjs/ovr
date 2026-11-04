@@ -474,6 +474,22 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
  */
 export const owned = new WeakMap<Table.Any, readonly Database.Migration[]>();
 
+/**
+ * Columns of a library's tables that must reference the `id` of a table the
+ * application chooses, with `ON DELETE CASCADE`, and the library that chooses
+ * it, for `database.check`.
+ */
+export const referenced = new WeakMap<
+	Table.Any,
+	{ readonly column: string; readonly by: string }
+>();
+
+/**
+ * The table each such column references, per database, set by the library
+ * when it is configured with that database.
+ */
+export const references = new WeakMap<object, Map<Table.Any, Table.Any>>();
+
 /** Database members, tables are added by name. */
 class Base<T extends readonly Table.Any[]> {
 	/** Names database members use. */
@@ -708,7 +724,8 @@ class Base<T extends readonly Table.Any[]> {
 	 *
 	 * Reports missing tables and columns, incompatible types, nullability, and
 	 * missing defaults, without changing anything. Keys, constraints, and indexes
-	 * are left to migrations.
+	 * are left to migrations, except the foreign keys a library's tables need,
+	 * such as Auth's to the users table.
 	 *
 	 * @returns One line per difference, empty when they match
 	 */
@@ -793,10 +810,90 @@ class Base<T extends readonly Table.Any[]> {
 						`${label}.${column.name}: unexpected NOT NULL column without a default`,
 					);
 			}
+
+			const reference = referenced.get(table);
+			if (reference)
+				differences.push(
+					...(await this.#reference(table, regclass, reference)),
+				);
 		}
 
 		return differences;
 	};
+
+	/**
+	 * Check the foreign key a library's table needs: from its column to the
+	 * chosen table's `id`, cascading deletes, validated and enforced.
+	 *
+	 * @param table Library's table
+	 * @param regclass Its resolved name
+	 * @param reference Column that references, and the library choosing what
+	 * @returns Differences
+	 */
+	async #reference(
+		table: Table.Any,
+		regclass: string,
+		reference: { readonly column: string; readonly by: string },
+	) {
+		const label = `${table.name}.${reference.column}`;
+		const target = references.get(this)?.get(table);
+		if (!target)
+			return [
+				`${label}: create ${reference.by} with this database before checking it, so it knows the table ${table.name} references`,
+			];
+
+		const expected = `${target.name} (id) ON DELETE CASCADE`;
+		const keys = await this.sql`
+			SELECT con.confrelid = to_regclass(${Identifier.table(target)}) AS target,
+				(SELECT a.attname::text FROM pg_attribute a
+					WHERE a.attrelid = con.confrelid AND a.attnum = con.confkey[1]) AS "column",
+				con.confdeltype = 'c' AS cascade,
+				con.convalidated AS validated,
+				-- NOT ENFORCED is new in Postgres 18
+				coalesce((to_jsonb(con) ->> 'conenforced')::boolean, true) AS enforced
+			FROM pg_constraint con
+			WHERE con.contype = 'f' AND con.conrelid = to_regclass(${regclass})
+				AND cardinality(con.conkey) = 1
+				AND con.conkey[1] = (SELECT a.attnum FROM pg_attribute a
+					WHERE a.attrelid = con.conrelid AND a.attname = ${reference.column})
+		`.parse(
+			Schema.object({
+				target: Schema.boolean().nullable(),
+				column: Schema.string().nullable(),
+				cascade: Schema.boolean(),
+				validated: Schema.boolean(),
+				enforced: Schema.boolean(),
+			}),
+		);
+
+		if (
+			keys.some(
+				(key) =>
+					key.target &&
+					key.column === "id" &&
+					key.cascade &&
+					key.validated &&
+					key.enforced,
+			)
+		)
+			return [];
+
+		const [key] = keys;
+		if (!key) return [`${label}: missing foreign key to ${expected}`];
+
+		const problems = [
+			...(!key.target || key.column !== "id"
+				? [`references another table or column`]
+				: []),
+			...(!key.cascade ? ["does not cascade deletes"] : []),
+			...(!key.validated ? ["is NOT VALID, validate it"] : []),
+			...(!key.enforced ? ["is NOT ENFORCED"] : []),
+		];
+
+		return [
+			`${label}: foreign key ${problems.join(", ")}, expected ${expected}`,
+		];
+	}
 
 	/**
 	 * @param table Table

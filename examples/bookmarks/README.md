@@ -79,7 +79,9 @@ generated once with:
 node -e 'console.log(crypto.getRandomValues(new Uint8Array(32)).toHex())'
 ```
 
-Run `migrate.ts` in the release step with a direct database connection; use the
+Run `migrate.ts` in the release step with a direct database connection. It
+imports `auth.ts`, so `database.check()` can verify Auth's foreign keys, and
+needs the same variables. Use the
 application's pooled connection for requests. Migrations are written SQL, and
 `database.check()` checks table compatibility without generating changes.
 
