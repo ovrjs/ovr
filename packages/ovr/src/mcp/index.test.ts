@@ -401,6 +401,16 @@ describe("Mcp", () => {
 		});
 	});
 
+	test("resources/read reports form validation issues instead of successful empty contents", async () => {
+		const { rpc } = setup();
+		const { body } = await rpc("resources/read", {
+			uri: "http://localhost/search",
+		});
+		expect(body.error).toBeDefined();
+		expect(body.error.message).toContain('"path":"q"');
+		expect(body.result).toBeUndefined();
+	});
+
 	test("invalid arguments are tool errors with the issues", async () => {
 		const { rpc } = setup();
 		const short = await rpc("tools/call", {

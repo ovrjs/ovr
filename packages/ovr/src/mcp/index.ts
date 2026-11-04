@@ -637,8 +637,16 @@ export class Mcp {
 			headers: this.#headers(c),
 			signal: c.req.signal,
 		});
-		agent.set(req, { session });
+		const call: Parameters<typeof agent.set>[1] = { session };
+		agent.set(req, call);
 		const res = await this.#app!.fetch(req, { ip: c.ip });
+
+		// the page's form has issues, such as a search with invalid parameters
+		if (call.issues) {
+			await res.body?.cancel();
+			throw new RpcError(-32602, Mcp.#issues(call.issues));
+		}
+
 		const text = await Mcp.#text(res);
 
 		if (res.status === 404) throw new RpcError(-32002, "Resource not found");
@@ -704,9 +712,7 @@ export class Mcp {
 			// the form's issues, instead of the redirect back to it
 			if (call.issues) {
 				await res.body?.cancel();
-				return Mcp.#error(
-					`422 Unprocessable Content\n\n${JSON.stringify({ issues: call.issues })}`,
-				);
+				return Mcp.#error(Mcp.#issues(call.issues));
 			}
 
 			const location = res.headers.get(Header.name.loc);
@@ -744,6 +750,14 @@ export class Mcp {
 				isError: !res.ok,
 			};
 		}
+	}
+
+	/**
+	 * @param issues Form issues `c.data()` recorded
+	 * @returns Message for the agent with each field's issue
+	 */
+	static #issues(issues: readonly unknown[]) {
+		return `422 Unprocessable Content\n\n${JSON.stringify({ issues })}`;
 	}
 
 	/**

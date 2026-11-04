@@ -441,6 +441,38 @@ describe("sql(fn)", () => {
 		]);
 	});
 
+	test("a transaction that ends with a savepoint open rolls back", async () => {
+		const { pool, log } = mock();
+		const db = new Database(pool, []);
+		const started = Promise.withResolvers<void>();
+		const ended = Promise.withResolvers<void>();
+		let open: Promise<unknown> = Promise.resolve();
+
+		await expect(
+			db.sql(async (t) => {
+				open = t
+					.sql(async (s) => {
+						await s.sql`SELECT ${1}`;
+						started.resolve();
+						await ended.promise;
+						await s.sql`SELECT ${2}`;
+					})
+					.catch((error: unknown) => error);
+				// returns without awaiting the savepoint
+				await started.promise;
+			}),
+		).rejects.toThrow("await every savepoint");
+		ended.resolve();
+		expect(await open).toBeInstanceOf(Error);
+
+		expect(log).toEqual([
+			"client1: BEGIN",
+			"client1: SAVEPOINT s1",
+			"client1: SELECT $1 [1]",
+			"client1: ROLLBACK",
+		]);
+	});
+
 	test("a savepoint's tag cannot run after the savepoint ends", async () => {
 		const { pool } = mock();
 		const db = new Database(pool, []);
@@ -553,6 +585,35 @@ describe.each(drivers)("$name", (driver) => {
 	});
 
 	const migrate = () => db.migrate([{ id: "0001_init", sql: init }]);
+
+	test("catching an overlapping group error cannot commit an unfinished savepoint", async () => {
+		await db.sql`CREATE TABLE other (id integer)`;
+		const finish = Promise.withResolvers<void>();
+		let pending: Promise<unknown> = Promise.resolve();
+		try {
+			await db
+				.sql(async (t) => {
+					const started = Promise.withResolvers<void>();
+					const first = t.sql(async (s) => {
+						await s.sql`INSERT INTO other VALUES (1)`;
+						started.resolve();
+						await finish.promise;
+						throw new Error("discard this write");
+					});
+					pending = first.catch(() => undefined);
+					await started.promise;
+					// Promise.all rejects on the overlapping group's error while first is still running.
+					await Promise.all([first, t.sql(async () => {})]).catch(
+						() => undefined,
+					);
+				})
+				.catch(() => undefined);
+		} finally {
+			finish.resolve();
+			await pending;
+		}
+		expect(await db.sql`SELECT * FROM other`).toEqual([]);
+	});
 
 	test("overlapping savepoints never commit writes from a rejected callback", async () => {
 		await db.sql`CREATE TABLE other (id integer)`;

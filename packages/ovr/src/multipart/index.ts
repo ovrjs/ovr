@@ -94,8 +94,16 @@ class Part extends Request {
 			}
 		}
 
+		let parsed: Headers;
+		try {
+			parsed = new Headers(headers);
+		} catch {
+			// an invalid name or value, the client's error
+			throw new Malformed("Invalid Part Header");
+		}
+
 		super(req, {
-			headers,
+			headers: parsed,
 			body,
 			// @ts-expect-error - streaming https://developer.mozilla.org/en-US/docs/Web/API/RequestInit#duplex
 			duplex: "half",

@@ -645,6 +645,12 @@ class Base<T extends readonly Table.Any[]> {
 			await connection.query(depth ? `SAVEPOINT ${savepoint}` : "BEGIN");
 			const result = await fn(client, nest).finally(() => (open = false));
 
+			// committing now would keep the unfinished savepoint's writes
+			if (nested)
+				throw new Error(
+					"The callback ended while a savepoint in it was still open, await every savepoint",
+				);
+
 			// a caught error leaves the group aborted, unless a savepoint inside rolled it back,
 			// and COMMIT of an aborted transaction rolls back without an error
 			if (failure !== undefined)

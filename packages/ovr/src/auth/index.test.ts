@@ -3132,6 +3132,23 @@ describe("agents", () => {
 		},
 	);
 
+	test.each(["/_passkey/options/approve", "/oauth/approve", "/oauth/deny"])(
+		"%s returns a client error for an invalid multipart part header",
+		async (path) => {
+			const { browser } = agents();
+			const response = await browser(path, {
+				method: "POST",
+				headers: {
+					origin,
+					"content-type": "multipart/form-data; boundary=audit",
+				},
+				body: '--audit\r\nBad Header: value\r\nContent-Disposition: form-data; name="request"\r\n\r\ninvalid\r\n--audit--\r\n',
+			});
+			expect(response.status).toBeGreaterThanOrEqual(400);
+			expect(response.status).toBeLessThan(500);
+		},
+	);
+
 	test("sharing Auth across apps mounts OAuth in each app", async () => {
 		const { auth } = agents();
 		const app = new App().use(auth, new Mcp({ auth }));
