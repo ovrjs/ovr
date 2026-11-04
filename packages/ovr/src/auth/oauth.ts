@@ -279,8 +279,9 @@ export function oauth(
 					admission ? 429 : 503,
 				);
 
-			const input = await c.data({ payload: 128 * Size.kb });
-			if (input.issues) return c.text("Authentication failed. Try again.", 400);
+			const input = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
+			if (!input || input.issues)
+				return c.text("Authentication failed. Try again.", 400);
 
 			try {
 				await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
@@ -305,8 +306,10 @@ export function oauth(
 				c.res.headers.set(Header.name.cache, "no-store");
 				if (!same(c)) return c.text("Forbidden", 403);
 
-				const result = await c.data({ payload: 128 * Size.kb });
-				if (result.issues)
+				const result = await c
+					.data({ payload: 128 * Size.kb })
+					.catch(Issue.body);
+				if (!result || result.issues)
 					return c.text("Your passkey could not be verified. Try again.", 400);
 
 				const pending = await asked(c, result.data.request);
@@ -354,10 +357,10 @@ export function oauth(
 			c.res.headers.set(Header.name.cache, "no-store");
 			if (!same(c)) return c.text("Forbidden", 403);
 
-			const result = await c.data({ payload: 128 * Size.kb });
+			const result = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
 			const pending = await asked(
 				c,
-				result.issues ? null : result.data.request,
+				!result || result.issues ? null : result.data.request,
 			);
 			if (!pending) return;
 

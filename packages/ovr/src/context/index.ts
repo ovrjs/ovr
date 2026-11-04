@@ -1,26 +1,27 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Limit, Multipart } from "../multipart/index.js";
+import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { Form as FormSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
-/** Properties to build the final `Response` with once middleware has run. */
-/**
- * Internal signal that the response is prepared and the request should end,
- * caught where the middleware threw it.
- */
-export class Halt extends Error {}
-
 /**
  * Requests an agent makes through an MCP tool, with the session its token
- * authorizes. Parse issues respond `422` with JSON instead of redirecting.
+ * authorizes. `c.data()` adds the form's issues, which the MCP endpoint
+ * returns to the agent instead of following the handler's redirect.
  */
-export const agent = new WeakMap<Request, { readonly session?: unknown }>();
+export const agent = new WeakMap<
+	Request,
+	{
+		readonly session?: unknown;
+		issues?: readonly { readonly path: string; readonly message: string }[];
+	}
+>();
 
+/** Properties to build the final `Response` with once middleware has run. */
 class PreparedResponse {
 	/**
 	 * `body` used to create the `Response`.
@@ -279,19 +280,12 @@ export class Context<
 
 			if (!form?.parse) return null as Context.Result<Shape>;
 
-			let result;
-			try {
-				result = await form.parse(
-					post
-						? this.form({ parts: form.parts, ...options })
-						: this.url.searchParams,
-				);
-			} catch (error) {
-				// too large or too many fields is the client's error, not the handler's
-				if (!(error instanceof Limit)) throw error;
-				this.text(error.message, 413);
-				throw new Halt();
-			}
+			// a body too large or not form data throws, for the handler to answer
+			const result = await form.parse(
+				post
+					? this.form({ parts: form.parts, ...options })
+					: this.url.searchParams,
+			);
 
 			/** Add the URL to return to with the encoded invalid state. */
 			const invalid = <R extends { search: FormSchema.Parse.Result.Search }>(
@@ -345,19 +339,13 @@ export class Context<
 	#agentIssues(
 		issues: readonly { path: readonly PropertyKey[]; message: string }[],
 	) {
-		if (!agent.has(this.req)) return;
+		const call = agent.get(this.req);
+		if (!call) return;
 
-		this.json(
-			{
-				issues: issues.map((issue) => ({
-					path: issue.path.map(String).join("."),
-					message: issue.message,
-				})),
-			},
-			422,
-		);
-
-		throw new Halt();
+		call.issues = issues.map((issue) => ({
+			path: issue.path.map(String).join("."),
+			message: issue.message,
+		}));
 	}
 
 	/**
@@ -372,13 +360,7 @@ export class Context<
 
 		if (!mw) return; // end of stack
 
-		let r: unknown;
-		try {
-			r = await mw(this, () => this.#run(middleware, i + 1));
-		} catch (error) {
-			if (error instanceof Halt) return;
-			throw error;
-		}
+		const r: unknown = await mw(this, () => this.#run(middleware, i + 1));
 
 		// resolve the return value
 		if (r instanceof Response) {

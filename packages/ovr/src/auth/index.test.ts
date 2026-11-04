@@ -667,11 +667,11 @@ describe("passkey ceremonies", () => {
 		).rejects.toThrow("changed");
 	});
 
-	test("does not trust a different request host even with a valid browser cookie", async () => {
+	test("does not prepare forms for a different request host", async () => {
 		const state = setup();
-		expect(
-			(await state.app.fetch("https://evil.example/register-page")).status,
-		).toBe(421);
+		await expect(
+			state.app.fetch("https://evil.example/register-page"),
+		).rejects.toThrow("Invalid origin");
 	});
 });
 
@@ -1496,12 +1496,12 @@ test("auth fails closed without trusted peer information and ignores spoofed IP 
 	expect(set).not.toHaveBeenCalled();
 });
 
-test("host mismatches return a controlled status before session reads or callbacks", async () => {
+test("nobody is signed in on another host, without reading storage", async () => {
 	const state = managed();
 	const get = vi.spyOn(state.storage.options.sessions, "get");
 	const response = await state.app.fetch("https://wrong.example/whoami");
-	expect(response.status).toBe(421);
-	expect(response.headers.get("cache-control")).toBe("no-store");
+	expect(response.status).toBe(200);
+	expect(await response.json()).toBeNull();
 	expect(get).not.toHaveBeenCalled();
 });
 
@@ -1566,8 +1566,17 @@ test("reading a session enforces Auth's origin", async () => {
 		Route.get("/private").use(async (c) => c.json(await c.session())),
 	);
 	const response = await app.fetch("https://wrong.example/private");
-	expect(response.status).toBe(421);
-	expect(await response.text()).toBe("Misdirected Request");
+	expect(await response.json()).toBeNull();
+	// signing in or out there throws, Auth's cookies and passkeys are bound to its origin
+	const login = new App().use(
+		(state.auth[mount]() as [Middleware])[0],
+		Route.post("/login").use(async (c) =>
+			c.json(await state.auth.login(c, "u")),
+		),
+	);
+	await expect(
+		login.fetch("https://wrong.example/login", { method: "POST" }),
+	).rejects.toThrow("Auth serves");
 });
 
 test("configured logout throws storage failures without claiming success", async () => {
@@ -1602,7 +1611,7 @@ test("configured options reject substituted operations and oversized bodies befo
 	data.set("email", "user@example.com");
 	data.set("bootstrap", "x".repeat(129 * 1024));
 	const oversized = await state.post(start.endpoint, data, start.cookie);
-	expect(oversized.status).toBe(413);
+	expect(oversized.status).toBe(400);
 	expect(set).not.toHaveBeenCalled();
 });
 
@@ -2099,7 +2108,7 @@ test("oversized registration bodies are rejected without spending the signup bud
 	data.set("email", "x".repeat(129 * 1024));
 	data.set("bootstrap", "invalid");
 	const response = await state.post("/_passkey/options/register", data);
-	expect(response.status).toBe(413);
+	expect(response.status).toBe(400);
 	// the client policy runs after parsing
 	expect(await rows(db.rate_limits)).toEqual([]);
 	expect(await storage.size(db.auth_challenges)).toBe(0);
@@ -3117,6 +3126,20 @@ describe("agents", () => {
 				method: "POST",
 				headers: { origin },
 				body: form({ a: "1", b: "2", c: "3", d: "4" }),
+			});
+			expect(response.status).toBeGreaterThanOrEqual(400);
+			expect(response.status).toBeLessThan(500);
+		},
+	);
+
+	test.each(["/_passkey/options/approve", "/oauth/approve", "/oauth/deny"])(
+		"%s returns a client error when the multipart boundary is missing",
+		async (path) => {
+			const { browser } = agents();
+			const response = await browser(path, {
+				method: "POST",
+				headers: { origin, "content-type": "multipart/form-data" },
+				body: "invalid multipart body",
 			});
 			expect(response.status).toBeGreaterThanOrEqual(400);
 			expect(response.status).toBeLessThan(500);

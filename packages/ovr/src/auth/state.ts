@@ -1,5 +1,5 @@
-import { type Context as ContextType, Halt, agent } from "../context/index.js";
-import { Codec, Header, Mime, Time } from "../util/index.js";
+import { type Context as ContextType, agent } from "../context/index.js";
+import { Codec, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import type { Storage } from "./storage.js";
@@ -30,14 +30,6 @@ export class State {
 
 	/** Create authentication helpers for the current request. */
 	constructor(c: State.Context, options: State.Options) {
-		if (c.url.origin !== options.origin) {
-			// respond 421 and end the request, before any session read
-			c.res.headers.set("cache-control", "no-store");
-			c.res.headers.set(Header.name.type, Header.utf8(Mime.type.text));
-			c.res.body = "Misdirected Request";
-			c.res.status = 421;
-			throw new Halt("Authentication requires its configured origin");
-		}
 		this.#c = c;
 		const lifetime = options.lifetime ?? 30 * Time.day;
 		this.options = {
@@ -48,8 +40,22 @@ export class State {
 		};
 	}
 
+	/**
+	 * A request on another host has no session there, its cookies are bound to
+	 * Auth's origin, and passkeys cannot be used on it.
+	 *
+	 * @throws When the request is not on Auth's origin
+	 */
+	#origin() {
+		if (this.#c.url.origin !== this.options.origin)
+			throw new Error(
+				`Auth serves ${this.options.origin}, this request is for ${this.#c.url.origin}`,
+			);
+	}
+
 	/** Read a browser binding; create it only while preparing a form in the handler. */
 	browser(create = false) {
+		if (create) this.#origin();
 		this.#browser ??= this.#c.cookie.get(State.#binding);
 		if (!this.#browser && create) {
 			this.#browser = crypto.randomUUID();
@@ -134,6 +140,10 @@ export class State {
 		if (call?.session)
 			return (this.#session ??= Promise.resolve(call.session as Auth.Session));
 
+		// nobody is signed in on another host, its session cookie is not sent there
+		if (this.#c.url.origin !== this.options.origin)
+			return (this.#session ??= Promise.resolve(null));
+
 		return (this.#session ??= this.#read());
 	}
 
@@ -144,6 +154,7 @@ export class State {
 	 * @param path Local path with its query
 	 */
 	remember(path: string) {
+		this.#origin();
 		this.#c.cookie.set(State.#return, path, {
 			secure: true,
 			httpOnly: true,
@@ -157,6 +168,7 @@ export class State {
 	 * @returns The remembered path, cleared, or the fallback
 	 */
 	resume(fallback: string) {
+		this.#origin();
 		const path = this.#c.cookie.get(State.#return);
 		if (!path) return fallback;
 
@@ -176,6 +188,7 @@ export class State {
 
 	/** Replace the current session and issue a new signed, secure cookie. */
 	async login(user: string) {
+		this.#origin();
 		if (
 			typeof user !== "string" ||
 			!user.trim() ||
@@ -208,6 +221,7 @@ export class State {
 
 	/** Revoke the current session and expire its cookie. Always await this method. */
 	async logout() {
+		this.#origin();
 		const session = await this.session();
 		if (session) await this.options.sessions.delete(session.id);
 		this.#clear();

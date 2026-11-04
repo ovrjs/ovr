@@ -1,3 +1,5 @@
+import { Limit, Malformed } from "../multipart/index.js";
+
 /**
  * Auth validation issue.
  *
@@ -10,6 +12,19 @@ export class Issue extends Error {
 	 */
 	static m(expected: string) {
 		return `Invalid ${expected}`;
+	}
+
+	/**
+	 * For `c.data().catch(Issue.body)` in Auth's handlers, which answer a
+	 * body that is too large or not form data like any other failed form.
+	 *
+	 * @param error Error from `c.data()`
+	 * @returns `null` for a body the client got wrong
+	 * @throws Any other error
+	 */
+	static body(error: unknown): null {
+		if (error instanceof Limit || error instanceof Malformed) return null;
+		throw error;
 	}
 
 	/**

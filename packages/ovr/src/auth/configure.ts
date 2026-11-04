@@ -210,9 +210,9 @@ export function configure<U extends Auth.Users>(
 			.fields(shape)
 			.use(guard("register"), async (c) => {
 				// the users table's fields, only known at runtime
-				const input = (await c.data({
-					payload: 128 * Size.kb,
-				})) as Form.Parse.Result<Shape> | null;
+				const input = (await c
+					.data({ payload: 128 * Size.kb })
+					.catch(Issue.body)) as Form.Parse.Result<Shape> | null;
 				if (!input || input.issues) throw new Issue("registration fields");
 				const data = values(input.data);
 				const credential = await new Passkey(c, state(c)).register(
@@ -237,7 +237,8 @@ export function configure<U extends Auth.Users>(
 			.fields({})
 			.use(guard("login"), async (c) => {
 				// Bound the body before verification.
-				await c.data({ payload: 128 * Size.kb });
+				if (!(await c.data({ payload: 128 * Size.kb }).catch(Issue.body)))
+					throw new Issue("login request");
 				const credential = await new Passkey(c, state(c)).login(
 					storage.credentials,
 				);
@@ -252,8 +253,8 @@ export function configure<U extends Auth.Users>(
 	const registration = Route.post(`${paths.options}/register`)
 		.fields({ ...shape, bootstrap: Field.hidden() })
 		.use(guard("register", true), async (c) => {
-			const input = await c.data({ payload: 128 * Size.kb });
-			if (!input) throw new TypeError("Missing registration schema");
+			const input = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
+			if (!input) throw new Issue("registration request");
 			if (input.issues) {
 				const invalid = fields.names.filter((name) =>
 					input.issues.some((issue) => issue.path[0] === name),
@@ -279,7 +280,7 @@ export function configure<U extends Auth.Users>(
 	const assertion = Route.post(`${paths.options}/login`)
 		.fields({ bootstrap: Field.hidden() })
 		.use(guard("login", true), async (c) => {
-			const input = await c.data({ payload: 128 * Size.kb });
+			const input = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
 			if (!input || input.issues) throw new Issue("login request");
 			await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
 				method: "login",

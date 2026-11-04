@@ -330,7 +330,9 @@ export class Passkey {
 
 	async #consume(method: "register" | "login") {
 		this.#origin();
-		const parsed = await this.#c.data({ payload: 128 * Size.kb });
+		const parsed = await this.#c
+			.data({ payload: 128 * Size.kb })
+			.catch(Issue.body);
 		const result = Passkey.#payload.parse(
 			parsed && typeof parsed === "object" && "data" in parsed
 				? parsed.data

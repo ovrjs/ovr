@@ -5,6 +5,45 @@ import { Route } from "./index.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
 describe("Route schema helpers", () => {
+	test("rejecting an oversized field cancels the remaining upload", async () => {
+		let canceled = false;
+		let reads = 0;
+		const body = new ReadableStream<Uint8Array>(
+			{
+				pull(controller) {
+					controller.enqueue(
+						new TextEncoder().encode(
+							reads++ === 0
+								? '--audit\r\nContent-Disposition: form-data; name="name"\r\n\r\n'
+								: "x".repeat(256),
+						),
+					);
+				},
+				cancel() {
+					canceled = true;
+				},
+			},
+			{ highWaterMark: 0 },
+		);
+		const route = Route.post("/upload")
+			.fields({ name: Field.text() })
+			.use(async (c) => {
+				await c.data({ payload: 128 });
+				c.text("accepted");
+			});
+		await expect(
+			new App()
+				.use(route)
+				.fetch("https://example.com/upload", {
+					method: "POST",
+					headers: { "content-type": "multipart/form-data; boundary=audit" },
+					body,
+					...{ duplex: "half" },
+				}),
+		).rejects.toThrow("Payload Too Large");
+		expect(canceled).toBe(true);
+	});
+
 	test("later parameter conversion cannot change the type seen by earlier middleware", async () => {
 		const route = Route.get("/items/:id").use((c) =>
 			c.text(c.params.id.toUpperCase()),
@@ -408,7 +447,7 @@ describe("Route schema helpers", () => {
 		const submit = Route.post("/limit")
 			.fields({ a: Field.text(), b: Field.text() })
 			.use(async (c) => {
-				// a body over a limit is answered with 413 for the handler
+				// a body over a limit throws, for the handler or the app to answer
 				const result = await c.data({ parts: 1 });
 
 				if (result.issues) {
@@ -424,17 +463,49 @@ describe("Route schema helpers", () => {
 		data.set("a", "x");
 		data.set("b", "y");
 
-		const res = await app.fetch(
-			new Request("http://localhost:5173/limit", {
-				method: "POST",
-				body: data,
-				headers: { origin: "http://localhost:5173" },
-			}),
-		);
-
-		expect(res.status).toBe(413);
-		expect(await res.text()).toBe("Too Many Parts");
+		await expect(
+			app.fetch(
+				new Request("http://localhost:5173/limit", {
+					method: "POST",
+					body: data,
+					headers: { origin: "http://localhost:5173" },
+				}),
+			),
+		).rejects.toThrow("Too Many Parts");
 	});
+
+	test.each([
+		["text/plain", "Unsupported Media Type"],
+		["multipart/form-data", "Boundary Not Found"],
+		["multipart/form-data; boundary=a@b", "Invalid Boundary"],
+	])(
+		"c.data throws a TypeError for a %s body, which the handler can answer",
+		async (type, message) => {
+			const submit = Route.post("/form")
+				.fields({ a: Field.text() })
+				.use(async (c) => {
+					try {
+						await c.data();
+						c.text("accepted");
+					} catch (error) {
+						if (!(error instanceof TypeError)) throw error;
+						c.text(error.message, 400);
+					}
+				});
+			const res = await new App()
+				.use(submit)
+				.fetch(
+					new Request("http://localhost:5173/form", {
+						method: "POST",
+						body: "a=x",
+						headers: { origin: "http://localhost:5173", "content-type": type },
+					}),
+				);
+
+			expect(res.status).toBe(400);
+			expect(await res.text()).toBe(message);
+		},
+	);
 
 	test("c.data returns null on routes without a schema", async () => {
 		const noSchema = Route.get("/no-schema").use(async (c) => {
@@ -468,16 +539,15 @@ describe("Route schema helpers", () => {
 		data.set("b", "y");
 		data.set("c", "z");
 
-		const res = await app.fetch(
-			new Request("http://localhost:5173/auto-limit", {
-				method: "POST",
-				body: data,
-				headers: { origin: "http://localhost:5173" },
-			}),
-		);
-
-		expect(res.status).toBe(413);
-		expect(await res.text()).toBe("Too Many Parts");
+		await expect(
+			app.fetch(
+				new Request("http://localhost:5173/auto-limit", {
+					method: "POST",
+					body: data,
+					headers: { origin: "http://localhost:5173" },
+				}),
+			),
+		).rejects.toThrow("Too Many Parts");
 	});
 
 	test("schema auto parts overrides app multipart parts option", async () => {

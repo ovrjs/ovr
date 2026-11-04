@@ -185,7 +185,7 @@ await database.sql(async (t) => {
 });
 ```
 
-Savepoints can nest. As in a transaction, catching an error inside the callback doesn't save the savepoint.
+Savepoints can nest. As in a transaction, catching an error inside the callback doesn't save the savepoint. A transaction runs on one connection, so await a savepoint before running other queries or savepoints in its transaction; until it ends, they throw.
 
 ## Migrate
 

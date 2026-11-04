@@ -133,7 +133,8 @@ export class App {
 				const { tool } = route;
 				if (tool) {
 					const other = this.#tools.get(tool.name);
-					if (other && other !== route)
+					// a route hidden or renamed since it was mounted no longer holds the name
+					if (other && other !== route && other.tool?.name === tool.name)
 						throw new TypeError(
 							`Tool name "${tool.name}" is used by ${other.method} ${other.pattern} and ${route.method} ${route.pattern}, change one of their patterns.`,
 						);

@@ -2376,41 +2376,47 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			form = new FormData();
 			const iter = source[Symbol.asyncIterator]();
 
-			let current: IteratorResult<Multipart.Part>;
+			// a failure ends the parts, which also stops the upload
+			try {
+				let current: IteratorResult<Multipart.Part>;
 
-			while ((current = await iter.next()) && !current.done) {
-				const part = current.value;
+				while ((current = await iter.next()) && !current.done) {
+					const part = current.value;
 
-				if (part.name) {
-					const field = this.shape[part.name];
+					if (part.name) {
+						const field = this.shape[part.name];
 
-					if (!field) {
-						issues.push(this.#unexpected(part.name, path));
-					} else if (field.streaming) {
-						// expose current and rest of the parts to the user
-						stream = (async function* () {
-							try {
-								// have to yield the current part first
-								// this is why the multipart can't be passed directly
-								yield part;
-
-								let next: IteratorResult<Multipart.Part>;
-
-								while ((next = await iter.next()) && !next.done) {
-									yield next.value;
-								}
-							} finally {
+						if (!field) {
+							issues.push(this.#unexpected(part.name, path));
+						} else if (field.streaming) {
+							// expose current and rest of the parts to the user
+							stream = (async function* () {
 								try {
-									await iter.return?.();
-								} catch {}
-							}
-						})();
+									// have to yield the current part first
+									// this is why the multipart can't be passed directly
+									yield part;
 
-						break;
-					} else {
-						form.append(part.name, await part.value());
+									let next: IteratorResult<Multipart.Part>;
+
+									while ((next = await iter.next()) && !next.done) {
+										yield next.value;
+									}
+								} finally {
+									try {
+										await iter.return?.();
+									} catch {}
+								}
+							})();
+
+							break;
+						} else {
+							form.append(part.name, await part.value());
+						}
 					}
 				}
+			} catch (error) {
+				await iter.return?.().catch(() => {});
+				throw error;
 			}
 		} else if (source instanceof FormData) {
 			form = source;

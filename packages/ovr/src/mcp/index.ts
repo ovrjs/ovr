@@ -697,8 +697,18 @@ export class Mcp {
 		let redirected: URL | undefined;
 
 		for (let i = 0; ; i++) {
-			agent.set(req, { session });
+			const call: Parameters<typeof agent.set>[1] = { session };
+			agent.set(req, call);
 			const res = await this.#app!.fetch(req, { ip: c.ip });
+
+			// the form's issues, instead of the redirect back to it
+			if (call.issues) {
+				await res.body?.cancel();
+				return Mcp.#error(
+					`422 Unprocessable Content\n\n${JSON.stringify({ issues: call.issues })}`,
+				);
+			}
+
 			const location = res.headers.get(Header.name.loc);
 
 			if (location && res.status >= 300 && res.status < 400) {

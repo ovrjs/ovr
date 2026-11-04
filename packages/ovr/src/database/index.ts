@@ -111,6 +111,11 @@ export namespace Database {
 	}
 }
 
+/** Runs a callback's queries as one group: a transaction, or a savepoint in one. */
+type Group = <R>(
+	fn: (client: Database.Client, nest: Group) => Promise<R>,
+) => Promise<R>;
+
 /** Identifier quoting shared by `Sql` and `Database`, not exported. */
 class Identifier {
 	/**
@@ -556,11 +561,11 @@ class Base<T extends readonly Table.Any[]> {
 
 	/**
 	 * @template R Callback result
-	 * @param fn Callback receiving the transaction's client and depth
+	 * @param fn Callback receiving the transaction's client and its savepoints
 	 * @returns Callback result
 	 */
 	async #transaction<R>(
-		fn: (client: Database.Client, depth: number) => Promise<R>,
+		fn: (client: Database.Client, nest: Group) => Promise<R>,
 	) {
 		const connection = await this.#pool.connect();
 		let broken: Error | undefined;
@@ -581,41 +586,64 @@ class Base<T extends readonly Table.Any[]> {
 	 * @template R Callback result
 	 * @param connection Connection, or the enclosing group's client
 	 * @param depth 0 for a transaction, savepoints are numbered by nesting
-	 * @param fn Callback receiving the group's client and depth
+	 * @param fn Callback receiving the group's client and its savepoints
 	 * @param broken Called when rolling back fails
 	 * @returns Callback result
 	 */
 	static async #group<R>(
 		connection: Database.Client,
 		depth: number,
-		fn: (client: Database.Client, depth: number) => Promise<R>,
+		fn: (client: Database.Client, nest: Group) => Promise<R>,
 		broken?: (reason: Error) => void,
 	) {
 		const savepoint = `s${depth}`;
 		let open = true;
 		let failure: unknown;
+		// a savepoint in this group, which has the connection until it ends
+		let nested = false;
 
 		// only valid until the group ends; a savepoint's queries also pass
 		// through the enclosing group, which then sees their failures too
+		const run: Database.Client["query"] = async (text, values) => {
+			if (!open) throw new Error("Transaction has ended");
+
+			try {
+				return await connection.query(text, values);
+			} catch (error) {
+				// queries after an aborted statement fail too, keep the cause
+				if ((error as { code?: unknown } | null)?.code !== "25P02")
+					failure = error;
+
+				throw error;
+			}
+		};
+
+		// one connection runs one group at a time: a query or savepoint here
+		// while a savepoint is open would run inside it, and its rollback
+		// would undo or keep the wrong statements
+		const busy = () =>
+			new Error(
+				"A savepoint is open in this transaction, await it before running other queries",
+			);
 		const client: Database.Client = {
 			query: async (text, values) => {
-				if (!open) throw new Error("Transaction has ended");
-
-				try {
-					return await connection.query(text, values);
-				} catch (error) {
-					// queries after an aborted statement fail too, keep the cause
-					if ((error as { code?: unknown } | null)?.code !== "25P02")
-						failure = error;
-
-					throw error;
-				}
+				if (nested) throw busy();
+				return run(text, values);
 			},
+		};
+		const nest: Group = async (inner) => {
+			if (nested) throw busy();
+			nested = true;
+			try {
+				return await Base.#group({ query: run }, depth + 1, inner);
+			} finally {
+				nested = false;
+			}
 		};
 
 		try {
 			await connection.query(depth ? `SAVEPOINT ${savepoint}` : "BEGIN");
-			const result = await fn(client, depth).finally(() => (open = false));
+			const result = await fn(client, nest).finally(() => (open = false));
 
 			// a caught error leaves the group aborted, unless a savepoint inside rolled it back,
 			// and COMMIT of an aborted transaction rolls back without an error
@@ -684,8 +712,8 @@ class Base<T extends readonly Table.Any[]> {
 
 		// one migration per transaction, history added since the last read is verified every time
 		while (
-			await this.#transaction(async (client, depth) => {
-				const sql = Base.#scope(client, depth);
+			await this.#transaction(async (client, nest) => {
+				const sql = Base.#tag(client, nest);
 
 				await sql`SELECT pg_advisory_xact_lock(hashtext('migrations'))`;
 				// applied in order under the lock, so `n` follows the history
@@ -901,25 +929,11 @@ class Base<T extends readonly Table.Any[]> {
 	}
 
 	/**
-	 * @param client Client of a transaction or savepoint
-	 * @param depth Its depth
-	 * @returns SQL tag on the client, whose groups are savepoints
-	 */
-	static #scope(client: Database.Client, depth: number) {
-		return Base.#tag(client, (fn) => Base.#group(client, depth + 1, fn));
-	}
-
-	/**
 	 * @param client Client queries run on
 	 * @param group Runs a callback's queries as one group
 	 * @returns SQL tag bound to the client
 	 */
-	static #tag(
-		client: Database.Client,
-		group: <R>(
-			fn: (client: Database.Client, depth: number) => Promise<R>,
-		) => Promise<R>,
-	): Database.Tag {
+	static #tag(client: Database.Client, group: Group): Database.Tag {
 		const fragment = (strings: readonly string[], values: readonly unknown[]) =>
 			new Sql(strings, values, client);
 		const raw = (text: string) => fragment([text], []);
@@ -934,9 +948,7 @@ class Base<T extends readonly Table.Any[]> {
 				if (typeof strings === "function") {
 					const fn = strings;
 
-					return group((inner, depth) =>
-						fn({ sql: Base.#scope(inner, depth) }),
-					);
+					return group((inner, nest) => fn({ sql: Base.#tag(inner, nest) }));
 				}
 
 				if (!Array.isArray(strings) || !Object.hasOwn(strings, "raw"))

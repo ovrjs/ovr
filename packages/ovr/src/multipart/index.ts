@@ -4,6 +4,9 @@ import { Codec, Header, Mime, Size } from "../util/index.js";
 /** A request body over one of the parser's limits. */
 export class Limit extends RangeError {}
 
+/** A request that is not valid multipart form data, the client's error. */
+export class Malformed extends TypeError {}
+
 class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
@@ -240,15 +243,15 @@ export class Multipart extends Request {
 
 		const [mime, params] = Header.shift(this.headers.get(Header.name.type));
 
-		if (!Mime.multipart(mime)) throw new TypeError("Unsupported Media Type");
+		if (!Mime.multipart(mime)) throw new Malformed("Unsupported Media Type");
 
 		const { boundary } = Header.params(params);
 
-		if (!boundary) throw new TypeError("Boundary Not Found");
+		if (!boundary) throw new Malformed("Boundary Not Found");
 		// RFC 2046: 1 to 70 characters from a limited set, not ending in a space
 		if (!/^[\w'()+,./:=? -]{0,69}[\w'()+,./:=?-]$/.test(boundary))
-			throw new TypeError("Invalid Boundary");
-		if (!this.body) throw new TypeError("No Request Body");
+			throw new Malformed("Invalid Boundary");
+		if (!this.body) throw new Malformed("No Request Body");
 
 		Object.assign(this.#options, options);
 		this.#reader = this.body.getReader();
@@ -467,6 +470,8 @@ export class Multipart extends Request {
 
 	/** @yields Multipart form data `Part`(s) */
 	async *[Symbol.asyncIterator]() {
+		let complete = false;
+
 		try {
 			await this.#findConcat(this.#opening);
 
@@ -507,7 +512,11 @@ export class Multipart extends Request {
 					break;
 				}
 			}
+
+			complete = true;
 		} finally {
+			// stopped early by a limit, an error, or the caller, so stop the upload
+			if (!complete) await this.#reader.cancel().catch(() => {});
 			this.#reader.releaseLock();
 		}
 	}

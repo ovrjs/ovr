@@ -413,6 +413,34 @@ describe("sql(fn)", () => {
 		expect(released).toEqual([undefined]);
 	});
 
+	test("an open savepoint has the connection until it ends", async () => {
+		const { pool, log } = mock();
+		const db = new Database(pool, []);
+		const busy = "A savepoint is open in this transaction";
+
+		await db.sql(async (t) => {
+			const ended = Promise.withResolvers<void>();
+			const open = t.sql(async (s) => {
+				await s.sql`SELECT ${1}`;
+				await ended.promise;
+			});
+			await expect(t.sql`SELECT ${2}`).rejects.toThrow(busy);
+			await expect(t.sql(async () => {})).rejects.toThrow(busy);
+			ended.resolve();
+			await open;
+			await t.sql`SELECT ${3}`;
+		});
+
+		expect(log).toEqual([
+			"client1: BEGIN",
+			"client1: SAVEPOINT s1",
+			"client1: SELECT $1 [1]",
+			"client1: RELEASE SAVEPOINT s1",
+			"client1: SELECT $1 [3]",
+			"client1: COMMIT",
+		]);
+	});
+
 	test("a savepoint's tag cannot run after the savepoint ends", async () => {
 		const { pool } = mock();
 		const db = new Database(pool, []);
@@ -525,6 +553,42 @@ describe.each(drivers)("$name", (driver) => {
 	});
 
 	const migrate = () => db.migrate([{ id: "0001_init", sql: init }]);
+
+	test("overlapping savepoints never commit writes from a rejected callback", async () => {
+		await db.sql`CREATE TABLE other (id integer)`;
+		await db
+			.sql(async (t) => {
+				const started = Promise.withResolvers<void>();
+				const inserted = Promise.withResolvers<void>();
+				const rollback = Promise.withResolvers<void>();
+				const finish = Promise.withResolvers<void>();
+				const first = t
+					.sql(async (s) => {
+						await s.sql`INSERT INTO other VALUES (1)`;
+						started.resolve();
+						await rollback.promise;
+						throw new Error("discard first write");
+					})
+					.catch(() => undefined);
+				await started.promise;
+				const second = t
+					.sql(async (s) => {
+						await s.sql`INSERT INTO other VALUES (2)`;
+						inserted.resolve();
+						await finish.promise;
+					})
+					.catch(() => undefined)
+					.finally(() => inserted.resolve());
+				await inserted.promise;
+				rollback.resolve();
+				await first;
+				finish.resolve();
+				await second;
+			})
+			.catch(() => undefined);
+		// Rejecting overlapping groups or rolling back the whole transaction is safe.
+		expect(await db.sql`SELECT * FROM other WHERE id = 1`).toEqual([]);
+	});
 
 	test("migrate applies once", async () => {
 		expect(await migrate()).toEqual(["0001_init"]);

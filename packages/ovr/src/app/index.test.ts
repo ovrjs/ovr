@@ -6,6 +6,13 @@ import { describe, expect, test } from "vitest";
 
 const app = new App({ trailingSlash: "always" });
 
+test("hiding a mounted tool releases its name for another route", () => {
+	const first = Route.get("/").describe("Home");
+	const app = new App().use(first);
+	first.describe(false);
+	expect(() => app.use(Route.get("/index").describe("Index"))).not.toThrow();
+});
+
 const notFound: Middleware = async (c, next) => {
 	await next();
 
