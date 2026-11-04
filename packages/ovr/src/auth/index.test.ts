@@ -1444,26 +1444,12 @@ test("auth requires a database at startup", () => {
 	).toThrow("database");
 });
 
-test("auth rejects client limiter arrays at startup", () => {
-	const storage = setup();
-	for (const method of ["register", "login"]) {
-		expect(() => managed(storage, { limits: { [method]: [] } })).toThrow(
-			`limits.${method} must be rate limit options`,
-		);
-	}
-});
-
 test("a failing limiter prevents challenge writes and throws to the app", async () => {
 	const storage = setup();
-	const state = managed(storage, {
-		limits: {
-			login: {
-				key: () => {
-					throw new Error("private backend failure");
-				},
-			},
-		},
-	});
+	vi.spyOn(Limiter.prototype, "check").mockRejectedValue(
+		new Error("private backend failure"),
+	);
+	const state = managed(storage);
 	await expect(
 		state.post("/_passkey/options/login", new FormData()),
 	).rejects.toThrow("private backend failure");

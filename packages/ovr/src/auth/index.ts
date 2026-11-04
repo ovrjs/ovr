@@ -34,9 +34,6 @@ export namespace Auth {
 		Logout: Route.Form<string>;
 	}
 
-	/** Rate limit policy, Auth creates the `Limiter` with its database. */
-	export type Limit = Omit<Limiter.Options, "database">;
-
 	/** A revocable session with a fixed lifetime, from `c.session()`. */
 	export type Session = ContextType.Session;
 
@@ -103,13 +100,6 @@ export namespace Auth {
 		 * its form. Defaults to /connect.
 		 */
 		readonly consent?: string;
-		/** Change the built-in signup and sign-in rate limits, stored in `database`. */
-		readonly limits?: {
-			/** Change the built-in registration client policy, 5 per 10 minutes; invalid options fields do not consume it. */
-			readonly register?: Auth.Limit;
-			/** Change the built-in login client policy, 20 per minute. */
-			readonly login?: Auth.Limit;
-		};
 	}
 
 	/** An agent's request to act for the user, shown on the consent page. */

@@ -133,27 +133,37 @@ Returning a value sets the `content-type` header to `html` unless it has already
 
 ## Rate limiting
 
-`Limiter` is reusable middleware that stores token buckets in your Postgres [database](/08-database). [Auth](/09-auth#rate-limiting) uses its own built-in policies automatically; ordinary routes opt in:
+[Auth](/09-auth#rate-limiting) limits sign-in and agent sign-in for you. Add a `Limiter` to your own routes that are expensive, such as ones that send email or call an AI model. It stores token buckets in your Postgres [database](/08-database), so every server counts together.
 
 ```ts
-import { App, Limiter, Route } from "ovr";
+import { Limiter, type Middleware, Route } from "ovr";
 
-const app = new App();
-const search = new Limiter("search", { database }); // Default policy: 60 per minute.
+const signedIn: Middleware = async (c, next) => {
+	if (!(await c.session())) return c.redirect("/login", 303);
+	return next();
+};
+
+// 10 per minute for each signed-in user
+const generate = new Limiter("generate", {
+	database,
+	limit: 10,
+	key: async (c) => (await c.session())?.user,
+});
 
 app.use(
-	Route.get("/search").use(search.middleware, (c) => c.text("Search results")),
+	Route.post("/generate").use(signedIn, generate.middleware, async (c) => {
+		// ...
+	}),
 );
-
-// Your server supplies the trusted socket peer or verified edge client IP:
-app.fetch(request, { ip });
 ```
 
-The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. Cookies and forwarded headers are never used as fallback identities. Exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`. A missing or invalid identity, or a storage failure, throws: the request is not admitted, and your app's error handling sees the error like one from your own handler.
+Without `key`, a limiter counts each client IP, which your server passes with `app.fetch(request, { ip })`, see [client IP examples](/03-app#client-ip).
+
+The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. A `key` that returns nothing throws, so put a limiter keyed by user after a sign-in check, as above. Cookies and forwarded headers are never used as fallback identities. Exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`. A missing or invalid identity, or a storage failure, throws: the request is not admitted, and your app's error handling sees the error like one from your own handler.
 
 The first argument names the limiter's buckets. Name each limiter: two with the same name and policy share their buckets, which is how separate servers using one database count together, but two limiters stacked on one route would then spend a request's tokens twice. Keep the name when you deploy, since a new name starts every client with a full budget.
 
-`database` is required. Optional settings are `limit`, `interval` (milliseconds), and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
+`database` is required. Optional settings are `limit` (default 60), `interval` (milliseconds, default a minute), and `key`. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
 Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/08-database#migrate) creates it before your own migrations; `new Limiter()` throws when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
 
@@ -165,6 +175,6 @@ Each admitted request refills and consumes a token in one atomic statement, so e
 
 Network-level and distributed abuse protection still belong at your deployment edge.
 
-Use `app.use(limiter.middleware)` to apply a limiter globally. That includes auth routes and logout too; prefer selected routes when you want those requests to remain independent of a general application quota. The auth service's own policies always bypass logout.
+A limiter mounted for every route with `app.use(limiter.middleware)` also counts Auth's requests, in its own budget, apart from Auth's limits; a sign-in then spends from both. Limiting selected routes avoids that.
 
 When composing client and aggregate middleware, check the client policy before tighter shared quotas. Every successful check consumes its token even if a later policy denies, so placing a tight aggregate quota first lets an already-blocked client drain shared capacity.

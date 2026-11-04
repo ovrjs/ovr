@@ -45,6 +45,12 @@ For secret rotation, pass `secret: [current, previous]`: new tokens use the firs
 
 `database` is your application's [Database](/08-database). Include `Auth.tables` in its tables, and `database.migrate()` [creates them](#storage).
 
+Auth limits sign-in per client IP, so your server must pass the trusted client IP when it calls the app, from its connection or a verified edge header, never an arbitrary forwarded header. See [client IP examples](/03-app#client-ip):
+
+```ts
+app.fetch(request, { ip });
+```
+
 `users` is your users table, which must be in `database` too. Its form fields, other than `id` and columns with defaults, are the registration form. Columns with defaults, such as a `role` an admin form edits, are set by the server, so a signup cannot choose them. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
 
 ## Forms
@@ -245,55 +251,26 @@ const passkeys = await database.sql`
 `.parse(database.auth_credentials);
 ```
 
-Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, and all browsers together 10,000; [aggregate rate limits](#additional-limits) protect that capacity from abuse.
+Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, and all browsers together 10,000, see [rate limiting](#rate-limiting).
 
 ## Rate limiting
 
-ovr supplies the per-client policies, stored in the `rate_limits` table.
+Auth limits sign-in for you, per client, in the `rate_limits` table. The limits are fixed, since they protect Auth's own storage: the accounts it creates and the sign-in challenges it keeps.
 
-| Operation    | Burst and refill rate |
-| ------------ | --------------------- |
-| Registration | 5 per 10 minutes      |
-| Login        | 20 per minute         |
+| Request             | Limit per client |
+| ------------------- | ---------------- |
+| Registration        | 5 per 10 minutes |
+| Login               | 20 per minute    |
+| Agent authorization | 30 per minute    |
+| Agent tokens        | 60 per minute    |
 
-The default identity is the trusted client IP, with IPv6 grouped by `/64`. A ceremony makes two requests: options and verification have separate budgets. Registration options validate application fields, within a bounded 128 KB body, before the client policy, so field errors do not spend signup attempts. Other admission checks run before parsing; all run before challenge writes. Logout bypasses these policies, including limiter failures.
+A client is its trusted IP, with IPv6 grouped by `/64`, from `app.fetch(request, { ip })`, see [Create](#create). A ceremony makes two requests: options and verification have separate budgets. Registration options validate application fields, within a bounded 128 KB body, before the limit, so field errors do not spend signup attempts. Other admission checks run before parsing; all run before challenge writes. Logout is never limited. Every worker shares the database, so a fresh instance does not receive a fresh budget. Missing identity or unavailable storage throws to your app; it never skips the limit.
 
-Every worker shares the database, so a fresh instance does not receive a fresh budget. See [Limiter](/05-middleware#rate-limiting) for middleware and custom identities.
-
-Your server must supply the real client IP:
-
-```ts
-app.fetch(request, { ip });
-```
-
-A Fetch `Request` does not expose the socket peer. Use your server's connection metadata or a verified edge identity; do not trust arbitrary forwarded headers. See [client IP examples](/03-app#client-ip). Missing identity or unavailable storage throws to your app; it never skips the limit.
-
-### Additional limits
-
-`limits.register` and `limits.login` change the built-in client policies, for example `login: { limit: 10 }`; options you leave out keep their defaults. They take the same options as [`Limiter`](/05-middleware#rate-limiting), except `database`, which is Auth's; Auth names them.
-
-**Public deployments need an aggregate ceiling to protect shared challenge capacity.** Per-client limits alone do not contain distributed callers. Enforce one at your edge, or check a shared [`Limiter`](/05-middleware#rate-limiting) on Auth's endpoints, `/auth/*` and `/_passkey/*`, before mounting `auth`:
-
-```ts
-const ceiling = new Limiter("auth:all", {
-	database,
-	limit: 100,
-	key: () => "all",
-});
-
-app.use((c, next) => {
-	const { pathname } = c.url;
-	if (pathname.startsWith("/auth/") || pathname.startsWith("/_passkey/"))
-		return ceiling.middleware(c, next);
-	return next();
-}, auth);
-```
-
-These numbers are an example. Size the burst and refill over the two-minute challenge lifetime against the challenge capacity and expected traffic. A shared ceiling counts legitimate users too, and it runs before the client policy, so a client that the client policy would block still spends shared tokens.
+Each browser can have 10 sign-in ceremonies outstanding, and all browsers together 10,000; when they are used up, new ceremonies are refused until some expire, two minutes after they start. Floods from many addresses belong at your hosting edge. To limit your own routes, see [Limiter](/05-middleware#rate-limiting).
 
 ## Options
 
-`Auth.Options` describes the complete configuration. `secret`, `origin`, `database`, and `users` are shown [above](#create), and `limits` under [rate limiting](#rate-limiting); these remaining options customize normal application behavior:
+`Auth.Options` describes the complete configuration. `secret`, `origin`, `database`, and `users` are shown [above](#create); these remaining options customize normal application behavior:
 
 | Option     | Default    | Purpose                                           |
 | ---------- | ---------- | ------------------------------------------------- |
@@ -373,6 +350,6 @@ Logging out does not disconnect agents. Token requests are limited to 60 per min
 
 Use HTTPS and browsers with native WebAuthn JSON support. JavaScript is required. Passkey forms load an external same-origin module; nonce-based content security policies can pass `auth.forms(c, { nonce })`.
 
-Every instance must use the same database and signing secrets. Set up aggregate limits and network overload protection at your edge.
+Every instance must use the same database and signing secrets. Set up network overload protection at your edge.
 
 Auth operations enforce the configured origin: on another host, `c.session()` returns `null`, signing in or out and preparing forms throw, and Auth's endpoints answer 421. Generated POST routes also require a same-origin `Sec-Fetch-Site` or matching `Origin`, even with `App` CSRF protection disabled. Cookies are host-wide, so use one authentication system per hostname. This implementation supports new-account registration with a first discoverable ES256/P-256 passkey. Adding more passkeys to an existing account and account recovery are not provided.

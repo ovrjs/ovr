@@ -5,7 +5,7 @@ import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field, Form, field } from "../schema/index.js";
-import { Header, Size } from "../util/index.js";
+import { Header, Size, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import { Passkey } from "./passkey.js";
@@ -43,41 +43,18 @@ export function configure<U extends Auth.Users>(
 				name !== "id" && field(schema) && !defaults.includes(name),
 		),
 	) as Shape;
-	const configured = options.limits ?? {};
-	/** Build a limiter on Auth's database from policy options over `defaults`. */
-	const limiter = (
-		label: string,
-		name: string,
-		policy: unknown,
-		defaults: Auth.Limit = {},
-	) => {
-		if (
-			typeof policy !== "object" ||
-			policy === null ||
-			Array.isArray(policy) ||
-			policy instanceof Limiter
-		)
-			throw new TypeError(`Auth ${label} must be rate limit options`);
-		return new Limiter(name, {
-			...defaults,
-			...policy,
-			database: options.database,
-		});
-	};
-	// Built at startup, so later changes to the options cannot disable admission.
+	// fixed, they protect Auth's own storage: accounts and outstanding challenges
 	const limits = {
-		register: limiter(
-			"limits.register",
-			"auth:register:" + options.origin,
-			configured.register ?? {},
-			{ limit: 5, interval: 600000 },
-		),
-		login: limiter(
-			"limits.login",
-			"auth:login:" + options.origin,
-			configured.login ?? {},
-			{ limit: 20, interval: 60000 },
-		),
+		register: new Limiter(`auth:register:${options.origin}`, {
+			limit: 5,
+			interval: 10 * Time.minute,
+			database: options.database,
+		}),
+		login: new Limiter(`auth:login:${options.origin}`, {
+			limit: 20,
+			interval: Time.minute,
+			database: options.database,
+		}),
 	};
 	const paths = {
 		register: "/auth/register",
