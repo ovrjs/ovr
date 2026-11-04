@@ -51,7 +51,10 @@ export const sessions = Symbol("sessions");
 export namespace Context {
 	/** A signed-in user's revocable session. */
 	export interface Session {
-		/** Opaque session ID, the row's ID in `auth_sessions`. */
+		/**
+		 * Opaque session ID: a browser session's row ID in `auth_sessions`, or
+		 * for an agent's tool call, a hash of its access token.
+		 */
 		readonly id: string;
 		/** User ID. */
 		readonly user: string;

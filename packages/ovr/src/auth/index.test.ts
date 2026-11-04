@@ -2720,6 +2720,51 @@ describe("agents", () => {
 			ip,
 		});
 
+	test("a grant ends 30 days after approval, however often it is refreshed", async () => {
+		const now = Date.now();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		try {
+			const { app, client_id, redirect } = await connect();
+			let issued = await (
+				await token(app, {
+					grant_type: "authorization_code",
+					client_id,
+					code: redirect.searchParams.get("code")!,
+					redirect_uri: "http://127.0.0.1:5123/callback",
+					code_verifier: verifier,
+				})
+			).json();
+			const end = now + 30 * Time.day;
+
+			// refreshing near the end keeps the end, and its access token stops there
+			clock.mockReturnValue(end - 30 * Time.minute);
+			const refreshed = await token(app, {
+				grant_type: "refresh_token",
+				client_id,
+				refresh_token: issued.refresh_token,
+			});
+			expect(refreshed.status).toBe(200);
+			issued = await refreshed.json();
+			expect(issued.expires_in).toBe(30 * 60);
+			expect((await call(app, issued.access_token, "late")).status).toBe(200);
+
+			// then neither token works, the user connects the agent again
+			clock.mockReturnValue(end);
+			expect((await call(app, issued.access_token, "ended")).status).toBe(401);
+			expect(
+				(
+					await token(app, {
+						grant_type: "refresh_token",
+						client_id,
+						refresh_token: issued.refresh_token,
+					})
+				).status,
+			).toBe(400);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
 	test("disconnecting an agent revokes its tokens, and needs a signed-in user", async () => {
 		const { app, auth, browser, client_id, redirect } = await connect();
 		app.use(
@@ -3446,6 +3491,17 @@ describe("agents", () => {
 			code_challenge_method: "S256",
 		});
 		expect(resource.searchParams.get("error")).toBe("invalid_target");
+
+		// only the mounted MCP endpoint, not any URL on the origin
+		for (const other of [`${origin}/notes`, `${mcp}/`, `${mcp}?x=1`]) {
+			const unknown = await error({
+				response_type: "code",
+				code_challenge: await challenge(),
+				code_challenge_method: "S256",
+				resource: other,
+			});
+			expect(unknown.searchParams.get("error")).toBe("invalid_target");
+		}
 	});
 
 	test("client ID metadata documents", async () => {

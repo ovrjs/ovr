@@ -77,6 +77,7 @@ export function oauth(
 	options: Auth.Options<any>,
 	storage: Storage,
 	state: (c: State.Context) => State,
+	resources: ReadonlySet<string>,
 ) {
 	const { origin } = options;
 	const page = options.page ?? "/login";
@@ -444,7 +445,8 @@ export function oauth(
 				} catch {
 					return error("invalid_target", "Invalid resource.");
 				}
-				if (target.origin !== origin || target.hash)
+				// exactly an endpoint that accepts these tokens, such as an MCP endpoint
+				if (!resources.has(target.href) || target.href !== resource)
 					return error("invalid_target", "Unknown resource.");
 
 				// a token grants everything the user can do, there are no narrower scopes
@@ -502,6 +504,8 @@ export function oauth(
 			const access = random();
 			const refresh = random();
 			let error = "invalid_grant";
+			/** How long the access token lasts, shorter near the grant's end */
+			let expires = lifetime.access;
 
 			// codes and refresh tokens are used once, refresh tokens rotate
 			const issued = await storage.tokens.exchange(
@@ -524,6 +528,10 @@ export function oauth(
 					}
 
 					const now = Date.now();
+					// a grant lasts from its approval, refreshing replaces its tokens but
+					// never extends it, then the user connects the agent again
+					const end = code ? now + lifetime.refresh : token.expiration;
+					expires = Math.min(lifetime.access, end - now);
 					const row = {
 						user: token.user,
 						client: token.client,
@@ -532,16 +540,8 @@ export function oauth(
 					};
 
 					return {
-						[access]: {
-							...row,
-							kind: "access",
-							expiration: now + lifetime.access,
-						},
-						[refresh]: {
-							...row,
-							kind: "refresh",
-							expiration: now + lifetime.refresh,
-						},
+						[access]: { ...row, kind: "access", expiration: now + expires },
+						[refresh]: { ...row, kind: "refresh", expiration: end },
 					};
 				},
 			);
@@ -550,7 +550,7 @@ export function oauth(
 			c.json({
 				access_token: access,
 				token_type: "Bearer",
-				expires_in: lifetime.access / Time.second,
+				expires_in: Math.floor(expires / Time.second),
 				refresh_token: refresh,
 			});
 		}),

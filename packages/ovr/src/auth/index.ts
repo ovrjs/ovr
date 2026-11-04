@@ -241,7 +241,9 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			sessions: storage.sessions,
 		};
 		const service = configure(options, storage, (c) => this.#state(c));
-		const signin = oauth(options, storage, (c) => this.#state(c));
+		// resources tokens can be issued for, the MCP endpoints mounted with this auth
+		const resources = new Set<string>();
+		const signin = oauth(options, storage, (c) => this.#state(c), resources);
 		this.#routes = service.routes;
 		this.forms = service.forms;
 		this.consent = signin.consent;
@@ -249,7 +251,8 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			origin: options.origin,
 			bearer: signin.bearer,
 			// the OAuth endpoints, once per app when several endpoints share them
-			mount: (app) => {
+			mount: (app, resource) => {
+				resources.add(resource);
 				if (this.#mounted.has(app.routes)) return [];
 
 				if (!Metadata.supported)

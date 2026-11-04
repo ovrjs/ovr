@@ -92,9 +92,13 @@ export namespace Mcp {
 
 			/**
 			 * @param app App the endpoint is mounted on
+			 * @param resource The endpoint's URL, which tokens are issued for
 			 * @returns The endpoints agents sign in with, mounted with the MCP endpoint
 			 */
-			mount(app: App.Mount): ReturnType<App.Service[typeof mount]>;
+			mount(
+				app: App.Mount,
+				resource: string,
+			): ReturnType<App.Service[typeof mount]>;
 		};
 	}
 }
@@ -174,7 +178,10 @@ export class Mcp {
 					.use(metadata),
 			);
 
-			return [...routes, auth[agents].mount(app)];
+			return [
+				...routes,
+				auth[agents].mount(app, new URL(path, auth[agents].origin).href),
+			];
 		}
 
 		return routes;
