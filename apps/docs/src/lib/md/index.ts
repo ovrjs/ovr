@@ -5,12 +5,13 @@ import { Schema } from "ovr";
 import langBash from "shiki/langs/bash.mjs";
 import langHtml from "shiki/langs/html.mjs";
 import langJson from "shiki/langs/json.mjs";
+import langSql from "shiki/langs/sql.mjs";
 import langTsx from "shiki/langs/tsx.mjs";
 
 export const options: Options = {
 	highlighter: {
-		langs: [langBash, langTsx, langJson, langHtml],
-		langAlias: { ts: "tsx", js: "tsx", jsx: "tsx" },
+		langs: [langBash, langTsx, langJson, langHtml, langSql],
+		langAlias: { ts: "tsx", js: "tsx", jsx: "tsx", sh: "bash" },
 	},
 	plugins: [codeControls, externalLink],
 };
