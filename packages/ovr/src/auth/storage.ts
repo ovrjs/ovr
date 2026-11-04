@@ -1,4 +1,9 @@
-import { type Database, owned, referenced } from "../database/index.js";
+import {
+	type Database,
+	owned,
+	referenced,
+	references,
+} from "../database/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
@@ -308,6 +313,7 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 					// waits for tokens being issued, and its snapshot, taken after the
 					// lock, includes them
 					await Storage.#lock(t.sql, found.user);
+					if (!(await this.#account(t.sql, found.user))) return false;
 
 					// read again under the lock, an exchange before it may have used it
 					const [row] = await t.sql`
@@ -326,9 +332,6 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 					const issued = used && (await exchange(used));
 					if (!issued) return false;
 
-					// insert before spending: the foreign key to the account takes its
-					// row first, the order an account deletion takes rows in, so the
-					// two wait for each other instead of deadlocking
 					for (const [value, issue] of Object.entries(issued))
 						await this.#insert(t.sql, value, { ...issue, family: row.family });
 
@@ -358,18 +361,12 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 		 *
 		 * @param user User ID
 		 * @param client Agent's client ID
-		 * @param users Users table, whose row is locked before the tokens
 		 */
-		revoke: async (user: string, client: string, users?: Table.Any) => {
+		revoke: async (user: string, client: string) => {
 			await this.#db.sql(async (t) => {
 				// waits for an exchange issuing this user's tokens, so the delete sees them
 				await Storage.#lock(t.sql, user);
-				// the account's row before its tokens, the order an account deletion
-				// takes them in, so the two cannot deadlock
-				if (users)
-					await t.sql`
-						SELECT 1 FROM ${users} WHERE ${users.columns.id} = ${user} FOR KEY SHARE
-					`;
+				await this.#account(t.sql, user);
 				await t.sql`
 					DELETE FROM ${Storage.tokens}
 					WHERE ${Storage.tokens.columns.user} = ${user}
@@ -389,6 +386,27 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 				`.parse(Storage.tokens),
 			),
 	};
+
+	/**
+	 * Lock the account's row before any of its tokens, the order deleting the
+	 * account takes them in, so the two wait for each other instead of
+	 * deadlocking, whenever the foreign key is checked. The users table is the
+	 * one `new Auth()` registered for this database.
+	 *
+	 * @param sql Transaction's SQL tag
+	 * @param user User ID
+	 * @returns `false` when the account no longer exists
+	 */
+	async #account(sql: Database.Tag, user: string) {
+		const users = references.get(this.#db)?.get(Storage.tokens);
+		if (!users) return true;
+
+		const rows = await sql`
+			SELECT 1 FROM ${users} WHERE ${users.columns.id} = ${user} FOR KEY SHARE
+		`;
+
+		return rows.length > 0;
+	}
 
 	/**
 	 * Serialize issuing and revoking a user's tokens, until the transaction ends.

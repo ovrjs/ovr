@@ -2505,7 +2505,12 @@ describe("agents", () => {
 			new Mcp({ auth }),
 			notes,
 			Route.get("/sign-in").use(async (c) => {
-				await auth.login(c, "user-1");
+				// an account, which agents' tokens need to exist
+				await db.sql`
+					INSERT INTO ${db.users} (id, email) VALUES (${user}, 'user@example.com')
+					ON CONFLICT (id) DO NOTHING
+				`;
+				await auth.login(c, user);
 				return c.text("signed in");
 			}),
 			Route.get("/connect").use(async (c) => {
@@ -3067,8 +3072,29 @@ describe("agents", () => {
 		).toBe(true);
 	});
 
+	test("a refresh for an account that no longer exists is refused", async () => {
+		const { app } = agents();
+		// no foreign key here, so only Auth's check of the account refuses it
+		await storage.tokens.set("orphan-refresh", {
+			kind: "refresh",
+			user: "deleted-user",
+			client: "agent",
+			resource: mcp,
+			scope: "",
+			expiration: Date.now() + 60000,
+		});
+		const refreshed = await token(app, {
+			grant_type: "refresh_token",
+			client_id: "agent",
+			refresh_token: "orphan-refresh",
+		});
+		expect(refreshed.status).toBe(400);
+		expect(await refreshed.json()).toEqual({ error: "invalid_grant" });
+	});
+
 	test("replaying a spent refresh token revokes its active successor", async () => {
 		const { app } = agents();
+		await db.sql`INSERT INTO ${db.users} (id, email) VALUES (${user}, 'user@example.com')`;
 		await storage.tokens.set("first-refresh", {
 			kind: "refresh",
 			user: "user-1",
@@ -3092,6 +3118,7 @@ describe("agents", () => {
 
 	test("a failed refresh leaves the original token usable and no orphan access token", async () => {
 		const { app } = agents();
+		await db.sql`INSERT INTO ${db.users} (id, email) VALUES (${user}, 'user@example.com')`;
 		await storage.tokens.set("original", {
 			kind: "refresh",
 			user: "user-1",
