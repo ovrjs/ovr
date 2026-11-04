@@ -283,41 +283,67 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 			await this.#prune();
 			const id = await Storage.hash(token);
 
-			return this.#db.sql(async (t) => {
-				const [found] = await t.sql`
+			return this.#db
+				.sql(async (t) => {
+					const [found] = await t.sql`
 					SELECT * FROM ${Storage.tokens} WHERE id = ${id}
 				`.parse(Storage.tokens);
-				if (!found) return false;
-				const { family } = found;
+					if (!found) return false;
+					const { family } = found;
 
-				// one exchange per family at a time, so a revocation waits for tokens
-				// being issued and its snapshot, taken after the lock, includes them
-				await t.sql`SELECT pg_advisory_xact_lock(hashtext('auth_tokens'), hashtext(${family}))`;
+					// one exchange per user at a time, so a replay or a disconnection
+					// waits for tokens being issued, and its snapshot, taken after the
+					// lock, includes them
+					await Storage.#lock(t.sql, found.user);
 
-				const [row] = await t.sql`
+					const [row] = await t.sql`
 					UPDATE ${Storage.tokens} SET kind = 'spent'
 					WHERE id = ${id} AND kind = ${kind}
 					RETURNING *
 				`.parse(Storage.tokens);
 
-				if (!row) {
-					// stolen and used by someone else, so neither party keeps access
-					await t.sql`
+					if (!row) {
+						// stolen and used by someone else, so neither party keeps access
+						await t.sql`
 						DELETE FROM ${Storage.tokens} WHERE family = ${family} AND EXISTS (
 							SELECT 1 FROM ${Storage.tokens} WHERE id = ${id} AND kind = 'spent'
 						)
 					`;
-					return false;
-				}
+						return false;
+					}
 
-				const used = Storage.#token([{ ...row, kind }]);
-				const issued = used && (await exchange(used));
-				if (!issued) return false;
+					const used = Storage.#token([{ ...row, kind }]);
+					const issued = used && (await exchange(used));
+					if (!issued) return false;
 
-				for (const [value, issue] of Object.entries(issued))
-					await this.#insert(t.sql, value, { ...issue, family: row.family });
+					for (const [value, issue] of Object.entries(issued))
+						await this.#insert(t.sql, value, { ...issue, family: row.family });
 
-				return true;
+					return true;
+				})
+				.catch((error: unknown) => {
+					// the account was deleted meanwhile, its tokens cascade with it
+					if ((error as { code?: unknown } | null)?.code === "23503")
+						return false;
+					throw error;
+				});
+		},
+		/**
+		 * Disconnect one of a user's agents: its codes, access tokens, and
+		 * refresh tokens, including ones an exchange is issuing at the same time.
+		 *
+		 * @param user User ID
+		 * @param client Agent's client ID
+		 */
+		revoke: async (user: string, client: string) => {
+			await this.#db.sql(async (t) => {
+				// waits for an exchange issuing this user's tokens, so the delete sees them
+				await Storage.#lock(t.sql, user);
+				await t.sql`
+					DELETE FROM ${Storage.tokens}
+					WHERE ${Storage.tokens.columns.user} = ${user}
+						AND ${Storage.tokens.columns.client} = ${client}
+				`;
 			});
 		},
 		/**
@@ -332,6 +358,16 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 				`.parse(Storage.tokens),
 			),
 	};
+
+	/**
+	 * Serialize issuing and revoking a user's tokens, until the transaction ends.
+	 *
+	 * @param sql Transaction's SQL tag
+	 * @param user User ID
+	 */
+	static async #lock(sql: Database.Tag, user: string) {
+		await sql`SELECT pg_advisory_xact_lock(hashtext('auth_tokens'), hashtext(${user}))`;
+	}
 
 	/**
 	 * @param sql SQL tag to insert with

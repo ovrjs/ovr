@@ -185,8 +185,9 @@ const connect = Route.get("/connect")
 		return (
 			<Page title={`Connect ${request.client.name}?`}>
 				<p>
-					{request.client.name} will be able to read and change your bookmarks.
-					You will return to {request.redirect}.
+					{request.client.name}, published by{" "}
+					{new URL(request.client.id).origin}, will be able to read and change
+					your bookmarks. You will return to {request.redirect}.
 				</p>
 				<request.Form />
 			</Page>

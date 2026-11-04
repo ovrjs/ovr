@@ -113,6 +113,64 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 			expect(await storage.tokens.get("survivor")).toBeUndefined();
 		});
 
+		test("documented agent disconnection revokes tokens issued by an in-flight refresh", async () => {
+			const row: Storage.Token = {
+				kind: "refresh",
+				user: "disconnect-user",
+				client: "disconnect-agent",
+				scope: "",
+				resource: "https://example.com/mcp",
+				expiration: Date.now() + 60_000,
+			};
+			await storage.tokens.set("disconnect-first", row);
+			const entered = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			const rotation = storage.tokens.exchange(
+				"disconnect-first",
+				"refresh",
+				async () => {
+					entered.resolve();
+					await release.promise;
+					return {
+						"disconnect-access": { ...row, kind: "access" },
+						"disconnect-refresh": row,
+					};
+				},
+			);
+			await entered.promise;
+			// the operation behind auth.disconnect, which waits for the exchange
+			const disconnect = storage.tokens.revoke(row.user, row.client);
+			try {
+				await vi.waitFor(
+					async () => {
+						const waiting = await pool.query(
+							"SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+							[schema],
+						);
+						expect(waiting.rows.length).toBeGreaterThan(0);
+					},
+					{ timeout: 3000 },
+				);
+			} finally {
+				release.resolve();
+				await Promise.all([rotation, disconnect]);
+			}
+			expect
+				.soft(await storage.tokens.get("disconnect-access"))
+				.toBeUndefined();
+			expect
+				.soft(
+					await storage.tokens.exchange(
+						"disconnect-refresh",
+						"refresh",
+						async () => ({
+							"disconnect-successor": { ...row, kind: "access" },
+						}),
+					),
+				)
+				.toBe(false);
+		});
+
 		test.each(["browser", "total"])(
 			"enforces the %s capacity across concurrent requests",
 			async (scope) => {

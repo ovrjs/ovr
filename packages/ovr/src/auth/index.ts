@@ -104,12 +104,15 @@ export namespace Auth {
 
 	/** An agent's request to act for the user, shown on the consent page. */
 	export interface Consent {
-		/** The agent, as it names itself */
+		/** The agent asking */
 		readonly client: {
-			/** Name the agent registered, not verified */
+			/**
+			 * Client ID, the URL of the agent's metadata document. Its origin is
+			 * who publishes the agent, show it on the page.
+			 */
+			readonly id: string;
+			/** Name the agent gives itself, not verified */
 			readonly name: string;
-			/** Client ID metadata document URL, for agents that have one */
-			readonly uri?: string;
 		};
 		/** Host the user returns to after deciding */
 		readonly redirect: string;
@@ -147,6 +150,8 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 
 	readonly #options: State.Options;
 	readonly #states = new WeakMap<object, State>();
+	/** Auth's tables in its database */
+	readonly #storage: Storage;
 	/** The OAuth endpoints are mounted */
 	readonly #mounted = new WeakSet<object>();
 
@@ -209,6 +214,7 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 				"Auth's users table is missing from the database, add it to its tables",
 			);
 		const storage = Storage.of(options.database);
+		this.#storage = storage;
 		this.#options = {
 			origin: options.origin,
 			secret:
@@ -294,5 +300,23 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	/** Revoke the current session and expire its cookie. Always await this method. */
 	logout(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
 		return this.#state(c).logout();
+	}
+
+	/**
+	 * Disconnect one of the signed-in user's agents. Once it resolves, the
+	 * agent's codes and tokens no longer work, including ones a refresh was
+	 * issuing meanwhile, and connecting again needs the user's consent.
+	 *
+	 * @param c Request context of the signed-in user
+	 * @param client Agent's client ID, from `auth_tokens`
+	 * @throws When nobody is signed in
+	 */
+	async disconnect(
+		c: Pick<Auth.Context, "url" | "cookie" | "res">,
+		client: string,
+	) {
+		const session = await this.#state(c).session();
+		if (!session) throw new Error("Sign in to disconnect an agent");
+		await this.#storage.tokens.revoke(session.user, client);
 	}
 }

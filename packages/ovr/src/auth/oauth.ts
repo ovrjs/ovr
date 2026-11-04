@@ -582,10 +582,7 @@ export function oauth(
 			});
 
 			return {
-				client: {
-					name: pending.name,
-					...(/^https:/.test(pending.client) ? { uri: pending.client } : {}),
-				},
+				client: { id: pending.client, name: pending.name },
 				redirect: new URL(pending.redirect).host || pending.redirect,
 				Form: (props) =>
 					Form({

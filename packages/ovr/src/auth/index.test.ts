@@ -2391,6 +2391,7 @@ describe("agents", () => {
 				return jsx("main", {
 					children: [
 						jsx("h1", { children: `Allow ${request.client.name}?` }),
+						jsx("p", { children: new URL(request.client.id).origin }),
 						jsx("p", { children: request.redirect }),
 						request.Form({}),
 					],
@@ -2537,6 +2538,8 @@ describe("agents", () => {
 		const consentPage = await browser(page.href);
 		const html = await consentPage.text();
 		expect(html).toContain("Allow Test Agent?");
+		// the client ID's origin, who publishes the agent
+		expect(html).toContain(new URL(agent).origin);
 		expect(html).toContain("127.0.0.1:5123");
 		const request = attribute(html, 'name="request" value');
 
@@ -2593,6 +2596,105 @@ describe("agents", () => {
 			}),
 			ip,
 		});
+
+	test("disconnecting an agent revokes its tokens, and needs a signed-in user", async () => {
+		const { app, auth, browser, client_id, redirect } = await connect();
+		app.use(
+			Route.post("/disconnect").use(async (c) => {
+				await auth.disconnect(c, client_id);
+				return c.text("disconnected");
+			}),
+		);
+		const issued = await (
+			await token(app, {
+				grant_type: "authorization_code",
+				client_id,
+				code: redirect.searchParams.get("code")!,
+				redirect_uri: "http://127.0.0.1:5123/callback",
+				code_verifier: verifier,
+			})
+		).json();
+		expect((await call(app, issued.access_token, "connected")).status).toBe(
+			200,
+		);
+
+		// signed out, nothing is disconnected
+		await expect(
+			app.fetch(`${origin}/disconnect`, {
+				method: "POST",
+				headers: { origin },
+			}),
+		).rejects.toThrow("Sign in to disconnect an agent");
+		expect((await call(app, issued.access_token, "still")).status).toBe(200);
+
+		const done = await browser("/disconnect", {
+			method: "POST",
+			headers: { origin },
+		});
+		expect(await done.text()).toBe("disconnected");
+		expect((await call(app, issued.access_token, "gone")).status).toBe(401);
+		expect(
+			(
+				await token(app, {
+					grant_type: "refresh_token",
+					client_id,
+					refresh_token: issued.refresh_token,
+				})
+			).status,
+		).toBe(400);
+	});
+
+	test("account deletion following the Auth guide revokes browser and agent access", async () => {
+		// the three cascading foreign keys in the Auth guide's migration
+		await db.sql`ALTER TABLE auth_credentials ADD CONSTRAINT deletion_credentials
+			FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE`;
+		await db.sql`ALTER TABLE auth_sessions ADD CONSTRAINT deletion_sessions
+			FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE`;
+		await db.sql`ALTER TABLE auth_tokens ADD CONSTRAINT deletion_tokens
+			FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE`;
+		try {
+			await db.sql`INSERT INTO users (id, email) VALUES (${user}, 'user@example.com')`;
+			const { app, browser, client_id, redirect } = await connect();
+			const response = await token(app, {
+				grant_type: "authorization_code",
+				client_id,
+				code: redirect.searchParams.get("code")!,
+				redirect_uri: "http://127.0.0.1:5123/callback",
+				code_verifier: verifier,
+			});
+			expect(response.status).toBe(200);
+			const issued = await response.json();
+			expect(
+				(await call(app, issued.access_token, "before deletion")).status,
+			).toBe(200);
+
+			await db.sql`DELETE FROM users WHERE id = ${user}`;
+			expect((await rows(db.auth_credentials)).length).toBe(0);
+			expect((await rows(db.auth_sessions)).length).toBe(0);
+			expect(
+				(await browser("/notes", { method: "POST", headers: { origin } }))
+					.status,
+			).toBe(401);
+			expect
+				.soft((await call(app, issued.access_token, "after deletion")).status)
+				.toBe(401);
+			expect
+				.soft(
+					(
+						await token(app, {
+							grant_type: "refresh_token",
+							client_id,
+							refresh_token: issued.refresh_token,
+						})
+					).status,
+				)
+				.toBe(400);
+		} finally {
+			await db.sql`ALTER TABLE auth_credentials DROP CONSTRAINT deletion_credentials`;
+			await db.sql`ALTER TABLE auth_sessions DROP CONSTRAINT deletion_sessions`;
+			await db.sql`ALTER TABLE auth_tokens DROP CONSTRAINT deletion_tokens`;
+		}
+	});
 
 	test("metadata points agents to the authorization server", async () => {
 		const { app } = agents();

@@ -235,12 +235,21 @@ A version's SQL never changes, so its checksum stays valid. Changes ship as a ne
 | `rate_limits`      | [Rate limit](/05-middleware#rate-limiting) buckets            |
 | `auth_tokens`      | Agents' authorization codes and tokens, stored as hashes      |
 
-Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. To delete an account's passkeys and sessions with it, give your `users` table a `text` ID and reference it in your own migration:
+Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. Give your `users` table a `text` ID and reference it from all three of Auth's tables that belong to a user, in your own migration:
 
 ```sql
 -- migrations/0003_auth_users.sql
 ALTER TABLE auth_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 ALTER TABLE auth_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+ALTER TABLE auth_tokens ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+```
+
+Then deleting the account deletes everything that signs in as it, whichever code deletes it: its passkeys, browser sessions, and agents' codes, access tokens, and refresh tokens. An agent refreshing its token at that moment cannot keep it.
+
+```ts
+await database.sql`
+	DELETE FROM ${database.users} WHERE ${database.users.columns.id} = ${session.user}
+`;
 ```
 
 The tables are available on your database by name, for example to list an account's passkeys:
@@ -301,7 +310,11 @@ const connect = Route.get("/connect")
 		return (
 			<>
 				<h1>Connect {request.client.name}?</h1>
-				<p>You will return to {request.redirect}.</p>
+				<p>
+					Published by {new URL(request.client.id).origin}. It will be able to
+					do anything you can do in this app. You will return to{" "}
+					{request.redirect}.
+				</p>
 				<request.Form />
 			</>
 		);
@@ -310,7 +323,7 @@ const connect = Route.get("/connect")
 app.use(new Mcp({ auth }), connect);
 ```
 
-`request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified, so the page shows where the user will return. `auth.consent(c)` also sets headers that stop other sites from framing the page.
+`request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified. `request.client.id` is the address of its metadata document, so its origin is who publishes the agent: show it, with where the user will return and what the agent can do. `auth.consent(c)` also sets headers that stop other sites from framing the page.
 
 Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint given `auth` have none of these endpoints.
 
@@ -330,19 +343,18 @@ Agents send the `resource` they will use the token with, such as the MCP endpoin
 
 In a tool call, `c.session()` returns the session of the user who approved the agent, so the same handlers serve people and agents.
 
-To list and disconnect an account's agents, query its refresh tokens:
+To list the signed-in user's agents, query their refresh tokens. Disconnect one with `auth.disconnect(c, client)`:
 
 ```ts
 const agents = await database.sql`
 	SELECT DISTINCT ${database.auth_tokens.columns.client} FROM ${database.auth_tokens}
-	WHERE ${database.auth_tokens.columns.user} = ${user} AND kind = 'refresh'
+	WHERE ${database.auth_tokens.columns.user} = ${session.user} AND kind = 'refresh'
 `;
 
-await database.sql`
-	DELETE FROM ${database.auth_tokens}
-	WHERE ${database.auth_tokens.columns.user} = ${user} AND ${database.auth_tokens.columns.client} = ${client}
-`;
+await auth.disconnect(c, client);
 ```
+
+Once it resolves, that agent's codes and tokens no longer work, including ones a refresh was issuing at the same moment, and connecting again needs the user's consent. Disconnect through Auth, not by deleting rows from `auth_tokens` yourself: a delete can miss tokens a refresh commits while it runs. `auth.disconnect` acts for the signed-in user, and throws without one.
 
 Logging out does not disconnect agents. Token requests are limited to 60 per minute per client IP.
 
