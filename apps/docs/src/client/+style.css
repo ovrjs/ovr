@@ -171,8 +171,8 @@
 		}
 	}
 
-	p code,
-	li code {
+	/* not code blocks, which list items can contain */
+	:is(p, li) code:not(pre code) {
 		@apply border-secondary border text-base font-normal text-nowrap not-italic shadow-xs;
 	}
 

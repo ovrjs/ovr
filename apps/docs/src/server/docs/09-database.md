@@ -207,7 +207,7 @@ CREATE TABLE posts (
 	published boolean NOT NULL DEFAULT false
 );
 
-CREATE INDEX ON posts (author, published);
+CREATE INDEX posts_author_published ON posts (author, published);
 ```
 
 Run them with a script, for example in a release step, then [check](#check) the tables:
