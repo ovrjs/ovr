@@ -14,3 +14,5 @@ npm-debug.log*
 .auth-pglite
 .auth.sqlite*
 .auth-*.pem
+# Local Claude Code settings
+.claude/
