@@ -3,7 +3,7 @@ title: Agents
 description: Pages as Markdown, routes as MCP tools, and forms as WebMCP tools, so AI agents can use your app.
 ---
 
-An ovr app works for AI agents the same way it works for people. Pages render as Markdown for agents that ask for it, an [MCP](https://modelcontextprotocol.io) endpoint turns your routes into tools, and forms are tools for agents in the browser. With [Auth](/08-auth#agents), the user approves the agent with their passkey and the agent acts as that user, through the same handlers.
+An ovr app works for AI agents the same way it works for people. Pages render as Markdown for agents that ask for it, an [MCP](https://modelcontextprotocol.io) endpoint turns your routes into tools, and forms are tools for agents in the browser. With [Auth](/09-auth#agents), the user approves the agent with their passkey and the agent acts as that user, through the same handlers.
 
 ## Markdown
 
@@ -97,7 +97,7 @@ Pass `auth` to require agents to sign in. The user approves the agent once in th
 const mcp = new Mcp({ instructions: "...", auth });
 ```
 
-The endpoint also mounts Auth's OAuth endpoints, and serves the protected resource metadata agents use to find them. Write the page where users approve agents at `/connect`, see [Auth agents](/08-auth#agents).
+The endpoint also mounts Auth's OAuth endpoints, and serves the protected resource metadata agents use to find them. Write the page where users approve agents at `/connect`, see [Auth agents](/09-auth#agents).
 
 ### Connect an agent
 

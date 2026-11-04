@@ -169,7 +169,7 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 - set `aria-invalid` and `aria-describedby`
 - autofocus the first invalid field
 
-Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/09-database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
+Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/08-database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
 
 ## GET forms
 

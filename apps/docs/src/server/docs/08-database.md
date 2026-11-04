@@ -234,7 +234,7 @@ const differences = await database.check();
 console.log({ applied, differences });
 ```
 
-- Tables from ovr, such as `Auth.tables` and `Limiter.table`, bring their own migrations. They are applied first, each library's in its own order, so yours can reference their tables.
+- Tables from ovr, such as [`Auth.tables`](/09-auth#storage) and [`Limiter.table`](/05-middleware#rate-limiting), bring their own migrations. They are applied first, each library's in its own order, so yours can reference their tables.
 - Each migration and its history record commit in one transaction, so a failing migration leaves nothing behind.
 - Concurrent runs wait on an advisory lock, so each migration applies once.
 - Editing or deleting an applied migration, or adding one that sorts before an applied migration, is an error.

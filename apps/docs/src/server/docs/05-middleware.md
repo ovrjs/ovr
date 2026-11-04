@@ -57,7 +57,7 @@ For each request, ovr creates a `Context` object _(abbreviated as `c` in these d
 
 ## Properties
 
-`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/04-route#parameters), the matched `route`, the signed-in [session](/08-auth#sessions), and helpers for cookies and request parsing.
+`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/04-route#parameters), the matched `route`, the signed-in [session](/09-auth#sessions), and helpers for cookies and request parsing.
 
 ```ts
 Route.get("/api/:id").use((c) => {
@@ -133,7 +133,7 @@ Returning a value sets the `content-type` header to `html` unless it has already
 
 ## Rate limiting
 
-`Limiter` is reusable middleware that stores token buckets in your Postgres [database](/09-database). [Auth](/08-auth#rate-limiting) uses its own built-in policies automatically; ordinary routes opt in:
+`Limiter` is reusable middleware that stores token buckets in your Postgres [database](/08-database). [Auth](/09-auth#rate-limiting) uses its own built-in policies automatically; ordinary routes opt in:
 
 ```ts
 import { App, Limiter, Route } from "ovr";
@@ -155,7 +155,7 @@ The first argument names the limiter's buckets. Name each limiter: two with the 
 
 `database` is required. Optional settings are `limit`, `interval` (milliseconds), and `key`. A custom `key(c)` can return an authenticated user ID; missing keys fail closed. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
-Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/09-database#migrate) creates it before your own migrations; `new Limiter()` throws when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
+Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/08-database#migrate) creates it before your own migrations; `new Limiter()` throws when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
 
 ```ts
 const database = new Database(pool, [posts, Limiter.table]);

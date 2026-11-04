@@ -3,7 +3,7 @@ title: Auth
 description: Passkey authentication with customizable forms, stored in your Postgres database.
 ---
 
-`Auth` handles passkey registration, login, logout, and sessions. It stores its data in your Postgres [database](/09-database), and creates accounts in your users table. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
+`Auth` handles passkey registration, login, logout, and sessions. It stores its data in your Postgres [database](/08-database), and creates accounts in your users table. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
 
 ## Create
 
@@ -37,7 +37,7 @@ const app = new App().use(auth);
 
 For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session duration; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
 
-`database` is your application's [Database](/09-database). Include `Auth.tables` in its tables, and `database.migrate()` [creates them](#storage).
+`database` is your application's [Database](/08-database). Include `Auth.tables` in its tables, and `database.migrate()` [creates them](#storage).
 
 `users` is your users table, which must be in `database` too. Its form fields, other than `id` and columns with defaults, are the registration form. Columns with defaults, such as a `role` an admin form edits, are set by the server, so a signup cannot choose them. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
 
@@ -205,7 +205,7 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/09-database#migrate) applies them, as `auth:1`, `auth:2`, and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/09-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
+`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1`, `auth:2`, and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
 
 ```ts
 const database = new Database(pool, [users, posts, ...Auth.tables]);

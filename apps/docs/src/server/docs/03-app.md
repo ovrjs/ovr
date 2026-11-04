@@ -85,7 +85,7 @@ import * as home from "./home";
 app.use(home); // uses all exports
 ```
 
-`use` also mounts services. An [Auth service](/08-auth) adds its registration, login, logout, and browser endpoints, and an [MCP endpoint](/10-agents) adds the route agents connect to.
+`use` also mounts services. An [Auth service](/09-auth) adds its registration, login, logout, and browser endpoints, and an [MCP endpoint](/10-agents) adds the route agents connect to.
 
 ```ts
 app.use(auth, mcp);
@@ -101,7 +101,7 @@ const response = await app.fetch("https://example.com");
 
 ### Client IP
 
-Server adapters can pass a trusted client IP with `app.fetch(request, { ip })`. It becomes `c.ip` for [rate limiting](/05-middleware#rate-limiting) and [authentication](/08-auth). A standard Fetch `Request` cannot identify its socket peer, so your server must supply this metadata. Passing only `ip` preserves the original `Request` object; normal `RequestInit` options such as `method` and `headers` remain available in the same argument.
+Server adapters can pass a trusted client IP with `app.fetch(request, { ip })`. It becomes `c.ip` for [rate limiting](/05-middleware#rate-limiting) and [authentication](/09-auth). A standard Fetch `Request` cannot identify its socket peer, so your server must supply this metadata. Passing only `ip` preserves the original `Request` object; normal `RequestInit` options such as `method` and `headers` remain available in the same argument.
 
 For a Node server with [srvx](https://srvx.h3.dev/guide/handler), use the connection's address:
 
