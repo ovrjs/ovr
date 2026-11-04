@@ -78,18 +78,24 @@ export namespace Mcp {
 
 	/** Authorization the MCP endpoint uses, `Auth` implements it */
 	export interface Auth {
-		/**
-		 * @param c Request context
-		 * @param resource MCP endpoint URL the token must be issued for
-		 * @returns The token's session, or `null` without a valid token
-		 */
-		bearer(c: Context, resource: string): Promise<unknown>;
+		/** What the MCP endpoint needs to sign agents in, internal to ovr */
+		readonly [agents]: {
+			/** Origin of the authorization server */
+			readonly origin: string;
 
-		/** Origin of the authorization server */
-		readonly origin: string;
+			/**
+			 * @param c Request context
+			 * @param resource MCP endpoint URL the token must be issued for
+			 * @returns The token's session, or `null` without a valid token
+			 */
+			bearer(c: Pick<Context, "req">, resource: string): Promise<unknown>;
 
-		/** @returns The endpoints agents sign in with, mounted with the MCP endpoint */
-		[agents](app: App.Mount): ReturnType<App.Service[typeof mount]>;
+			/**
+			 * @param app App the endpoint is mounted on
+			 * @returns The endpoints agents sign in with, mounted with the MCP endpoint
+			 */
+			mount(app: App.Mount): ReturnType<App.Service[typeof mount]>;
+		};
 	}
 }
 
@@ -156,7 +162,7 @@ export class Mcp {
 				c.res.headers.set("access-control-allow-origin", "*");
 				c.json({
 					resource: new URL(path, c.url).href,
-					authorization_servers: [auth.origin],
+					authorization_servers: [auth[agents].origin],
 					bearer_methods_supported: ["header"],
 					resource_name: this.#options.name ?? c.url.host,
 				});
@@ -168,7 +174,7 @@ export class Mcp {
 					.use(metadata),
 			);
 
-			return [...routes, auth[agents](app)];
+			return [...routes, auth[agents].mount(app)];
 		}
 
 		return routes;
@@ -241,7 +247,7 @@ export class Mcp {
 		const { auth, path } = this.#options;
 		if (!auth) return null;
 
-		const session = await auth.bearer(c, new URL(path, c.url).href);
+		const session = await auth[agents].bearer(c, new URL(path, c.url).href);
 		if (session) return session;
 
 		c.res.headers.set(

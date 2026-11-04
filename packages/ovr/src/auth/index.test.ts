@@ -1,4 +1,4 @@
-import { App, mount } from "../app/index.js";
+import { App, mount, agents as signin } from "../app/index.js";
 import { Database, owned } from "../database/index.js";
 import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
@@ -896,11 +896,14 @@ describe("revocable sessions", () => {
 });
 
 describe("form contracts", () => {
-	test("exports namespaced auth issues and public context and persistence types", async () => {
+	test("keeps internals private and exports public context and persistence types", async () => {
 		const api = await import("../index.js");
-		expect(api.Auth.Issue).toBe(Auth.Issue);
+		// Auth answers its issues itself, so they are not part of the API
+		expect(api.Auth).not.toHaveProperty("Issue");
 		expect(api).not.toHaveProperty("AuthIssue");
-		expectTypeOf<Auth.Issue>().toExtend<Error>();
+		const { auth } = setup();
+		for (const name of ["routes", "bearer", "origin"])
+			expect(name in auth).toBe(false);
 		expectTypeOf<keyof Auth.Session>().toEqualTypeOf<
 			"id" | "user" | "expiration"
 		>();
@@ -2784,7 +2787,7 @@ describe("agents", () => {
 		const req = new Request(resource, {
 			headers: { authorization: "Bearer test-access" },
 		});
-		expect(await auth.bearer({ req }, resource)).toBeNull();
+		expect(await auth[signin].bearer({ req }, resource)).toBeNull();
 	});
 
 	test("the OAuth consent page prevents framing by another origin", async () => {

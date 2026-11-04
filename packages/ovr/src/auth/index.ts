@@ -3,12 +3,12 @@ import { type Context as ContextType, sessions } from "../context/index.js";
 import type { Database } from "../database/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
+import type { Mcp } from "../mcp/index.js";
 import type { Route } from "../route/index.js";
 import type { Field, Form, Schema } from "../schema/index.js";
 import type { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
 import { configure } from "./configure.js";
-import { Issue } from "./issue.js";
 import { Metadata } from "./metadata.js";
 import { oauth } from "./oauth.js";
 import { State } from "./state.js";
@@ -16,7 +16,6 @@ import { Storage } from "./storage.js";
 
 export namespace Auth {
 	/** Authentication validation issue. */
-	export type Issue = InstanceType<typeof Auth.Issue>;
 
 	/** Request capabilities required while preparing the built-in UI. */
 	export type Context = Pick<ContextType, "url" | "cookie" | "res" | "form"> & {
@@ -144,9 +143,6 @@ export namespace Auth {
 
 /** Complete passkey authentication stored in the application's Postgres database. */
 export class Auth<U extends Auth.Users = Auth.Users> {
-	/** Validation issue shared by authentication and passkey verification. */
-	static readonly Issue = Issue;
-
 	/**
 	 * Tables Auth stores its data in, include them in the database's tables.
 	 * `database.migrate` then creates them, and `database.check` checks them.
@@ -161,26 +157,18 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 
 	readonly #options: State.Options;
 	readonly #states = new WeakMap<object, State>();
-	/** OAuth endpoints for agents */
-	readonly #oauth: readonly Route[];
 	/** The OAuth endpoints are mounted */
 	readonly #mounted = new WeakSet<object>();
 
 	/** Generated endpoints, mounted with `app.use(auth)`. */
-	readonly routes: readonly Route[];
+	readonly #routes: readonly Route[];
 	/**
 	 * Read an agent's authorization request on the consent page, with the form
 	 * to allow or deny it. `null` when the request is invalid or expired.
 	 */
 	readonly consent: (c: Auth.Context) => Promise<Auth.Consent | null>;
-	/**
-	 * Read the session of an agent's bearer token issued for `resource`, such
-	 * as the MCP endpoint URL.
-	 */
-	readonly bearer: (
-		c: Pick<ContextType, "req">,
-		resource: string,
-	) => Promise<Auth.Session | null>;
+	/** Signs agents in for an MCP endpoint given this `auth`, internal to ovr. */
+	readonly [agents]: Mcp.Auth[typeof agents];
 	/** Prepare request-scoped UI in the handler before returning JSX. */
 	readonly forms: (
 		c: Auth.Context,
@@ -244,11 +232,27 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 		};
 		const service = configure(options, storage, (c) => this.#state(c));
 		const signin = oauth(options, storage, (c) => this.#state(c));
-		this.routes = service.routes;
-		this.#oauth = signin.routes;
+		this.#routes = service.routes;
 		this.forms = service.forms;
 		this.consent = signin.consent;
-		this.bearer = signin.bearer;
+		this[agents] = {
+			origin: options.origin,
+			bearer: signin.bearer,
+			// the OAuth endpoints, once per app when several endpoints share them
+			mount: (app) => {
+				if (this.#mounted.has(app.routes)) return [];
+
+				if (!Metadata.supported)
+					throw new TypeError(
+						"Connecting agents requires Node.js or Bun to fetch client ID metadata documents safely",
+					);
+
+				// only once mounting succeeds, so a failed attempt is not skipped next time
+				this.#mounted.add(app.routes);
+
+				return this.#host(signin.routes);
+			},
+		};
 	}
 
 	/** Mounted by `app.use(auth)`, and lets every request read its session. */
@@ -258,28 +262,8 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 				c[sessions] = () => this.#state(c).session();
 				return next();
 			},
-			this.#host(this.routes),
+			this.#host(this.#routes),
 		];
-	}
-
-	/**
-	 * Mounted by an MCP endpoint given this `auth`, the OAuth endpoints agents
-	 * sign in with. Once per app, when several endpoints share it.
-	 *
-	 * @param app App the endpoint is mounted on
-	 */
-	[agents](app: App.Mount): ReturnType<App.Service[typeof mount]> {
-		if (this.#mounted.has(app.routes)) return [];
-
-		if (!Metadata.supported)
-			throw new TypeError(
-				"Connecting agents requires Node.js or Bun to fetch client ID metadata documents safely",
-			);
-
-		// only once mounting succeeds, so a failed attempt is not skipped next time
-		this.#mounted.add(app.routes);
-
-		return this.#host(this.#oauth);
 	}
 
 	/**
@@ -291,7 +275,11 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 
 		return [
 			(c: ContextType, next: () => Promise<void>) => {
-				if (c.route && routes.has(c.route) && c.url.origin !== this.origin) {
+				if (
+					c.route &&
+					routes.has(c.route) &&
+					c.url.origin !== this.#options.origin
+				) {
 					c.res.headers.set("cache-control", "no-store");
 					return c.text("Misdirected Request", 421);
 				}
@@ -299,11 +287,6 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			},
 			...endpoints,
 		];
-	}
-
-	/** Canonical HTTPS origin used by this service. */
-	get origin() {
-		return this.#options.origin;
 	}
 
 	#state(c: State.Context) {

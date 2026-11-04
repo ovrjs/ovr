@@ -305,7 +305,7 @@ These numbers are an example. Size the burst and refill over the two-minute chal
 
 `page` and `redirect` must be local paths. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
 
-Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Failures the client caused, such as an expired challenge, an invalid passkey, or an account that already exists, are `Auth.Issue` instances: they return to the form with a generic message, with guidance to log in if registration already completed. Anything else, such as an unavailable database, is thrown to your app like an error from your own handler. Auth doesn't log. Rate-limit denials include a retry hint, and the client waits before retrying.
+Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Failures the client caused, such as an expired challenge, an invalid passkey, or an account that already exists, return to the form with a generic message, with guidance to log in if registration already completed. Anything else, such as an unavailable database, is thrown to your app like an error from your own handler. Auth doesn't log. Rate-limit denials include a retry hint, and the client waits before retrying.
 
 ## Agents
 
@@ -351,7 +351,7 @@ Anyone can send a client ID, so downloads are limited: each IP can make 30 autho
 
 Agents send the `resource` they will use the token with, such as the MCP endpoint URL, when they authorize and when they request tokens. Authorization requires PKCE with S256. Codes last a minute and are used once, access tokens last an hour, and refresh tokens last 30 days and are replaced each time they are used. Using a code or refresh token a second time revokes every token issued from it, since one of the two parties stole it. A token grants what the user can do, so requests with a `scope` are refused. Tokens are bound to the resource they were requested for, such as the MCP endpoint, and stored as SHA-256 hashes.
 
-In a tool call, `c.session()` returns the session of the user who approved the agent, so the same handlers serve people and agents. `auth.bearer(c, resource)` reads a bearer token's session directly.
+In a tool call, `c.session()` returns the session of the user who approved the agent, so the same handlers serve people and agents.
 
 To list and disconnect an account's agents, query its refresh tokens:
 
