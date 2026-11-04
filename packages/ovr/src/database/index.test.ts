@@ -375,112 +375,17 @@ describe("sql(fn)", () => {
 		expect(released).toEqual([undefined]);
 	});
 
-	test("nested callbacks are savepoints that roll back only their own queries", async () => {
-		const { pool, log, released } = mock();
-		const db = new Database(pool, []);
-		const error = new Error("boom");
-
-		const result = await db.sql(async (t) => {
-			await t.sql(async (s) => {
-				await s.sql`SELECT ${1}`;
-				await s.sql(async (n) => {
-					await n.sql`SELECT ${2}`;
-				});
-			});
-			await expect(
-				t.sql(async (s) => {
-					await s.sql`SELECT ${3}`;
-					throw error;
-				}),
-			).rejects.toBe(error);
-			return "kept";
-		});
-
-		expect(result).toBe("kept");
-		expect(log).toEqual([
-			"client1: BEGIN",
-			"client1: SAVEPOINT s1",
-			"client1: SELECT $1 [1]",
-			"client1: SAVEPOINT s2",
-			"client1: SELECT $1 [2]",
-			"client1: RELEASE SAVEPOINT s2",
-			"client1: RELEASE SAVEPOINT s1",
-			"client1: SAVEPOINT s1",
-			"client1: SELECT $1 [3]",
-			"client1: ROLLBACK TO SAVEPOINT s1",
-			"client1: COMMIT",
-		]);
-		expect(released).toEqual([undefined]);
-	});
-
-	test("an open savepoint has the connection until it ends", async () => {
+	test("transactions do not nest", async () => {
 		const { pool, log } = mock();
 		const db = new Database(pool, []);
-		const busy = "A savepoint is open in this transaction";
-
-		await db.sql(async (t) => {
-			const ended = Promise.withResolvers<void>();
-			const open = t.sql(async (s) => {
-				await s.sql`SELECT ${1}`;
-				await ended.promise;
-			});
-			await expect(t.sql`SELECT ${2}`).rejects.toThrow(busy);
-			await expect(t.sql(async () => {})).rejects.toThrow(busy);
-			ended.resolve();
-			await open;
-			await t.sql`SELECT ${3}`;
-		});
-
-		expect(log).toEqual([
-			"client1: BEGIN",
-			"client1: SAVEPOINT s1",
-			"client1: SELECT $1 [1]",
-			"client1: RELEASE SAVEPOINT s1",
-			"client1: SELECT $1 [3]",
-			"client1: COMMIT",
-		]);
-	});
-
-	test("a transaction that ends with a savepoint open rolls back", async () => {
-		const { pool, log } = mock();
-		const db = new Database(pool, []);
-		const started = Promise.withResolvers<void>();
-		const ended = Promise.withResolvers<void>();
-		let open: Promise<unknown> = Promise.resolve();
 
 		await expect(
 			db.sql(async (t) => {
-				open = t
-					.sql(async (s) => {
-						await s.sql`SELECT ${1}`;
-						started.resolve();
-						await ended.promise;
-						await s.sql`SELECT ${2}`;
-					})
-					.catch((error: unknown) => error);
-				// returns without awaiting the savepoint
-				await started.promise;
+				// @ts-expect-error t.sql only runs queries
+				await t.sql(async () => {});
 			}),
-		).rejects.toThrow("await every savepoint");
-		ended.resolve();
-		expect(await open).toBeInstanceOf(Error);
-
-		expect(log).toEqual([
-			"client1: BEGIN",
-			"client1: SAVEPOINT s1",
-			"client1: SELECT $1 [1]",
-			"client1: ROLLBACK",
-		]);
-	});
-
-	test("a savepoint's tag cannot run after the savepoint ends", async () => {
-		const { pool } = mock();
-		const db = new Database(pool, []);
-
-		await db.sql(async (t) => {
-			const inner = await t.sql(async (s) => s.sql);
-			await expect(inner`SELECT 1`).rejects.toThrow("Transaction has ended");
-		});
+		).rejects.toThrow("Transactions do not nest");
+		expect(log).toEqual(["client1: BEGIN", "client1: ROLLBACK"]);
 	});
 
 	test("rejects calls that are not a template or a callback", () => {
@@ -585,71 +490,6 @@ describe.each(drivers)("$name", (driver) => {
 	});
 
 	const migrate = () => db.migrate([{ id: "0001_init", sql: init }]);
-
-	test("catching an overlapping group error cannot commit an unfinished savepoint", async () => {
-		await db.sql`CREATE TABLE other (id integer)`;
-		const finish = Promise.withResolvers<void>();
-		let pending: Promise<unknown> = Promise.resolve();
-		try {
-			await db
-				.sql(async (t) => {
-					const started = Promise.withResolvers<void>();
-					const first = t.sql(async (s) => {
-						await s.sql`INSERT INTO other VALUES (1)`;
-						started.resolve();
-						await finish.promise;
-						throw new Error("discard this write");
-					});
-					pending = first.catch(() => undefined);
-					await started.promise;
-					// Promise.all rejects on the overlapping group's error while first is still running.
-					await Promise.all([first, t.sql(async () => {})]).catch(
-						() => undefined,
-					);
-				})
-				.catch(() => undefined);
-		} finally {
-			finish.resolve();
-			await pending;
-		}
-		expect(await db.sql`SELECT * FROM other`).toEqual([]);
-	});
-
-	test("overlapping savepoints never commit writes from a rejected callback", async () => {
-		await db.sql`CREATE TABLE other (id integer)`;
-		await db
-			.sql(async (t) => {
-				const started = Promise.withResolvers<void>();
-				const inserted = Promise.withResolvers<void>();
-				const rollback = Promise.withResolvers<void>();
-				const finish = Promise.withResolvers<void>();
-				const first = t
-					.sql(async (s) => {
-						await s.sql`INSERT INTO other VALUES (1)`;
-						started.resolve();
-						await rollback.promise;
-						throw new Error("discard first write");
-					})
-					.catch(() => undefined);
-				await started.promise;
-				const second = t
-					.sql(async (s) => {
-						await s.sql`INSERT INTO other VALUES (2)`;
-						inserted.resolve();
-						await finish.promise;
-					})
-					.catch(() => undefined)
-					.finally(() => inserted.resolve());
-				await inserted.promise;
-				rollback.resolve();
-				await first;
-				finish.resolve();
-				await second;
-			})
-			.catch(() => undefined);
-		// Rejecting overlapping groups or rolling back the whole transaction is safe.
-		expect(await db.sql`SELECT * FROM other WHERE id = 1`).toEqual([]);
-	});
 
 	test("migrate applies once", async () => {
 		expect(await migrate()).toEqual(["0001_init"]);
@@ -789,65 +629,6 @@ describe.each(drivers)("$name", (driver) => {
 				}),
 			).rejects.toThrow();
 			expect(await db.sql`SELECT * FROM other`).toEqual([]);
-		},
-	);
-
-	test.skipIf(!driver.errors)(
-		"a savepoint recovers from an expected error and the transaction commits",
-		async () => {
-			await migrate();
-
-			const insert = (sql: Database.Tag, email: string) =>
-				sql`INSERT INTO ${db.users} ${sql.values(db.users, {
-					email,
-					visits: 0n,
-					meta: { theme: "" },
-					tags: [],
-				})}`;
-
-			await insert(db.sql, "a@example.com");
-			await db.sql(async (t) => {
-				await insert(t.sql, "b@example.com");
-				try {
-					await t.sql(async (s) => {
-						await insert(s.sql, "c@example.com");
-						await insert(s.sql, "a@example.com");
-					});
-				} catch (error) {
-					if (!Database.unique(error)) throw error;
-				}
-				await insert(t.sql, "d@example.com");
-			});
-
-			expect(
-				await db.sql`SELECT email FROM ${db.users} ORDER BY email`,
-			).toEqual([
-				{ email: "a@example.com" },
-				{ email: "b@example.com" },
-				{ email: "d@example.com" },
-			]);
-		},
-	);
-
-	test.skipIf(!driver.errors)(
-		"a caught error inside a savepoint still fails it",
-		async () => {
-			await db.sql`CREATE TABLE other (id integer)`;
-
-			await db.sql(async (t) => {
-				await t.sql`INSERT INTO other VALUES (1)`;
-				await expect(
-					t.sql(async (s) => {
-						await s.sql`INSERT INTO other VALUES (2)`;
-						try {
-							await s.sql`SELECT 1 / 0`;
-						} catch {
-							// Catching the statement error does not restore the savepoint.
-						}
-					}),
-				).rejects.toThrow();
-			});
-			expect(await db.sql`SELECT * FROM other`).toEqual([{ id: 1 }]);
 		},
 	);
 

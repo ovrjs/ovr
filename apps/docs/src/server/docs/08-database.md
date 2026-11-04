@@ -163,29 +163,7 @@ Use `t.sql` for every query in the transaction. `database.sql` would run on anot
 
 A single statement doesn't need a callback: Postgres runs each one atomically. Use one when several statements must succeed or fail together, for example when you read a row, decide in JavaScript, and then write.
 
-### Savepoints
-
-A failed query aborts the transaction in Postgres, so catching its error doesn't save the transaction: it rolls back and rethrows the error. To recover from an expected error, pass `t.sql` a callback. It runs as a savepoint, which rolls back only its own queries when it throws, and the transaction continues:
-
-```ts
-await database.sql(async (t) => {
-	for (const post of imported) {
-		try {
-			await t.sql(async (s) => {
-				await s.sql`
-					INSERT INTO ${database.posts} ${s.sql.values(database.posts, post)}
-				`;
-				// ...more queries for this post
-			});
-		} catch (error) {
-			if (!Database.unique(error, "posts_author_title_key")) throw error;
-			// this post's queries rolled back, the others are kept
-		}
-	}
-});
-```
-
-Savepoints can nest. As in a transaction, catching an error inside the callback doesn't save the savepoint. A transaction runs on one connection, so await a savepoint before running other queries or savepoints in its transaction; until it ends, they throw. A transaction or savepoint whose callback ends while a savepoint in it is still open rolls back and throws, rather than committing its unfinished writes.
+A failed query aborts the transaction in Postgres, so catching its error doesn't save the transaction: it rolls back and rethrows the error. Avoid expected errors in the SQL instead, such as with `INSERT … ON CONFLICT DO NOTHING`. Transactions don't nest: helpers that run in one take `t` and use `t.sql`.
 
 ## Migrate
 
