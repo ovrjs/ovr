@@ -7,7 +7,7 @@ description: Passkey authentication with customizable forms, stored in your Post
 
 ## Create
 
-Create one `Auth` instance with your users table, and add it to the app with `app.use(auth)`. This mounts the authentication endpoints, and lets handlers read the session with `c.session()`.
+Create one `Auth` instance with your users table, and add it to the app with `app.use(auth)`. This mounts the authentication endpoints, and lets handlers read the session with `c.session()`. The examples on this page continue this one, using its `app` and `auth`.
 
 ```ts
 import { App, Auth, Database, Field, Schema, Table } from "ovr";
@@ -54,8 +54,6 @@ Create your `/login` page with both forms. `Auth` supplies the POST endpoints; y
 Call `auth.forms(c)` in the route handler, before returning JSX. This lets ovr set the browser-binding cookie before streaming begins.
 
 ```tsx
-import { Route } from "ovr";
-
 app.use(
 	Route.get("/login").use((c) => {
 		const { Register, Login } = auth.forms(c);
@@ -313,8 +311,6 @@ Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/10-agents)
 Pass `auth` to the [MCP endpoint](/10-agents#sign-in), which mounts the OAuth endpoints agents sign in with, and create the page where users approve them, `/connect` unless you set `consent`:
 
 ```tsx
-const auth = new Auth(options);
-
 const connect = Route.get("/connect")
 	.describe(false)
 	.use(async (c) => {
@@ -331,7 +327,7 @@ const connect = Route.get("/connect")
 		);
 	});
 
-app.use(auth, new Mcp({ auth }), connect);
+app.use(new Mcp({ auth }), connect);
 ```
 
 `request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified, so the page shows where the user will return. `auth.consent(c)` also sets headers that stop other sites from framing the page.
