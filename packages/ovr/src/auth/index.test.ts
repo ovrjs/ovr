@@ -960,21 +960,6 @@ describe("form contracts", () => {
 		expect(html).toContain('src="/_passkey/client.js"');
 	});
 
-	test("rejects reserved schema fields rather than silently replacing them", async () => {
-		const state = setup();
-		const route = Route.post("/conflict")
-			.fields({ credential: Field.email(), challenge: Field.text() })
-			.use((c) => c.text("unused"));
-		state.app.use(
-			Route.get("/conflict").use((c) => {
-				new Passkey(c, new State(c, state.options)).form(route, "register", {
-					endpoint,
-				});
-			}),
-		);
-		expect(() => Passkey.prepare(route)).toThrow("reserve");
-	});
-
 	test("binds stored challenges to their exact pathname", async () => {
 		const state = setup();
 		const start = await state.start("register");
@@ -1364,7 +1349,9 @@ describe("configured passkey callbacks", () => {
 		expect(() => managed(setup(), { page: "https://evil.example" })).toThrow(
 			"local paths",
 		);
-		expect(() => managed(setup(), { page: "/auth/login" })).toThrow("distinct");
+		expect(() => managed(setup(), { page: "/auth/login" })).toThrow(
+			"endpoints",
+		);
 	});
 });
 
@@ -1431,16 +1418,16 @@ test("a protected page checks the session and redirects when signed out", async 
 	expect(after).toHaveBeenCalledOnce();
 });
 
-test("auth requires a database at startup", () => {
+test("auth requires a database", () => {
 	const storage = setup();
-	expect(
-		() =>
-			new Auth({
-				...storage.settings,
-				// @ts-expect-error A shared database is required; the framework has no implicit storage.
-				database: undefined,
-			}),
-	).toThrow("database");
+	// type errors, never run
+	void (() => {
+		new Auth({
+			...storage.settings,
+			// @ts-expect-error A shared database is required; the framework has no implicit storage.
+			database: undefined,
+		});
+	});
 });
 
 test("a failing limiter prevents challenge writes and throws to the app", async () => {
@@ -1710,7 +1697,6 @@ test.each([
 	{ value: 17000, retry: "17" },
 	{ value: -1000, retry: "1" },
 	{ value: 86400000, retry: "3600" },
-	{ value: NaN, retry: null },
 ])(
 	"admission result $value controls the retry deadline without leaking errors",
 	async ({ value, retry }) => {
@@ -1722,10 +1708,6 @@ test.each([
 			);
 			const state = managed(setup());
 			const response = state.post("/_passkey/options/login", new FormData());
-			if (retry === null) {
-				await expect(response).rejects.toThrow("Invalid auth retry deadline");
-				return;
-			}
 			expect((await response).status).toBe(429);
 			expect((await response).headers.get("retry-after")).toBe(retry);
 		} finally {
@@ -2258,18 +2240,18 @@ describe("migration SQL", () => {
 			},
 			[users],
 		);
-		expect(
-			() =>
-				new Auth({
-					secret: "test-secret-with-at-least-32-bytes",
-					origin,
-					database: bare,
-					users,
-				}),
-		).toThrow("...Auth.tables");
-		expect(() => new Limiter("requests", { database: bare })).toThrow(
-			"Limiter.table",
-		);
+		// type errors, never run
+		void (() => {
+			new Auth({
+				secret: "test-secret-with-at-least-32-bytes",
+				origin,
+				// @ts-expect-error Auth.tables are missing
+				database: bare,
+				users,
+			});
+			// @ts-expect-error Limiter.table is missing
+			new Limiter("requests", { database: bare });
+		});
 	});
 
 	test("Auth creates accounts in a users table it can insert into", () => {
@@ -2289,7 +2271,6 @@ describe("migration SQL", () => {
 			});
 		};
 
-		expect(() => table({ email: Field.email() })).toThrow("id column");
 		// registration only fills fields, so other columns need defaults
 		expect(() =>
 			table({
@@ -2302,14 +2283,32 @@ describe("migration SQL", () => {
 			{ id: Schema.string(), email: Field.email(), plan: Schema.string() },
 			{ default: ["plan"] },
 		);
-		expect(
-			() =>
-				new Auth({
-					...settings,
-					database: new Database(pool, [...Auth.tables]),
-					users,
-				}),
-		).toThrow("users table is missing");
+		// type errors, never run
+		void (() => {
+			const people = new Table("people", { email: Field.email() });
+			new Auth({
+				...settings,
+				database: new Database(pool, [people, ...Auth.tables]),
+				// @ts-expect-error a users table needs an id column
+				users: people,
+			});
+			const reserved = new Table("reserved", {
+				id: Schema.string(),
+				credential: Field.text(),
+			});
+			new Auth({
+				...settings,
+				database: new Database(pool, [reserved, ...Auth.tables]),
+				// @ts-expect-error passkey forms send credential themselves
+				users: reserved,
+			});
+			new Auth({
+				...settings,
+				// @ts-expect-error the users table is missing
+				database: new Database(pool, [...Auth.tables]),
+				users,
+			});
+		});
 	});
 
 	test("reading a session needs app.use(auth)", async () => {

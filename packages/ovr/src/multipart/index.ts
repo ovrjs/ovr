@@ -26,7 +26,7 @@ class Needle extends Uint8Array {
 	constructor(needle: string) {
 		super(Codec.encode(needle).buffer);
 
-		if (this.length > 255) throw new RangeError("Needle exceeds 255 bytes");
+		// boundaries are at most 70 characters, checked before a needle is made
 
 		for (let i = 0; i < this.length; i++) (this.loc[this[i]!] ??= []).push(i);
 

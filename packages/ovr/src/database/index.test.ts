@@ -384,7 +384,7 @@ describe("sql(fn)", () => {
 				// @ts-expect-error t.sql only runs queries
 				await t.sql(async () => {});
 			}),
-		).rejects.toThrow("Transactions do not nest");
+		).rejects.toThrow("template tag");
 		expect(log).toEqual(["client1: BEGIN", "client1: ROLLBACK"]);
 	});
 

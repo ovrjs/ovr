@@ -483,11 +483,7 @@ export class Mcp {
 
 			const { name, read } = tool;
 			const form = route as Route.Post;
-			// the same name in the browser's WebMCP forms and here
-			if (tools.has(name))
-				throw new TypeError(
-					`Tool name "${name}" is used by more than one route, change one of their patterns.`,
-				);
+			// names are unique, app.use() throws for two routes sharing one
 
 			const params = route.pattern
 				.split("/")

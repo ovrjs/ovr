@@ -121,14 +121,14 @@ describe("Table", () => {
 		).toThrow(TypeError);
 	});
 
-	test("rejects unknown default columns", () => {
-		expect(
-			() =>
-				new Table("t", { a: Schema.string() }, {
-					default: ["b"],
-				} as unknown as Table.Options<{ a: Schema<string> }>),
-		).toThrow("unknown column b");
-		expect(() => new Table("", { a: Schema.string() })).toThrow(TypeError);
+	test("rejects unknown default columns and empty names", () => {
+		// type errors, never run
+		void (() => {
+			// @ts-expect-error not a column
+			new Table("t", { a: Schema.string() }, { default: ["b"] });
+			// @ts-expect-error a table needs a name
+			new Table("", { a: Schema.string() });
+		});
 	});
 
 	test("rejects nested bigint schemas that the JSON codec cannot store", () => {

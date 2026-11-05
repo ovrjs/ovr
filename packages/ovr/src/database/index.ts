@@ -493,8 +493,6 @@ export const references = new WeakMap<object, Map<Table.Any, Table.Any>>();
 /** Database members, tables are added by name. */
 class Base<T extends readonly Table.Any[]> {
 	/** Names database members use. */
-	static readonly #reserved = new Set(["sql", "migrate", "check"]);
-
 	/** Postgres types able to store each kind of column value, preferred first. */
 	static readonly #types: Record<Table.Type, readonly string[]> = {
 		string: [
@@ -554,7 +552,9 @@ class Base<T extends readonly Table.Any[]> {
 		this.sql = Base.#tag(pool, (fn) => this.#transaction(fn)) as Base<T>["sql"];
 
 		for (const table of tables) {
-			if (Base.#reserved.has(table.name) || Object.hasOwn(this, table.name))
+			// sql, migrate, check, or a table listed before: reserved names are
+			// also a type error
+			if (Object.hasOwn(this, table.name))
 				throw new TypeError(
 					`Database table name ${table.name} is not available`,
 				);
@@ -982,14 +982,9 @@ class Base<T extends readonly Table.Any[]> {
 					| ((t: Database.Transaction) => Promise<unknown>),
 				...values: unknown[]
 			) => {
-				if (typeof strings === "function") {
+				// a transaction's own tag has none, transactions do not nest
+				if (typeof strings === "function" && transaction) {
 					const fn = strings;
-
-					if (!transaction)
-						throw new TypeError(
-							"Transactions do not nest, run queries in this one with t.sql`...`",
-						);
-
 					return transaction((inner) => fn({ sql: Base.#tag(inner) }));
 				}
 

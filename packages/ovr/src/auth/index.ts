@@ -39,7 +39,13 @@ export namespace Auth {
 
 	/** A users table with a text `id`, which Auth creates accounts in. */
 	export type Users = Table<string, any, any> & {
-		readonly shape: { readonly id: Schema<string> };
+		readonly shape: {
+			readonly id: Schema<string>;
+			// passkey forms send these fields themselves
+			readonly credential?: never;
+			readonly ceremony?: never;
+			readonly bootstrap?: never;
+		};
 	};
 
 	/** Columns of a users table the server sets with defaults, such as a role. */
@@ -69,8 +75,13 @@ export namespace Auth {
 		readonly secret: string | readonly [string, ...string[]];
 		/** Trusted HTTPS origin, for example `https://example.com`. */
 		readonly origin: string;
-		/** Database containing `Auth.tables`, which stores challenges, sessions, credentials, and rate limits. */
-		readonly database: Database;
+		/**
+		 * Database containing `Auth.tables`, which stores challenges, sessions,
+		 * credentials, and rate limits, and the users table.
+		 */
+		readonly database: Database &
+			Database.Tables<typeof Auth.tables> &
+			Database.Tables<readonly [U]>;
 		/**
 		 * Time in milliseconds a session lasts without being used; defaults to
 		 * one week. Using it renews it, at most once a day.
@@ -179,13 +190,8 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			typeof options.secret === "string"
 				? [options.secret]
 				: [...options.secret];
-		if (
-			!secrets.length ||
-			secrets.some(
-				(secret) =>
-					typeof secret !== "string" || Codec.encode(secret).length < 32,
-			)
-		)
+		// often from the environment, so its length is checked here
+		if (secrets.some((secret) => Codec.encode(secret).length < 32))
 			throw new TypeError("Auth secret must contain at least 32 bytes");
 		for (const name of ["idle", "lifetime"] as const) {
 			const value = options[name];
@@ -199,20 +205,6 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 					`Auth ${name} must be a time in milliseconds, from one second to a year`,
 				);
 		}
-		if (typeof options.database?.sql !== "function")
-			throw new TypeError("Auth requires a database");
-		if (
-			Auth.tables.some(
-				(table) => Reflect.get(options.database, table.name) !== table,
-			)
-		)
-			throw new TypeError(
-				"Auth's tables are missing from the database, add ...Auth.tables to its tables",
-			);
-		if (Reflect.get(options.database, options.users?.name) !== options.users)
-			throw new TypeError(
-				"Auth's users table is missing from the database, add it to its tables",
-			);
 		// the users table Auth's tables reference in this database, for its check
 		const chosen = references.get(options.database) ?? new Map();
 		for (const table of Storage.owners) {

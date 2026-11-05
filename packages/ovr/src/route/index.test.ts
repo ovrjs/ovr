@@ -847,20 +847,21 @@ describe("chained routes", () => {
 		page.url({ params: { id: "1" } });
 	});
 
-	test("params checks whole parameter names, and redirects need their values", async () => {
-		expect(() =>
-			// @ts-expect-error not a parameter of the pattern
-			Route.get("/items/:id").params({ i: Field.text() }),
-		).toThrow('has no parameter "i"');
+	test("params take whole parameter names, and redirects need their values", () => {
+		// @ts-expect-error not a parameter of the pattern
+		Route.get("/items/:id").params({ i: Field.text() });
 
-		const item = Route.get("/items/:id").use((c) => c.text(c.params.id));
-		const app = new App().use(
-			item,
-			Route.get("/go").use((c) => c.redirect(item, 303)),
-		);
-		await expect(app.fetch("http://localhost/go")).rejects.toThrow(
-			"route.url({ params })",
-		);
+		const item = Route.get("/items/:id");
+		const files = Route.get("/files/*");
+		const home = Route.get("/");
+		Route.get("/go").use((c) => {
+			// @ts-expect-error parameters need values, from route.url({ params })
+			c.redirect(item, 303);
+			// @ts-expect-error a wildcard too
+			c.redirect(files);
+			c.redirect(home);
+			c.redirect(item.url({ params: { id: "1" } }), 303);
+		});
 	});
 
 	test("links encode parameter values", async () => {
@@ -975,13 +976,6 @@ describe("chained routes", () => {
 
 		expect(res.status).toBe(404);
 		expect(ran).toBe(false);
-	});
-
-	test("params rejects names the pattern does not have", () => {
-		expect(() =>
-			// @ts-expect-error - not a parameter of the pattern
-			Route.get("/posts/:id").params({ ids: Schema.string() }),
-		).toThrow('Route "/posts/:id" has no parameter "ids".');
 	});
 
 	test("fields keep their types after params, and params after fields", () => {

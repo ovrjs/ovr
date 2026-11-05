@@ -117,10 +117,12 @@ export class Table<
 	 * @param shape Column schemas
 	 * @param options Postgres schema and the columns the database supplies
 	 */
-	constructor(name: Name, shape: S, options = {} as O) {
+	constructor(
+		name: Name extends "" ? never : Name,
+		shape: S,
+		options = {} as O,
+	) {
 		super({ type: "object", shape, mode: "strip" });
-
-		if (!name) throw new TypeError("Table name is required");
 
 		this.name = name;
 		this.shape = shape;
@@ -132,11 +134,6 @@ export class Table<
 			const [type, nullable] = Table.#type(schema.def, `${name}.${key}`);
 
 			columns[key] = new Column(this, key, type, nullable);
-		}
-
-		for (const key of options.default ?? []) {
-			if (!Object.hasOwn(shape, key))
-				throw new TypeError(`Table ${name}: unknown column ${key}`);
 		}
 
 		this.columns = columns as { readonly [K in keyof S]: Column };

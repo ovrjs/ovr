@@ -20,8 +20,6 @@ export function configure<U extends Auth.Users>(
 ) {
 	type Shape = Form.Shape;
 	const { users } = options;
-	if (!("id" in users.shape))
-		throw new TypeError("Auth's users table needs an id column");
 	for (const [name, column] of Object.entries(users.columns))
 		if (
 			name !== "id" &&
@@ -65,7 +63,8 @@ export function configure<U extends Auth.Users>(
 	};
 	const page = options.page ?? "/login";
 	const redirect = options.redirect ?? "/";
-	for (const path of [...Object.values(paths), page, redirect]) {
+	// Auth's own paths are fixed, only these come from options
+	for (const path of [page, redirect]) {
 		if (
 			!path.startsWith("/") ||
 			path.startsWith("//") ||
@@ -86,19 +85,9 @@ export function configure<U extends Auth.Users>(
 		`${paths.options}/register`,
 		`${paths.options}/login`,
 	];
-	if (new Set(endpoints).size !== endpoints.length || endpoints.includes(page))
-		throw new TypeError(
-			"Auth endpoint paths must be distinct from each other and the page",
-		);
+	if (endpoints.includes(page))
+		throw new TypeError("Auth's page cannot be one of its endpoints");
 	const fields = new Form(shape);
-	if (
-		fields.names.some((name) =>
-			["credential", "ceremony", "bootstrap"].includes(name),
-		)
-	)
-		throw new TypeError(
-			"Passkey forms reserve credential, ceremony, and bootstrap fields",
-		);
 
 	/** @returns The first field, such as an email, or the host, naming the passkey */
 	const name = (data: Form.Parse.Data<Shape>) => {
@@ -108,9 +97,7 @@ export function configure<U extends Auth.Users>(
 			: new URL(options.origin).hostname;
 	};
 
-	const values = (data: unknown) => {
-		if (!data || typeof data !== "object")
-			throw new TypeError("Invalid parsed form");
+	const values = (data: object) => {
 		// Both routes validate this application shape before selecting its transformed values.
 		return Object.fromEntries(
 			fields.names.map((name) => [name, Reflect.get(data, name)]),
@@ -134,13 +121,11 @@ export function configure<U extends Auth.Users>(
 			prompt ? "options" : "verify",
 		);
 		if (admission === true) return true;
-		if (!(admission instanceof Date))
-			throw new TypeError("Invalid auth admission result");
 		const now = Date.now();
-		const deadline = admission.getTime();
-		if (!Number.isSafeInteger(deadline))
-			throw new TypeError("Invalid auth retry deadline");
-		const retry = Math.min(now + 3600000, Math.max(now + 1000, deadline));
+		const retry = Math.min(
+			now + 3600000,
+			Math.max(now + 1000, admission.getTime()),
+		);
 		if (!prompt) {
 			back(c, method, retry);
 			return false;

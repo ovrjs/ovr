@@ -471,28 +471,11 @@ export class Route<
 	 * @returns The route, with converted `c.params` types
 	 */
 	params<P extends Route.ParamSchemas<Pattern>>(
+		// a name the pattern does not have is a type error
 		schemas: P,
 	): Route.Of<Kind, Pattern, Route.Converted<Params, P>, Shape> {
 		this.#configure("params");
 		this.#before("params");
-
-		// whole names, so "i" is not taken for ":id"
-		const names = this.pattern
-			.split("/")
-			.flatMap((part) =>
-				part.startsWith(":")
-					? [part.slice(1)]
-					: part.endsWith("*")
-						? ["*"]
-						: [],
-			);
-		for (const name in schemas) {
-			if (!names.includes(name)) {
-				throw new TypeError(
-					`Route "${this.pattern}" has no parameter "${name}".`,
-				);
-			}
-		}
 
 		this.#paramSchemas = { ...this.#paramSchemas, ...schemas } as Record<
 			string,

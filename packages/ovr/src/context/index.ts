@@ -191,16 +191,15 @@ export class Context<
 	 * - [307 Temporary Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/307)
 	 * - [308 Permanent Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/308)
 	 */
-	redirect(
-		location: string | URL | Route,
+	redirect<L extends string | URL | Route>(
+		// a route with parameters needs values, which only route.url() is given
+		location: L extends Route<infer P>
+			? P extends `${string}${":" | "*"}${string}`
+				? never
+				: L
+			: L,
 		status: 301 | 302 | 303 | 307 | 308 = 302,
 	) {
-		// a pattern's parameters need values, which only route.url() is given
-		if (location instanceof Route && /[:*]/.test(location.pattern))
-			throw new TypeError(
-				`Redirect to "${location.pattern}" with route.url({ params })`,
-			);
-
 		this.res.body = null;
 		this.res.status = status;
 		this.res.headers.set(

@@ -189,11 +189,7 @@ export class State {
 	/** Replace the current session and issue a new signed, secure cookie. */
 	async login(user: string) {
 		this.#origin();
-		if (
-			typeof user !== "string" ||
-			!user.trim() ||
-			Codec.encode(user).length > 1024
-		)
+		if (!user.trim() || Codec.encode(user).length > 1024)
 			throw new TypeError("Auth user ID must contain 1 to 1024 UTF-8 bytes");
 		const previous = await this.session();
 		if (previous) await this.options.sessions.delete(previous.id);

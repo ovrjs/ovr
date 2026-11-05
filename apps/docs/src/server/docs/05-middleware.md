@@ -165,7 +165,7 @@ The first argument names the limiter's buckets. Name each limiter: two with the 
 
 `database` is required. Optional settings are `limit` (default 60), `interval` (milliseconds, default a minute), and `key`. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
-Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/08-database#migrate) creates it before your own migrations; `new Limiter()` throws when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
+Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/08-database#migrate) creates it before your own migrations; `new Limiter()` is a type error when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
 
 ```ts
 const database = new Database(pool, [posts, Limiter.table]);

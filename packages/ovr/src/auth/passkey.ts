@@ -91,14 +91,6 @@ export class Passkey {
 		route: T,
 	) {
 		if (!Passkey.#routes.has(route)) {
-			if (
-				route.names?.some((v) =>
-					["credential", "ceremony", "bootstrap"].includes(v),
-				)
-			)
-				throw new TypeError(
-					"Passkey forms reserve credential, ceremony, and bootstrap fields",
-				);
 			if (route.extend) Object.assign(route, route.extend(Passkey.#fields));
 			Passkey.#routes.add(route);
 		}
@@ -112,10 +104,6 @@ export class Passkey {
 		options: Passkey.Options,
 	) {
 		this.#origin();
-		if (!Passkey.#routes.has(route))
-			throw new TypeError(
-				"Prepare passkey routes at startup with Passkey.prepare()",
-			);
 		const browser = this.#auth.browser(true);
 		const user = method === "register" ? crypto.randomUUID() : undefined;
 		this.#c.res.headers.set("cache-control", "no-store");

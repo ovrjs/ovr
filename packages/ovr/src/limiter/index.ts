@@ -22,7 +22,9 @@ export namespace Limiter {
 	/** Shared Postgres storage, with a default policy of 60 requests per minute. */
 	export interface Options extends Partial<Policy> {
 		/** Database containing `Limiter.table`, shared by every instance. */
-		readonly database: Database;
+		readonly database: Database & {
+			readonly [Name in (typeof Limiter.table)["name"]]: typeof Limiter.table;
+		};
 		/** Override trusted-IP keying, for example with an authenticated user ID. Missing keys fail closed. */
 		readonly key?: (
 			c: Context,
@@ -72,12 +74,6 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 	 * @param name Stable name of the policy's buckets. Limiters with the same name and policy share them, across every server using the database.
 	 */
 	constructor(name: string, options: Limiter.Options) {
-		if (typeof options?.database?.sql !== "function")
-			throw new TypeError("Limiter requires a database");
-		if (Reflect.get(options.database, Limiter.table.name) !== Limiter.table)
-			throw new TypeError(
-				"Limiter's table is missing from the database, add Limiter.table to its tables",
-			);
 		this.#options = { limit: 60, interval: 60000, ...options };
 		for (const [name, value] of Object.entries({
 			limit: this.#options.limit,
@@ -90,8 +86,7 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 			)
 				throw new TypeError(`Invalid limiter ${name}`);
 		}
-		if (typeof name !== "string" || !name || name.length > 512)
-			throw new TypeError("Invalid limiter name");
+		if (name.length > 512) throw new TypeError("Invalid limiter name");
 		this.#name = name;
 	}
 

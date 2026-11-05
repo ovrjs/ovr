@@ -219,7 +219,7 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1` to `auth:3` and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` throws when they are missing from its database.
+`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1` to `auth:3` and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` is a type error when they or the users table are missing from its database.
 
 ```ts
 const database = new Database(pool, [users, posts, ...Auth.tables]);
