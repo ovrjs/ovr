@@ -207,14 +207,11 @@ export class Multipart extends Request {
 	/** Owned storage for headers and boundaries spanning input chunks. */
 	readonly #scratch: Uint8Array<ArrayBuffer>;
 
-	/** Opening boundary needle */
+	/** First delimiter, which opens the first part or closes an empty form */
 	readonly #opening: Needle;
 
 	/** Part boundary needle */
 	readonly #boundary: Needle;
-
-	/** Closing delimiter, all a form without fields sends */
-	readonly #closing: string;
 
 	/** Where valid data ends, valid < #valid >= invalid or empty space */
 	#valid = 0;
@@ -263,9 +260,8 @@ export class Multipart extends Request {
 
 		Object.assign(this.#options, options);
 		this.#reader = this.body.getReader();
-		this.#opening = new Needle(`--${boundary}\r\n`);
+		this.#opening = new Needle(`--${boundary}`);
 		this.#boundary = new Needle(`\r\n--${boundary}`);
-		this.#closing = `--${boundary}--`;
 
 		this.#scratch = new Uint8Array(
 			new ArrayBuffer(
@@ -515,11 +511,33 @@ export class Multipart extends Request {
 		return true;
 	}
 
-	/** @returns The unread data holds the closing delimiter of a form without parts */
-	#closes() {
-		return Codec.decode(
-			this.#memory.subarray(this.#offset, this.#valid),
-		).includes(this.#closing);
+	/**
+	 * Reads what follows a delimiter: `--` ends the body, a new line starts
+	 * the next part's headers, which it is left in front of.
+	 *
+	 * @returns `true` when the delimiter closes the body
+	 * @throws {Malformed} Otherwise, since RFC 2046 does not let the boundary
+	 * start a line of content, as in `--boundary-suffix`
+	 */
+	async #closed() {
+		// the two bytes after the boundary may be in the next chunk
+		while (
+			this.#valid - this.#offset < 2 &&
+			!this.#read(await this.#reader.read())
+		);
+
+		if (this.#valid - this.#offset > 1) {
+			const first = this.#memory[this.#offset];
+			const second = this.#memory[this.#offset + 1];
+			if (first === 45 && second === 45) {
+				// done, drain any epilogue without parsing it
+				while (!this.#read(await this.#reader.read(), false));
+				return true;
+			}
+			if (first === 13 && second === 10) return false;
+		}
+
+		throw new Malformed("Invalid Boundary");
 	}
 
 	/** @yields Multipart form data `Part`(s) */
@@ -527,14 +545,11 @@ export class Multipart extends Request {
 		let complete = false;
 
 		try {
-			if (!(await this.#findConcat(this.#opening))) {
-				// a form without fields sends only the closing delimiter
-				if (!this.#closes()) throw new Malformed("Missing Opening Boundary");
-				complete = true;
-				return;
-			}
+			if (!(await this.#findConcat(this.#opening)))
+				throw new Malformed("Missing Opening Boundary");
 
-			for (let i = 0; ; i++) {
+			// a form without fields sends only the closing delimiter
+			for (let i = 0; !(await this.#closed()); i++) {
 				const headers = await this.#findConcat(Multipart.#newLine);
 				// a body ends with the closing delimiter, after the last part
 				if (!headers) throw new Malformed("Unexpected End of Body");
@@ -550,25 +565,6 @@ export class Multipart extends Request {
 					await state.pulling?.catch(() => {});
 					if (!state.ended && !(await this.#skip(this.#boundary)))
 						throw new Malformed("Unexpected End of Body");
-				}
-
-				// the two bytes after the boundary may be in the next chunk
-				while (
-					this.#valid - this.#offset < 2 &&
-					!this.#read(await this.#reader.read())
-				);
-
-				if (
-					// ensures invalid characters aren't used to determine if it's done
-					this.#valid - this.#offset > 1 &&
-					// check for --
-					// if not done it would be \r\nNEXT-HEADER
-					this.#memory[this.#offset] === 45 &&
-					this.#memory[this.#offset + 1] === 45
-				) {
-					// done, drain any epilogue
-					while (!this.#read(await this.#reader.read(), false));
-					break;
 				}
 			}
 

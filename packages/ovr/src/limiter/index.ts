@@ -5,6 +5,48 @@ import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
 import { Time } from "../util/index.js";
 
+/**
+ * Internal to ovr, which counts each client this way.
+ *
+ * @param value Client IP
+ * @returns The IPv4 address, or the IPv6 /64 network, one home or office
+ */
+export function network(value: string | undefined) {
+	if (!value || value.length > 64 || !/^[\da-f:.]+$/i.test(value)) return;
+	if (!value.includes(":"))
+		return value.split(".").length === 4 &&
+			value
+				.split(".")
+				.every((v) => /^(0|[1-9]\d{0,2})$/.test(v) && Number(v) <= 255)
+			? value
+			: undefined;
+	let host: string;
+	try {
+		host = new URL(`http://[${value}]`).hostname;
+	} catch {
+		return;
+	}
+	const [head = "", tail = ""] = host.slice(1, -1).split("::");
+	const first = head ? head.split(":") : [];
+	const last = tail ? tail.split(":") : [];
+	const groups: string[] = [
+		...first,
+		...Array<string>(8 - first.length - last.length).fill("0"),
+		...last,
+	];
+	// IPv4-mapped IPv6 addresses share their IPv4 budget, rather than one giant ::ffff /64 bucket.
+	if (groups.slice(0, 5).every((v) => v === "0") && groups[5] === "ffff") {
+		const high = parseInt(groups[6]!, 16);
+		const low = parseInt(groups[7]!, 16);
+		return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+	}
+	return (
+		groups
+			.map((v, i) => (i < 4 ? parseInt(v, 16).toString(16) : "0"))
+			.join(":") + "/64"
+	);
+}
+
 export namespace Limiter {
 	/**
 	 * Request capabilities available before parsing a body, including the
@@ -94,7 +136,7 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 	async check(c: Limiter.Context, scope = ""): Promise<true | Date> {
 		const identity = this.#options.key
 			? await this.#options.key(c)
-			: Limiter.#ip(c.ip);
+			: network(c.ip);
 		if (typeof identity !== "string" || !identity || identity.length > 1024)
 			throw new LimitIssue(
 				"Rate limiting requires a trusted client IP in App.fetch(request, { ip }), or an explicit authenticated key",
@@ -174,46 +216,6 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 
 		return (
 			now + Math.max(1000, Math.ceil(((1 - available) * interval) / limit))
-		);
-	}
-
-	/**
-	 * @param value Client IP
-	 * @returns The IPv4 address, or the IPv6 /64 network, one home or office
-	 */
-	static #ip(value: string | undefined) {
-		if (!value || value.length > 64 || !/^[\da-f:.]+$/i.test(value)) return;
-		if (!value.includes(":"))
-			return value.split(".").length === 4 &&
-				value
-					.split(".")
-					.every((v) => /^(0|[1-9]\d{0,2})$/.test(v) && Number(v) <= 255)
-				? value
-				: undefined;
-		let host: string;
-		try {
-			host = new URL(`http://[${value}]`).hostname;
-		} catch {
-			return;
-		}
-		const [head = "", tail = ""] = host.slice(1, -1).split("::");
-		const first = head ? head.split(":") : [];
-		const last = tail ? tail.split(":") : [];
-		const groups: string[] = [
-			...first,
-			...Array<string>(8 - first.length - last.length).fill("0"),
-			...last,
-		];
-		// IPv4-mapped IPv6 addresses share their IPv4 budget, rather than one giant ::ffff /64 bucket.
-		if (groups.slice(0, 5).every((v) => v === "0") && groups[5] === "ffff") {
-			const high = parseInt(groups[6]!, 16);
-			const low = parseInt(groups[7]!, 16);
-			return [high >> 8, high & 255, low >> 8, low & 255].join(".");
-		}
-		return (
-			groups
-				.map((v, i) => (i < 4 ? parseInt(v, 16).toString(16) : "0"))
-				.join(":") + "/64"
 		);
 	}
 }

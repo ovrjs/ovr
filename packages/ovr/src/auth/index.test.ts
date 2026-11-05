@@ -2552,6 +2552,24 @@ describe("agents", () => {
 	}
 
 	const verifier = "v".repeat(43);
+	test("the token endpoint answers its advertised browser preflight", async () => {
+		const { app } = agents();
+		const res = await app.fetch(`${origin}/oauth/token`, {
+			method: "OPTIONS",
+			headers: {
+				origin: "https://agent.example",
+				"sec-fetch-site": "cross-site",
+				"access-control-request-method": "POST",
+				"access-control-request-headers": "authorization",
+			},
+		});
+		expect(res.status).toBe(204);
+		expect(res.headers.get("access-control-allow-origin")).toBe("*");
+		expect(res.headers.get("access-control-allow-headers")).toContain(
+			"authorization",
+		);
+	});
+
 	const challenge = async () =>
 		Codec.Base64Url.encode(
 			new Uint8Array(
@@ -3856,6 +3874,30 @@ describe("agents", () => {
 				expect((await authorize(app, agent)).status).toBe(503);
 			} finally {
 				clock.mockRestore();
+			}
+		});
+
+		test("rotating IPv6 addresses in one /64 cannot take extra download slots", async () => {
+			const { app } = agents();
+			const release = Promise.withResolvers<void>();
+			vi.mocked(Metadata.fetch).mockImplementation(async (url) => {
+				if (url.href !== agent) await release.promise;
+				return documents[url.href];
+			});
+			const waiting = [1, 2].map((i) =>
+				authorize(
+					app,
+					`https://slow${i}.example/client.json`,
+					`2001:db8:1::${i}`,
+				),
+			);
+			try {
+				await vi.waitFor(() => expect(Metadata.fetch).toHaveBeenCalledTimes(2));
+				expect((await authorize(app, agent, "2001:db8:1::3")).status).toBe(503);
+				expect(Metadata.fetch).toHaveBeenCalledTimes(2);
+			} finally {
+				release.resolve();
+				await Promise.all(waiting);
 			}
 		});
 

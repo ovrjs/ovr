@@ -1,7 +1,7 @@
 import { type App, agents, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Route } from "../route/index.js";
+import { Route, parameters } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec, Header, Method, Mime, Size } from "../util/index.js";
 
@@ -299,7 +299,11 @@ export class Mcp {
 			typeof message !== "object" ||
 			Array.isArray(message) ||
 			(message as Json).jsonrpc !== "2.0" ||
-			typeof (message as Json).method !== "string"
+			typeof (message as Json).method !== "string" ||
+			// MCP request IDs are strings or integers
+			("id" in message &&
+				typeof message.id !== "string" &&
+				!Number.isSafeInteger(message.id))
 		) {
 			throw new RpcError(-32600, "Invalid request", 400);
 		}
@@ -428,16 +432,9 @@ export class Mcp {
 				return {
 					resourceTemplates: this.#pages(true).map((route) => ({
 						uriTemplate: new URL(
-							route.pattern
-								.split("/")
-								.map((segment) =>
-									segment === "*"
-										? "{+wildcard}"
-										: segment.startsWith(":")
-											? `{${segment.slice(1)}}`
-											: segment,
-								)
-								.join("/"),
+							route.pattern.replace(parameters, (_, name?: string) =>
+								name ? `{${name}}` : "{+wildcard}",
+							),
 							c.url,
 						).href
 							.replaceAll("%7B", "{")
@@ -485,10 +482,10 @@ export class Mcp {
 			const form = route as Route.Post;
 			// names are unique, app.use() throws for two routes sharing one
 
-			const params = route.pattern
-				.split("/")
-				.filter((segment) => segment.startsWith(":") || segment === "*")
-				.map((segment) => (segment === "*" ? "wildcard" : segment.slice(1)));
+			const params = Array.from(
+				route.pattern.matchAll(parameters),
+				([, name]) => name ?? "wildcard",
+			);
 
 			const properties: Json = {};
 			const required = new Set<string>();
@@ -566,24 +563,25 @@ export class Mcp {
 			return Mcp.#error(`Missing required parameter: ${missing.join(", ")}`);
 
 		const { route } = tool;
-		const pathname = route.pattern
-			.split("/")
-			.map((segment) =>
-				segment === "*"
-					? String(args.wildcard).split("/").map(encodeURIComponent).join("/")
-					: segment.startsWith(":")
-						? encodeURIComponent(String(args[segment.slice(1)]))
-						: segment,
-			)
-			.join("/");
+		let pathname: string;
+		try {
+			pathname = route.url({
+				params: Object.fromEntries(
+					tool.params.map((param) => [
+						param === "wildcard" ? "*" : param,
+						String(args[param]),
+					]),
+				),
+			} as never);
+		} catch (error) {
+			// a value such as `..` or `/host` would leave its place in the path
+			if (!(error instanceof TypeError)) throw error;
+			return Mcp.#error(`Parameters do not match ${route.pattern}`);
+		}
 
-		// a path, so an argument such as `/host` cannot change the origin
-		const url = new URL(c.url.origin + pathname);
-		// arguments such as `..` or a more specific pattern could select another route
-		if (
-			url.origin !== c.url.origin ||
-			this.#app!.find(route.method, url.pathname) !== route
-		)
+		const url = new URL(pathname, c.url.origin);
+		// a more specific pattern could select another route
+		if (this.#app!.find(route.method, url.pathname) !== route)
 			return Mcp.#error(`Parameters do not match ${route.pattern}`);
 
 		const read = route.method === Method.get;

@@ -864,6 +864,18 @@ describe("chained routes", () => {
 		});
 	});
 
+	test("a root wildcard cannot turn a form action into another origin", () => {
+		const save = Route.post("/*");
+		try {
+			const action = save.url({ params: { "*": "/outside.example/collect" } });
+			expect(new URL(action, "https://app.example").origin).toBe(
+				"https://app.example",
+			);
+		} catch (error) {
+			if (!(error instanceof TypeError)) throw error;
+		}
+	});
+
 	test("links encode parameter values", async () => {
 		const page = Route.get("/hello/:name");
 		// a value cannot add segments, a query, or a fragment

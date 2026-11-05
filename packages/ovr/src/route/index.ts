@@ -9,6 +9,13 @@ import type { Util } from "../util/index.js";
 export const freeze = Symbol("freeze");
 
 /**
+ * Matches a pattern's parameters, as the router reads them: `:name` up to the
+ * next slash, anywhere in a segment, and a final `*`, the wildcard, which
+ * has no name. Internal to ovr.
+ */
+export const parameters = /:([^/]+?)(?=\/|\*?$)|\*$/g;
+
+/**
  * Helper type to extract the route params (`:slug`) into a record.
  *
  * @template Pattern Route pattern to extract params from
@@ -558,28 +565,21 @@ export class Route<
 	): Route.Href<Pattern, O> {
 		const params = options?.params as Record<string, string> | undefined;
 		const path = params
-			? this.pattern
-					.split("/")
-					.map((part) => {
-						if (part.startsWith(":"))
-							return Route.#segment(params[part.slice(1)]!);
-
-						// the wildcard keeps its slashes, each of its segments is encoded,
-						// after any text before it in the pattern, as in `/files-*`
-						if (part.endsWith("*"))
-							return (
-								part.slice(0, -1) +
-								params["*"]!.split("/")
-									.map((segment) =>
-										segment ? Route.#segment(segment) : segment,
-									)
-									.join("/")
-							);
-
-						return part;
-					})
-					.join("/")
+			? this.pattern.replace(parameters, (_, name?: string) =>
+					name
+						? Route.#segment(params[name]!)
+						: // the wildcard keeps its slashes, each of its segments is encoded
+							params["*"]!.split("/")
+								.map((segment) => (segment ? Route.#segment(segment) : segment))
+								.join("/"),
+				)
 			: this.pattern;
+		// a value starting with a slash, such as a wildcard of `/host/path`,
+		// would make a path that browsers read as another origin
+		if (path.startsWith("//"))
+			throw new TypeError(
+				`Route path "${path}" would start with "//", which is read as another host`,
+			);
 		const { search, hash } = options ?? {};
 
 		return (path +

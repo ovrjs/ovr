@@ -578,27 +578,38 @@ class Base<T extends readonly Table.Any[]> {
 		let open = true;
 		let failure: unknown;
 		let broken: Error | undefined;
+		/** Queries started and not yet finished */
+		const running = new Set<Promise<unknown>>();
 
 		// only valid until the transaction ends, the connection returns to the pool
 		const client: Database.Client = {
 			query: async (text, values) => {
 				if (!open) throw new Error("Transaction has ended");
 
+				const query = connection.query(text, values);
+				const settled = query.catch(() => {});
+				running.add(settled);
 				try {
-					return await connection.query(text, values);
+					return await query;
 				} catch (error) {
 					// queries after an aborted statement fail too, keep the cause
 					if ((error as { code?: unknown } | null)?.code !== "25P02")
 						failure = error;
 
 					throw error;
+				} finally {
+					running.delete(settled);
 				}
 			},
 		};
 
 		try {
 			await connection.query("BEGIN");
-			const result = await fn(client).finally(() => (open = false));
+			const result = await fn(client).finally(async () => {
+				open = false;
+				// one the callback did not wait for may still fail and abort it
+				await Promise.all(running);
+			});
 
 			// COMMIT of an aborted transaction rolls back without an error
 			if (failure !== undefined)

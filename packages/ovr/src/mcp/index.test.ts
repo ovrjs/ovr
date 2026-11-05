@@ -460,6 +460,38 @@ describe("Mcp", () => {
 		expect(unknown.body.error.code).toBe(-32602);
 	});
 
+	test("an invalid request ID cannot execute a tool", async () => {
+		const { app, posts } = setup();
+		const init = request("tools/call", {
+			name: "post_posts_id_delete",
+			arguments: { id: "1" },
+		});
+		const res = await app.fetch("http://localhost/mcp", {
+			...init,
+			body: JSON.stringify({ ...JSON.parse(String(init.body)), id: {} }),
+		});
+		expect.soft(posts.has("1")).toBe(true);
+		expect(await res.json()).toMatchObject({
+			id: null,
+			error: { code: -32600 },
+		});
+	});
+
+	test("a tool passes a wildcard following a literal prefix to its handler", async () => {
+		const { app, rpc } = setup();
+		const files = Route.get("/file-*")
+			.describe("Read file")
+			.use((c) => c.text(c.params["*"]));
+		app.use(files);
+		const { body } = await rpc("tools/call", {
+			name: files.tool!.name,
+			arguments: { wildcard: "archive/report" },
+		});
+		expect(body.result.content).toEqual([
+			{ type: "text", text: "archive/report" },
+		]);
+	});
+
 	test("described pages are resources", async () => {
 		const { app, rpc } = setup();
 		// undescribed pages are not served to agents

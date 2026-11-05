@@ -659,6 +659,23 @@ describe.each(drivers)("$name", (driver) => {
 		},
 	);
 
+	test.skipIf(!driver.errors)(
+		"an in-flight statement cannot silently roll back an acknowledged write",
+		async () => {
+			await db.sql`CREATE TABLE other (id integer)`;
+			const [transaction] = await Promise.allSettled([
+				db.sql(async (t) => {
+					await t.sql`INSERT INTO other VALUES (1)`;
+					// Both queries start. The callback finishes after the first result.
+					await Promise.race([t.sql`SELECT 1`, t.sql`SELECT 1 / 0`]);
+					return "saved";
+				}),
+			]);
+			expect(await db.sql`SELECT * FROM other`).toEqual([]);
+			expect(transaction).toMatchObject({ status: "rejected" });
+		},
+	);
+
 	test("a lazy query cannot execute after its transaction releases the connection", async () => {
 		await db.sql`CREATE TABLE other (id integer)`;
 		const result = await db.sql(async (t) => ({

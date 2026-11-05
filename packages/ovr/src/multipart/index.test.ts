@@ -1467,6 +1467,36 @@ describe("hostile and malformed bodies", () => {
 		).rejects.toThrow(TypeError);
 	});
 
+	it("a boundary prefix inside file data cannot introduce a field", async () => {
+		const content =
+			'photo\r\n--XyZsuffix\r\nContent-Disposition: form-data; name="role"\r\n\r\nadmin';
+		const multipart = new Multipart(
+			request("XyZ", [
+				encode(
+					`--XyZ\r\nContent-Disposition: form-data; name="upload"; filename="a.txt"\r\n\r\n${content}\r\n--XyZ--\r\n`,
+				),
+			]),
+		);
+		try {
+			expect(await fields(multipart)).toEqual([["upload", content]]);
+		} catch (error) {
+			// A strict parser may reject the malformed delimiter instead.
+			if (!(error instanceof TypeError)) throw error;
+		}
+	});
+
+	it("does not parse fields from the epilogue of an empty form", async () => {
+		const multipart = new Multipart(
+			request("XyZ", [
+				encode("--XyZ--\r\n"),
+				encode(
+					'--XyZ\r\nContent-Disposition: form-data; name="role"\r\n\r\nadmin\r\n--XyZ--\r\n',
+				),
+			]),
+		);
+		expect(await fields(multipart)).toEqual([]);
+	});
+
 	it("accepts a form without fields, which sends only the closing delimiter", async () => {
 		expect(
 			await fields(new Multipart(request("XyZ", [encode("--XyZ--\r\n")]))),

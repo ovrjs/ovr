@@ -1,7 +1,7 @@
 import { crossOrigin } from "../app/index.js";
 import type { Context } from "../context/index.js";
 import { jsx } from "../jsx/index.js";
-import { Limiter } from "../limiter/index.js";
+import { Limiter, network } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Field } from "../schema/index.js";
@@ -173,7 +173,8 @@ export function oauth(
 
 		let download = pending.get(id);
 		if (!download) {
-			const ip = c.ip ?? "";
+			// a client's network, so rotating IPv6 addresses do not add slots
+			const ip = network(c.ip) ?? "";
 			const slots = () =>
 				pending.size < downloads.concurrent &&
 				(active.get(ip) ?? 0) < downloads.each;
@@ -278,8 +279,10 @@ export function oauth(
 	const routes: Route[] = [];
 
 	const cross = (route: Route) => {
-		crossOrigin.add(route);
-		routes.push(route, new Route("OPTIONS", route.pattern).use(cors));
+		// browsers send the preflight cross-site too, without credentials
+		const preflight = new Route("OPTIONS", route.pattern).use(cors);
+		crossOrigin.add(route).add(preflight);
+		routes.push(route, preflight);
 		return route;
 	};
 
