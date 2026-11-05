@@ -3092,6 +3092,38 @@ describe("agents", () => {
 		expect(await refreshed.json()).toEqual({ error: "invalid_grant" });
 	});
 
+	test("replaying a used code minutes later still revokes its tokens", async () => {
+		const now = Date.now();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		try {
+			const { app, client_id, redirect } = await connect();
+			const exchange = () =>
+				token(app, {
+					grant_type: "authorization_code",
+					client_id,
+					code: redirect.searchParams.get("code")!,
+					redirect_uri: "http://127.0.0.1:5123/callback",
+					code_verifier: verifier,
+				});
+			const issued = await (await exchange()).json();
+
+			// past the code's own minute, and pruning has run
+			clock.mockReturnValue(now + 3 * Time.minute);
+			await storage.tokens.set("prune-trigger", {
+				kind: "access",
+				user,
+				client: client_id,
+				resource: mcp,
+				scope: "",
+				expiration: now + 4 * Time.minute,
+			});
+			expect((await exchange()).status).toBe(400);
+			expect((await call(app, issued.access_token, "stolen")).status).toBe(401);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
 	test("replaying a spent refresh token revokes its active successor", async () => {
 		const { app } = agents();
 		await db.sql`INSERT INTO ${db.users} (id, email) VALUES (${user}, 'user@example.com')`;
@@ -3193,9 +3225,8 @@ describe("agents", () => {
 			scope: "unknown:permission",
 		});
 		const res = await browser("/oauth/authorize?" + query);
-		expect(
-			new URL(res.headers.get("location")!).searchParams.get("error"),
-		).toBe("invalid_scope");
+		expect(res.status).toBe(400);
+		expect(await res.text()).toContain("(invalid_scope)");
 	});
 
 	test("the user approves, and the agent acts as the user", async () => {
@@ -3481,8 +3512,10 @@ describe("agents", () => {
 		const authorize = (query: Record<string, string>) =>
 			browser(`/oauth/authorize?${new URLSearchParams(query)}`);
 
-		// only metadata documents identify agents
+		// only metadata documents identify agents, by their exact URL
 		for (const client_id of [
+			"https://evil.example\\@agent.example/client.json",
+			"HTTPS://agent.example/client.json",
 			"nope",
 			"https://agent.example/missing.json",
 			"https://agent.example/unsafe.json",
@@ -3500,35 +3533,39 @@ describe("agents", () => {
 			).status,
 		).toBe(400);
 
-		const error = async (query: Record<string, string>) =>
-			new URL(
-				(await authorize({ client_id: web, state: "s", ...query })).headers.get(
-					"location",
-				)!,
-			);
+		// errors before consent are answered here, never redirected to the
+		// client's callback, which would make this origin an open redirector
+		const error = async (query: Record<string, string>) => {
+			const res = await authorize({ client_id: web, state: "s", ...query });
+			expect(res.status).toBe(400);
+			expect(res.headers.get("location")).toBeNull();
+			return res.text();
+		};
 
-		const pkce = await error({ response_type: "code", resource: mcp });
-		expect(pkce.origin).toBe("https://agent.example");
-		expect(pkce.searchParams.get("error")).toBe("invalid_request");
-		expect(pkce.searchParams.get("state")).toBe("s");
-
-		const resource = await error({
-			response_type: "code",
-			code_challenge: await challenge(),
-			code_challenge_method: "S256",
-		});
-		expect(resource.searchParams.get("error")).toBe("invalid_target");
-
-		// only the mounted MCP endpoint, not any URL on the origin
-		for (const other of [`${origin}/notes`, `${mcp}/`, `${mcp}?x=1`]) {
-			const unknown = await error({
+		expect(await error({ resource: mcp })).toContain(
+			"(unsupported_response_type)",
+		);
+		expect(await error({ response_type: "code", resource: mcp })).toContain(
+			"(invalid_request)",
+		);
+		expect(
+			await error({
 				response_type: "code",
 				code_challenge: await challenge(),
 				code_challenge_method: "S256",
-				resource: other,
-			});
-			expect(unknown.searchParams.get("error")).toBe("invalid_target");
-		}
+			}),
+		).toContain("(invalid_target)");
+
+		// only the mounted MCP endpoint, not any URL on the origin
+		for (const other of [`${origin}/notes`, `${mcp}/`, `${mcp}?x=1`])
+			expect(
+				await error({
+					response_type: "code",
+					code_challenge: await challenge(),
+					code_challenge_method: "S256",
+					resource: other,
+				}),
+			).toContain("(invalid_target)");
 	});
 
 	test("client ID metadata documents", async () => {
@@ -3601,9 +3638,16 @@ describe("agents", () => {
 	});
 
 	describe("metadata document downloads", () => {
-		const authorize = (app: App, client_id: string, from = ip) =>
+		// a complete request, so a found agent goes on to sign in (303)
+		const authorize = async (app: App, client_id: string, from = ip) =>
 			app.fetch(
-				`${origin}/oauth/authorize?${new URLSearchParams({ client_id })}`,
+				`${origin}/oauth/authorize?${new URLSearchParams({
+					response_type: "code",
+					client_id,
+					code_challenge: await challenge(),
+					code_challenge_method: "S256",
+					resource: mcp,
+				})}`,
 				{ ip: from },
 			);
 
@@ -3619,10 +3663,19 @@ describe("agents", () => {
 			expect((await authorize(app, agent)).status).toBe(303);
 			expect(Metadata.fetch).toHaveBeenCalledTimes(1);
 
-			// unknown agents are downloaded again
-			await authorize(app, "https://agent.example/missing.json");
-			await authorize(app, "https://agent.example/missing.json");
-			expect(Metadata.fetch).toHaveBeenCalledTimes(3);
+			// an unknown agent is remembered for a minute, not downloaded again
+			const now = Date.now();
+			const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+			try {
+				await authorize(app, "https://agent.example/missing.json");
+				await authorize(app, "https://agent.example/missing.json");
+				expect(Metadata.fetch).toHaveBeenCalledTimes(2);
+				clock.mockReturnValue(now + Time.minute + 1);
+				await authorize(app, "https://agent.example/missing.json");
+				expect(Metadata.fetch).toHaveBeenCalledTimes(3);
+			} finally {
+				clock.mockRestore();
+			}
 		});
 
 		test("each IP is limited", async () => {
@@ -3635,30 +3688,58 @@ describe("agents", () => {
 			expect((await authorize(app, agent, "203.0.113.10")).status).toBe(303);
 		});
 
-		test("downloads from each host are limited", async () => {
+		test("one client's downloads from a host cannot block the host for others", async () => {
 			const { app } = agents();
 
-			for (let i = 0; i < 30; i++)
+			// junk client IDs on the real agent's host, from one IP
+			for (let i = 0; i < 10; i++)
 				expect(
 					(
 						await authorize(
 							app,
 							`https://agent.example/${i}.json`,
-							`198.51.100.${i}`,
+							"198.51.100.7",
 						)
 					).status,
 				).toBe(400);
 			const limited = await authorize(
 				app,
-				"https://agent.example/30.json",
-				"198.51.100.30",
+				"https://agent.example/10.json",
+				"198.51.100.7",
 			);
 			expect(limited.status).toBe(503);
-			expect(Metadata.fetch).toHaveBeenCalledTimes(30);
+			expect(Metadata.fetch).toHaveBeenCalledTimes(10);
 
-			// other hosts and found agents are unaffected
-			await authorize(app, "https://other.example/client.json");
-			expect(Metadata.fetch).toHaveBeenCalledTimes(31);
+			// everyone else still connects the real agent from that host
+			expect((await authorize(app, agent, "192.0.2.44")).status).toBe(303);
+			expect(Metadata.fetch).toHaveBeenCalledTimes(11);
+		});
+
+		test("one IP holds at most two downloads at once", async () => {
+			const { app } = agents();
+			const { promise, resolve } = Promise.withResolvers<void>();
+			vi.mocked(Metadata.fetch).mockImplementation(async (url) => {
+				await promise;
+				return documents[url.href];
+			});
+
+			const slow = [0, 1].map((i) =>
+				authorize(app, `https://agent${i}.example/client.json`, "198.51.100.7"),
+			);
+			await vi.waitFor(() => expect(Metadata.fetch).toHaveBeenCalledTimes(2));
+			const third = await authorize(
+				app,
+				"https://agent2.example/client.json",
+				"198.51.100.7",
+			);
+			expect(third.status).toBe(503);
+
+			// another IP is not held up
+			const other = authorize(app, agent, "192.0.2.44");
+			await vi.waitFor(() => expect(Metadata.fetch).toHaveBeenCalledTimes(3));
+			resolve();
+			expect((await other).status).toBe(303);
+			await Promise.all(slow);
 		});
 
 		test("downloads at once are limited", async () => {

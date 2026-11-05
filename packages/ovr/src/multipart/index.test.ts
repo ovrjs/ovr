@@ -1386,3 +1386,127 @@ describe("Multipart input ownership", () => {
 		expect(i).toBe(entries.length);
 	});
 });
+
+describe("hostile and malformed bodies", () => {
+	const encode = (text: string) => new TextEncoder().encode(text);
+	const request = (boundary: string, chunks: Uint8Array[]) =>
+		new Request("http://localhost", {
+			method: "POST",
+			headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+			body: streamChunks(chunks),
+			...{ duplex: "half" },
+		});
+	const fields = async (multipart: Multipart) => {
+		const found: [string | null, string][] = [];
+		for await (const part of multipart)
+			found.push([part.name, await part.text()]);
+		return found;
+	};
+
+	it("skips the rest of a part its reader stopped reading, so it cannot inject parts", async () => {
+		const injected = `\r\nContent-Disposition: form-data; name="role"\r\n\r\nadmin`;
+		const multipart = new Multipart(
+			request("XyZ", [
+				encode(
+					'--XyZ\r\nContent-Disposition: form-data; name="avatar"; filename="a.png"\r\n\r\nfirst chunk',
+				),
+				encode(injected),
+				encode(
+					'\r\n--XyZ\r\nContent-Disposition: form-data; name="title"\r\n\r\nhello\r\n--XyZ--\r\n',
+				),
+			]),
+		);
+		const names: (string | null)[] = [];
+		for await (const part of multipart) {
+			names.push(part.name);
+			if (part.name === "avatar") {
+				// sniff the first chunk, then stop reading
+				const reader = part.body.getReader();
+				await reader.read();
+				await reader.cancel();
+			} else await part.text();
+		}
+		expect(names).toEqual(["avatar", "title"]);
+	});
+
+	it("a reader left on a part gets nothing once the parser moves on", async () => {
+		const multipart = new Multipart(
+			request("XyZ", [
+				encode('--XyZ\r\nContent-Disposition: form-data; name="a"\r\n\r\none'),
+				encode(
+					'two\r\n--XyZ\r\nContent-Disposition: form-data; name="b"\r\n\r\nbee\r\n--XyZ--',
+				),
+			]),
+		);
+		const iterator = multipart[Symbol.asyncIterator]();
+		const first = (await iterator.next()).value!;
+		const reader = first.body.getReader();
+		await reader.read();
+		reader.releaseLock();
+		const second = (await iterator.next()).value!;
+		expect(await second.text()).toBe("bee");
+		await iterator.return?.();
+	});
+
+	it.each([
+		[
+			"a part that ends without its boundary",
+			'--XyZ\r\nContent-Disposition: form-data; name="title"\r\n\r\nhello wor',
+		],
+		[
+			"a body without the closing delimiter",
+			'--XyZ\r\nContent-Disposition: form-data; name="title"\r\n\r\nhello\r\n--X',
+		],
+		[
+			"a body that never opens a part",
+			'Content-Disposition: form-data; name="title"\r\n\r\nhello',
+		],
+	])("rejects %s", async (_, body) => {
+		await expect(
+			fields(new Multipart(request("XyZ", [encode(body)]))),
+		).rejects.toThrow(TypeError);
+	});
+
+	it("accepts a form without fields, which sends only the closing delimiter", async () => {
+		expect(
+			await fields(new Multipart(request("XyZ", [encode("--XyZ--\r\n")]))),
+		).toEqual([]);
+	});
+
+	it("searches a hostile boundary in linear time", async () => {
+		const boundary = "a".repeat(70);
+		const chunk = encode("a".repeat(64 * 1024));
+		const body = [
+			encode(
+				`--${boundary}\r\nContent-Disposition: form-data; name="f"\r\n\r\n`,
+			),
+			...Array.from({ length: 128 }, () => chunk),
+			encode(`\r\n--${boundary}--`),
+		];
+		const started = performance.now();
+		const found = await fields(new Multipart(request(boundary, body)));
+		// 8 MB of near matches: about a second with a quadratic search
+		expect(performance.now() - started).toBeLessThan(500);
+		expect(found[0]![1].length).toBe(128 * 64 * 1024);
+	});
+});
+
+describe("quoted header parameters", () => {
+	it("keeps a ; or an escaped quote inside a quoted value", async () => {
+		const body =
+			'--XyZ\r\nContent-Disposition: form-data; name="na;me"; filename="notes;v2 \\"final\\".txt"\r\n\r\ncontent\r\n--XyZ--\r\n';
+		const multipart = new Multipart(
+			new Request("http://localhost", {
+				method: "POST",
+				headers: { "content-type": "multipart/form-data; boundary=XyZ" },
+				body,
+			}),
+		);
+		const parts: [string | null, string | null][] = [];
+		for await (const part of multipart) {
+			parts.push([part.name, part.filename]);
+			await part.text();
+		}
+		expect(parts).toEqual([["na;me", 'notes;v2 "final".txt']]);
+	});
+});

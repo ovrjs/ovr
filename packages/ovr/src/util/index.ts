@@ -153,7 +153,8 @@ export class Header {
 	 * @returns Map containing each key=value pair
 	 */
 	static params(header: string | null) {
-		const parsed: Record<string, string> = {};
+		// without a prototype, so a key such as "__proto__" is only a key
+		const parsed: Record<string, string> = Object.create(null);
 
 		if (header) {
 			const headerLength = header.length;
@@ -173,17 +174,22 @@ export class Header {
 				}
 
 				const key = header.slice(cursor, equal).trim();
+				let value: string;
 
+				// a quoted value ends at its closing quote, it can contain ";"
+				let start = equal + 1;
+				while (header[start] === " " || header[start] === "\t") start++;
+				if (header[start] === '"') {
+					value = "";
+					let i = start + 1;
+					for (; i < headerLength && header[i] !== '"'; i++)
+						value += header[i] === "\\" ? (header[++i] ?? "") : header[i];
+					semi = header.indexOf(";", i);
+					if (semi === -1) semi = headerLength;
+				} else value = header.slice(start, semi).trim();
+
+				// first value should take precedence
 				if (!(key in parsed)) {
-					// first value should take precedence
-
-					let value = header.slice(equal + 1, semi).trim();
-
-					if (value[0] === '"' && value[value.length - 1] === '"') {
-						// remove quotes
-						value = value.slice(1, -1);
-					}
-
 					if (value.includes("%")) {
 						// most values don't need to be decoded
 						try {

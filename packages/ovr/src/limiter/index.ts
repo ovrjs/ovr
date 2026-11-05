@@ -6,10 +6,13 @@ import { Table } from "../table/index.js";
 import { Time } from "../util/index.js";
 
 export namespace Limiter {
-	/** Request capabilities available before parsing a body. */
+	/**
+	 * Request capabilities available before parsing a body, including the
+	 * session, so a `key` can count each signed-in user.
+	 */
 	export type Context = Pick<
 		ContextType,
-		"req" | "url" | "ip" | "cookie" | "res"
+		"req" | "url" | "ip" | "cookie" | "res" | "session"
 	>;
 	/** A token bucket allows an initial burst, then replenishes continuously. */
 	export interface Policy {

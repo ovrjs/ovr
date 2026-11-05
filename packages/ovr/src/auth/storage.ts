@@ -335,8 +335,14 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 					for (const [value, issue] of Object.entries(issued))
 						await this.#insert(t.sql, value, { ...issue, family: row.family });
 
+					// kept as long as what it was exchanged for, so replaying it later
+					// still finds the family and revokes it
+					const until = Math.max(
+						row.expiration,
+						...Object.values(issued).map((issue) => issue.expiration),
+					);
 					const spent = await t.sql`
-						UPDATE ${Storage.tokens} SET kind = 'spent'
+						UPDATE ${Storage.tokens} SET kind = 'spent', expiration = ${until}
 						WHERE id = ${id} AND kind = ${kind}
 						RETURNING id
 					`;

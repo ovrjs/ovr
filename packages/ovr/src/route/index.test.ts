@@ -194,7 +194,7 @@ describe("Route schema helpers", () => {
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
 
-		const html = await new Render(null).string(profile.Form({}));
+		const html = await Render.string(profile.Form({}));
 
 		expect(html.includes('action="/profile"')).toBe(true);
 		expect(html.includes('method="GET"')).toBe(true);
@@ -209,7 +209,7 @@ describe("Route schema helpers", () => {
 		const state = new URL(
 			"http://localhost:5173/signup?tab=profile&_form=stale&_return=%2Fold#details",
 		);
-		const html = await new Render(null).string(submit.Form({ state }));
+		const html = await Render.string(submit.Form({ state }));
 
 		expect(
 			html.includes(
@@ -642,7 +642,7 @@ describe("editing records", () => {
 			file: "not a file",
 			note: null,
 		};
-		const html = await new Render(null).string(
+		const html = await Render.string(
 			update.Form({ params: { id: "1" }, values: post }),
 		);
 
@@ -654,7 +654,7 @@ describe("editing records", () => {
 
 		// submitted values restored from the URL override the record
 		const state = new URL("http://localhost:5173/posts/1?title=Typed");
-		const restored = await new Render(null).string(
+		const restored = await Render.string(
 			update.Form({ params: { id: "1" }, values: post, state }),
 		);
 
@@ -666,7 +666,7 @@ describe("editing records", () => {
 		const update = Route.post("/posts/:id")
 			.fields(fields)
 			.use((c) => c.text("ok"));
-		const html = await new Render(null).string([
+		const html = await Render.string([
 			update.Form({ params: { id: "1" }, submit: "Save changes" }),
 			update.Form({ params: { id: "1" } }),
 		]);
@@ -678,7 +678,7 @@ describe("editing records", () => {
 
 	test("Field and component accept initial values too", async () => {
 		const form = Form.from(fields);
-		const html = await new Render(null).string([
+		const html = await Render.string([
 			form.Field({ name: "title", values: { title: "One" } }),
 			form.component({ name: "body", values: { body: "Two" } }).Control(),
 		]);
@@ -692,7 +692,7 @@ describe("editing records", () => {
 			.fields({ body: Field.textarea() })
 			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
-		const html = await new Render(null).string(
+		const html = await Render.string(
 			update.Form({ params: { id: "1" }, values: { body } }),
 		);
 
@@ -716,7 +716,7 @@ describe("editing records", () => {
 				: parsed.invalid({ email: "Already registered" });
 			const state = new URL("https://example.com/edit");
 			for (const pair of result.search ?? []) state.searchParams.set(...pair);
-			const html = await new Render(null).string(
+			const html = await Render.string(
 				form.Fields({ state, values: { title: "Old title", tags: ["a"] } }),
 			);
 
@@ -773,7 +773,7 @@ describe("invalid after parsing", () => {
 describe("chained routes", () => {
 	test("forms are WebMCP tools for browser agents", async () => {
 		const render = (element: unknown) =>
-			new Render(null).string(element as Parameters<Render["string"]>[0]);
+			Render.string(element as Parameters<typeof Render.string>[0]);
 
 		// a form that may change data waits for the user to submit it
 		const create = Route.post("/posts")
@@ -849,6 +849,22 @@ describe("chained routes", () => {
 		page.url({ params: { id: "1" } });
 	});
 
+	test("params checks whole parameter names, and redirects need their values", async () => {
+		expect(() =>
+			// @ts-expect-error not a parameter of the pattern
+			Route.get("/items/:id").params({ i: Field.text() }),
+		).toThrow('has no parameter "i"');
+
+		const item = Route.get("/items/:id").use((c) => c.text(c.params.id));
+		const app = new App().use(
+			item,
+			Route.get("/go").use((c) => c.redirect(item, 303)),
+		);
+		await expect(app.fetch("http://localhost/go")).rejects.toThrow(
+			"route.url({ params })",
+		);
+	});
+
 	test("links encode parameter values", async () => {
 		const page = Route.get("/hello/:name");
 		// a value cannot add segments, a query, or a fragment
@@ -860,6 +876,21 @@ describe("chained routes", () => {
 			"/hello/a%20b?q=1",
 		);
 
+		// a value cannot leave its segment as a dot segment or by being empty
+		for (const name of ["..", ".", ""])
+			expect(() =>
+				Route.get("/users/:id/delete").url({ params: { id: name } }),
+			).toThrow("cannot be a path segment");
+		expect(() =>
+			Route.get("/files/*").url({ params: { "*": "../../admin" } }),
+		).toThrow("cannot be a path segment");
+		// an encoded dot stays text
+		expect(page.url({ params: { name: "%2e%2e" } })).toBe("/hello/%252e%252e");
+		// a wildcard after other text
+		expect(Route.get("/x*").url({ params: { "*": "a/b c" } })).toBe(
+			"/xa/b%20c",
+		);
+
 		// the wildcard keeps its slashes
 		const files = Route.get("/files/*");
 		expect(files.url({ params: { "*": "images/my logo?.png" } })).toBe(
@@ -867,9 +898,9 @@ describe("chained routes", () => {
 		);
 
 		// components build their URLs the same way
-		const html = await new Render(null).string(
+		const html = await Render.string(
 			page.Anchor({ params: { name: "a/b" }, children: "Hi" }) as Parameters<
-				Render["string"]
+				typeof Render.string
 			>[0],
 		);
 		expect(html).toContain('href="/hello/a%2Fb"');

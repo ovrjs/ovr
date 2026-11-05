@@ -223,6 +223,8 @@ export class Table<
 			case "string":
 			case "boolean":
 			case "number":
+			// stored as an ISO string, read back as a date by the table's schema
+			case "date":
 				return;
 			case "literal":
 			case "enum":

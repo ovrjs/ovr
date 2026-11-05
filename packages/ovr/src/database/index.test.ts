@@ -491,6 +491,33 @@ describe.each(drivers)("$name", (driver) => {
 
 	const migrate = () => db.migrate([{ id: "0001_init", sql: init }]);
 
+	test("dates inside a JSON column are stored as ISO strings and read back as dates", async () => {
+		const events = new Table("events", {
+			id: Schema.number().int(),
+			meta: Schema.object({
+				at: Schema.date(),
+				times: Schema.array(Schema.date()),
+			}),
+		});
+		const database = new Database(pool, [events]);
+		await database.sql`CREATE TABLE events (id integer PRIMARY KEY, meta jsonb NOT NULL)`;
+		try {
+			const at = new Date("2026-11-04T12:00:00.000Z");
+			await database.sql`INSERT INTO ${events} ${database.sql.values(events, {
+				id: 1,
+				meta: { at, times: [at] },
+			})}`;
+			const [row] = await database.sql`SELECT * FROM ${events}`.parse(events);
+			expect(row!.meta.at).toEqual(at);
+			expect(row!.meta.times[0]).toEqual(at);
+			expect(
+				await database.sql`SELECT meta ->> 'at' AS at FROM ${events}`,
+			).toEqual([{ at: "2026-11-04T12:00:00.000Z" }]);
+		} finally {
+			await database.sql`DROP TABLE events`;
+		}
+	});
+
 	test("migrate applies once", async () => {
 		expect(await migrate()).toEqual(["0001_init"]);
 		expect(await migrate()).toEqual([]);

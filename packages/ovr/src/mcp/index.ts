@@ -471,8 +471,8 @@ export class Mcp {
 	}
 
 	/**
-	 * Built for each request, a route described or hidden after it was mounted
-	 * is listed and called as it is now.
+	 * Built for each request, so routes mounted after the endpoint are
+	 * included. Mounted routes are final, so their tools do not change.
 	 *
 	 * @returns Tools by name, from the app's current routes
 	 */

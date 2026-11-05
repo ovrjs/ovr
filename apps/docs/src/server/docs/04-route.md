@@ -187,7 +187,7 @@ const remove = Route.post("/posts/:id/delete")
 
 GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
 
-`describe(false)` also hides a page from agents, which can otherwise read it as Markdown. Auth hides its pages, such as its browser script, this way. See [Agents](/10-agents) for how tools and pages are served to agents.
+`describe(false)` also hides a page from the MCP endpoint, which otherwise lists it as a resource. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages by checking the session. Auth hides its pages, such as its browser script, this way. See [Agents](/10-agents) for how tools and pages are served to agents.
 
 ## Properties
 

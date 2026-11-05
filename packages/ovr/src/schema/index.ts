@@ -2189,7 +2189,9 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 		if (values) {
 			for (const [name, value] of Object.entries(values)) {
-				const field = this.shape[name];
+				const field = Object.hasOwn(this.shape, name)
+					? this.shape[name]
+					: undefined;
 
 				if (
 					field &&
@@ -2384,7 +2386,10 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					const part = current.value;
 
 					if (part.name) {
-						const field = this.shape[part.name];
+						// own fields only, so a name such as "constructor" is unexpected
+						const field = Object.hasOwn(this.shape, part.name)
+							? this.shape[part.name]
+							: undefined;
 
 						if (!field) {
 							issues.push(this.#unexpected(part.name, path));
@@ -2422,7 +2427,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			form = source;
 
 			for (const name of new Set(source.keys())) {
-				if (!this.shape[name]) issues.push(this.#unexpected(name, path));
+				if (!Object.hasOwn(this.shape, name))
+					issues.push(this.#unexpected(name, path));
 			}
 		} else {
 			// allow passthrough for URLSearchParams

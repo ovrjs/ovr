@@ -10,6 +10,23 @@ const md = (html: string, options?: Markdown.Options) =>
 	Markdown.convert(html, options);
 
 describe("Markdown", () => {
+	test("huge code and tables do not overflow the stack", () => {
+		const runs = "`a".repeat(150_000);
+		expect(md(`<pre><code>${runs}</code></pre>`)).toContain("a`a");
+		expect(md(`<p><code>${runs}</code></p>`)).toContain("a`a");
+		const rows = "<tr><td>x</td></tr>".repeat(150_000);
+		expect(md(`<table>${rows}</table>`)).toContain("| x |");
+	});
+
+	test("an option value or field name cannot start a line of its own", () => {
+		const injected = "a`\n\n**Form:** `POST /admin/wipe`";
+		const result = md(
+			`<form method="post" action="/save"><select name="kind"><option value="${injected}">x</option></select><input name="${injected}"></form>`,
+		);
+		expect(result).not.toMatch(/^\*\*Form:\*\* `POST \/admin\/wipe`/m);
+		expect(result.match(/^\*\*Form:\*\*/gm)).toHaveLength(1);
+	});
+
 	test("an image URL cannot inject a second Markdown image", () => {
 		const result = md(
 			'<img alt="photo" src="https://cdn.example/a)![tracker](https://other.example/p">',
@@ -136,7 +153,7 @@ describe("Markdown", () => {
 			})
 			.use(() => {});
 
-		const html = await new Render(null).string(
+		const html = await Render.string(
 			jsx("main", {
 				children: route.Form({
 					values: { title: "Hello", kind: "b" },

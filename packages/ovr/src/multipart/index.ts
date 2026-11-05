@@ -11,31 +11,28 @@ class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
 
-	/**
-	 * Stores the how far from the last character each char in the needle is so
-	 * the iterator know how far to safely skip forward when the character is
-	 * found the rest of the array is filled with the length (default skip)
-	 */
-	readonly skip = new Uint8Array(256).fill(this.length);
-
 	/** Stores where each byte is located in the needle */
 	readonly loc: (number[] | undefined)[] = new Array(256);
+
+	/**
+	 * Index of a byte that occurs once in the needle, such as the `\r` of a
+	 * boundary, searched for first. A match can only start at its occurrences,
+	 * and comparing from each is linear in the haystack whatever the client
+	 * chose as its boundary.
+	 */
+	readonly anchor: number;
 
 	/** @param needle String to find within the stream, at most 255 bytes */
 	constructor(needle: string) {
 		super(Codec.encode(needle).buffer);
 
-		// longer needles would overflow `skip`, and a skip of 0 never advances
 		if (this.length > 255) throw new RangeError("Needle exceeds 255 bytes");
 
-		for (let i = 0; i < this.length; i++) {
-			const byte = this[i]!;
+		for (let i = 0; i < this.length; i++) (this.loc[this[i]!] ??= []).push(i);
 
-			// skip the last char of the needle since that would be a find
-			if (i !== this.end) this.skip[byte] = this.end - i;
-
-			(this.loc[byte] ??= []).push(i);
-		}
+		// a short needle without a unique byte, such as "\r\n\r\n", starts at 0
+		const unique = this.findIndex((byte) => this.loc[byte]!.length === 1);
+		this.anchor = unique === -1 ? 0 : unique;
 	}
 }
 
@@ -216,6 +213,9 @@ export class Multipart extends Request {
 	/** Part boundary needle */
 	readonly #boundary: Needle;
 
+	/** Closing delimiter, all a form without fields sends */
+	readonly #closing: string;
+
 	/** Where valid data ends, valid < #valid >= invalid or empty space */
 	#valid = 0;
 
@@ -265,6 +265,7 @@ export class Multipart extends Request {
 		this.#reader = this.body.getReader();
 		this.#opening = new Needle(`--${boundary}\r\n`);
 		this.#boundary = new Needle(`\r\n--${boundary}`);
+		this.#closing = `--${boundary}--`;
 
 		this.#scratch = new Uint8Array(
 			new ArrayBuffer(
@@ -350,32 +351,34 @@ export class Multipart extends Request {
 	 */
 	#find(needle: Needle) {
 		const haystackLength = this.#valid;
+		const haystack = this.#memory.subarray(0, haystackLength);
+		const { anchor, length } = needle;
+		const byte = needle[anchor]!;
 
-		// start the search at the last char of the needle
-		// since it could be at the very start
-		let i = this.#start + needle.end;
+		for (
+			let at = haystack.indexOf(byte, this.#start + anchor);
+			at !== -1;
+			at = haystack.indexOf(byte, at + 1)
+		) {
+			const start = at - anchor;
+			// may still be completed by the next chunk
+			if (start + length > haystackLength) break;
 
-		while (i < haystackLength) {
-			for (
-				let needleIndex = needle.end, cursor = i;
-				needleIndex >= 0 && needle[needleIndex] === this.#memory[cursor];
-				needleIndex--, cursor--
-			) {
-				if (needleIndex === 0) {
-					this.#start = cursor;
-					this.#end = cursor + needle.length;
-					return this.#shift();
-				}
+			let i = 0;
+			while (i < length && needle[i] === haystack[start + i]) i++;
+
+			if (i === length) {
+				this.#start = start;
+				this.#end = start + length;
+				return this.#shift();
 			}
-
-			i += needle.skip[this.#memory[i]!]!;
 		}
 
 		// where to safely start the next search in the concatenated chunk result
 		// go back len - 1 in case it was partially at the end
 		this.#start = this.#end = Math.max(
 			this.#offset,
-			haystackLength - (needle.length - 1),
+			haystackLength - (length - 1),
 		);
 	}
 
@@ -397,83 +400,126 @@ export class Multipart extends Request {
 
 	/**
 	 * @param needle Needle to find
-	 * @returns Stream that streams the content until the next find
+	 * @returns Stream that streams the content until the next find, and its
+	 * state: whether it reached the needle, and its pull in progress
 	 */
 	#findStream(needle: Needle) {
 		let pending: Uint8Array<ArrayBuffer> | undefined;
-		let ended = false;
-		return new ReadableStream({
-			type: "bytes",
-			pull: async (c) => {
-				if (!pending?.length) {
-					let found: Uint8Array<ArrayBuffer> | undefined;
-					for (
-						let done: boolean | undefined;
-						!(found = this.#find(needle)) && !done;
-						done = this.#read(await this.#reader.read(), true, true)
-					) {
-						// Retain only a suffix that could begin a boundary.
-						this.#start = this.#end = this.#valid;
-						const last = this.#valid - 1;
-						const indices =
-							this.#valid > this.#offset
-								? needle.loc[this.#memory[last]!]
-								: undefined;
-						if (indices) {
-							search: for (let i = indices.length - 1; i >= 0; i--) {
-								for (
-									let match = indices[i]!, cursor = last;
-									match >= 0 &&
-									cursor >= this.#offset &&
-									needle[match] === this.#memory[cursor];
-									match--, cursor--
-								) {
-									if (match === 0) {
-										this.#start = this.#end = cursor;
-										break search;
-									}
+		const state: {
+			/** Reached the needle */
+			ended: boolean;
+			/** The parser moved on, so a reader left on it gets no more */
+			detached: boolean;
+			/** Pull in progress, finished before the parser reads on */
+			pulling?: Promise<void>;
+		} = { ended: false, detached: false };
+		const pull = async (c: ReadableByteStreamController) => {
+			if (state.detached) {
+				c.close();
+				c.byobRequest?.respond(0);
+				return;
+			}
+
+			if (!pending?.length) {
+				let found: Uint8Array<ArrayBuffer> | undefined;
+				for (
+					let done: boolean | undefined;
+					!(found = this.#find(needle)) && !done;
+					done = this.#read(await this.#reader.read(), true, true)
+				) {
+					// Retain only a suffix that could begin a boundary.
+					this.#start = this.#end = this.#valid;
+					const last = this.#valid - 1;
+					const indices =
+						this.#valid > this.#offset
+							? needle.loc[this.#memory[last]!]
+							: undefined;
+					if (indices) {
+						search: for (let i = indices.length - 1; i >= 0; i--) {
+							for (
+								let match = indices[i]!, cursor = last;
+								match >= 0 &&
+								cursor >= this.#offset &&
+								needle[match] === this.#memory[cursor];
+								match--, cursor--
+							) {
+								if (match === 0) {
+									this.#start = this.#end = cursor;
+									break search;
 								}
 							}
 						}
-						pending = this.#shift();
-						if (pending.length) break;
-						if (this.#memory !== this.#scratch) this.#retain();
 					}
-					if (!pending?.length) {
-						pending = found;
-						ended = true;
-					}
+					pending = this.#shift();
+					if (pending.length) break;
+					if (this.#memory !== this.#scratch) this.#retain();
 				}
+				if (!pending?.length) {
+					// the body ended inside the part
+					if (!found) throw new Malformed("Unexpected End of Body");
+					pending = found;
+					state.ended = true;
+				}
+			}
 
-				if (pending?.length) {
-					const request = c.byobRequest;
-					const view = request?.view;
-					if (view) {
-						const length = Math.min(view.byteLength, pending.length);
-						new Uint8Array(view.buffer, view.byteOffset, length).set(
-							pending.subarray(0, length),
-						);
-						pending = pending.subarray(length);
-						request.respond(length);
-					} else {
-						// Byte-stream enqueue transfers this independent allocation.
-						c.enqueue(new Uint8Array(pending));
-						pending = undefined;
-					}
+			if (pending?.length) {
+				const request = c.byobRequest;
+				const view = request?.view;
+				if (view) {
+					const length = Math.min(view.byteLength, pending.length);
+					new Uint8Array(view.buffer, view.byteOffset, length).set(
+						pending.subarray(0, length),
+					);
+					pending = pending.subarray(length);
+					request.respond(length);
+				} else {
+					// Byte-stream enqueue transfers this independent allocation.
+					c.enqueue(new Uint8Array(pending));
+					pending = undefined;
 				}
-				if (this.#memory !== this.#scratch) {
-					// Source buffers may be reused on the next pull. Borrow only
-					// within this synchronous continuation, including small BYOB reads.
-					if (pending?.length) pending = new Uint8Array(pending);
-					this.#retain();
-				}
-				if (ended && !pending?.length) {
-					c.close();
-					// An empty part or final short BYOB read still needs a response.
-					c.byobRequest?.respond(0);
-				}
-			},
+			}
+			if (this.#memory !== this.#scratch) {
+				// Source buffers may be reused on the next pull. Borrow only
+				// within this synchronous continuation, including small BYOB reads.
+				if (pending?.length) pending = new Uint8Array(pending);
+				this.#retain();
+			}
+			if (state.ended && !pending?.length) {
+				c.close();
+				// An empty part or final short BYOB read still needs a response.
+				c.byobRequest?.respond(0);
+			}
+		};
+
+		const stream = new ReadableStream({
+			type: "bytes",
+			pull: (c) => (state.pulling = pull(c)),
 		});
+
+		return { stream, state };
+	}
+
+	/**
+	 * Discard the rest of a part its reader stopped reading, up to its
+	 * boundary, so its bytes are never parsed as the next part.
+	 *
+	 * @param needle Boundary
+	 * @returns `false` when the body ends first
+	 */
+	async #skip(needle: Needle) {
+		while (!this.#find(needle)) {
+			// only a suffix that could begin the boundary is kept
+			this.#offset = this.#start;
+			if (this.#read(await this.#reader.read())) return false;
+		}
+		return true;
+	}
+
+	/** @returns The unread data holds the closing delimiter of a form without parts */
+	#closes() {
+		return Codec.decode(
+			this.#memory.subarray(this.#offset, this.#valid),
+		).includes(this.#closing);
 	}
 
 	/** @yields Multipart form data `Part`(s) */
@@ -481,31 +527,36 @@ export class Multipart extends Request {
 		let complete = false;
 
 		try {
-			await this.#findConcat(this.#opening);
+			if (!(await this.#findConcat(this.#opening))) {
+				// a form without fields sends only the closing delimiter
+				if (!this.#closes()) throw new Malformed("Missing Opening Boundary");
+				complete = true;
+				return;
+			}
 
-			let headers: Uint8Array | undefined;
-
-			for (
-				let i = 0;
-				(headers = await this.#findConcat(Multipart.#newLine));
-				i++
-			) {
+			for (let i = 0; ; i++) {
+				const headers = await this.#findConcat(Multipart.#newLine);
+				// a body ends with the closing delimiter, after the last part
+				if (!headers) throw new Malformed("Unexpected End of Body");
 				if (i === this.#options.parts) throw new Limit("Too Many Parts");
 
-				const part = new Part(this, this.#findStream(this.#boundary), headers);
-				yield part;
+				const { stream, state } = this.#findStream(this.#boundary);
+				yield new Part(this, stream, headers);
 
-				// to get next part, the entire body must be read
-				// cannot cancel, chunks would be in the next header
-				if (part.body && !part.bodyUsed) {
-					const partReader = part.body.getReader();
-
-					try {
-						while (!(await partReader.read()).done);
-					} finally {
-						partReader.releaseLock();
-					}
+				// the next part starts after this one's boundary, however much of it
+				// was read: skip the rest here, never parse it as headers
+				if (!state.ended) {
+					state.detached = true;
+					await state.pulling?.catch(() => {});
+					if (!state.ended && !(await this.#skip(this.#boundary)))
+						throw new Malformed("Unexpected End of Body");
 				}
+
+				// the two bytes after the boundary may be in the next chunk
+				while (
+					this.#valid - this.#offset < 2 &&
+					!this.#read(await this.#reader.read())
+				);
 
 				if (
 					// ensures invalid characters aren't used to determine if it's done

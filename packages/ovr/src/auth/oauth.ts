@@ -58,6 +58,10 @@ const limit = 16 * 1024;
 const downloads = {
 	/** Downloads at once, per instance */
 	concurrent: 16,
+	/** Downloads at once for one client IP, per instance */
+	each: 2,
+	/** How long a client ID without a document is remembered */
+	missing: Time.minute,
 	/** Agents kept after they are found, per instance */
 	cached: 1000,
 	/** How long a found agent is kept */
@@ -103,9 +107,19 @@ export function oauth(
 		database: options.database,
 	});
 
-	/** Downloads from each document host, so the server cannot flood one */
+	/**
+	 * Downloads from each document host by each client IP, so one client
+	 * cannot spend a host's downloads for everyone
+	 */
 	const hosts = new Limiter(`auth:metadata:${origin}`, {
-		limit: 30,
+		limit: 10,
+		interval: Time.minute,
+		database: options.database,
+	});
+
+	/** Downloads from each document host in all, so the server cannot flood one */
+	const ceiling = new Limiter(`auth:metadata-hosts:${origin}`, {
+		limit: 300,
 		interval: Time.minute,
 		database: options.database,
 		key: () => "hosts",
@@ -114,8 +128,14 @@ export function oauth(
 	/** Agents found recently, by client ID */
 	const found = new Map<string, { client: Client; expiration: number }>();
 
+	/** Client IDs without a valid document, until when, by client ID */
+	const missing = new Map<string, number>();
+
 	/** Downloads in progress, by client ID */
 	const pending = new Map<string, Promise<Client | null | undefined>>();
+
+	/** Downloads in progress, by client IP, so one cannot take every slot */
+	const active = new Map<string, number>();
 
 	/**
 	 * Finds an agent, downloading its document at most once at a time.
@@ -128,30 +148,50 @@ export function oauth(
 		const url = id ? identify(id) : undefined;
 		if (!id || !url) return;
 
+		const now = Date.now();
 		const known = found.get(id);
-		if (known && known.expiration > Date.now()) return known.client;
+		if (known && known.expiration > now) return known.client;
 		found.delete(id);
+		if ((missing.get(id) ?? 0) > now) return;
+		missing.delete(id);
 
 		let download = pending.get(id);
 		if (!download) {
-			if (pending.size >= downloads.concurrent) return null;
+			const ip = c.ip ?? "";
+			const downloading = active.get(ip) ?? 0;
+			if (pending.size >= downloads.concurrent || downloading >= downloads.each)
+				return null;
+			active.set(ip, downloading + 1);
 
 			download = (async () => {
-				if ((await hosts.check(c, url.host).catch(() => false)) !== true)
+				// this client's share first, so a refused one spends nothing of the host's
+				if (
+					(await hosts.check(c, url.host)) !== true ||
+					(await ceiling.check(c, url.host)) !== true
+				)
 					return null;
 
 				const client = await find(id, url);
+				// the oldest is forgotten first
 				if (client) {
-					// the oldest agent is forgotten first
 					if (found.size >= downloads.cached)
 						found.delete(found.keys().next().value!);
 					found.set(id, {
 						client,
 						expiration: Date.now() + downloads.lifetime,
 					});
+				} else {
+					if (missing.size >= downloads.cached)
+						missing.delete(missing.keys().next().value!);
+					missing.set(id, Date.now() + downloads.missing);
 				}
 				return client;
-			})().finally(() => pending.delete(id));
+			})().finally(() => {
+				pending.delete(id);
+				const left = (active.get(ip) ?? 1) - 1;
+				if (left) active.set(ip, left);
+				else active.delete(ip);
+			});
 
 			pending.set(id, download);
 		}
@@ -179,9 +219,9 @@ export function oauth(
 	};
 
 	const admit = async (c: Context, limiter: Limiter) => {
-		const admission = await limiter.check(c).catch(() => false as const);
-		if (admission === true) return true;
-		c.json({ error: "temporarily_unavailable" }, admission ? 429 : 503);
+		// an unavailable limiter throws to the app, it never skips the limit
+		if ((await limiter.check(c)) === true) return true;
+		c.json({ error: "temporarily_unavailable" }, 429);
 		return false;
 	};
 
@@ -271,14 +311,8 @@ export function oauth(
 			c.res.headers.set(Header.name.cache, "no-store");
 			if (!same(c)) return c.text("Forbidden", 403);
 
-			const admission = await authorizations
-				.check(c, "approve")
-				.catch(() => false as const);
-			if (admission !== true)
-				return c.text(
-					"Too many requests. Try again later.",
-					admission ? 429 : 503,
-				);
+			if ((await authorizations.check(c, "approve")) !== true)
+				return c.text("Too many requests. Try again later.", 429);
 
 			const input = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
 			if (!input || input.issues)
@@ -394,14 +428,8 @@ export function oauth(
 				c.res.headers.set(Header.name.cache, "no-store");
 				const query = c.url.searchParams;
 
-				const admission = await authorizations
-					.check(c)
-					.catch(() => false as const);
-				if (admission !== true)
-					return c.text(
-						"Too many requests. Try again later.",
-						admission ? 429 : 503,
-					);
+				if ((await authorizations.check(c)) !== true)
+					return c.text("Too many requests. Try again later.", 429);
 
 				const client = await agent(c, query.get("client_id"));
 				if (client === null)
@@ -415,15 +443,10 @@ export function oauth(
 				if (!redirect) return c.text("Invalid redirect URI.", 400);
 
 				// the client is known, so other errors go back to it
-				const error = (code: string, description: string) => {
-					const url = new URL(redirect);
-					url.searchParams.set("error", code);
-					url.searchParams.set("error_description", description);
-					if (query.has("state"))
-						url.searchParams.set("state", query.get("state")!);
-					url.searchParams.set("iss", origin);
-					return c.redirect(url, 303);
-				};
+				// answered here, not redirected: any client can publish a document
+				// with any callback, which would make this origin an open redirector
+				const error = (code: string, description: string) =>
+					c.text(`${description} (${code})`, 400);
 
 				if (query.get("response_type") !== "code")
 					return error("unsupported_response_type", "Use the code flow.");
@@ -714,6 +737,9 @@ function identify(id: string) {
 		return;
 	}
 	if (url.pathname === "/" || url.hash || url.username || url.password) return;
+	// exactly as written, so the ID shown reads as the origin it is, unlike
+	// `https://evil.example\@good.example/`, which a URL parses as evil.example
+	if (url.href !== id) return;
 
 	return url;
 }

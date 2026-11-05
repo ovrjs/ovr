@@ -115,7 +115,7 @@ export class App {
 		if (this.#options.csrf) this.#global.push(App.#csrf);
 
 		if (this.#options.trailingSlash !== "ignore") {
-			this.#global.push(App.#createTrailingSlash(this.#options.trailingSlash));
+			this.#global.push(this.#createTrailingSlash(this.#options.trailingSlash));
 		}
 	}
 
@@ -255,22 +255,32 @@ export class App {
 		c.text("Forbidden", 403);
 	}
 
-	/** @returns Trailing slash middleware */
-	static #createTrailingSlash(mode: App.Options.TrailingSlash) {
+	/**
+	 * Redirect a request no route matched to the other spelling of its path,
+	 * with or without the trailing slash, when a route matches that.
+	 *
+	 * @returns Trailing slash middleware
+	 */
+	#createTrailingSlash(mode: App.Options.TrailingSlash) {
 		return async (c: Context, next: Middleware.Next) => {
 			await next();
 
-			if (c.res.status && c.res.status !== 404) return;
+			// a route answered, its handler has already run
+			if (c.route || (c.res.status && c.res.status !== 404)) return;
 
-			const slash = c.url.pathname.endsWith("/");
+			const { pathname } = c.url;
+			const slash = pathname.endsWith("/");
+			const other =
+				mode === "always" && !slash
+					? pathname + "/"
+					: mode === "never" && pathname !== "/" && slash
+						? pathname.slice(0, -1)
+						: undefined;
 
-			if (mode === "always" && !slash) {
-				c.url.pathname += "/";
-				c.redirect(c.url, 308);
-			} else if (mode === "never" && c.url.pathname !== "/" && slash) {
-				c.url.pathname = c.url.pathname.slice(0, -1);
-				c.redirect(c.url, 308);
-			}
+			if (!other || !this.#trie.find(App.#match(c.req.method) + other)) return;
+
+			c.url.pathname = other;
+			c.redirect(c.url, 308);
 		};
 	}
 }

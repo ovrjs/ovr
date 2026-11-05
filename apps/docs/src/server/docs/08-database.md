@@ -192,6 +192,8 @@ Run them with a script, for example in a release step, then [check](#check) the 
 
 ```ts
 // scripts/migrate.ts
+// with Auth, create it first, so check() knows the users table it references
+import "../src/auth.ts";
 import { database } from "../src/database.ts";
 import { readFile, readdir } from "node:fs/promises";
 

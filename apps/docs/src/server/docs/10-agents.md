@@ -77,7 +77,7 @@ const remove = Route.post("/posts/:id/delete")
 | POST and other methods, described | A tool                           |
 | GET, described                    | A read-only tool, and a resource |
 | GET                               | A resource, read as Markdown     |
-| `describe(false)`                 | Nothing                          |
+| `describe(false)`                 | Nothing through MCP              |
 
 A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. Its name is generated from the method and pattern, for example `post_posts_id_delete`.
 

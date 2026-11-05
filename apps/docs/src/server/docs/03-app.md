@@ -21,7 +21,7 @@ The following values can be configured when creating the `App`.
 
 ### Trailing Slash
 
-ovr handles [trailing slash](https://bjornlu.com/blog/trailing-slash-for-frameworks) redirects automatically, you can customize the redirect preference.
+ovr handles [trailing slash](https://bjornlu.com/blog/trailing-slash-for-frameworks) redirects automatically, you can customize the redirect preference. A request no route matches is redirected with `308` when the other spelling of its path, with or without the slash, matches one; a matched route always answers, so `/style.css` works in `"always"` mode.
 
 ```ts
 new App({ trailingSlash: "always" });

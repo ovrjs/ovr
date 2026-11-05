@@ -171,7 +171,7 @@ function Component() {
 const stream = Render.stream(<Component />);
 
 const response = new Response(stream, {
-	"content-type": "text/html; charset=utf-8",
+	headers: { "content-type": "text/html; charset=utf-8" },
 });
 ```
 

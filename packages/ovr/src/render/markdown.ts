@@ -573,9 +573,7 @@ export class Markdown {
 			code?.attrs.class ?? node.attrs.class ?? "",
 		)?.[1];
 		const text = Markdown.#content(node).replace(/^\n/, "").replace(/\n$/, "");
-		const fence = "`".repeat(
-			Math.max(3, ...Array.from(text.matchAll(/`+/g), ([m]) => m.length + 1)),
-		);
+		const fence = "`".repeat(Math.max(3, Markdown.#ticks(text) + 1));
 		return `${fence}${language ?? ""}\n${text}\n${fence}`;
 	}
 
@@ -616,7 +614,9 @@ export class Markdown {
 
 		if (!rows.length) return caption;
 
-		const width = Math.max(...rows.map((row) => row.length));
+		// a loop, a spread of many rows would overflow the stack
+		let width = 0;
+		for (const row of rows) width = Math.max(width, row.length);
 		// the header sets the columns, shorter rows are filled in by the reader
 		const line = (row: string[]) => `| ${row.join(" | ")} |`;
 
@@ -805,9 +805,9 @@ export class Markdown {
 			lines.push(
 				"",
 				...fields.map((f) => {
-					let line = `- ${Markdown.#escape(f.label)} \`${f.name}\` (${[f.type, ...f.rules].join(", ")})`;
+					let line = `- ${Markdown.#escape(f.label)} ${Markdown.#code(f.name)} (${[f.type, ...f.rules].join(", ")})`;
 					if (f.options.length)
-						line += `, options: ${f.options.map((o) => `\`${o}\``).join(", ")}`;
+						line += `, options: ${f.options.map((o) => Markdown.#code(o)).join(", ")}`;
 					if (f.value.length)
 						line += `, value: ${f.value.map((v) => Markdown.#code(v)).join(", ")}`;
 					for (const note of f.notes) line += `\n  - ${note}`;
@@ -1023,11 +1023,23 @@ export class Markdown {
 	 * @returns Code span
 	 */
 	static #code(text: string) {
-		const ticks = "`".repeat(
-			Math.max(1, ...Array.from(text.matchAll(/`+/g), ([m]) => m.length + 1)),
-		);
+		// one line, so a value cannot start a line of its own, such as a form
+		text = text.replace(/\s*[\r\n]+\s*/g, " ");
+		const ticks = "`".repeat(Markdown.#ticks(text) + 1);
 		const pad = /^`|`$|^ .* $/.test(text) ? " " : "";
 		return `${ticks}${pad}${text}${pad}${ticks}`;
+	}
+
+	/**
+	 * @param text Text
+	 * @returns Length of its longest run of backticks
+	 */
+	static #ticks(text: string) {
+		// a loop, a spread of many runs would overflow the stack
+		let longest = 0;
+		for (const [run] of text.matchAll(/`+/g))
+			longest = Math.max(longest, run.length);
+		return longest;
 	}
 
 	/**

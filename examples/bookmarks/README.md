@@ -45,7 +45,8 @@ recovery are separate product choices.
 
 The described routes are MCP tools: `post_bookmarks` saves, `post_bookmarks_id`
 edits, and `post_bookmarks_id_delete` deletes; agents' clients can confirm each with the user. The list and
-edit pages are read-only tools, and every page is a Markdown resource. An agent
+edit pages are read-only tools, and the described pages are Markdown resources;
+`/login` and `/connect` are hidden from MCP with `describe(false)`. An agent
 connecting to `/mcp` signs in through OAuth: the user logs in with their passkey
 and approves it on `/connect`, and its tool calls run the same handlers as that
 user, so ownership checks apply unchanged. Requests with
@@ -62,9 +63,11 @@ compatibility, login-page rendering, authentication redirects, CRUD, initial edi
 values, duplicate create/update errors, cross-account access rejection, invalid
 UUIDs, unsafe URLs, and logout/revocation. Sessions were established through a
 private test harness using `auth.login`; the browser passkey ceremony was not
-exercised by this check. The migrations were applied and checked on Postgres 18
-before Auth's tables brought their own. The MCP and OAuth flows are covered by ovr's own
-tests; they were not exercised against this example.
+exercised by this check. That smoke check
+predates Auth's own migrations and the foreign-key check, so run `migrate.ts`
+against a disposable Postgres database to confirm it on your setup. The MCP and
+OAuth flows are covered by ovr's own tests; they were not exercised against this
+example.
 
 Use the repository's TSX build setup with `jsxImportSource: "ovr"`. The included
 tsconfig points to current source for checking; configure the same source aliases

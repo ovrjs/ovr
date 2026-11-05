@@ -267,7 +267,7 @@ export class Render {
 	 * @param options Render options
 	 * @returns Concatenated HTML
 	 */
-	async string(element: JSX.Element, options?: Render.Options) {
+	static async string(element: JSX.Element, options?: Render.Options) {
 		return (await Array.fromAsync(new Render(element, options))).join("");
 	}
 

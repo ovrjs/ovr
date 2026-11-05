@@ -206,12 +206,14 @@ You can also sign out the current session in a handler with `await auth.logout(c
 
 To sign out other sessions, such as from a list of the user's devices, or all of a user's sessions, delete their rows from `database.auth_sessions`. A deleted session ends on its next request:
 
-````ts
+```ts
 await database.sql`
 	DELETE FROM ${database.auth_sessions}
 	WHERE ${database.auth_sessions.columns.user} = ${session.user}
 `;
-``` `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
+```
+
+`auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
 
 Resolve sessions and prepare forms before returning JSX. Doing this inside an async component is too late to reliably set cookies, redirects, or response status.
 
@@ -223,7 +225,7 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 const database = new Database(pool, [users, posts, ...Auth.tables]);
 
 await database.migrate(files); // Auth's migrations, then your migrations/*.sql
-````
+```
 
 A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, which the next `database.migrate()` applies: `auth:2` added the table for [agents](#agents), and `auth:3` the sign-in time that ends a session at its `lifetime`.
 
@@ -339,13 +341,13 @@ Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint
 
 An agent's client ID is the HTTPS URL of its [client ID metadata document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-id-metadata-documents), a JSON file with its name and the addresses to return the user to. Auth fetches it when the user connects, so the name shown on the consent page is tied to the agent's website, and there is nothing to register or store. The fetch never follows redirects, reads at most 5 KB, and refuses private and other special-use addresses. The address is checked when the connection looks the name up, so a domain cannot pass the check and then point at your network. Node.js and Bun can check the connection, so mounting `new Mcp({ auth })` throws in other runtimes.
 
-Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute, each host serves at most 30 downloads per minute, and an instance downloads at most 16 documents at once. Requests for the same agent share one download, and a found agent is kept for 5 minutes.
+Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute and download 10 documents per minute from one host, a host serves at most 300 downloads per minute in all, and an instance downloads at most 16 documents at once, 2 for one IP. Requests for the same agent share one download, a found agent is kept for 5 minutes, and a client ID without a valid document is remembered for a minute. Errors in an authorization request are answered with a 400 page, not redirected to the agent, since anyone can publish a document naming any callback.
 
 Agents send the `resource` they will use the token with, the URL of an MCP endpoint mounted with this `auth`, when they authorize and when they request tokens; any other URL is refused, even on your origin. Authorization requires PKCE with S256. Codes last a minute and are used once, and access tokens last an hour. Refresh tokens are replaced each time they are used, but a connection ends 30 days after the user approved it, however often the agent refreshes; then the user connects it again. Using a code or refresh token a second time revokes every token issued from it, since one of the two parties stole it. A token grants what the user can do, so requests with a `scope` are refused. Tokens are bound to the resource they were requested for, such as the MCP endpoint, and stored as SHA-256 hashes.
 
 In a tool call, `c.session()` returns the session of the user who approved the agent, so the same handlers serve people and agents.
 
-To list the signed-in user's agents, query their refresh tokens. Disconnect one with `auth.disconnect(c, client)`:
+To list the signed-in user's agents, query their refresh tokens. Disconnect one with `auth.disconnect(c, client)`, passing one of the listed client IDs:
 
 ```ts
 const agents = await database.sql`
@@ -353,6 +355,8 @@ const agents = await database.sql`
 	WHERE ${database.auth_tokens.columns.user} = ${session.user} AND kind = 'refresh'
 `;
 
+// for example, the agent the user chose from the list
+const [{ client }] = agents;
 await auth.disconnect(c, client);
 ```
 

@@ -476,8 +476,18 @@ export class Route<
 		this.#configure("params");
 		this.#before("params");
 
+		// whole names, so "i" is not taken for ":id"
+		const names = this.pattern
+			.split("/")
+			.flatMap((part) =>
+				part.startsWith(":")
+					? [part.slice(1)]
+					: part.endsWith("*")
+						? ["*"]
+						: [],
+			);
 		for (const name in schemas) {
-			if (!this.pattern.includes(`:${name}`) && name !== "*") {
+			if (!names.includes(name)) {
 				throw new TypeError(
 					`Route "${this.pattern}" has no parameter "${name}".`,
 				);
@@ -569,11 +579,19 @@ export class Route<
 					.split("/")
 					.map((part) => {
 						if (part.startsWith(":"))
-							return encodeURIComponent(params[part.slice(1)]!);
+							return Route.#segment(params[part.slice(1)]!);
 
-						// the wildcard keeps its slashes, each of its segments is encoded
-						if (part === "*")
-							return params[part]!.split("/").map(encodeURIComponent).join("/");
+						// the wildcard keeps its slashes, each of its segments is encoded,
+						// after any text before it in the pattern, as in `/files-*`
+						if (part.endsWith("*"))
+							return (
+								part.slice(0, -1) +
+								params["*"]!.split("/")
+									.map((segment) =>
+										segment ? Route.#segment(segment) : segment,
+									)
+									.join("/")
+							);
 
 						return part;
 					})
@@ -596,6 +614,20 @@ export class Route<
 					? hash
 					: "#" + hash
 				: "")) as Route.Href<Pattern, O>;
+	}
+
+	/**
+	 * @param value Parameter value
+	 * @returns The value encoded as one segment
+	 * @throws When it would not stay in its segment: empty, `.`, or `..`,
+	 * which a URL resolves away
+	 */
+	static #segment(value: string) {
+		if (value === "" || value === "." || value === "..")
+			throw new TypeError(
+				`Route parameter "${value}" cannot be a path segment, it would change the path`,
+			);
+		return encodeURIComponent(value);
 	}
 
 	/**

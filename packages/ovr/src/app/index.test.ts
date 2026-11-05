@@ -173,6 +173,25 @@ test("GET /not-found/", async () => {
 	expect(res.status).toBe(404);
 });
 
+test("a returned Response keeps each cookie, and ones already set", async () => {
+	const app = new App().use(
+		Route.get("/cookies").use((c) => {
+			c.cookie.set("earlier", "0");
+			const headers = new Headers({ "x-kept": "yes" });
+			headers.append("set-cookie", "a=1");
+			headers.append("set-cookie", "b=2");
+			return new Response("ok", { headers });
+		}),
+	);
+	const res = await app.fetch("http://localhost:5173/cookies");
+	expect(res.headers.get("x-kept")).toBe("yes");
+	expect(res.headers.getSetCookie().map((c) => c.split(";")[0])).toEqual([
+		"earlier=0",
+		"a=1",
+		"b=2",
+	]);
+});
+
 describe("trailing slash", () => {
 	test("always", async () => {
 		const res = await appFetch("/api/123");
@@ -188,6 +207,39 @@ describe("trailing slash", () => {
 
 		expect(res.status).toBe(308);
 		expect(res.headers.get("location")).toBe("http://localhost:5173/test");
+	});
+
+	test("a matched route's response is kept, its handler runs once", async () => {
+		let ran = 0;
+		const always = new App({ trailingSlash: "always" }).use(
+			Route.get("/style.css").use((c) => {
+				ran++;
+				c.text("body{}");
+			}),
+		);
+		const css = await always.fetch("http://localhost:5173/style.css");
+		expect(css.status).toBe(200);
+		expect(await css.text()).toBe("body{}");
+
+		const never = new App().use(
+			Route.post("/jobs/*").use((c) => {
+				ran++;
+				c.text("done");
+			}),
+		);
+		const job = await never.fetch("http://localhost:5173/jobs/a/", {
+			method: "POST",
+			headers: { origin: "http://localhost:5173" },
+		});
+		expect(job.status).toBe(200);
+		expect(ran).toBe(2);
+	});
+
+	test("only redirects to a path a route matches", async () => {
+		const never = new App().use(Route.get("/test").use((c) => c.text("test")));
+		const missing = await never.fetch("http://localhost:5173/missing/");
+		expect(missing.status).not.toBe(308);
+		expect(missing.headers.get("location")).toBeNull();
 	});
 
 	test("ignore", async () => {

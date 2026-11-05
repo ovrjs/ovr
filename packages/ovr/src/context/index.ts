@@ -195,6 +195,12 @@ export class Context<
 		location: string | URL | Route,
 		status: 301 | 302 | 303 | 307 | 308 = 302,
 	) {
+		// a pattern's parameters need values, which only route.url() is given
+		if (location instanceof Route && /[:*]/.test(location.pattern))
+			throw new TypeError(
+				`Redirect to "${location.pattern}" with route.url({ params })`,
+			);
+
 		this.res.body = null;
 		this.res.status = status;
 		this.res.headers.set(
@@ -371,10 +377,12 @@ export class Context<
 			this.res.body = r.body;
 			this.res.status = r.status;
 
-			// merge
+			// merge, each cookie is its own header, added to ones already set
 			for (const [name, header] of r.headers) {
-				this.res.headers.set(name, header);
+				if (name !== "set-cookie") this.res.headers.set(name, header);
 			}
+			for (const cookie of r.headers.getSetCookie())
+				this.res.headers.append("set-cookie", cookie);
 		} else if (r !== undefined) {
 			// something to stream
 			const [mime] = Header.shift(this.res.headers.get(Header.name.type));

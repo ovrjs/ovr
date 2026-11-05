@@ -995,9 +995,7 @@ describe("Form schema", () => {
 			Codec.Base64Url.encode(Codec.encode(JSON.stringify(tampered))),
 		);
 
-		const html = await new Render(null).string(
-			form.Field({ name: "name", state: url }),
-		);
+		const html = await Render.string(form.Field({ name: "name", state: url }));
 
 		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes('value="{')).toBe(false);
@@ -1021,10 +1019,8 @@ describe("Form schema", () => {
 
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const name = await new Render(null).string(
-			form.Field({ name: "name", state: url }),
-		);
-		const email = await new Render(null).string(
+		const name = await Render.string(form.Field({ name: "name", state: url }));
+		const email = await Render.string(
 			form.Field({ name: "email", state: url }),
 		);
 
@@ -1047,7 +1043,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const html = await new Render(null).string(form.Fields({ state: url }));
+		const html = await Render.string(form.Fields({ state: url }));
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(1);
@@ -1061,7 +1057,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set("first", "ross");
 
-		const html = await new Render(null).string(form.Fields({ state: url }));
+		const html = await Render.string(form.Fields({ state: url }));
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(0);
@@ -1073,8 +1069,8 @@ describe("Form schema", () => {
 			role: Field.radio(["reader", "admin"], { label: "Role" }),
 		});
 
-		const email = await new Render(null).string(form.Field({ name: "email" }));
-		const role = await new Render(null).string(form.Field({ name: "role" }));
+		const email = await Render.string(form.Field({ name: "email" }));
+		const role = await Render.string(form.Field({ name: "role" }));
 
 		expect(email.includes(">Email Address</label>")).toBe(true);
 		expect(email.includes(' label="Email Address"')).toBe(false);
@@ -1092,13 +1088,9 @@ describe("Form schema", () => {
 			"https://example.com/search?q=travel+backpack&sort=newest&inStock=on",
 		);
 
-		const q = await new Render(null).string(
-			form.Field({ name: "q", state: url }),
-		);
-		const sort = await new Render(null).string(
-			form.Field({ name: "sort", state: url }),
-		);
-		const inStock = await new Render(null).string(
+		const q = await Render.string(form.Field({ name: "q", state: url }));
+		const sort = await Render.string(form.Field({ name: "sort", state: url }));
+		const inStock = await Render.string(
 			form.Field({ name: "inStock", state: url }),
 		);
 
@@ -1124,12 +1116,8 @@ describe("Form schema", () => {
 		url.searchParams.set("sort", "oldest");
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const q = await new Render(null).string(
-			form.Field({ name: "q", state: url }),
-		);
-		const sort = await new Render(null).string(
-			form.Field({ name: "sort", state: url }),
-		);
+		const q = await Render.string(form.Field({ name: "q", state: url }));
+		const sort = await Render.string(form.Field({ name: "sort", state: url }));
 
 		expect(q.includes('value="travel backpack"')).toBe(true);
 		expect(sort.includes("aria-invalid")).toBe(true);
@@ -1168,13 +1156,11 @@ describe("Form schema", () => {
 			),
 		);
 
-		const name = await new Render(null).string(
-			form.Field({ name: "name", state: url }),
-		);
-		const email = await new Render(null).string(
+		const name = await Render.string(form.Field({ name: "name", state: url }));
+		const email = await Render.string(
 			form.Field({ name: "email", state: url }),
 		);
-		const password = await new Render(null).string(
+		const password = await Render.string(
 			form.Field({ name: "password", state: url }),
 		);
 
@@ -1229,9 +1215,7 @@ describe("Form schema", () => {
 			),
 		);
 
-		const html = await new Render(null).string(
-			form.Field({ name: "name", state: url }),
-		);
+		const html = await Render.string(form.Field({ name: "name", state: url }));
 
 		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes("aria-invalid")).toBe(false);
@@ -1412,6 +1396,20 @@ describe("Form schema", () => {
 
 		expect(result.issues).toHaveLength(1);
 		expect(result.issues[0]?.path[0]).toBe("extra");
+	});
+
+	test("names of inherited properties are unexpected fields too", async () => {
+		const form = Form.from({ name: Field.text() });
+		const data = new FormData();
+
+		data.set("name", "ross");
+		data.set("constructor", "x");
+		data.set("toString", "y");
+		const result = formInvalid(await form.parse(data));
+
+		expect(result.issues.map((issue) => issue.path[0])).toEqual(
+			expect.arrayContaining(["constructor", "toString"]),
+		);
 	});
 
 	test("FormData parse aggregates all unexpected field names", async () => {
