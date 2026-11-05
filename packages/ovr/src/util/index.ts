@@ -102,14 +102,15 @@ export class Header {
 
 	/**
 	 * @param header header value to parse
-	 * @returns Base/first param
+	 * @returns Base, trimmed and lowercase since media types ignore case, and its params
 	 */
 	static shift(header: string | null): [string | null, string | null] {
-		const semi = header?.indexOf(";") ?? -1;
+		if (header === null) return [null, null];
+		const semi = header.indexOf(";");
 
 		return semi === -1
-			? [header, null]
-			: [header!.slice(0, semi), header!.slice(semi)];
+			? [header.trim().toLowerCase(), null]
+			: [header.slice(0, semi).trim().toLowerCase(), header.slice(semi)];
 	}
 
 	/**

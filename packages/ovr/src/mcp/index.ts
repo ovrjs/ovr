@@ -665,7 +665,9 @@ export class Mcp {
 	 * @returns `true` if the URL is a page agents can read
 	 */
 	#readable(c: Context, url: URL) {
-		if (url.origin !== c.url.origin) return false;
+		// credentials are no part of a page's address
+		if (url.origin !== c.url.origin || url.username || url.password)
+			return false;
 		const route = this.#app!.find(Method.get, url.pathname);
 		return Boolean(route?.description);
 	}
@@ -722,7 +724,20 @@ export class Mcp {
 
 				if (!this.#readable(c, next) || i === Mcp.#redirects) {
 					return {
-						content: [{ type: "text", text: `Redirected to ${next.href}` }],
+						content: [
+							{
+								type: "text",
+								// another site is where the app sends the user, such as a
+								// checkout, but a page of this app that agents cannot read
+								// stays private, with its address and any token in it
+								text:
+									next.origin !== c.url.origin
+										? `Redirected to ${next.href}`
+										: this.#readable(c, next)
+											? `Redirected to ${next.pathname}${next.search}`
+											: "Redirected to a page agents cannot read",
+							},
+						],
 						isError: false,
 					};
 				}

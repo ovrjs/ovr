@@ -266,6 +266,31 @@ describe("Mcp", () => {
 		expect(called).toBe(false);
 	});
 
+	test("a tool redirect keeps the address of a page agents cannot read private", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Route.post("/private-go")
+				.describe("Go somewhere private")
+				.use((c) => c.redirect("/private?token=secret", 303)),
+			Route.get("/private").use(() => "private"),
+			Route.post("/checkout")
+				.describe("Start a checkout")
+				.use((c) => c.redirect("https://pay.example/checkout?session=1", 303)),
+		);
+		const hidden = await rpc("tools/call", {
+			name: Route.post("/private-go").describe("x").tool!.name,
+		});
+		expect(JSON.stringify(hidden.body)).not.toContain("secret");
+		expect(hidden.body.result.content[0].text).toBe(
+			"Redirected to a page agents cannot read",
+		);
+		// another site is where the app sends the user, such as a payment page
+		const away = await rpc("tools/call", { name: "post_checkout" });
+		expect(away.body.result.content[0].text).toBe(
+			"Redirected to https://pay.example/checkout?session=1",
+		);
+	});
+
 	test("an oversized chunked MCP request stops at the limit", async () => {
 		const { app } = setup();
 		let pulls = 0;
@@ -475,6 +500,24 @@ describe("Mcp", () => {
 			id: null,
 			error: { code: -32600 },
 		});
+	});
+
+	test("a named wildcard and a trailing wildcard cannot share one argument", () => {
+		void (() => {
+			// @ts-expect-error both would be the tool's `wildcard` argument
+			Route.post("/remove/:wildcard/*").describe("Remove the selected file");
+			// either alone is a tool
+			Route.post("/remove/:wildcard").describe("Remove the selected file");
+			Route.post("/remove/*").describe("Remove the selected file");
+		});
+	});
+
+	test("an MCP resource URI with credentials returns a protocol error", async () => {
+		const { rpc } = setup();
+		const { body } = await rpc("resources/read", {
+			uri: "http://user:password@localhost/posts",
+		});
+		expect(body.error).toBeDefined();
 	});
 
 	test("a tool preserves a named parameter called wildcard on a write", async () => {

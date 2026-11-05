@@ -78,9 +78,9 @@ const remove = Route.post("/posts/:id/delete")
 | GET, described                    | A read-only tool, and a resource |
 | Not described                     | Nothing through MCP              |
 
-A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. Its name is generated from the method and pattern, for example `post_posts_id_delete`.
+A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. A `*` wildcard is the `wildcard` argument, so describing a pattern with both `:wildcard` and `*` is a type error. Its name is generated from the method and pattern, for example `post_posts_id_delete`.
 
-A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown, following redirects within the app. When `c.data()` finds issues, the agent receives them as an error with each field's message, instead of a redirect back to the form. Your handlers do not change.
+A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown, following redirects to described pages. A redirect to another site returns its URL, such as a checkout page for the user to open. A redirect to a page of the app agents cannot read returns only that it redirected, keeping its address and any token in it private. When `c.data()` finds issues, the agent receives them as an error with each field's message, instead of a redirect back to the form. Your handlers do not change.
 
 `route.tool` is the name and description a route is called with, and whether it only reads, or `undefined` when it is not a tool. Names of patterns with `_` or other punctuation, or longer than 64 characters, end with a short hash of the pattern, so `/a/b` and `/a_b` get different names. Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, so you find out when the app starts.
 

@@ -29,6 +29,13 @@ export type ExtractParams<Pattern extends string = string> =
 				? { "*": string }
 				: {};
 
+/** `S` without leading or trailing whitespace */
+type Trim<S extends string> = S extends ` ${infer R}` | `${infer R} `
+	? Trim<R>
+	: S extends `\n${infer R}` | `${infer R}\n` | `\t${infer R}` | `${infer R}\t`
+		? Trim<R>
+		: S;
+
 /**
  * Helper type to insert a record of params into a resolved string.
  *
@@ -461,10 +468,17 @@ export class Route<
 	 * Describe the route for agents. Only described routes are served to
 	 * them: as MCP tools, and GET routes as resources too.
 	 *
-	 * @param description What the route does, written for an agent, not empty
+	 * @param description What the route does, written for an agent, not blank
 	 * @returns The route
 	 */
-	describe<D extends string>(description: D extends "" ? never : D) {
+	describe<D extends string>(
+		description: Trim<D> extends ""
+			? never
+			: // `:wildcard` and `*` would both be the tool's `wildcard` argument
+				["wildcard" | "*"] extends [keyof ExtractParams<Pattern>]
+				? "Rename :wildcard, a tool's * argument is named wildcard"
+				: D,
+	) {
 		this.#configure("describe");
 		this.#description = description;
 		return this;

@@ -1467,6 +1467,43 @@ describe("hostile and malformed bodies", () => {
 		).rejects.toThrow(TypeError);
 	});
 
+	it("accepts linear whitespace after a multipart delimiter", async () => {
+		const multipart = new Multipart(
+			request("XyZ", [
+				encode(
+					'--XyZ\r\nContent-Disposition: form-data; name="first"\r\n\r\none\r\n--XyZ \t\r\nContent-Disposition: form-data; name="second"\r\n\r\ntwo\r\n--XyZ--\r\n',
+				),
+			]),
+		);
+		expect(await fields(multipart)).toEqual([
+			["first", "one"],
+			["second", "two"],
+		]);
+	});
+
+	it("accepts transport padding split across chunks, and rejects text after it", async () => {
+		const padded = new Multipart(
+			request("XyZ", [
+				encode("--XyZ \t"),
+				encode(" "),
+				encode(
+					'\r\nContent-Disposition: form-data; name="first"\r\n\r\none\r\n--XyZ',
+				),
+				encode("--\r\n"),
+			]),
+		);
+		expect(await fields(padded)).toEqual([["first", "one"]]);
+
+		const text = new Multipart(
+			request("XyZ", [
+				encode(
+					'--XyZ \tx\r\nContent-Disposition: form-data; name="first"\r\n\r\none\r\n--XyZ--\r\n',
+				),
+			]),
+		);
+		await expect(fields(text)).rejects.toThrow(TypeError);
+	});
+
 	it("only an opening delimiter at the start of a line can introduce fields", async () => {
 		const multipart = new Multipart(
 			request("XyZ", [

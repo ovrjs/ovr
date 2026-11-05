@@ -958,6 +958,8 @@ describe("chained routes", () => {
 		// an empty description would leave the route silently unserved
 		// @ts-expect-error
 		Route.post("/blank").describe("");
+		// @ts-expect-error
+		Route.post("/blank").describe(" \n\t ");
 	});
 
 	test("params convert values before the middleware runs", async () => {

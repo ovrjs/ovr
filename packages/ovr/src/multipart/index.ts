@@ -513,29 +513,39 @@ export class Multipart extends Request {
 
 	/**
 	 * Reads what follows a delimiter: `--` ends the body, a new line starts
-	 * the next part's headers, which it is left in front of.
+	 * the next part's headers, which it is left in front of. Spaces and tabs
+	 * before the new line are transport padding, which RFC 2046 says to ignore.
 	 *
 	 * @returns `true` when the delimiter closes the body
 	 * @throws {Malformed} Otherwise, since RFC 2046 does not let the boundary
 	 * start a line of content, as in `--boundary-suffix`
 	 */
 	async #closed() {
-		// the two bytes after the boundary may be in the next chunk
-		while (
-			this.#valid - this.#offset < 2 &&
-			!this.#read(await this.#reader.read())
-		);
+		/**
+		 * @param i Index after the offset
+		 * @returns The byte there, reading the next chunk if needed
+		 */
+		const at = async (i: number) => {
+			while (
+				this.#valid - this.#offset <= i &&
+				!this.#read(await this.#reader.read())
+			);
+			return this.#valid - this.#offset > i
+				? this.#memory[this.#offset + i]
+				: undefined;
+		};
 
-		if (this.#valid - this.#offset > 1) {
-			const first = this.#memory[this.#offset];
-			const second = this.#memory[this.#offset + 1];
-			if (first === 45 && second === 45) {
-				// done, drain any epilogue without parsing it
-				while (!this.#read(await this.#reader.read(), false));
-				return true;
-			}
-			if (first === 13 && second === 10) return false;
+		if ((await at(0)) === 45 && (await at(1)) === 45) {
+			// done, drain any epilogue without parsing it
+			while (!this.#read(await this.#reader.read(), false));
+			return true;
 		}
+
+		// consumed as it is read, so padding cannot fill the buffer
+		for (let byte = await at(0); byte === 32 || byte === 9; byte = await at(0))
+			this.#start = this.#end = ++this.#offset;
+
+		if ((await at(0)) === 13 && (await at(1)) === 10) return false;
 
 		throw new Malformed("Invalid Boundary");
 	}

@@ -6,6 +6,27 @@ import { describe, expect, test } from "vitest";
 
 const app = new App({ trailingSlash: "always" });
 
+test.each(["Text/HTML", "text/html ; charset=utf-8", "APPLICATION/XHTML+XML"])(
+	"markup content stays escaped with Content-Type %s",
+	async (type) => {
+		const application = new App().use(
+			Route.get("/").use((c) => {
+				c.res.headers.set("content-type", type);
+				return c.url.searchParams.get("message");
+			}),
+		);
+		const response = await application.fetch(
+			"https://example.com/?message=" +
+				encodeURIComponent(
+					'<img xmlns="http://www.w3.org/1999/xhtml" src="x" onerror="alert(1)"/>',
+				),
+		);
+		expect(await response.text()).toBe(
+			'&lt;img xmlns="http://www.w3.org/1999/xhtml" src="x" onerror="alert(1)"/>',
+		);
+	},
+);
+
 test("a mounted route's configuration is final", () => {
 	const route = Route.get("/items/:id").describe("Item");
 	new App().use(route);
