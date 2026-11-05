@@ -42,14 +42,8 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				max: 12,
 			});
 			await pool.query(`CREATE SCHEMA ${schema}`);
-			await pool.query(owned.get(Storage.tokens)![1]!.sql);
+			await pool.query(owned.get(Storage.tokens)![0]!.sql);
 			await pool.query(`
-			CREATE TABLE auth_sessions (id text PRIMARY KEY, expiration bigint NOT NULL);
-			CREATE TABLE auth_challenges (
-				id text PRIMARY KEY, challenge text NOT NULL, browser text NOT NULL,
-				method text NOT NULL, action text NOT NULL, origin text NOT NULL,
-				expiration bigint NOT NULL, "user" text, fields text
-			);
 			CREATE FUNCTION overlap() RETURNS trigger LANGUAGE plpgsql AS $$
 			BEGIN
 				IF NEW.id LIKE 'race-%' THEN PERFORM pg_sleep(0.05); END IF;

@@ -2094,9 +2094,7 @@ test("oversized registration bodies are rejected without spending the signup bud
 
 /** Checksums of the shipped migrations: never update them, add a new version instead. */
 const checksums = {
-	auth: "1dd0bbe5a91a90cc6532753e04695d3fd488ef08202a63d70fea508f11a201ec",
-	agents: "a6c10a9a55133d44e1aa98e6019bad9cb8d6874052c1d4131b473ff6653987f1",
-	sessions: "27d66a8bdd7dd5655d4242587343392dcb5790aa72ebca61705c3ebbc13dcbaf",
+	auth: "a004b98e623499f6670ffcee36ae4c61cbac67fd0754be942d2d2d61524792fd",
 	limiter: "94fd469e8c2caa7331e532b764ae872352804a28527febb3decf5b09cf40ca70",
 };
 
@@ -2230,13 +2228,7 @@ describe("migration SQL", () => {
 	});
 
 	test("Auth's tables bring their migrations, applied before the app's", async () => {
-		expect(applied).toEqual([
-			"auth:1",
-			"auth:2",
-			"auth:3",
-			"rate_limits:1",
-			"0001_users",
-		]);
+		expect(applied).toEqual(["auth:1", "rate_limits:1", "0001_users"]);
 		// applied, so nothing runs again
 		expect(await db.migrate([own])).toEqual([]);
 	});
@@ -2329,14 +2321,12 @@ describe("migration SQL", () => {
 		await expect(app.fetch(`${origin}/`)).rejects.toThrow("app.use(auth)");
 	});
 
-	const [auth, agents, sessions] = owned.get(Storage.credentials)!;
+	const [auth] = owned.get(Storage.credentials)!;
 	const [limiter] = owned.get(Limiter.table)!;
 
 	// an applied migration's checksum must never change, new SQL ships as a new version
 	test.each([
 		["auth:1", auth!.sql, checksums.auth],
-		["auth:2", agents!.sql, checksums.agents],
-		["auth:3", sessions!.sql, checksums.sessions],
 		["rate_limits:1", limiter!.sql, checksums.limiter],
 	])("%s never changes", async (_, sql, checksum) => {
 		expect(

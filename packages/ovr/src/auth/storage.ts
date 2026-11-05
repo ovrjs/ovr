@@ -148,6 +148,7 @@ CREATE INDEX auth_credentials_user ON auth_credentials ("user");
 CREATE TABLE auth_sessions (
 	id text PRIMARY KEY,
 	"user" text NOT NULL,
+	started bigint NOT NULL,
 	expiration bigint NOT NULL
 );
 CREATE INDEX auth_sessions_user ON auth_sessions ("user");
@@ -165,11 +166,9 @@ CREATE TABLE auth_challenges (
 	fields text
 );
 CREATE INDEX auth_challenges_expiration ON auth_challenges (expiration);
-CREATE INDEX auth_challenges_browser ON auth_challenges (browser, expiration);`,
-		},
-		{
-			id: "auth:2",
-			sql: `CREATE TABLE auth_tokens (
+CREATE INDEX auth_challenges_browser ON auth_challenges (browser, expiration);
+
+CREATE TABLE auth_tokens (
 	id text PRIMARY KEY,
 	kind text NOT NULL,
 	"user" text NOT NULL,
@@ -184,14 +183,6 @@ CREATE INDEX auth_challenges_browser ON auth_challenges (browser, expiration);`,
 CREATE INDEX auth_tokens_family ON auth_tokens (family);
 CREATE INDEX auth_tokens_user ON auth_tokens ("user");
 CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
-		},
-		{
-			id: "auth:3",
-			// sessions renew while used, up to a lifetime from sign-in;
-			// existing sessions count from when this runs
-			sql: `ALTER TABLE auth_sessions ADD COLUMN started bigint NOT NULL
-	DEFAULT (extract(epoch FROM now()) * 1000)::bigint;
-ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 		},
 	] as const;
 

@@ -219,7 +219,7 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1` to `auth:3` and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` is a type error when they or the users table are missing from its database.
+`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1` and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` is a type error when they or the users table are missing from its database.
 
 ```ts
 const database = new Database(pool, [users, posts, ...Auth.tables]);
@@ -227,7 +227,7 @@ const database = new Database(pool, [users, posts, ...Auth.tables]);
 await database.migrate(files); // Auth's migrations, then your migrations/*.sql
 ```
 
-A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, which the next `database.migrate()` applies: `auth:2` added the table for [agents](#agents), and `auth:3` the sign-in time that ends a session at its `lifetime`.
+A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, such as `auth:2`, which the next `database.migrate()` applies.
 
 | Table              | Contents                                                      |
 | ------------------ | ------------------------------------------------------------- |

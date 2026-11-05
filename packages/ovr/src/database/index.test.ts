@@ -1,6 +1,6 @@
 import { Field, Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
-import { Database } from "./index.js";
+import { Database, owned } from "./index.js";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import pg from "pg";
@@ -767,6 +767,26 @@ describe.each(drivers)("$name", (driver) => {
 		expect(await db.migrate(migrations)).toHaveLength(migrations.length);
 		// Allow several complete reads, but not 1 + 2 + ... + N history rows.
 		expect(scanned).toBeLessThanOrEqual(migrations.length * 4);
+	});
+
+	test("a library's migrations apply in the order it lists them", async () => {
+		const library = new Table("library", { id: Schema.number().int() });
+		const versions = Array.from({ length: 11 }, (_, i) => ({
+			id: `library:${i + 1}`,
+			sql: i ? "SELECT 1" : "CREATE TABLE library (id int)",
+		}));
+		owned.set(library, versions.slice(0, 9));
+		const database = new Database(pool, [library]);
+		try {
+			expect(await database.migrate([])).toEqual(
+				versions.slice(0, 9).map(({ id }) => id),
+			);
+			// as text, library:10 sorts before library:9
+			owned.set(library, versions);
+			expect(await database.migrate([])).toEqual(["library:10", "library:11"]);
+		} finally {
+			await pool.query("DROP TABLE IF EXISTS library");
+		}
 	});
 
 	test("migrate rejects changed, missing, and out of order migrations", async () => {

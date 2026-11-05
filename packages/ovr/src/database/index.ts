@@ -666,8 +666,12 @@ class Base<T extends readonly Table.Any[]> {
 			);
 		}
 
-		const sorted = groups.map((group) =>
-			[...group].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+		// a library's in the order it lists them, so `auth:10` follows
+		// `auth:9`, and yours in ID order, as files are named
+		const ordered = groups.map((group, i) =>
+			i === groups.length - 1
+				? [...group].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+				: group,
 		);
 		const applied: string[] = [];
 		const done = new Set<string>();
@@ -702,15 +706,18 @@ class Base<T extends readonly Table.Any[]> {
 					last = row.n;
 				}
 
-				for (const group of sorted) {
-					const next = group.find((migration) => !done.has(migration.id));
-					if (!next) continue;
+				for (const group of ordered) {
+					const index = group.findIndex((migration) => !done.has(migration.id));
+					if (index === -1) continue;
 
-					const later = group.findLast((migration) => done.has(migration.id));
-					if (later && later.id > next.id)
+					const later = group.findLastIndex((migration) =>
+						done.has(migration.id),
+					);
+					if (later > index)
 						throw new Error(
-							`Migration ${next.id} sorts before applied migration ${later.id}`,
+							`Migration ${group[index]!.id} sorts before applied migration ${group[later]!.id}`,
 						);
+					const next = group[index]!;
 
 					// run by PL/pgSQL, where a COMMIT or ROLLBACK in the migration is an
 					// error, instead of ending this transaction and leaving changes
