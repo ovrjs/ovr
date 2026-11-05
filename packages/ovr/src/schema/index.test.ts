@@ -1505,7 +1505,7 @@ describe("toJsonSchema", () => {
 			tz: { title: "Time zone", type: "string" },
 			agree: { title: "I agree", type: "boolean", default: false },
 		});
-		expect(properties.name).not.toHaveProperty("title");
+		expect(properties).not.toHaveProperty("name.title");
 	});
 
 	test("an unchecked box may be left out of input, and is always output", () => {
