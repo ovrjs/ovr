@@ -563,6 +563,15 @@ export class Mcp {
 		if (missing.length)
 			return Mcp.#error(`Missing required parameter: ${missing.join(", ")}`);
 
+		// reported like the form's issues, where a browser would get a 404
+		const issues: { path: string; message: string }[] = [];
+		for (const [param, key] of tool.params) {
+			const result = tool.route.paramSchemas?.[key]?.parse(String(args[param]));
+			for (const issue of result?.issues ?? [])
+				issues.push({ path: param, message: issue.message });
+		}
+		if (issues.length) return Mcp.#error(Mcp.#issues(issues));
+
 		const { route } = tool;
 		let pathname: string;
 		try {
@@ -728,14 +737,14 @@ export class Mcp {
 							{
 								type: "text",
 								// another site is where the app sends the user, such as a
-								// checkout, but a page of this app that agents cannot read
-								// stays private, with its address and any token in it
+								// checkout, but the address of a page of this app that agents
+								// cannot read stays private, with any token in it
 								text:
 									next.origin !== c.url.origin
 										? `Redirected to ${next.href}`
 										: this.#readable(c, next)
 											? `Redirected to ${next.pathname}${next.search}`
-											: "Redirected to a page agents cannot read",
+											: "Redirected",
 							},
 						],
 						isError: false,

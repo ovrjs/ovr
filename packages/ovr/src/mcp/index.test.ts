@@ -266,6 +266,29 @@ describe("Mcp", () => {
 		expect(called).toBe(false);
 	});
 
+	test("a tool reports a parameter its schema rejects, instead of a bare 404", async () => {
+		const { app, rpc } = setup();
+		let called = false;
+		app.use(
+			Route.get("/items/:id")
+				.describe("Show an item")
+				.params({ id: Schema.string().uuid() })
+				.use(() => {
+					called = true;
+					return "item";
+				}),
+		);
+		const { body } = await rpc("tools/call", {
+			name: "get_items_id",
+			arguments: { id: "not-a-uuid" },
+		});
+		expect(called).toBe(false);
+		expect(body.result.isError).toBe(true);
+		expect(body.result.content[0].text).toBe(
+			`422 Unprocessable Content\n\n${JSON.stringify({ issues: [{ path: "id", message: "Expected UUID" }] })}`,
+		);
+	});
+
 	test("a tool redirect keeps the address of a page agents cannot read private", async () => {
 		const { app, rpc } = setup();
 		app.use(
@@ -281,9 +304,7 @@ describe("Mcp", () => {
 			name: Route.post("/private-go").describe("x").tool!.name,
 		});
 		expect(JSON.stringify(hidden.body)).not.toContain("secret");
-		expect(hidden.body.result.content[0].text).toBe(
-			"Redirected to a page agents cannot read",
-		);
+		expect(hidden.body.result.content[0].text).toBe("Redirected");
 		// another site is where the app sends the user, such as a payment page
 		const away = await rpc("tools/call", { name: "post_checkout" });
 		expect(away.body.result.content[0].text).toBe(
