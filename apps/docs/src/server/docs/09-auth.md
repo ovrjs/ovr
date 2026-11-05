@@ -264,7 +264,7 @@ const passkeys = await database.sql`
 `.parse(database.auth_credentials);
 ```
 
-Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, and all browsers together 10,000, see [rate limiting](#rate-limiting).
+Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, see [rate limiting](#rate-limiting).
 
 ## Rate limiting
 
@@ -279,7 +279,7 @@ Auth limits sign-in for you, per client, in the `rate_limits` table. The limits 
 
 A client is its trusted IP, with IPv6 grouped by `/64`, from `app.fetch(request, { ip })`, see [Create](#create). A ceremony makes two requests: options and verification have separate budgets. Registration options validate application fields, within a bounded 128 KB body, before the limit, so field errors do not spend signup attempts. Other admission checks run before parsing; all run before challenge writes. Logout is never limited. Every worker shares the database, so a fresh instance does not receive a fresh budget. Missing identity or unavailable storage throws to your app; it never skips the limit.
 
-Each browser can have 10 sign-in ceremonies outstanding, and all browsers together 10,000; when they are used up, new ceremonies are refused until some expire, two minutes after they start. Floods from many addresses belong at your hosting edge. To limit your own routes, see [Limiter](/05-middleware#rate-limiting).
+Each browser can have 10 sign-in ceremonies outstanding; when they are used up, its new ceremonies are refused until some expire, two minutes after they start. There is no cap across browsers, which anyone with enough addresses could fill to lock everyone out; the per-IP limits bound each network instead. Floods from many addresses belong at your hosting edge. To limit your own routes, see [Limiter](/05-middleware#rate-limiting).
 
 ## Options
 
@@ -304,25 +304,22 @@ Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/10-agents)
 Pass `auth` to the [MCP endpoint](/10-agents#sign-in), which mounts the OAuth endpoints agents sign in with, and create the page where users approve them, `/connect` unless you set `consent`:
 
 ```tsx
-const connect = Route.get("/connect")
-	.describe(false)
-	.use(async (c) => {
-		if (!(await c.session())) return c.redirect("/login", 303);
-		const request = await auth.consent(c);
-		if (!request) return c.text("This request expired. Connect again.", 400);
+const connect = Route.get("/connect").use(async (c) => {
+	if (!(await c.session())) return c.redirect("/login", 303);
+	const request = await auth.consent(c);
+	if (!request) return c.text("This request expired. Connect again.", 400);
 
-		return (
-			<>
-				<h1>Connect {request.client.name}?</h1>
-				<p>
-					Published by {new URL(request.client.id).origin}. It will be able to
-					do anything you can do in this app. You will return to{" "}
-					{request.redirect}.
-				</p>
-				<request.Form />
-			</>
-		);
-	});
+	return (
+		<>
+			<h1>Connect {request.client.name}?</h1>
+			<p>
+				Published by {new URL(request.client.id).origin}. It will be able to do
+				anything you can do in this app. You will return to {request.redirect}.
+			</p>
+			<request.Form />
+		</>
+	);
+});
 
 app.use(new Mcp({ auth }), connect);
 ```
@@ -341,18 +338,20 @@ Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint
 
 An agent's client ID is the HTTPS URL of its [client ID metadata document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-id-metadata-documents), a JSON file with its name and the addresses to return the user to. Auth fetches it when the user connects, so the name shown on the consent page is tied to the agent's website, and there is nothing to register or store. The fetch never follows redirects, reads at most 5 KB, and refuses private and other special-use addresses. The address is checked when the connection looks the name up, so a domain cannot pass the check and then point at your network. Node.js and Bun can check the connection, so mounting `new Mcp({ auth })` throws in other runtimes.
 
-Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute and download 10 documents per minute from one host, a host serves at most 300 downloads per minute in all, and an instance downloads at most 16 documents at once, 2 for one IP. Requests for the same agent share one download, a found agent is kept for 5 minutes, and a client ID without a valid document is remembered for a minute. Errors in an authorization request are answered with a 400 page, not redirected to the agent, since anyone can publish a document naming any callback.
+Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute and download 10 documents per minute from one host, a host serves at most 300 downloads per minute in all, and an instance downloads at most 16 documents at once, 2 for one IP. Requests for the same agent share one download, a found agent is kept for 5 minutes, and a client ID without a valid document is remembered for a minute. When a download is refused, an agent found in the last day is served from its last document, so floods of made-up client IDs cannot lock out agents users already connect. Errors in an authorization request are answered with a 400 page, not redirected to the agent, since anyone can publish a document naming any callback.
 
 Agents send the `resource` they will use the token with, the URL of an MCP endpoint mounted with this `auth`, when they authorize and when they request tokens; any other URL is refused, even on your origin. Authorization requires PKCE with S256. Codes last a minute and are used once, and access tokens last an hour. Refresh tokens are replaced each time they are used, but a connection ends 30 days after the user approved it, however often the agent refreshes; then the user connects it again. Using a code or refresh token a second time revokes every token issued from it, since one of the two parties stole it. A token grants what the user can do, so requests with a `scope` are refused. Tokens are bound to the resource they were requested for, such as the MCP endpoint, and stored as SHA-256 hashes.
 
 In a tool call, `c.session()` returns the session of the user who approved the agent, so the same handlers serve people and agents.
 
-To list the signed-in user's agents, query their refresh tokens. Disconnect one with `auth.disconnect(c, client)`, passing one of the listed client IDs:
+To list the signed-in user's agents, query their unexpired refresh tokens; a refresh token expires when its connection ends. Disconnect one with `auth.disconnect(c, client)`, passing one of the listed client IDs:
 
 ```ts
 const agents = await database.sql`
 	SELECT DISTINCT ${database.auth_tokens.columns.client} FROM ${database.auth_tokens}
-	WHERE ${database.auth_tokens.columns.user} = ${session.user} AND kind = 'refresh'
+	WHERE ${database.auth_tokens.columns.user} = ${session.user}
+		AND ${database.auth_tokens.columns.kind} = 'refresh'
+		AND ${database.auth_tokens.columns.expiration} > ${Date.now()}
 `;
 
 // for example, the agent the user chose from the list

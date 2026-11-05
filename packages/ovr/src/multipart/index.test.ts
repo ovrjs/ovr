@@ -1509,4 +1509,20 @@ describe("quoted header parameters", () => {
 		}
 		expect(parts).toEqual([["na;me", 'notes;v2 "final".txt']]);
 	});
+
+	it("decodes only the escapes browsers write in a quoted filename", async () => {
+		const body =
+			'--XyZ\r\nContent-Disposition: form-data; name="file"; filename="100%41 %22a%22%0A.txt"\r\n\r\ncontent\r\n--XyZ--\r\n';
+		const multipart = new Multipart(
+			new Request("http://localhost", {
+				method: "POST",
+				headers: { "content-type": "multipart/form-data; boundary=XyZ" },
+				body,
+			}),
+		);
+		for await (const part of multipart) {
+			expect(part.filename).toBe('100%41 "a"\n.txt');
+			await part.text();
+		}
+	});
 });

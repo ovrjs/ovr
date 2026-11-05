@@ -66,6 +66,8 @@ const downloads = {
 	cached: 1000,
 	/** How long a found agent is kept */
 	lifetime: 5 * Time.minute,
+	/** How long a found agent's document is used when a new download is refused */
+	stale: Time.day,
 };
 
 /**
@@ -126,7 +128,10 @@ export function oauth(
 	});
 
 	/** Agents found recently, by client ID */
-	const found = new Map<string, { client: Client; expiration: number }>();
+	const found = new Map<
+		string,
+		{ client: Client; expiration: number; stale: number }
+	>();
 
 	/** Client IDs without a valid document, until when, by client ID */
 	const missing = new Map<string, number>();
@@ -149,54 +154,70 @@ export function oauth(
 		if (!id || !url) return;
 
 		const now = Date.now();
-		const known = found.get(id);
+		let known = found.get(id);
 		if (known && known.expiration > now) return known.client;
-		found.delete(id);
+		if (known && known.stale <= now) {
+			found.delete(id);
+			known = undefined;
+		}
 		if ((missing.get(id) ?? 0) > now) return;
 		missing.delete(id);
+
+		// a refused download serves an agent found before from its last
+		// document, so floods of other client IDs cannot lock it out
+		const refused = () => known?.client ?? null;
 
 		let download = pending.get(id);
 		if (!download) {
 			const ip = c.ip ?? "";
-			const downloading = active.get(ip) ?? 0;
-			if (pending.size >= downloads.concurrent || downloading >= downloads.each)
-				return null;
-			active.set(ip, downloading + 1);
+			const slots = () =>
+				pending.size < downloads.concurrent &&
+				(active.get(ip) ?? 0) < downloads.each;
+			if (!slots()) return refused();
 
-			download = (async () => {
-				// this client's share first, so a refused one spends nothing of the host's
-				if (
-					(await hosts.check(c, url.host)) !== true ||
-					(await ceiling.check(c, url.host)) !== true
-				)
-					return null;
+			// each request's own share, before it starts a download others may
+			// join, so one client's refusal is never another's
+			if ((await hosts.check(c, url.host)) !== true) return refused();
 
-				const client = await find(id, url);
-				// the oldest is forgotten first
-				if (client) {
-					if (found.size >= downloads.cached)
-						found.delete(found.keys().next().value!);
-					found.set(id, {
-						client,
-						expiration: Date.now() + downloads.lifetime,
-					});
-				} else {
-					if (missing.size >= downloads.cached)
-						missing.delete(missing.keys().next().value!);
-					missing.set(id, Date.now() + downloads.missing);
-				}
-				return client;
-			})().finally(() => {
-				pending.delete(id);
-				const left = (active.get(ip) ?? 1) - 1;
-				if (left) active.set(ip, left);
-				else active.delete(ip);
-			});
+			download = pending.get(id);
+			if (!download) {
+				if (!slots()) return refused();
+				active.set(ip, (active.get(ip) ?? 0) + 1);
 
-			pending.set(id, download);
+				download = (async () => {
+					if ((await ceiling.check(c, url.host)) !== true) return null;
+
+					const client = await find(id, url);
+					// the oldest is forgotten first
+					found.delete(id);
+					if (client) {
+						if (found.size >= downloads.cached)
+							found.delete(found.keys().next().value!);
+						const now = Date.now();
+						found.set(id, {
+							client,
+							expiration: now + downloads.lifetime,
+							stale: now + downloads.stale,
+						});
+					} else {
+						if (missing.size >= downloads.cached)
+							missing.delete(missing.keys().next().value!);
+						missing.set(id, Date.now() + downloads.missing);
+					}
+					return client;
+				})().finally(() => {
+					pending.delete(id);
+					const left = (active.get(ip) ?? 1) - 1;
+					if (left) active.set(ip, left);
+					else active.delete(ip);
+				});
+
+				pending.set(id, download);
+			}
 		}
 
-		return download;
+		const client = await download;
+		return client === null ? refused() : client;
 	};
 
 	const random = () =>
@@ -404,106 +425,98 @@ export function oauth(
 
 	// authorization server metadata, RFC 8414
 	cross(
-		Route.get(paths.metadata)
-			.describe(false)
-			.use(cors, (c) =>
-				c.json({
-					issuer: origin,
-					authorization_endpoint: origin + paths.authorize,
-					token_endpoint: origin + paths.token,
-					response_types_supported: ["code"],
-					grant_types_supported: ["authorization_code", "refresh_token"],
-					code_challenge_methods_supported: ["S256"],
-					token_endpoint_auth_methods_supported: ["none"],
-					client_id_metadata_document_supported: true,
-					authorization_response_iss_parameter_supported: true,
-				}),
-			),
+		Route.get(paths.metadata).use(cors, (c) =>
+			c.json({
+				issuer: origin,
+				authorization_endpoint: origin + paths.authorize,
+				token_endpoint: origin + paths.token,
+				response_types_supported: ["code"],
+				grant_types_supported: ["authorization_code", "refresh_token"],
+				code_challenge_methods_supported: ["S256"],
+				token_endpoint_auth_methods_supported: ["none"],
+				client_id_metadata_document_supported: true,
+				authorization_response_iss_parameter_supported: true,
+			}),
+		),
 	);
 
 	routes.push(
-		Route.get(paths.authorize)
-			.describe(false)
-			.use(async (c) => {
-				c.res.headers.set(Header.name.cache, "no-store");
-				const query = c.url.searchParams;
+		Route.get(paths.authorize).use(async (c) => {
+			c.res.headers.set(Header.name.cache, "no-store");
+			const query = c.url.searchParams;
 
-				if ((await authorizations.check(c)) !== true)
-					return c.text("Too many requests. Try again later.", 429);
+			if ((await authorizations.check(c)) !== true)
+				return c.text("Too many requests. Try again later.", 429);
 
-				const client = await agent(c, query.get("client_id"));
-				if (client === null)
-					return c.text(
-						"Too many agents are connecting. Try again later.",
-						503,
-					);
-				if (!client) return c.text("Unknown client.", 400);
+			const client = await agent(c, query.get("client_id"));
+			if (client === null)
+				return c.text("Too many agents are connecting. Try again later.", 503);
+			if (!client) return c.text("Unknown client.", 400);
 
-				const redirect = match(client.redirects, query.get("redirect_uri"));
-				if (!redirect) return c.text("Invalid redirect URI.", 400);
+			const redirect = match(client.redirects, query.get("redirect_uri"));
+			if (!redirect) return c.text("Invalid redirect URI.", 400);
 
-				// the client is known, so other errors go back to it
-				// answered here, not redirected: any client can publish a document
-				// with any callback, which would make this origin an open redirector
-				const error = (code: string, description: string) =>
-					c.text(`${description} (${code})`, 400);
+			// answered here, not redirected: any client can publish a document
+			// with any callback, which would make this origin an open redirector
+			const error = (code: string, description: string) =>
+				c.text(`${description} (${code})`, 400);
 
-				if (query.get("response_type") !== "code")
-					return error("unsupported_response_type", "Use the code flow.");
+			if (query.get("response_type") !== "code")
+				return error("unsupported_response_type", "Use the code flow.");
 
-				const challenge = query.get("code_challenge");
-				if (
-					query.get("code_challenge_method") !== "S256" ||
-					!challenge ||
-					!/^[\w-]{43}$/.test(challenge)
-				)
-					return error("invalid_request", "PKCE with S256 is required.");
+			const challenge = query.get("code_challenge");
+			if (
+				query.get("code_challenge_method") !== "S256" ||
+				!challenge ||
+				!/^[\w-]{43}$/.test(challenge)
+			)
+				return error("invalid_request", "PKCE with S256 is required.");
 
-				// tokens are bound to the resource the agent will use them with
-				const resource = query.get("resource");
-				if (!resource) return error("invalid_target", "Resource is required.");
-				let target: URL;
-				try {
-					target = new URL(resource);
-				} catch {
-					return error("invalid_target", "Invalid resource.");
-				}
-				// exactly an endpoint that accepts these tokens, such as an MCP endpoint
-				if (!resources.has(target.href) || target.href !== resource)
-					return error("invalid_target", "Unknown resource.");
+			// tokens are bound to the resource the agent will use them with
+			const resource = query.get("resource");
+			if (!resource) return error("invalid_target", "Resource is required.");
+			let target: URL;
+			try {
+				target = new URL(resource);
+			} catch {
+				return error("invalid_target", "Invalid resource.");
+			}
+			// exactly an endpoint that accepts these tokens, such as an MCP endpoint
+			if (!resources.has(target.href) || target.href !== resource)
+				return error("invalid_target", "Unknown resource.");
 
-				// a token grants everything the user can do, there are no narrower scopes
-				if (query.get("scope"))
-					return error("invalid_scope", "Scopes are not supported.");
+			// a token grants everything the user can do, there are no narrower scopes
+			if (query.get("scope"))
+				return error("invalid_scope", "Scopes are not supported.");
 
-				const session = await state(c).session();
-				if (!session) {
-					// come back here after logging in
-					state(c).remember(c.url.pathname + c.url.search);
-					return c.redirect(page, 303);
-				}
+			const session = await state(c).session();
+			if (!session) {
+				// come back here after logging in
+				state(c).remember(c.url.pathname + c.url.search);
+				return c.redirect(page, 303);
+			}
 
-				const url = new URL(consent, origin);
-				url.searchParams.set(
-					"request",
-					await Token.seal(
-						options.secret,
-						"consent",
-						JSON.stringify({
-							client: client.id,
-							name: client.name,
-							redirect,
-							challenge,
-							resource,
-							state: query.get("state"),
-							user: session.user,
-							expiration: Date.now() + lifetime.consent,
-						} satisfies Pending),
-					),
-				);
+			const url = new URL(consent, origin);
+			url.searchParams.set(
+				"request",
+				await Token.seal(
+					options.secret,
+					"consent",
+					JSON.stringify({
+						client: client.id,
+						name: client.name,
+						redirect,
+						challenge,
+						resource,
+						state: query.get("state"),
+						user: session.user,
+						expiration: Date.now() + lifetime.consent,
+					} satisfies Pending),
+				),
+			);
 
-				return c.redirect(url, 303);
-			}),
+			return c.redirect(url, 303);
+		}),
 		prompt,
 		approve,
 		deny,

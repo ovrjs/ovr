@@ -153,7 +153,7 @@ export class Mcp {
 			Route.post(path).use((c) => this.#handle(c)),
 			// only POST is used, there are no streams to open or sessions to end
 			...[Method.get, "DELETE"].map((method) =>
-				new Route(method, path).describe(false).use((c) => {
+				new Route(method, path).use((c) => {
 					c.res.headers.set("allow", Method.post);
 					return c.text("Method Not Allowed", 405);
 				}),
@@ -173,9 +173,7 @@ export class Mcp {
 			};
 
 			routes.push(
-				Route.get(`/.well-known/oauth-protected-resource${path}`)
-					.describe(false)
-					.use(metadata),
+				Route.get(`/.well-known/oauth-protected-resource${path}`).use(metadata),
 			);
 
 			return [
@@ -465,7 +463,7 @@ export class Mcp {
 		return this.#app!.routes.filter(
 			(route) =>
 				route.method === Method.get &&
-				route.description !== false &&
+				route.description &&
 				/[:*]/.test(route.pattern) === templates,
 		);
 	}
@@ -675,7 +673,7 @@ export class Mcp {
 	#readable(c: Context, url: URL) {
 		if (url.origin !== c.url.origin) return false;
 		const route = this.#app!.find(Method.get, url.pathname);
-		return route !== undefined && route.description !== false;
+		return Boolean(route?.description);
 	}
 
 	/**

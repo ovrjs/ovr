@@ -9,7 +9,7 @@ const app = new App({ trailingSlash: "always" });
 test("a mounted route's configuration is final", () => {
 	const route = Route.get("/items/:id").describe("Item");
 	new App().use(route);
-	expect(() => route.describe(false)).toThrow(
+	expect(() => route.describe("Other")).toThrow(
 		'Call .describe() before app.use() on route "/items/:id".',
 	);
 	expect(() => route.params({})).toThrow("before app.use()");

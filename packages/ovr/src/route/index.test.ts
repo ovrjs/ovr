@@ -795,10 +795,8 @@ describe("chained routes", () => {
 
 		// a form per record would repeat the name, and only described routes are tools
 		const remove = Route.post("/posts/:id/delete").describe("Delete a post");
-		const login = Route.post("/login").describe(false);
 		for (const html of [
 			await render(remove.Form({ params: { id: "1" } })),
-			await render(login.Form({})),
 			await render(Route.post("/internal").Form({})),
 			await render(Route.get("/about").Form({})),
 		])
@@ -932,9 +930,9 @@ describe("chained routes", () => {
 		expect(route.description).toBe("List posts");
 	});
 
-	test("describe stores the description, and false hides the route", () => {
+	test("describe stores the description", () => {
 		const remove = Route.post("/posts/:id/delete").describe("Delete a post");
-		const hidden = Route.post("/internal").describe(false);
+		const undescribed = Route.post("/internal");
 
 		expect(remove.description).toBe("Delete a post");
 		expect(remove.tool).toEqual({
@@ -942,7 +940,8 @@ describe("chained routes", () => {
 			description: "Delete a post",
 			read: false,
 		});
-		expect(hidden.description).toBe(false);
+		expect(undescribed.description).toBeUndefined();
+		expect(undescribed.tool).toBeUndefined();
 	});
 
 	test("params convert values before the middleware runs", async () => {

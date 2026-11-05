@@ -175,11 +175,13 @@ export class Header {
 
 				const key = header.slice(cursor, equal).trim();
 				let value: string;
+				let quoted = false;
 
 				// a quoted value ends at its closing quote, it can contain ";"
 				let start = equal + 1;
 				while (header[start] === " " || header[start] === "\t") start++;
 				if (header[start] === '"') {
+					quoted = true;
 					value = "";
 					let i = start + 1;
 					for (; i < headerLength && header[i] !== '"'; i++)
@@ -190,7 +192,13 @@ export class Header {
 
 				// first value should take precedence
 				if (!(key in parsed)) {
-					if (value.includes("%")) {
+					if (quoted) {
+						// browsers escape only these in a quoted multipart filename,
+						// so other "%" are the name's own, like "100%41.txt"
+						value = value.replace(/%(22|0D|0A)/gi, (escape) =>
+							decodeURIComponent(escape),
+						);
+					} else if (value.includes("%")) {
 						// most values don't need to be decoded
 						try {
 							// cookies must be a simple string

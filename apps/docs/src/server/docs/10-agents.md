@@ -58,7 +58,7 @@ app.use(mcp);
 
 ### Tools
 
-Only [described routes](/04-route#describe) become tools, so adding a route never lets agents call it. Write the description for an agent that sees the route without your UI:
+Only [described routes](/04-route#describe) are served to agents, so adding a route never lets agents call or read it. Write the description for an agent that sees the route without your UI:
 
 ```ts
 const create = Route.post("/posts")
@@ -76,8 +76,7 @@ const remove = Route.post("/posts/:id/delete")
 | --------------------------------- | -------------------------------- |
 | POST and other methods, described | A tool                           |
 | GET, described                    | A read-only tool, and a resource |
-| GET                               | A resource, read as Markdown     |
-| `describe(false)`                 | Nothing through MCP              |
+| Not described                     | Nothing through MCP              |
 
 A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. Its name is generated from the method and pattern, for example `post_posts_id_delete`.
 
@@ -87,7 +86,7 @@ A tool call is a request to the route. The arguments become form data, or search
 
 ### Resources
 
-GET routes are resources. Routes without parameters are listed; routes with parameters are templates, like `https://example.com/posts/{id}`. Reading one renders the page as Markdown.
+Described GET routes are resources. Routes without parameters are listed; routes with parameters are templates, like `https://example.com/posts/{id}`. Reading one renders the page as Markdown.
 
 ### Sign in
 
@@ -124,6 +123,6 @@ The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specifi
 ></form>
 ```
 
-A form that may change data waits for the user to submit it, after the agent fills it in. GET forms, such as a search, add `toolautosubmit`, so the agent submits them itself and sees the results. Forms of routes with parameters, like a delete button in each row, would repeat the name, so they are not annotated; when one is the only form on its page, pass `toolname` and `tooldescription` yourself. Undescribed and hidden routes are never annotated, so an agent cannot sign in or approve itself.
+A form that may change data waits for the user to submit it, after the agent fills it in. GET forms, such as a search, add `toolautosubmit`, so the agent submits them itself and sees the results. Forms of routes with parameters, like a delete button in each row, would repeat the name, so they are not annotated; when one is the only form on its page, pass `toolname` and `tooldescription` yourself. Undescribed routes are never annotated, so an agent cannot sign in or approve itself.
 
 Browsers without WebMCP ignore the attributes. It is in a Chrome origin trial, so add your trial token to pages to enable it for users.

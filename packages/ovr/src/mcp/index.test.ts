@@ -59,6 +59,7 @@ function setup() {
 		);
 
 	const show = Route.get("/posts/:id")
+		.describe("Show a post")
 		.params({ id: Schema.string().preprocess(String) })
 		.use((c) => {
 			const title = posts.get(c.params.id);
@@ -94,9 +95,7 @@ function setup() {
 			return c.redirect(list, 303);
 		});
 
-	const hidden = Route.post("/internal")
-		.describe(false)
-		.use(() => "secret");
+	const hidden = Route.post("/internal").use(() => "secret");
 
 	const app = new App().use(
 		new Mcp({ name: "posts", instructions: "Manage posts." }),
@@ -183,25 +182,29 @@ describe("Mcp", () => {
 		});
 		expect(origins).not.toContain("http://other.example");
 	});
-	test("a mounted tool cannot be hidden or changed later", async () => {
+	test("a mounted tool cannot be changed later", async () => {
 		const { app } = setup();
 		const route = Route.post("/toggle")
 			.describe("Toggle")
 			.use(() => {});
 		app.use(route);
-		expect(() => route.describe(false)).toThrow("before app.use()");
+		expect(() => route.describe("Other")).toThrow("before app.use()");
 		expect(() => route.use(() => {})).toThrow("before app.use()");
 	});
 	test("mounting a service twice cannot switch the first endpoint to another app", async () => {
 		const mcp = new Mcp();
 		const first = new App().use(
 			mcp,
-			Route.get("/tenant").use(() => "first tenant"),
+			Route.get("/tenant")
+				.describe("Tenant")
+				.use(() => "first tenant"),
 		);
 		try {
 			new App().use(
 				mcp,
-				Route.get("/tenant").use(() => "second tenant"),
+				Route.get("/tenant")
+					.describe("Tenant")
+					.use(() => "second tenant"),
 			);
 		} catch (error) {
 			// Refusing a second mount also keeps the first app isolated.
@@ -216,16 +219,14 @@ describe("Mcp", () => {
 		);
 	});
 
-	test("resources/read does not run hidden GET handlers", async () => {
+	test("resources/read does not run undescribed GET handlers", async () => {
 		const { app, rpc } = setup();
 		let called = false;
 		app.use(
-			Route.get("/private")
-				.describe(false)
-				.use(() => {
-					called = true;
-					return "private data";
-				}),
+			Route.get("/private").use(() => {
+				called = true;
+				return "private data";
+			}),
 		);
 		await rpc("resources/read", { uri: "http://localhost/private" });
 		expect(called).toBe(false);
@@ -240,16 +241,12 @@ describe("Mcp", () => {
 				Route.post("/edit/:id")
 					.describe("Edit one item")
 					.use(() => "edited"),
-				Route.post("/edit/private")
-					.describe(false)
-					.use(() => {
-						called = true;
-					}),
-				Route.post("/")
-					.describe(false)
-					.use(() => {
-						called = true;
-					}),
+				Route.post("/edit/private").use(() => {
+					called = true;
+				}),
+				Route.post("/").use(() => {
+					called = true;
+				}),
 			);
 			await rpc("tools/call", { name: "post_edit_id", arguments: { id } });
 			expect(called).toBe(false);
@@ -261,11 +258,9 @@ describe("Mcp", () => {
 		let called = false;
 		app.use(
 			Route.post("/go").use((c) => c.redirect("/private", 303)),
-			Route.get("/private")
-				.describe(false)
-				.use(() => {
-					called = true;
-				}),
+			Route.get("/private").use(() => {
+				called = true;
+			}),
 		);
 		await rpc("tools/call", { name: "post_go" });
 		expect(called).toBe(false);
@@ -298,11 +293,13 @@ describe("Mcp", () => {
 		const started = Promise.withResolvers<AbortSignal>();
 		const finish = Promise.withResolvers<void>();
 		app.use(
-			Route.get("/slow").use(async (c) => {
-				started.resolve(c.req.signal);
-				await finish.promise;
-				return "done";
-			}),
+			Route.get("/slow")
+				.describe("Slow")
+				.use(async (c) => {
+					started.resolve(c.req.signal);
+					await finish.promise;
+					return "done";
+				}),
 		);
 		const client = new AbortController();
 		const pending = app.fetch("http://localhost/mcp", {
@@ -345,13 +342,14 @@ describe("Mcp", () => {
 
 		expect(tools.map((tool: { name: string }) => tool.name)).toEqual([
 			"get_posts",
+			"get_posts_id",
 			"get_search",
 			"post_posts",
 			"post_posts_id_delete",
 		]);
 		expect(body.result).toMatchObject({ ttlMs: 60000, cacheScope: "public" });
 
-		const [list, search, create, remove] = tools;
+		const [list, , search, create, remove] = tools;
 
 		expect(list).toEqual({
 			name: "get_posts",
@@ -462,8 +460,13 @@ describe("Mcp", () => {
 		expect(unknown.body.error.code).toBe(-32602);
 	});
 
-	test("pages are resources", async () => {
-		const { rpc } = setup();
+	test("described pages are resources", async () => {
+		const { app, rpc } = setup();
+		// undescribed pages are not served to agents
+		app.use(
+			Route.get("/about").use(() => "About"),
+			Route.get("/drafts/:id").use(() => "Draft"),
+		);
 
 		const list = await rpc("resources/list");
 		expect(list.body.result.resources).toEqual([
@@ -486,6 +489,7 @@ describe("Mcp", () => {
 			{
 				uriTemplate: "http://localhost/posts/{id}",
 				name: "/posts/:id",
+				description: "Show a post",
 				mimeType: "text/markdown",
 			},
 		]);
@@ -666,6 +670,5 @@ describe("Mcp", () => {
 			Route.get("/search").fields({ q: Field.search() }).tool,
 		).toBeUndefined();
 		expect(Route.get("/about").tool).toBeUndefined();
-		expect(Route.post("/hidden").describe(false).tool).toBeUndefined();
 	});
 });

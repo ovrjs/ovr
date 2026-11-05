@@ -3715,6 +3715,84 @@ describe("agents", () => {
 			expect(Metadata.fetch).toHaveBeenCalledTimes(11);
 		});
 
+		test("a refused request never refuses another waiting on the same agent", async () => {
+			const { app } = agents();
+
+			// one IP spends its downloads from the real agent's host
+			for (let i = 0; i < 10; i++)
+				await authorize(app, `https://agent.example/${i}.json`, "198.51.100.7");
+
+			// hold its request for the real agent in its own limit check
+			const check = Limiter.prototype.check;
+			const held = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			const spy = vi
+				.spyOn(Limiter.prototype, "check")
+				.mockImplementation(async function (this: Limiter, c, scope) {
+					if (c.ip === "198.51.100.7" && scope === "agent.example") {
+						held.resolve();
+						await release.promise;
+					}
+					return check.call(this, c, scope);
+				});
+			try {
+				const refused = authorize(app, agent, "198.51.100.7");
+				await held.promise;
+				// someone else asks for the same agent meanwhile
+				const other = authorize(app, agent, "192.0.2.44");
+				await vi.waitFor(() =>
+					expect(Metadata.fetch).toHaveBeenCalledTimes(11),
+				);
+				release.resolve();
+				expect((await refused).status).toBe(503);
+				expect((await other).status).toBe(303);
+			} finally {
+				release.resolve();
+				spy.mockRestore();
+			}
+		});
+
+		test("a found agent is served from its last document when downloads are refused", async () => {
+			const { app } = agents();
+			expect((await authorize(app, agent)).status).toBe(303);
+			expect(Metadata.fetch).toHaveBeenCalledTimes(1);
+
+			const now = Date.now();
+			const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+			const { promise, resolve } = Promise.withResolvers<void>();
+			try {
+				// its cache ran out, and every download slot is taken
+				clock.mockReturnValue(now + 5 * Time.minute + 1);
+				vi.mocked(Metadata.fetch).mockImplementation(async (url) => {
+					await promise;
+					return documents[url.href];
+				});
+				const waiting = Array.from({ length: 16 }, (_, i) =>
+					authorize(
+						app,
+						`https://agent${i}.example/client.json`,
+						`198.51.100.${i}`,
+					),
+				);
+				await vi.waitFor(() =>
+					expect(Metadata.fetch).toHaveBeenCalledTimes(17),
+				);
+
+				expect((await authorize(app, agent, "192.0.2.44")).status).toBe(303);
+				expect(Metadata.fetch).toHaveBeenCalledTimes(17);
+
+				// a day later its document is too old to use
+				clock.mockReturnValue(now + Time.day + 1);
+				expect((await authorize(app, agent, "192.0.2.45")).status).toBe(503);
+
+				resolve();
+				await Promise.all(waiting);
+			} finally {
+				resolve();
+				clock.mockRestore();
+			}
+		});
+
 		test("one IP holds at most two downloads at once", async () => {
 			const { app } = agents();
 			const { promise, resolve } = Promise.withResolvers<void>();

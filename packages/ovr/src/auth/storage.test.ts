@@ -336,9 +336,10 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 		);
 
 		test.each(["browser", "total"])(
-			"enforces the %s capacity across concurrent requests",
+			"enforces the browser capacity across concurrent requests, with no total cap (%s)",
 			async (scope) => {
-				const capacity = scope === "browser" ? 10 : 10000;
+				// a cap shared by every browser would be one attacker's to fill
+				const seeded = scope === "browser" ? 9 : 10000;
 				const challenge: Storage.Challenge = {
 					challenge: "challenge",
 					browser: "browser",
@@ -347,7 +348,7 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 					origin: "https://example.com",
 					expiration: Date.now() + 120000,
 				};
-				// Complete pruning before the race and leave exactly one slot available.
+				// Complete pruning before the race.
 				await storage.challenges.set("warmup", challenge);
 				await storage.challenges.take("warmup");
 				await db.sql`
@@ -355,26 +356,25 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 			SELECT 'seed-' || i, 'challenge',
 				CASE WHEN ${scope} = 'browser' THEN 'browser' ELSE 'browser-' || i END,
 				'login', '/auth/login', 'https://example.com', ${challenge.expiration}
-			FROM generate_series(1, ${capacity - 1}::int) AS i
+			FROM generate_series(1, ${seeded}::int) AS i
 		`;
 
 				const results = await Promise.all(
 					Array.from({ length: 12 }, (_, i) =>
-						storage.challenges.set(`race-${i}`, {
-							...challenge,
-							browser: scope === "browser" ? "browser" : `race-${i}`,
-						}),
+						storage.challenges.set(`race-${i}`, challenge),
 					),
 				);
 
-				expect(results.filter(Boolean)).toHaveLength(1);
+				// one browser's last slot goes to one request, whatever others hold
+				const won = scope === "browser" ? 1 : 10;
+				expect(results.filter(Boolean)).toHaveLength(won);
 				expect(
 					(
 						await pool.query(
 							"SELECT count(*)::int AS count FROM auth_challenges",
 						)
 					).rows,
-				).toEqual([{ count: capacity }]);
+				).toEqual([{ count: seeded + won }]);
 			},
 		);
 	},

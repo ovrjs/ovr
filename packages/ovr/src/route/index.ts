@@ -351,8 +351,8 @@ export class Route<
 	/** HTTP method */
 	readonly method: Route.Method;
 
-	/** Description for agents, `false` hides the route from them */
-	#description?: string | false;
+	/** Description for agents */
+	#description?: string;
 
 	/** Schemas that check and convert pattern parameters */
 	#paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
@@ -377,7 +377,7 @@ export class Route<
 		this.#pattern = pattern;
 	}
 
-	/** Description for agents, `false` hides the route from them */
+	/** Description for agents, only described routes are served to them */
 	get description() {
 		return this.#description;
 	}
@@ -451,13 +451,13 @@ export class Route<
 	}
 
 	/**
-	 * Describe the route for agents. Described routes become MCP tools, and
-	 * `false` hides the route from agents.
+	 * Describe the route for agents. Only described routes are served to
+	 * them: as MCP tools, and GET routes as resources too.
 	 *
 	 * @param description What the route does, written for an agent
 	 * @returns The route
 	 */
-	describe(description: string | false) {
+	describe(description: string) {
 		this.#configure("describe");
 		this.#description = description;
 		return this;

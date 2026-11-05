@@ -27,21 +27,19 @@ function Page({ title, children }: { title: string; children: JSX.Element }) {
 	);
 }
 
-const login = Route.get("/login")
-	.describe(false)
-	.use(async (c) => {
-		if (await c.session()) return c.redirect(list, 303);
-		const { Register, Login } = auth.forms(c);
+const login = Route.get("/login").use(async (c) => {
+	if (await c.session()) return c.redirect(list, 303);
+	const { Register, Login } = auth.forms(c);
 
-		return (
-			<Page title="Your bookmarks">
-				<h2>Log in</h2>
-				<Login />
-				<h2>Create account</h2>
-				<Register />
-			</Page>
-		);
-	});
+	return (
+		<Page title="Your bookmarks">
+			<h2>Log in</h2>
+			<Login />
+			<h2>Create account</h2>
+			<Register />
+		</Page>
+	);
+});
 
 const create = Route.post("/bookmarks")
 	.describe("Save a bookmark")
@@ -175,24 +173,22 @@ const edit = Route.get("/bookmarks/:id/edit")
 		);
 	});
 
-const connect = Route.get("/connect")
-	.describe(false)
-	.use(async (c) => {
-		if (!(await c.session())) return c.redirect(login, 303);
-		const request = await auth.consent(c);
-		if (!request) return c.text("This request expired. Connect again.", 400);
+const connect = Route.get("/connect").use(async (c) => {
+	if (!(await c.session())) return c.redirect(login, 303);
+	const request = await auth.consent(c);
+	if (!request) return c.text("This request expired. Connect again.", 400);
 
-		return (
-			<Page title={`Connect ${request.client.name}?`}>
-				<p>
-					{request.client.name}, published by{" "}
-					{new URL(request.client.id).origin}, will be able to read and change
-					your bookmarks. You will return to {request.redirect}.
-				</p>
-				<request.Form />
-			</Page>
-		);
-	});
+	return (
+		<Page title={`Connect ${request.client.name}?`}>
+			<p>
+				{request.client.name}, published by {new URL(request.client.id).origin},
+				will be able to read and change your bookmarks. You will return to{" "}
+				{request.redirect}.
+			</p>
+			<request.Form />
+		</Page>
+	);
+});
 
 /** Agents use the described routes as tools, and read pages as Markdown. */
 const mcp = new Mcp({

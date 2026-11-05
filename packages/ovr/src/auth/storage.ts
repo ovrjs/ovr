@@ -216,8 +216,12 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 		Storage.tokens,
 	] as const;
 
-	/** Outstanding ceremonies across all browsers, and for one browser. */
-	static readonly #capacity = { total: 10000, browser: 10 };
+	/**
+	 * Outstanding ceremonies for one browser. There is no cap across browsers:
+	 * cookies are free to mint, so any cap shared by all of them is one
+	 * attacker's to fill, and the per-IP limit already bounds each network.
+	 */
+	static readonly #capacity = 10;
 
 	/** One store per database, so instances share pruning. */
 	static readonly #stores = new WeakMap<Database, Storage>();
@@ -465,20 +469,18 @@ ALTER TABLE auth_sessions ALTER COLUMN started DROP DEFAULT;`,
 			const now = Date.now();
 
 			return this.#db.sql(async (t) => {
-				// one writer at a time, so concurrent requests cannot share the last
-				// slot; the insert's snapshot is taken after the lock
-				await t.sql`SELECT pg_advisory_xact_lock(hashtext('auth_challenges'))`;
+				// one writer at a time for each browser, so its concurrent requests
+				// cannot share the last slot; the insert's snapshot is taken after the lock
+				await t.sql`SELECT pg_advisory_xact_lock(hashtext('auth_challenges'), hashtext(${challenge.browser}))`;
 
 				const rows = await t.sql`
 					INSERT INTO ${table} (id, challenge, browser, method, action, origin, expiration, "user", fields)
 					SELECT ${id}, ${challenge.challenge}, ${challenge.browser}, ${challenge.method},
 						${challenge.action}, ${challenge.origin}, ${challenge.expiration}::bigint,
 						${challenge.user ?? null}, ${challenge.fields ?? null}
-					WHERE NOT EXISTS (
-						SELECT 1 FROM ${table} WHERE expiration > ${now} OFFSET ${Storage.#capacity.total - 1}
-					) AND (
+					WHERE (
 						SELECT count(*) FROM ${table} WHERE browser = ${challenge.browser} AND expiration > ${now}
-					) < ${Storage.#capacity.browser}
+					) < ${Storage.#capacity}
 					RETURNING id
 				`;
 

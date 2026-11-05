@@ -45,8 +45,8 @@ recovery are separate product choices.
 
 The described routes are MCP tools: `post_bookmarks` saves, `post_bookmarks_id`
 edits, and `post_bookmarks_id_delete` deletes; agents' clients can confirm each with the user. The list and
-edit pages are read-only tools, and the described pages are Markdown resources;
-`/login` and `/connect` are hidden from MCP with `describe(false)`. An agent
+edit pages are read-only tools and Markdown resources; `/login` and `/connect`
+are not described, so agents cannot reach them through MCP. An agent
 connecting to `/mcp` signs in through OAuth: the user logs in with their passkey
 and approves it on `/connect`, and its tool calls run the same handlers as that
 user, so ownership checks apply unchanged. Requests with

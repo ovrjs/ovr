@@ -175,7 +175,7 @@ const page = Route.get("/hello/:name").use(() => {
 
 ## Describe
 
-`describe` explains what the route does for AI agents. Only described routes become tools for agents that connect to the app's [MCP endpoint](/10-agents) or use the page's forms, and the description says when to use them. Write it for a reader who sees the route without your UI.
+`describe` explains what the route does for AI agents. Only described routes are served to agents that connect to the app's [MCP endpoint](/10-agents) or use the page's forms, as tools and, for GET routes, as pages to read; the description says when to use them. Write it for a reader who sees the route without your UI.
 
 ```ts
 const remove = Route.post("/posts/:id/delete")
@@ -187,7 +187,7 @@ const remove = Route.post("/posts/:id/delete")
 
 GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
 
-`describe(false)` also hides a page from the MCP endpoint, which otherwise lists it as a resource. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages by checking the session. Auth hides its pages, such as its browser script, this way. See [Agents](/10-agents) for how tools and pages are served to agents.
+A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages by checking the session. See [Agents](/10-agents) for how tools and pages are served to agents.
 
 ## Properties
 
