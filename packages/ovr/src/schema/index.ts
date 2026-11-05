@@ -937,11 +937,15 @@ export class Schema<Output>
 						schema.type === "checkbox" &&
 						!schema.values;
 
-					own(
-						properties,
-						name,
-						unchecked ? { ...node.schema, default: false } : node.schema,
-					);
+					// the label people read, which names a terse field, such as `dob`
+					const label =
+						schema instanceof FieldSchema && FieldSchema.label(schema);
+
+					own(properties, name, {
+						...(label && { title: label }),
+						...node.schema,
+						...(unchecked && { default: false }),
+					});
 					if (!node.optional && !unchecked) required.push(name);
 				}
 
@@ -2651,6 +2655,14 @@ class FieldSchema<
 		this.parts = parts;
 		this.streaming = stream;
 		this.#persist = persist;
+	}
+
+	/**
+	 * @param field Field instance
+	 * @returns The label given to the field, if any
+	 */
+	static label(field: Field.Any) {
+		return field.#options.props?.label;
 	}
 
 	/**

@@ -1492,6 +1492,22 @@ describe("Form schema", () => {
 describe("toJsonSchema", () => {
 	const draft = "https://json-schema.org/draft/2020-12/schema";
 
+	test("a field's label is its title", () => {
+		const form = Schema.object({
+			dob: Field.date({ label: "Date of birth" }),
+			tz: Field.text({ label: "Time zone" }).optional(),
+			agree: Field.checkbox({ label: "I agree" }),
+			name: Field.text(),
+		});
+		const { properties } = form.toJsonSchema({ io: "input" });
+		expect(properties).toMatchObject({
+			dob: { title: "Date of birth" },
+			tz: { title: "Time zone", type: "string" },
+			agree: { title: "I agree", type: "boolean", default: false },
+		});
+		expect(properties.name).not.toHaveProperty("title");
+	});
+
 	test("an unchecked box may be left out of input, and is always output", () => {
 		const form = Schema.object({
 			agree: Field.checkbox(),
