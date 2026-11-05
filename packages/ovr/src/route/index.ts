@@ -685,9 +685,10 @@ export class Route<
 					} as Route.URLOptions<ExtractParams<Pattern>>),
 					method: route.method,
 					enctype,
-					// with fields, default to the fields and a submit button
-					children: Fields && [
-						Fields({ state, values }),
+					// default to the fields, if any, and a submit button, so a form
+					// without fields, such as a delete, is still one to submit
+					children: [
+						Fields?.({ state, values }),
 						jsx("button", { children: submit }),
 					],
 					// WebMCP, browser agents call the form as the route's tool. A form

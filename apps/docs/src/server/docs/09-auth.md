@@ -39,7 +39,7 @@ const app = new App().use(auth);
 node -e 'console.log(crypto.getRandomValues(new Uint8Array(32)).toHex())'
 ```
 
-Keep it stable across deployments and the same on every instance: a new secret signs everyone out. `origin` is your exact HTTPS origin, without a path or trailing slash.
+Keep it stable across deployments and the same on every instance: a new secret signs everyone out. `origin` is your exact HTTPS origin, without a path or trailing slash. In development, serve the app over HTTPS too, such as `https://localhost:5173` with a certificate your system trusts, from a tool like [mkcert](https://github.com/FiloSottile/mkcert); passkeys need the origin to match.
 
 For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session `lifetime`; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
 

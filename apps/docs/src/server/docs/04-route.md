@@ -93,20 +93,17 @@ More specific matches are prioritized. The following pathnames would match the c
 
 ## Get
 
-`Route.get` makes it easy to create a [GET](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/GET) route and corresponding `Anchor`, `Button`, and `Form` components for it. This ensures if you change the route's pattern, you don't need to update all of the links to it throughout your application. Anytime you need to generate a link to a route use the `Anchor` component.
+`Route.get` creates a [GET](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/GET) route with `Anchor`, `Form`, and `Button` components that link to it, so changing the route's pattern never leaves a stale link. Use `Anchor` for links and `Form` for forms that submit to the route, such as a search.
 
 ```tsx
 const page = Route.get("/").use(() => {
 	return (
 		<main>
-			{/* <a href="/"> */}
+			{/* <a href="/">Home</a> */}
 			<page.Anchor>Home</page.Anchor>
 
-			{/* <button formmethod="GET" formaction="/"> */}
-			<page.Button>Submit</page.Button>
-
-			{/* <form method="GET" action="/"> */}
-			<page.Form>...</page.Form>
+			{/* <form method="GET" action="/"><button>Submit</button></form> */}
+			<page.Form />
 		</main>
 	);
 });
@@ -114,40 +111,44 @@ const page = Route.get("/").use(() => {
 
 ## Post
 
-There is also a `Route.post` function that will create a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route and corresponding `Form` and `Button` elements. Anytime you need to handle a form submission, use the generated `Form` component. These components also automatically set the `enctype=multipart/form-data` attribute.
+`Route.post` creates a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route with `Form` and `Button` components. Use `Form` whenever a page submits to the route. It sets `enctype="multipart/form-data"`, and renders the route's [`fields`](/07-schema#post-forms) and a submit button, labelled with `submit`:
 
 ```tsx
-const login = Route.post("/login").use(async (c) => {
-	const data = await c.req.formData();
-	// ...
-	c.redirect("/", 303);
-});
+const create = Route.post("/posts")
+	.fields({ title: Field.text() })
+	.use(async (c) => {
+		const result = await c.data();
+		// ...
+	});
 
-const page = Route.get("/").use(() => {
-	return (
-		<main>
-			{/* <form method="POST" action="/login" enctype="multipart/form-data"> */}
-			<login.Form>...</login.Form>
-
-			{/* <button formmethod="POST" formaction="/login" formenctype="multipart/form-data"> */}
-			<login.Button>Submit</login.Button>
-		</main>
-	);
-});
+const page = Route.get("/").use((c) => (
+	// the title field and an "Add post" button
+	<create.Form state={c.url} submit="Add post" />
+));
 ```
 
-To parse typed form data instead of reading `c.req` yourself, declare the route's [`fields`](/07-schema#post-forms): its `Form` then renders them, and `c.data()` validates them.
-
-Patterns can have parameters, like any route, and the route's `Form` and `Button` take their values with [`params`](#props).
+A route without fields, such as a delete, renders just the button. Patterns can have parameters, like any route, and the components take their values with [`params`](#props).
 
 ```tsx
 const remove = Route.post("/posts/:id/delete").use((c) => {
 	// ...
 });
 
-<remove.Form params={{ id: post.id }}>
-	<button>Delete</button>
-</remove.Form>;
+// <form method="POST" action="/posts/1/delete" ...><button>Delete</button></form>
+<remove.Form params={{ id: post.id }} submit="Delete" />;
+```
+
+Pass children to write the form's contents yourself, for example with [`Fields` or `Field`](/07-schema#post-forms) for a custom layout; they replace the generated fields and button.
+
+`Button` is for a second action inside another form: a submit button whose `formaction` sends that form to this route instead. Like any `formaction` button, it does nothing outside a `<form>`, so use the route's `Form` for a standalone button.
+
+```tsx
+<update.Form params={{ id: post.id }} state={c.url}>
+	<update.Fields values={post} state={c.url} />
+	<button>Save</button>
+	{/* submits the same form to /posts/1/preview */}
+	<preview.Button params={{ id: post.id }}>Preview</preview.Button>
+</update.Form>
 ```
 
 ## Props

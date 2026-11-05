@@ -1,4 +1,5 @@
 import { App } from "../app/index.js";
+import { jsx } from "../jsx/index.js";
 import { Render } from "../render/index.js";
 import { Field, Form, Schema } from "../schema/index.js";
 import { Route } from "./index.js";
@@ -674,6 +675,27 @@ describe("editing records", () => {
 		expect(html).toContain("<button>Save changes</button>");
 		expect(html).toContain("<button>Submit</button>");
 		expect(html).not.toContain("submit=");
+	});
+
+	test("a Form without fields is still a button to submit, unless given children", async () => {
+		const remove = Route.post("/posts/:id/delete").use((c) => c.text("ok"));
+		expect(
+			await Render.string(
+				remove.Form({ params: { id: "1" }, submit: "Delete" }),
+			),
+		).toBe(
+			'<form action="/posts/1/delete" method="POST" enctype="multipart/form-data"><button>Delete</button></form>',
+		);
+		expect(
+			await Render.string(
+				remove.Form({
+					params: { id: "1" },
+					children: jsx("button", { children: "Remove" }),
+				}),
+			),
+		).toBe(
+			'<form action="/posts/1/delete" method="POST" enctype="multipart/form-data"><button>Remove</button></form>',
+		);
 	});
 
 	test("Field and component accept initial values too", async () => {

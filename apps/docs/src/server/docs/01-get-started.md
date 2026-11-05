@@ -57,7 +57,8 @@ const app = new App();
 
 app.use(() => <h1>Hello World</h1>);
 
-serve({ fetch: (req) => app.fetch(req) });
+// the client IP is for rate limits and Auth, see /03-app#client-ip
+serve({ fetch: (req) => app.fetch(req, { ip: req.ip }) });
 ```
 
 Then can compile `tsx` into `js` with TypeScript, and run the server with Node.
