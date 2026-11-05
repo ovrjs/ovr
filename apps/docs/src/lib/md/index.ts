@@ -1,6 +1,6 @@
 import { codeControls } from "./code-controls.ts";
 import { externalLink } from "./external-link.ts";
-import { type Options, Processor } from "@robino/md";
+import type { Options } from "@robino/md";
 import { Schema } from "ovr";
 import langBash from "shiki/langs/bash.mjs";
 import langHtml from "shiki/langs/html.mjs";
@@ -15,8 +15,6 @@ export const options: Options = {
 	},
 	plugins: [codeControls, externalLink],
 };
-
-export const processor = new Processor(options);
 
 export const FrontmatterSchema = Schema.object({
 	title: Schema.string(),

@@ -133,6 +133,14 @@ describe("Markdown", () => {
 		expect(md("<nav>Nav</nav><p>Body</p>")).toBe("Nav\n\nBody\n");
 	});
 
+	test("finds main inside any wrapper, such as a custom element", () => {
+		expect(
+			md(
+				"<body><x-prefetch><header><a href='/'>Home</a></header><div><nav><ul><li>Docs</li></ul></nav><span><main><h1>Page</h1><p>Body</p></main></span><aside>Contents</aside></div></x-prefetch><footer>Footer</footer></body>",
+			),
+		).toBe("# Page\n\nBody\n");
+	});
+
 	test("details, definitions, and line breaks", () => {
 		expect(
 			md(

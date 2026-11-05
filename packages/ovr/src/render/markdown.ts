@@ -380,6 +380,16 @@ export class Markdown {
 			return;
 		}
 
+		// the page's content, however it is wrapped, such as in a custom element:
+		// what came before is dropped, and its contents are read as top level
+		if (tag === "main" && this.#main === "before") {
+			this.#stack.length = 0;
+			this.#pending = Markdown.#node("");
+			this.#before = [];
+			this.#main = "inside";
+			return;
+		}
+
 		const implicit = Markdown.#implicit[tag];
 		if (implicit && implicit.includes(this.#stack.at(-1)?.tag ?? "")) {
 			this.#close(this.#stack.at(-1)!.tag);
@@ -388,10 +398,6 @@ export class Markdown {
 		if (!this.#stack.length) {
 			if (Markdown.#containers.has(tag)) {
 				this.#flush();
-				if (tag === "main" && this.#main === "before") {
-					this.#before = [];
-					this.#main = "inside";
-				}
 				return;
 			}
 

@@ -3,40 +3,42 @@ import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as o from "ovr";
 
-export const page = o.Route.get("/").use((c) => {
-	const Layout = createLayout(c);
+export const page = o.Route.get("/")
+	.describe("Overview of ovr, the streaming web framework, and its features")
+	.use((c) => {
+		const Layout = createLayout(c);
 
-	return (
-		<Layout head={<Meta {...result.frontmatter} />}>
-			<h1 class="mb-4">{result.frontmatter.title}</h1>
+		return (
+			<Layout head={<Meta {...result.frontmatter} />}>
+				<h1 class="mb-4">{result.frontmatter.title}</h1>
 
-			<p class="mb-7 text-lg">{result.frontmatter.description}</p>
+				<p class="mb-7 text-lg">{result.frontmatter.description}</p>
 
-			<div class="mb-7 flex gap-3">
-				<a href="/01-get-started" class="button h-11 px-5 text-base">
-					Get Started
-				</a>
-				<a
-					href="/demo/memory"
-					data-no-prefetch
-					class="button ghost h-11 px-5 text-base"
-				>
-					Demo
-				</a>
-			</div>
+				<div class="mb-7 flex gap-3">
+					<a href="/01-get-started" class="button h-11 px-5 text-base">
+						Get Started
+					</a>
+					<a
+						href="/demo/memory"
+						data-no-prefetch
+						class="button ghost h-11 px-5 text-base"
+					>
+						Demo
+					</a>
+				</div>
 
-			<div class="mb-7 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-				<Features />
-			</div>
+				<div class="mb-7 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+					<Features />
+				</div>
 
-			<hr />
+				<hr />
 
-			{o.Render.html(result.html)}
+				{o.Render.html(result.html)}
 
-			<hr />
-		</Layout>
-	);
-});
+				<hr />
+			</Layout>
+		);
+	});
 
 function* Features() {
 	const features = [

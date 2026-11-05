@@ -27,7 +27,20 @@ if (import.meta.env.DEV && process.env.AUTH_SECRET) {
 	app = new o.App().use(service, auth.routes(database, service));
 } else app = new o.App();
 
-app.use(redirect, notFound, home, docs, demo, seo);
+app.use(
+	redirect,
+	notFound,
+	home,
+	docs,
+	demo,
+	seo,
+	// described routes, the docs, are tools and resources for agents
+	new o.Mcp({
+		name: "ovr",
+		instructions:
+			"Documentation for ovr, a TypeScript web framework that streams HTML and serves the same routes to people and AI agents. Read 01-get-started first, or llms.txt for everything at once.",
+	}),
+);
 
 if (import.meta.env.DEV) {
 	app.use(

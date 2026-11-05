@@ -58,7 +58,7 @@ export const createLayout =
 								</Popover>
 							</nav>
 						</header>
-						<main class="flex">
+						<div class="flex">
 							<div>
 								<nav class="sticky top-0 z-10 hidden max-h-dvh min-w-52 flex-col gap-4 overflow-y-auto p-4 md:flex">
 									<HomeLink />
@@ -68,15 +68,16 @@ export const createLayout =
 							<div class="flex w-full min-w-0 flex-row-reverse justify-between">
 								<TOC c={c} />
 								<div class="flex w-full min-w-0 justify-center">
-									<div
+									{/* the page's own content, which agents read as Markdown */}
+									<main
 										id="content"
 										class="prose mb-16 w-full max-w-3xl min-w-0 px-4 pt-3.5 pb-4"
 									>
 										{props.children}
-									</div>
+									</main>
 								</div>
 							</div>
-						</main>
+						</div>
 					</drab-prefetch>
 				</body>
 			</html>
