@@ -10,9 +10,8 @@ logs
 npm-debug.log*
 .vscode
 .vercel
-# Local authentication demo database, and the earlier SQLite one
+# Local authentication demo database
 .auth-pglite
-.auth.sqlite*
 .auth-*.pem
 # Local Claude Code settings
 .claude/
