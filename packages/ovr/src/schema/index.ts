@@ -3246,6 +3246,11 @@ export class Field {
 	// since "string" doesn't make sense to end users
 	/** Default message for required field values. */
 	static readonly #required = "Required field";
+	/**
+	 * Message for choices, whether none or one not offered was sent, such as
+	 * by an agent, where "Required field" would be wrong.
+	 */
+	static readonly #choose = "Select an option";
 
 	/**
 	 * @param value Raw form entry
@@ -3543,7 +3548,7 @@ export class Field {
 	): Field.Instance<V[], "input", "checkbox", readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ values, props: { ...props, type: "checkbox" } },
-			Schema.array(Schema.enum(values, Field.#required), Field.#required),
+			Schema.array(Schema.enum(values, Field.#choose), Field.#choose),
 			Field.#readMany,
 			values.length,
 		);
@@ -3561,7 +3566,7 @@ export class Field {
 	): Field.Instance<V, "input", "radio", readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ values, props: { ...props, type: "radio" } },
-			Schema.enum(values, Field.#required),
+			Schema.enum(values, Field.#choose),
 		);
 	}
 
@@ -3590,7 +3595,7 @@ export class Field {
 	): Field.Instance<V, "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ tag: "select", values, props },
-			Schema.enum(values, Field.#required),
+			Schema.enum(values, Field.#choose),
 		);
 	}
 
@@ -3606,7 +3611,7 @@ export class Field {
 	): Field.Instance<V[], "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
 			{ tag: "select", values, props: { ...props, multiple: true } },
-			Schema.array(Schema.enum(values, Field.#required), Field.#required),
+			Schema.array(Schema.enum(values, Field.#choose), Field.#choose),
 			Field.#readMany,
 			values.length,
 		);

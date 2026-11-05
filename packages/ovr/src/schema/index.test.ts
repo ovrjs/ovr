@@ -681,8 +681,8 @@ describe("Form schema", () => {
 			"Array",
 		]);
 		expect(result.issues.map((issue) => issue.message)).toEqual([
-			"Required field",
-			"Required field",
+			"Select an option",
+			"Select an option",
 			"Required field",
 		]);
 	});
@@ -815,7 +815,7 @@ describe("Form schema", () => {
 		]);
 	});
 
-	test("required single-value non-text fields use the required message", async () => {
+	test("required single-value non-text fields use the required message, choices ask to select", async () => {
 		const form = Form.from({
 			age: Field.number(),
 			role: Field.radio(["reader", "admin"]),
@@ -832,10 +832,37 @@ describe("Form schema", () => {
 		]);
 		expect(result.issues.map((issue) => issue.message)).toEqual([
 			"Required field",
-			"Required field",
-			"Required field",
+			"Select an option",
+			"Select an option",
 			"Required field",
 		]);
+	});
+
+	test("a choice that is not offered asks to select an option, not for a value", async () => {
+		const form = Form.from({
+			role: Field.radio(["reader", "admin"]),
+			sort: Field.select(["relevance", "newest"]),
+			roles: Field.checkboxes(["reader", "admin"]),
+			tags: Field.multiselect(["a", "b"]),
+		});
+		const data = new FormData();
+
+		data.set("role", "owner");
+		data.set("sort", "oldest");
+		data.set("roles", "owner");
+		data.set("tags", "z");
+
+		const result = formInvalid(await form.parse(data));
+
+		expect(result.issues.map((issue) => issue.path[0])).toEqual([
+			"role",
+			"sort",
+			"roles",
+			"tags",
+		]);
+		expect(new Set(result.issues.map((issue) => issue.message))).toEqual(
+			new Set(["Select an option"]),
+		);
 	});
 
 	test("blank single-value select and radio fields are treated as missing", async () => {
@@ -855,8 +882,8 @@ describe("Form schema", () => {
 			"sort",
 		]);
 		expect(result.issues.map((issue) => issue.message)).toEqual([
-			"Required field",
-			"Required field",
+			"Select an option",
+			"Select an option",
 		]);
 	});
 
