@@ -112,7 +112,7 @@ The agent opens your sign-in page in the browser, then your consent page, and re
 
 ### Protocol
 
-The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) Streamable HTTP transport: each JSON-RPC request is a POST that receives a JSON response, with `server/discover`, the mirrored request headers, and no sessions. Clients of earlier versions, which start with `initialize`, are told the supported version. Requests from another `Origin` are rejected.
+The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) Streamable HTTP transport: each JSON-RPC request is a POST that receives a JSON response, with `server/discover`, the mirrored request headers, and no sessions. Clients of the earlier [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) and 2025-06-18 versions, such as ChatGPT's, start with `initialize` and send the version in the `MCP-Protocol-Version` header; they are served the same tools and resources, also without sessions. Requests from another `Origin` are rejected.
 
 ## WebMCP
 

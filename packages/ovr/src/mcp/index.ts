@@ -115,6 +115,12 @@ export class Mcp {
 	/** Supported protocol versions */
 	static readonly #versions = ["2026-07-28"];
 
+	/**
+	 * Earlier versions, which start with `initialize`, newest first. Clients
+	 * such as ChatGPT's still use them.
+	 */
+	static readonly #legacy = ["2025-11-25", "2025-06-18"];
+
 	/** `_meta` key prefix */
 	static readonly #meta = "io.modelcontextprotocol/";
 
@@ -213,18 +219,55 @@ export class Mcp {
 			const version = meta[`${Mcp.#meta}protocolVersion`];
 			const header = c.req.headers.get("mcp-protocol-version");
 
-			this.#validate(c, method, params, version, header);
+			if (method === "initialize") {
+				// an earlier version's handshake, answered with the requested
+				// version when supported, otherwise the newest earlier one
+				const requested = params.protocolVersion;
+				c.json({
+					jsonrpc: "2.0",
+					id,
+					result: {
+						protocolVersion:
+							typeof requested === "string" && Mcp.#legacy.includes(requested)
+								? requested
+								: Mcp.#legacy[0],
+						...this.#server(),
+						serverInfo: this.#info(c),
+					},
+				});
+				return;
+			}
 
-			const result = await this.#dispatch(c, method, params, session);
+			// after `initialize`, an earlier version is only in the header
+			const legacy =
+				version === undefined &&
+				header !== null &&
+				Mcp.#legacy.includes(header);
+
+			if (legacy) {
+				if (method === "server/discover")
+					throw new RpcError(-32601, "Method not found", 404);
+			} else this.#validate(c, method, params, version, header);
+
+			const { ttlMs, cacheScope, ...result } = await this.#dispatch(
+				c,
+				method,
+				params,
+				session,
+			);
 
 			c.json({
 				jsonrpc: "2.0",
 				id,
-				result: {
-					resultType: "complete",
-					...result,
-					_meta: { [`${Mcp.#meta}serverInfo`]: this.#info(c) },
-				},
+				result: legacy
+					? result
+					: {
+							resultType: "complete",
+							ttlMs,
+							cacheScope,
+							...result,
+							_meta: { [`${Mcp.#meta}serverInfo`]: this.#info(c) },
+						},
 			});
 		} catch (error) {
 			if (!(error instanceof RpcError)) throw error;
@@ -331,10 +374,9 @@ export class Mcp {
 		const mismatch = (message: string) =>
 			new RpcError(-32020, `Header mismatch: ${message}`, 400);
 
-		// earlier versions start with `initialize` and send no version in `_meta`
 		if (typeof version !== "string" || !Mcp.#versions.includes(version))
 			throw new RpcError(-32022, "Unsupported protocol version", 400, {
-				supported: Mcp.#versions,
+				supported: [...Mcp.#versions, ...Mcp.#legacy],
 				requested: typeof version === "string" ? version : header,
 			});
 
@@ -405,7 +447,7 @@ export class Mcp {
 		switch (method) {
 			case "server/discover":
 				return {
-					supportedVersions: Mcp.#versions,
+					supportedVersions: [...Mcp.#versions, ...Mcp.#legacy],
 					...this.#server(),
 					...cache,
 				};

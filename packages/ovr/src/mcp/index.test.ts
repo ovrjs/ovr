@@ -442,7 +442,7 @@ describe("Mcp", () => {
 		expect(status).toBe(200);
 		expect(body.result).toMatchObject({
 			resultType: "complete",
-			supportedVersions: ["2026-07-28"],
+			supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18"],
 			capabilities: { tools: {}, resources: {} },
 			instructions: "Manage posts.",
 			_meta: {
@@ -783,23 +783,145 @@ describe("Mcp", () => {
 		});
 	});
 
-	test("earlier clients that initialize are told the supported version", async () => {
-		const { app } = setup();
-		const res = await app.fetch("http://localhost/mcp", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
+	describe("earlier versions", () => {
+		/** A request as an earlier client sends it, without `_meta` or `Mcp-*` headers */
+		const legacy = async (
+			app: App,
+			body: Record<string, unknown>,
+			version: string | null = "2025-06-18",
+		) => {
+			const res = await app.fetch("http://localhost/mcp", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					accept: "application/json, text/event-stream",
+					...(version && { "mcp-protocol-version": version }),
+				},
+				body: JSON.stringify({ jsonrpc: "2.0", ...body }),
+			});
+			const text = await res.text();
+			return { status: res.status, body: text ? JSON.parse(text) : null };
+		};
+
+		test("initialize answers with the requested version", async () => {
+			const { app } = setup();
+			const { status, body } = await legacy(
+				app,
+				{
+					id: 0,
+					method: "initialize",
+					params: {
+						protocolVersion: "2025-06-18",
+						capabilities: {},
+						clientInfo: { name: "codex-mcp-client", version: "0.166.0" },
+					},
+				},
+				null,
+			);
+
+			expect(status).toBe(200);
+			expect(body).toEqual({
 				jsonrpc: "2.0",
 				id: 0,
-				method: "initialize",
-				params: { protocolVersion: "2025-06-18", capabilities: {} },
-			}),
+				result: {
+					protocolVersion: "2025-06-18",
+					capabilities: { tools: {}, resources: {} },
+					instructions: "Manage posts.",
+					serverInfo: { name: "posts", version: "1.0.0" },
+				},
+			});
 		});
 
-		expect(res.status).toBe(400);
-		expect((await res.json()).error).toMatchObject({
-			code: -32022,
-			data: { supported: ["2026-07-28"], requested: null },
+		test("initialize with an unsupported version offers the newest earlier one", async () => {
+			const { app } = setup();
+			const { body } = await legacy(
+				app,
+				{
+					id: 1,
+					method: "initialize",
+					params: { protocolVersion: "2024-11-05", capabilities: {} },
+				},
+				null,
+			);
+			expect(body.result.protocolVersion).toBe("2025-11-25");
+		});
+
+		test("the initialized notification is accepted", async () => {
+			const { app } = setup();
+			const { status, body } = await legacy(app, {
+				method: "notifications/initialized",
+			});
+			expect(status).toBe(202);
+			expect(body).toBeNull();
+		});
+
+		test("tools work after initialize, in the earlier result shape", async () => {
+			const { app, posts } = setup();
+			const list = await legacy(app, { id: 2, method: "tools/list" });
+			expect(list.status).toBe(200);
+			expect(
+				list.body.result.tools.map((tool: { name: string }) => tool.name),
+			).toContain("post_posts");
+			// fields only the 2026-07-28 version has
+			for (const key of ["resultType", "ttlMs", "cacheScope", "_meta"])
+				expect(list.body.result).not.toHaveProperty(key);
+
+			const call = await legacy(app, {
+				id: 3,
+				method: "tools/call",
+				params: { name: "post_posts", arguments: { title: "Third post" } },
+			});
+			expect(call.body.result).toMatchObject({ isError: false });
+			expect(call.body.result.content[0].text).toContain("Third post");
+			expect(call.body.result).not.toHaveProperty("resultType");
+			expect([...posts.values()]).toContain("Third post");
+
+			const read = await legacy(app, {
+				id: 4,
+				method: "resources/read",
+				params: { uri: "http://localhost/posts" },
+			});
+			expect(read.body.result.contents[0].text).toContain("Third post");
+		});
+
+		test("form issues reach an earlier client as a tool error", async () => {
+			const { app } = setup();
+			const { body } = await legacy(app, {
+				id: 5,
+				method: "tools/call",
+				params: { name: "post_posts", arguments: { title: "x" } },
+			});
+			expect(body.result.isError).toBe(true);
+			expect(body.result.content[0].text).toContain("422");
+		});
+
+		test("a request without a supported version is refused", async () => {
+			const { app } = setup();
+			for (const version of [null, "2025-03-26"]) {
+				const { status, body } = await legacy(
+					app,
+					{ id: 6, method: "tools/list" },
+					version,
+				);
+				expect(status).toBe(400);
+				expect(body.error).toMatchObject({
+					code: -32022,
+					data: {
+						supported: ["2026-07-28", "2025-11-25", "2025-06-18"],
+						requested: version,
+					},
+				});
+			}
+		});
+
+		test("server/discover is for the 2026-07-28 version only", async () => {
+			const { app } = setup();
+			const { status, body } = await legacy(app, {
+				id: 7,
+				method: "server/discover",
+			});
+			expect(status).toBe(404);
+			expect(body.error.code).toBe(-32601);
 		});
 	});
 
