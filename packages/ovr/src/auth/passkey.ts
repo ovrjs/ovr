@@ -449,9 +449,15 @@ export class Passkey {
 	 *
 	 * @param credentials Stored credentials
 	 * @param fields Form fields the ceremony was issued for, from `Passkey.fields`
+	 * @param user User the ceremony offered the passkeys of, such as when
+	 * allowing an agent, whose authenticator may then leave out the user handle
 	 * @returns The updated credential
 	 */
-	async login(credentials: Storage.Credentials, fields?: string) {
+	async login(
+		credentials: Storage.Credentials,
+		fields?: string,
+		user?: string,
+	) {
 		const { state, credential } = await this.#consume("login");
 		if (state.fields !== fields) throw new Issue("login fields");
 		const result = Passkey.#assertion.parse(credential);
@@ -466,12 +472,13 @@ export class Passkey {
 			throw new Issue("credential ID");
 		const stored = await credentials.get(result.data.id);
 		if (!stored || stored.id !== result.data.id) throw new Issue("credential");
+		const handle = result.data.response.userHandle;
+		// without a handle, only a passkey of the user identified before the
+		// ceremony, which offered theirs (WebAuthn, verifying an assertion)
 		if (
-			!result.data.response.userHandle ||
-			!Passkey.#equal(
-				Passkey.#decode(result.data.response.userHandle),
-				Codec.encode(stored.user),
-			)
+			handle
+				? !Passkey.#equal(Passkey.#decode(handle), Codec.encode(stored.user))
+				: stored.user !== user
 		)
 			throw new Issue("user handle");
 		const bytes = Passkey.#decode(result.data.response.authenticatorData);

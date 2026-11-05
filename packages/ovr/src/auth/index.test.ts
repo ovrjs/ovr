@@ -3447,6 +3447,61 @@ describe("agents", () => {
 		expect(options.allowCredentials[0].type).toBe("public-key");
 	});
 
+	test("an allowed passkey can approve an agent without returning a user handle", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const passkey = await enroll(user);
+		const html = await consentPage(browser, agent);
+		const request = attribute(html, 'name="request" value');
+		const started = await browser(attribute(html, "data-endpoint"), {
+			method: "POST",
+			headers: { origin },
+			body: form({ request, bootstrap: attribute(html, "data-bootstrap") }),
+		});
+		expect(started.status).toBe(200);
+		const { ceremony, options } = await started.json();
+		expect(options.allowCredentials).toHaveLength(1);
+		const credential = await assertion(options.challenge, passkey.keys, {
+			handle: null,
+		});
+		const approved = await browser("/oauth/approve", {
+			method: "POST",
+			headers: { origin },
+			body: form({ request, ceremony, credential: JSON.stringify(credential) }),
+		});
+		expect(approved.status).toBe(303);
+		expect(
+			new URL(approved.headers.get("location")!).searchParams.get("code"),
+		).toBeTruthy();
+	});
+
+	test("another user's passkey without a user handle cannot approve an agent", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		await enroll(user);
+		const other = await enroll("user-2");
+		const html = await consentPage(browser, agent);
+		const request = attribute(html, 'name="request" value');
+		const started = await browser(attribute(html, "data-endpoint"), {
+			method: "POST",
+			headers: { origin },
+			body: form({ request, bootstrap: attribute(html, "data-bootstrap") }),
+		});
+		const { ceremony, options } = await started.json();
+		const credential = await assertion(options.challenge, other.keys, {
+			handle: null,
+		});
+		const refused = await browser("/oauth/approve", {
+			method: "POST",
+			headers: { origin },
+			body: form({ request, ceremony, credential: JSON.stringify(credential) }),
+		});
+		expect(refused.status).toBe(400);
+		expect(
+			await db.sql`SELECT * FROM ${db.auth_tokens} WHERE kind = 'code'`,
+		).toEqual([]);
+	});
+
 	test("native Deny works after the browser module adds passkey inputs", async () => {
 		const { browser } = agents();
 		await browser("/sign-in");

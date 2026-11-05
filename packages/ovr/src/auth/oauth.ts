@@ -392,6 +392,8 @@ export function oauth(
 					credential = await new Passkey(c, state(c)).login(
 						storage.credentials,
 						await Passkey.fields({ request: result.data.request }),
+						// the prompt offered only this user's passkeys
+						pending.user,
 					);
 				} catch (error) {
 					if (!unverified(error)) throw error;

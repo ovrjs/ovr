@@ -321,6 +321,24 @@ describe("Mcp", () => {
 		);
 	});
 
+	test("a page preserves the value of a checkbox group with one option", async () => {
+		const { app, rpc } = setup();
+		const route = Route.post("/preferences")
+			.describe("Save preferences")
+			.fields({ tags: Field.checkboxes(["news"]) });
+		app.use(
+			route,
+			Route.get("/preferences")
+				.describe("Edit preferences")
+				.use(() => route.Form({ values: { tags: ["news"] } })),
+		);
+		const { body } = await rpc("resources/read", {
+			uri: "http://localhost/preferences",
+		});
+		expect(body.result.contents[0].text).toContain("- `tags`: `news`");
+		expect(body.result.contents[0].text).not.toContain("- `tags`: `true`");
+	});
+
 	test("a tool reports a parameter its schema rejects, instead of a bare 404", async () => {
 		const { app, rpc } = setup();
 		let called = false;

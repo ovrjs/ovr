@@ -32,6 +32,9 @@ type Field = {
 
 	/** Requirements from attributes */
 	rules: string[];
+
+	/** A single checkbox without a `value`, a boolean, not a group of one */
+	lone?: boolean;
 };
 
 export namespace Markdown {
@@ -687,9 +690,11 @@ export class Markdown {
 				const value = attrs.value ?? "on";
 				if (group && group.type === type) {
 					group.options.push(`${value}${label !== value ? ` (${label})` : ""}`);
+					group.lone = false;
 				} else {
 					group = Markdown.#field(legend || label, name, type);
 					group.options.push(`${value}${label !== value ? ` (${label})` : ""}`);
+					group.lone = type === "checkbox" && attrs.value === undefined;
 					fields.push(group);
 					byName.set(name, group);
 				}
@@ -808,9 +813,7 @@ export class Markdown {
 			const entries = fields
 				.map((f) =>
 					// a single checkbox is a boolean argument, unchecked included
-					f.type === "checkbox" && f.options.length === 1
-						? { ...f, value: [String(f.value.length > 0)] }
-						: f,
+					f.lone ? { ...f, value: [String(f.value.length > 0)] } : f,
 				)
 				.filter((f) => f.value.length || f.notes.length)
 				.map((f) => {
