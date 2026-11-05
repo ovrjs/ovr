@@ -266,6 +266,61 @@ describe("Mcp", () => {
 		expect(called).toBe(false);
 	});
 
+	test("a page an agent reads points a form to its tool, with only its values", async () => {
+		const { app, rpc } = setup();
+		const rename = Route.post("/notes/:id/rename")
+			.describe("Rename a note")
+			.fields({
+				title: Field.text({ label: "Title" }).min(1),
+				pinned: Field.checkbox(),
+			})
+			.use(() => {});
+		const archive = Route.post("/notes/:id/archive")
+			.fields({ reason: Field.text() })
+			.use(() => {});
+		app.use(
+			rename,
+			archive,
+			Route.get("/notes/:id")
+				.describe("Show a note")
+				.use((c) =>
+					jsx("main", {
+						children: [
+							rename.Form({
+								params: { id: c.params.id },
+								values: { title: "Groceries" },
+								submit: "Save",
+							}),
+							archive.Form({ params: { id: c.params.id } }),
+						],
+					}),
+				),
+		);
+		const { body } = await rpc("tools/call", {
+			name: "get_notes_id",
+			arguments: { id: "7" },
+		});
+		expect(body.result.content[0].text).toBe(
+			[
+				"**Form:** `POST http://localhost/notes/7/rename` (tool `post_notes_id_rename`)",
+				"",
+				"- `title`: `Groceries`",
+				// unchecked, a boolean argument
+				"- `pinned`: `false`",
+				"",
+				"Submit: Save",
+				"",
+				// not a tool, so described in full
+				"**Form:** `POST http://localhost/notes/7/archive`",
+				"",
+				"- reason `reason` (text)",
+				"",
+				"Submit: Submit",
+				"",
+			].join("\n"),
+		);
+	});
+
 	test("a tool reports a parameter its schema rejects, instead of a bare 404", async () => {
 		const { app, rpc } = setup();
 		let called = false;

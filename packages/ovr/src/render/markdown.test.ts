@@ -186,12 +186,32 @@ describe("Markdown", () => {
 			[
 				"**Form:** `POST https://example.com/x` (tool `x_post`)",
 				"",
-				"- Email `email` (email, required, maxlength 50)",
+				"- `email`",
 				"  - Expected email",
 				"",
 				"JavaScript is required.",
 				"",
 				"Submit: Go",
+				"",
+			].join("\n"),
+		);
+	});
+
+	test("a tool's form keeps only values, a single checkbox as a boolean", () => {
+		expect(
+			md(
+				'<form method="post" action="/x"><input name="title" value="One"><input type="checkbox" name="pinned" checked><input type="checkbox" name="tags" value="a" checked><input type="checkbox" name="tags" value="b"><textarea name="body"></textarea><button>Save</button></form>',
+				{ base: "https://example.com/", tool: () => "x_post" },
+			),
+		).toBe(
+			[
+				"**Form:** `POST https://example.com/x` (tool `x_post`)",
+				"",
+				"- `title`: `One`",
+				"- `pinned`: `true`",
+				"- `tags`: `a`",
+				"",
+				"Submit: Save",
 				"",
 			].join("\n"),
 		);

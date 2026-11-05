@@ -645,7 +645,10 @@ export class Mcp {
 			headers: this.#headers(c),
 			signal: c.req.signal,
 		});
-		const call: Parameters<typeof agent.set>[1] = { session };
+		const call: Parameters<typeof agent.set>[1] = {
+			session,
+			tool: this.#tool(c),
+		};
 		agent.set(req, call);
 		const res = await this.#app!.fetch(req, { ip: c.ip });
 
@@ -666,6 +669,18 @@ export class Mcp {
 		return {
 			contents: [{ uri: url.href, mimeType: type ?? Mime.type.md, text }],
 		};
+	}
+
+	/**
+	 * @param c Request context
+	 * @returns The name of the tool a form submits to, so the page an agent
+	 * reads points to the tool instead of repeating its fields
+	 */
+	#tool(c: Context) {
+		return (method: string, action: URL) =>
+			action.origin === c.url.origin && !action.username && !action.password
+				? this.#app!.find(method, action.pathname)?.tool?.name
+				: undefined;
 	}
 
 	/**
@@ -715,7 +730,10 @@ export class Mcp {
 		let redirected: URL | undefined;
 
 		for (let i = 0; ; i++) {
-			const call: Parameters<typeof agent.set>[1] = { session };
+			const call: Parameters<typeof agent.set>[1] = {
+				session,
+				tool: this.#tool(c),
+			};
 			agent.set(req, call);
 			const res = await this.#app!.fetch(req, { ip: c.ip });
 

@@ -82,6 +82,8 @@ A tool's input schema combines the pattern's parameters, converted by `params` s
 
 A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown, following redirects to described pages. A redirect to another site returns its URL, such as a checkout page for the user to open. A redirect to a page of the app agents cannot read returns only that it redirected, keeping its address and any token in it private. To give an agent a link, such as a share link, describe the page it redirects to, or respond with the link instead of redirecting. When `c.data()` finds issues, the agent receives them as an error with each field's message, instead of a redirect back to the form. Your handlers do not change.
 
+Pages an agent reads through MCP point each form that submits to a tool to that tool, such as `(tool post_notes_id_update)`, with only the form's current values and messages, since the tool's input schema already describes its fields. A single checkbox's value is `true` or `false`, like its argument. Forms that submit elsewhere, and pages requested as Markdown outside MCP, describe every field.
+
 `route.tool` is the name and description a route is called with, and whether it only reads, or `undefined` when it is not a tool. Names of patterns with `_` or other punctuation, or longer than 64 characters, end with a short hash of the pattern, so `/a/b` and `/a_b` get different names. Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, so you find out when the app starts.
 
 ### Resources

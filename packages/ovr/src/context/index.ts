@@ -18,6 +18,8 @@ export const agent = new WeakMap<
 	{
 		readonly session?: unknown;
 		issues?: readonly { readonly path: string; readonly message: string }[];
+		/** Names the tool a form submits to, so a page points to it */
+		readonly tool?: (method: string, action: URL) => string | undefined;
 	}
 >();
 
@@ -391,7 +393,10 @@ export class Context<
 				this.res.headers.append(Header.name.vary, "Accept");
 
 				if (Context.#markdown(this.req)) {
-					this.res.body = Render.markdown(r, { base: this.url });
+					this.res.body = Render.markdown(r, {
+						base: this.url,
+						tool: agent.get(this.req)?.tool,
+					});
 					this.res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
 					return;
 				}

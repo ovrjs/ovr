@@ -41,7 +41,8 @@ export namespace Markdown {
 		readonly base?: string | URL | undefined;
 
 		/**
-		 * Names the tool that submits a form, if there is one.
+		 * Names the tool that submits a form, if there is one. The form is then
+		 * described by its tool, with only its values and messages.
 		 *
 		 * @param method Form method
 		 * @param action Resolved form action
@@ -801,7 +802,26 @@ export class Markdown {
 			`**Form:** \`${method} ${this.#href(action)}\`${tool ? ` (tool \`${tool}\`)` : ""}`,
 		];
 
-		if (fields.length) {
+		if (tool) {
+			// the tool's input schema describes the fields, so only what the page
+			// adds: current values, such as an edit form's, and messages
+			const entries = fields
+				.map((f) =>
+					// a single checkbox is a boolean argument, unchecked included
+					f.type === "checkbox" && f.options.length === 1
+						? { ...f, value: [String(f.value.length > 0)] }
+						: f,
+				)
+				.filter((f) => f.value.length || f.notes.length)
+				.map((f) => {
+					let line = `- ${Markdown.#code(f.name)}`;
+					if (f.value.length)
+						line += `: ${f.value.map((v) => Markdown.#code(v)).join(", ")}`;
+					for (const note of f.notes) line += `\n  - ${note}`;
+					return line;
+				});
+			if (entries.length) lines.push("", ...entries);
+		} else if (fields.length) {
 			lines.push(
 				"",
 				...fields.map((f) => {
