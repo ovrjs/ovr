@@ -454,16 +454,11 @@ export class Route<
 	 * Describe the route for agents. Only described routes are served to
 	 * them: as MCP tools, and GET routes as resources too.
 	 *
-	 * @param description What the route does, written for an agent
+	 * @param description What the route does, written for an agent, not empty
 	 * @returns The route
 	 */
-	describe(description: string) {
+	describe<D extends string>(description: D extends "" ? never : D) {
 		this.#configure("describe");
-		// an empty description would leave the route silently unserved
-		if (!description.trim())
-			throw new TypeError(
-				`Route "${this.pattern}" needs a description agents can read.`,
-			);
 		this.#description = description;
 		return this;
 	}
