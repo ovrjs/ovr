@@ -72,7 +72,12 @@ export function listen(
 		status.textContent = "";
 		form.setAttribute("aria-busy", "true");
 		try {
-			if (!window.PublicKeyCredential || !navigator.credentials)
+			// checked before asking for options, which would spend a challenge
+			if (
+				!window.PublicKeyCredential?.parseCreationOptionsFromJSON ||
+				!PublicKeyCredential.parseRequestOptionsFromJSON ||
+				!navigator.credentials
+			)
 				throw new Error("Passkeys are unavailable in this browser.");
 			const data = new FormData(form);
 			data.delete("credential");

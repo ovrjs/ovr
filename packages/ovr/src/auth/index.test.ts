@@ -2974,6 +2974,46 @@ describe("agents", () => {
 		}
 	});
 
+	test.each([
+		[404, undefined],
+		[410, undefined],
+		[429, null],
+		[503, null],
+	])(
+		"a %i response is %s: final, or worth retrying",
+		async (status, expected) => {
+			const dns = process.getBuiltinModule("node:dns");
+			const https = process.getBuiltinModule("node:https");
+			const { Readable } = process.getBuiltinModule("node:stream");
+			const { EventEmitter } = process.getBuiltinModule("node:events");
+
+			vi.spyOn(dns, "lookup").mockImplementation(((
+				_hostname: string,
+				_options: unknown,
+				callback: Function,
+			) => callback(null, [{ address: "8.8.8.8", family: 4 }])) as any);
+			vi.spyOn(https, "get").mockImplementation(((
+				_url: URL,
+				options: any,
+				callback: Function,
+			) => {
+				options.lookup("agent.example", { all: true }, (error: unknown) => {
+					if (error) throw error;
+					callback(Object.assign(Readable.from([]), { statusCode: status }));
+				});
+				return new EventEmitter();
+			}) as any);
+
+			try {
+				expect(
+					await Metadata.fetch(new URL("https://agent.example/client.json")),
+				).toBe(expected);
+			} finally {
+				vi.restoreAllMocks();
+			}
+		},
+	);
+
 	test("a pooled socket to a private address cannot serve a metadata request", async () => {
 		const http = process.getBuiltinModule("node:http");
 		const https = process.getBuiltinModule("node:https");
@@ -3781,14 +3821,41 @@ describe("agents", () => {
 				expect((await authorize(app, agent, "192.0.2.44")).status).toBe(303);
 				expect(Metadata.fetch).toHaveBeenCalledTimes(17);
 
-				// a day later its document is too old to use
-				clock.mockReturnValue(now + Time.day + 1);
+				// an hour later its document is too old to use
+				clock.mockReturnValue(now + Time.hour + 1);
 				expect((await authorize(app, agent, "192.0.2.45")).status).toBe(503);
 
 				resolve();
 				await Promise.all(waiting);
 			} finally {
 				resolve();
+				clock.mockRestore();
+			}
+		});
+
+		test("a failure that may pass serves a found agent, a final one forgets it", async () => {
+			const { app } = agents();
+			expect((await authorize(app, agent)).status).toBe(303);
+
+			const now = Date.now();
+			const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+			try {
+				// its host times out
+				clock.mockReturnValue(now + 5 * Time.minute + 1);
+				vi.mocked(Metadata.fetch).mockResolvedValue(null);
+				expect((await authorize(app, agent)).status).toBe(303);
+				expect(Metadata.fetch).toHaveBeenCalledTimes(2);
+
+				// its document is gone
+				vi.mocked(Metadata.fetch).mockResolvedValue(undefined);
+				expect((await authorize(app, agent)).status).toBe(400);
+				expect(Metadata.fetch).toHaveBeenCalledTimes(3);
+
+				// and stays forgotten through an outage
+				clock.mockReturnValue(now + 7 * Time.minute);
+				vi.mocked(Metadata.fetch).mockResolvedValue(null);
+				expect((await authorize(app, agent)).status).toBe(503);
+			} finally {
 				clock.mockRestore();
 			}
 		});

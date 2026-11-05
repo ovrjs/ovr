@@ -55,7 +55,9 @@ export class Metadata {
 
 	/**
 	 * @param url Client ID
-	 * @returns The parsed document, or `undefined` if it could not be fetched
+	 * @returns The parsed document, `undefined` when the host's answer is final,
+	 * such as a 404 or an invalid document, or `null` when a retry may succeed:
+	 * a timeout, a network error, or a 5xx or 429 response
 	 */
 	static async fetch(url: URL): Promise<unknown> {
 		const https = process.getBuiltinModule("node:https");
@@ -72,6 +74,9 @@ export class Metadata {
 		// an address in the URL is connected to without a lookup
 		const host = url.hostname.replace(/^\[|\]$/g, "");
 		if (net.isIP(host) && special(host)) return;
+
+		// set when the failure is the host's final answer, not a passing one
+		let final = false;
 
 		const bytes = await new Promise<Uint8Array | undefined>((resolve) => {
 			// for the whole download, a response sent slowly cannot hold it open
@@ -93,8 +98,10 @@ export class Metadata {
 					lookup: (hostname, options, callback) =>
 						dns.lookup(hostname, { ...options, all: true }, (error, all) => {
 							if (error) return callback(error, "", 0);
-							if (!all.length || all.some(({ address }) => special(address)))
+							if (!all.length || all.some(({ address }) => special(address))) {
+								final = true;
 								return callback(new Error("Special-use address"), "", 0);
+							}
 							if (options.all) return (callback as Function)(null, all);
 							callback(null, all[0]!.address, all[0]!.family);
 						}),
@@ -102,6 +109,8 @@ export class Metadata {
 				(res) => {
 					// redirects are not followed
 					if (res.statusCode !== 200) {
+						const status = res.statusCode ?? 0;
+						final = status < 500 && status !== 429;
 						res.destroy();
 						return done();
 					}
@@ -110,6 +119,7 @@ export class Metadata {
 					let size = 0;
 					res.on("data", (chunk: Uint8Array) => {
 						if ((size += chunk.length) > Metadata.#limit) {
+							final = true;
 							res.destroy();
 							return done();
 						}
@@ -123,10 +133,11 @@ export class Metadata {
 			req.on("error", () => done());
 		});
 
-		if (!bytes) return;
+		if (!bytes) return final ? undefined : null;
 
 		try {
-			return JSON.parse(Codec.decode(bytes));
+			// a document of `null` is invalid, not a passing failure
+			return JSON.parse(Codec.decode(bytes)) ?? undefined;
 		} catch {
 			return;
 		}

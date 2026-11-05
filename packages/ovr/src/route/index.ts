@@ -459,6 +459,11 @@ export class Route<
 	 */
 	describe(description: string) {
 		this.#configure("describe");
+		// an empty description would leave the route silently unserved
+		if (!description.trim())
+			throw new TypeError(
+				`Route "${this.pattern}" needs a description agents can read.`,
+			);
 		this.#description = description;
 		return this;
 	}

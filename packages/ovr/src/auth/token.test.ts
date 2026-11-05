@@ -28,3 +28,23 @@ test("secret rotation signs with the first key and accepts retained keys", async
 	expect(await Token.open(current, "session", fresh)).toBe("id");
 	await expect(Token.open(old, "session", fresh)).rejects.toThrow("token");
 });
+
+test("a signature has one spelling", async () => {
+	const secret = "test-secret-with-at-least-32-bytes";
+	const cookie = await Token.seal(secret, "session", "token");
+	// the last character of a 32-byte signature carries 2 unused bits
+	const alphabet =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	const last = alphabet.indexOf(cookie.at(-1)!);
+	const respelled = cookie.slice(0, -1) + alphabet[last ^ 1];
+	expect(
+		Uint8Array.fromBase64(respelled.split(".").at(-1)!, {
+			alphabet: "base64url",
+		}),
+	).toEqual(
+		Uint8Array.fromBase64(cookie.split(".").at(-1)!, { alphabet: "base64url" }),
+	);
+	await expect(Token.open(secret, "session", respelled)).rejects.toThrow(
+		"token",
+	);
+});

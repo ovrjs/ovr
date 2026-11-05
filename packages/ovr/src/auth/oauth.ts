@@ -66,8 +66,11 @@ const downloads = {
 	cached: 1000,
 	/** How long a found agent is kept */
 	lifetime: 5 * Time.minute,
-	/** How long a found agent's document is used when a new download is refused */
-	stale: Time.day,
+	/**
+	 * How long a found agent's document is used when a new download is
+	 * refused or fails for now, short since its redirects could have changed
+	 */
+	stale: Time.hour,
 };
 
 /**
@@ -147,7 +150,7 @@ export function oauth(
 	 *
 	 * @param c Request context
 	 * @param id Client ID
-	 * @returns The agent, `undefined` if it is unknown, or `null` if downloads are limited
+	 * @returns The agent, `undefined` if it is unknown, or `null` if downloads are limited or failing for now
 	 */
 	const agent = async (c: Context, id: string | null) => {
 		const url = id ? identify(id) : undefined;
@@ -163,8 +166,9 @@ export function oauth(
 		if ((missing.get(id) ?? 0) > now) return;
 		missing.delete(id);
 
-		// a refused download serves an agent found before from its last
-		// document, so floods of other client IDs cannot lock it out
+		// a download refused or failing for now serves an agent found before
+		// from its last document, so floods of other client IDs or a passing
+		// outage cannot lock it out
 		const refused = () => known?.client ?? null;
 
 		let download = pending.get(id);
@@ -188,6 +192,9 @@ export function oauth(
 					if ((await ceiling.check(c, url.host)) !== true) return null;
 
 					const client = await find(id, url);
+					// a failure that may pass keeps what is known, and is not remembered
+					if (client === null) return null;
+
 					// the oldest is forgotten first
 					found.delete(id);
 					if (client) {
@@ -450,7 +457,7 @@ export function oauth(
 
 			const client = await agent(c, query.get("client_id"));
 			if (client === null)
-				return c.text("Too many agents are connecting. Try again later.", 503);
+				return c.text("Could not load the agent. Try again later.", 503);
 			if (!client) return c.text("Unknown client.", 400);
 
 			const redirect = match(client.redirects, query.get("redirect_uri"));
@@ -762,10 +769,15 @@ function identify(id: string) {
  *
  * @param id Client ID
  * @param url Client ID, parsed
- * @returns The client
+ * @returns The client, `undefined` if it has no valid document, or `null`
+ * if the download failed for now
  */
-async function find(id: string, url: URL): Promise<Client | undefined> {
-	const metadata = (await Metadata.fetch(url)) as Record<string, unknown>;
+async function find(id: string, url: URL): Promise<Client | null | undefined> {
+	const metadata = (await Metadata.fetch(url)) as Record<
+		string,
+		unknown
+	> | null;
+	if (metadata === null) return null;
 	const redirects = metadata?.redirect_uris;
 	if (
 		metadata?.client_id !== id ||

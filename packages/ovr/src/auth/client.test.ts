@@ -375,6 +375,23 @@ test("requires native JSON parsing and serialization for registration and login"
 	}
 });
 
+test("a browser without the JSON helpers spends no challenge", async () => {
+	const state = setup();
+	const helpers = Credential as unknown as Record<string, unknown>;
+	const parse = helpers.parseRequestOptionsFromJSON;
+	delete helpers.parseRequestOptionsFromJSON;
+	try {
+		state.init("first", "bootstrap", "/options", "login");
+		await state.first.fire();
+		expect(state.fetcher).not.toHaveBeenCalled();
+		expect(state.status[0]?.textContent).toBe(
+			"Passkeys are unavailable in this browser.",
+		);
+	} finally {
+		helpers.parseRequestOptionsFromJSON = parse;
+	}
+});
+
 test("auto-initializes later streamed forms without attaching duplicate handlers", async () => {
 	const state = setup();
 	const scripts = [

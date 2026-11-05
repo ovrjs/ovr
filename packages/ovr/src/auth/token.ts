@@ -37,7 +37,11 @@ export class Token {
 		const dot = token.lastIndexOf(".");
 		if (dot > 0 && token.startsWith(`${purpose}:`)) {
 			try {
-				const signature = Codec.Base64Url.decode(token.slice(dot + 1));
+				const text = token.slice(dot + 1);
+				const signature = Codec.Base64Url.decode(text);
+				// one spelling per signature, as it was issued
+				if (Codec.Base64Url.encode(signature) !== text)
+					throw new Issue("token");
 				const payload = Codec.encode(token.slice(0, dot));
 				for (const key of typeof secret === "string" ? [secret] : secret)
 					if (
