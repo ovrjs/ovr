@@ -716,7 +716,24 @@ class Base<T extends readonly Table.Any[]> {
 					// error, instead of ending this transaction and leaving changes
 					// applied but unrecorded
 					await sql`SELECT set_config('migrate.sql', ${next.sql}, true)`;
-					await sql`DO $$ BEGIN EXECUTE current_setting('migrate.sql'); END $$`;
+					await sql`DO $$ BEGIN EXECUTE current_setting('migrate.sql'); END $$`.catch(
+						(error: unknown) => {
+							const { code, message } = (error ?? {}) as {
+								code?: unknown;
+								message?: unknown;
+							};
+							if (
+								code === "0A000" &&
+								typeof message === "string" &&
+								message.includes("transaction commands")
+							)
+								throw new Error(
+									`Migration ${next.id} cannot contain BEGIN, COMMIT, or ROLLBACK, it already runs in a transaction`,
+									{ cause: error },
+								);
+							throw error;
+						},
+					);
 					const [row] = await sql`
 						INSERT INTO migrations (id, checksum) VALUES (${next.id}, ${checksums.get(next.id)})
 						RETURNING n

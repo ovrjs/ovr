@@ -686,10 +686,21 @@ describe.each(drivers)("$name", (driver) => {
 						sql: "BEGIN; CREATE TABLE other (id int); COMMIT; SELECT 1 / 0",
 					},
 				]),
-			).rejects.toThrow();
+			).rejects.toThrow(
+				"Migration 0001 cannot contain BEGIN, COMMIT, or ROLLBACK",
+			);
 			expect(await db.sql`SELECT to_regclass('other')::text AS name`).toEqual([
 				{ name: null },
 			]);
+		},
+	);
+
+	test.skipIf(!driver.errors)(
+		"a migration's other errors are unchanged",
+		async () => {
+			await expect(
+				db.migrate([{ id: "0001", sql: "SELECT 1 / 0" }]),
+			).rejects.toThrow("division by zero");
 		},
 	);
 
