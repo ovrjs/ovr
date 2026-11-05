@@ -929,9 +929,20 @@ export class Schema<Output>
 
 				for (const [name, schema] of Object.entries(def.shape)) {
 					const node = Schema.#node(schema, c);
+					// a browser leaves an unchecked box out and it reads as false, so
+					// input, such as an agent's, may leave it out too
+					const unchecked =
+						c.io === "input" &&
+						schema instanceof FieldSchema &&
+						schema.type === "checkbox" &&
+						!schema.values;
 
-					own(properties, name, node.schema);
-					if (!node.optional) required.push(name);
+					own(
+						properties,
+						name,
+						unchecked ? { ...node.schema, default: false } : node.schema,
+					);
+					if (!node.optional && !unchecked) required.push(name);
 				}
 
 				return {

@@ -406,6 +406,12 @@ describe("Mcp", () => {
 		expect(search.description).toBe("Search posts");
 		expect(Object.keys(search.inputSchema.properties)).toEqual(["q"]);
 		expect(create.inputSchema.properties.title).toMatchObject({ minLength: 3 });
+		// like a browser, an agent may leave an unchecked box out
+		expect(create.inputSchema.properties.draft).toEqual({
+			type: "boolean",
+			default: false,
+		});
+		expect(create.inputSchema.required).toEqual(["title"]);
 		// writes claim nothing more, so clients treat them as possibly destructive
 		expect(create.annotations).toEqual({
 			readOnlyHint: false,

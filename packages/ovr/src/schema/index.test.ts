@@ -1492,6 +1492,22 @@ describe("Form schema", () => {
 describe("toJsonSchema", () => {
 	const draft = "https://json-schema.org/draft/2020-12/schema";
 
+	test("an unchecked box may be left out of input, and is always output", () => {
+		const form = Schema.object({
+			agree: Field.checkbox(),
+			topics: Field.checkboxes(["a", "b"]),
+		});
+		const input = form.toJsonSchema({ io: "input" });
+		expect(input.properties).toMatchObject({
+			agree: { type: "boolean", default: false },
+		});
+		expect(input.required).toEqual(["topics"]);
+		expect(form.toJsonSchema({ io: "output" }).required).toEqual([
+			"agree",
+			"topics",
+		]);
+	});
+
 	test("primitives", () => {
 		expect(Schema.string().toJsonSchema()).toEqual({
 			$schema: draft,
