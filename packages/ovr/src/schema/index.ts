@@ -23,6 +23,36 @@ type Failure = {
  */
 export const normalizers = new WeakSet<(value: any) => unknown>();
 
+/**
+ * Set a property, defining `__proto__` as data since assigning it would
+ * change the object's prototype.
+ *
+ * @param data Object to set it on
+ * @param name Property name
+ * @param value Property value
+ */
+const own = (data: Record<string, unknown>, name: string, value: unknown) => {
+	if (name === "__proto__")
+		Object.defineProperty(data, name, {
+			value,
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
+	else data[name] = value;
+};
+
+/**
+ * Add issues to a list, one at a time, since spreading a very long list
+ * into `push` overflows the stack.
+ *
+ * @param issues List to add to
+ * @param more Issues to add
+ */
+const append = <I>(issues: I[], more: readonly I[]) => {
+	for (const issue of more) issues.push(issue);
+};
+
 type Run = (
 	value: unknown,
 	path: Schema.Issue.Path,
@@ -338,7 +368,7 @@ class ShapeUtil {
 		const out: Record<string, unknown> = {};
 
 		for (const name of names) {
-			if (name in shape) out[name] = shape[name];
+			if (name in shape) own(out, name, shape[name]);
 		}
 
 		return out as Pick<S, N>;
@@ -361,7 +391,7 @@ class ShapeUtil {
 		const out: Record<string, unknown> = {};
 
 		for (const [name, value] of Object.entries(shape)) {
-			if (!remove.has(name)) out[name] = value;
+			if (!remove.has(name)) own(out, name, value);
 		}
 
 		return out as Omit<S, N>;
@@ -592,25 +622,6 @@ export class Schema<Output>
 	}
 
 	/**
-	 * Set an output property, defining `__proto__` as data since assigning it
-	 * would change the object's prototype.
-	 *
-	 * @param data Output object
-	 * @param name Property name
-	 * @param value Property value
-	 */
-	static #set(data: Record<string, unknown>, name: string, value: unknown) {
-		if (name === "__proto__")
-			Object.defineProperty(data, name, {
-				value,
-				enumerable: true,
-				writable: true,
-				configurable: true,
-			});
-		else data[name] = value;
-	}
-
-	/**
 	 * @param expected Expected value
 	 * @param path Issue path, copied since parsing continues to change it
 	 * @param message Issue message
@@ -687,7 +698,7 @@ export class Schema<Output>
 
 						if (result.issues) {
 							// the first failure's list is new, so it is reused
-							if (issues) issues.push(...result.issues);
+							if (issues) append(issues, result.issues);
 							else issues = result.issues;
 						} else {
 							data.push(result.data);
@@ -720,10 +731,10 @@ export class Schema<Output>
 						path.pop();
 
 						if (result.issues) {
-							if (issues) issues.push(...result.issues);
+							if (issues) append(issues, result.issues);
 							else issues = result.issues;
 						} else if (result.data !== undefined) {
-							Schema.#set(data, name, result.data);
+							own(data, name, result.data);
 						}
 					}
 
@@ -737,7 +748,7 @@ export class Schema<Output>
 										message: "Unexpected key",
 									});
 								} else {
-									Schema.#set(data, name, next);
+									own(data, name, next);
 								}
 							}
 						}
@@ -756,7 +767,7 @@ export class Schema<Output>
 						// return as soon as one passes
 						if (!result.issues) return result;
 
-						issues.push(...result.issues);
+						append(issues, result.issues);
 					}
 
 					return { issues };
@@ -919,7 +930,7 @@ export class Schema<Output>
 				for (const [name, schema] of Object.entries(def.shape)) {
 					const node = Schema.#node(schema, c);
 
-					properties[name] = node.schema;
+					own(properties, name, node.schema);
 					if (!node.optional) required.push(name);
 				}
 
@@ -2206,7 +2217,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						(!limit ||
 							JSON.stringify(result.data).length <= Form.#maxValueChars)
 					) {
-						sanitized[name as ShapeUtil.Name<Shape>] = result.data;
+						own(sanitized, name, result.data);
 					}
 				}
 			}
@@ -2250,7 +2261,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 							name,
 						);
 
-						if (value != null) data[name] = value;
+						if (value != null) own(data, name, value);
 					}
 
 					return data;
@@ -2283,7 +2294,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 								).optional(),
 								values: Schema.object(
 									this.names.reduce<Schema.Object.Shape>((shape, name) => {
-										shape[name] = Form.#valueSchema.optional();
+										own(shape, name, Form.#valueSchema.optional());
 
 										return shape;
 									}, {}),
@@ -2441,13 +2452,13 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				const result = field.parse(value, [...path, name]);
 
 				if (result.issues) {
-					issues.push(...result.issues);
+					append(issues, result.issues);
 				} else if (result.data !== undefined) {
-					data[name] = result.data;
+					own(data, name, result.data);
 				}
 
 				// a cleared field is recorded empty, so it overrides initial values
-				if (FieldSchema.persisted(field)) values[name] = value ?? "";
+				if (FieldSchema.persisted(field)) own(values, name, value ?? "");
 			}
 		}
 

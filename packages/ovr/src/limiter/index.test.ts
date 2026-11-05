@@ -1,6 +1,7 @@
 import { App } from "../app/index.js";
 import { Database, owned } from "../database/index.js";
 import { Route } from "../route/index.js";
+import { Codec } from "../util/index.js";
 import { LimitIssue, Limiter } from "./index.js";
 import { PGlite } from "@electric-sql/pglite";
 import {
@@ -71,6 +72,17 @@ function setup({
 	return { app, limiter, fetch, hit };
 }
 
+/** The key a bucket is stored under, a hash of its policy, scope, and identity */
+const key = async (...parts: unknown[]) =>
+	Codec.Base64Url.encode(
+		new Uint8Array(
+			await crypto.subtle.digest(
+				"SHA-256",
+				Codec.encode(JSON.stringify(parts)),
+			),
+		),
+	);
+
 const buckets = () =>
 	db.sql`SELECT * FROM ${db.rate_limits} ORDER BY key`.parse(db.rate_limits);
 
@@ -87,13 +99,7 @@ describe("token buckets", () => {
 		expect((await state.fetch()).status).toBe(429);
 		expect(state.hit).toHaveBeenCalledTimes(61);
 		const [bucket] = await buckets();
-		expect(JSON.parse(bucket!.key)).toEqual([
-			"requests",
-			60,
-			60000,
-			"",
-			"192.0.2.1",
-		]);
+		expect(bucket!.key).toBe(await key("requests", 60, 60000, "", "192.0.2.1"));
 	});
 
 	test("concurrent checks consume one budget", async () => {
@@ -113,6 +119,15 @@ describe("token buckets", () => {
 		expect((await state.app.fetch("https://example.com/health")).status).toBe(
 			200,
 		);
+	});
+
+	test("a 1024-character Unicode identity can consume and exhaust a bucket", async () => {
+		const key = Array.from({ length: 1024 }, (_, i) =>
+			String.fromCharCode(0x4e00 + ((i * 7919) % 20000)),
+		).join("");
+		const { fetch } = setup({ limit: 1, key: () => key });
+		expect((await fetch()).status).toBe(200);
+		expect((await fetch()).status).toBe(429);
 	});
 
 	test("scopes have independent budgets", async () => {
@@ -144,9 +159,9 @@ describe("token buckets", () => {
 		vi.advanceTimersByTime(61000);
 		expect((await state.fetch("192.0.2.2")).status).toBe(200);
 		// the first client's expired bucket was pruned
-		expect(
-			(await buckets()).map((bucket) => JSON.parse(bucket.key)[4]),
-		).toEqual(["192.0.2.2"]);
+		expect((await buckets()).map((bucket) => bucket.key)).toEqual([
+			await key("requests", 1, 1000, "", "192.0.2.2"),
+		]);
 		expect((await state.fetch()).status).toBe(200);
 	});
 

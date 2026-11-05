@@ -31,7 +31,7 @@ export namespace Database {
 		/** Unique ID, migrations are applied in ID order. */
 		readonly id: string;
 
-		/** Trusted SQL, may contain several statements. */
+		/** Trusted SQL, may contain several statements but not `BEGIN`, `COMMIT`, or `ROLLBACK`, since it runs in a transaction. */
 		readonly sql: string;
 	}
 
@@ -256,7 +256,8 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 				i,
 			]);
 
-			if (result.issues) issues.push(...result.issues);
+			// one at a time, a very long list spread into `push` overflows the stack
+			if (result.issues) for (const issue of result.issues) issues.push(issue);
 			else data.push(result.data);
 		}
 
@@ -711,7 +712,11 @@ class Base<T extends readonly Table.Any[]> {
 							`Migration ${next.id} sorts before applied migration ${later.id}`,
 						);
 
-					await new Sql([next.sql], [], client);
+					// run by PL/pgSQL, where a COMMIT or ROLLBACK in the migration is an
+					// error, instead of ending this transaction and leaving changes
+					// applied but unrecorded
+					await sql`SELECT set_config('migrate.sql', ${next.sql}, true)`;
+					await sql`DO $$ BEGIN EXECUTE current_setting('migrate.sql'); END $$`;
 					const [row] = await sql`
 						INSERT INTO migrations (id, checksum) VALUES (${next.id}, ${checksums.get(next.id)})
 						RETURNING n

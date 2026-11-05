@@ -477,6 +477,34 @@ describe("Mcp", () => {
 		});
 	});
 
+	test("a tool preserves a named parameter called wildcard on a write", async () => {
+		const { app, rpc } = setup();
+		const removed: string[] = [];
+		const route = Route.post("/remove/:wildcard")
+			.describe("Remove the selected entry")
+			.use((c) => {
+				removed.push(c.params.wildcard);
+				c.text("removed");
+			});
+		app.use(route);
+		await rpc("tools/call", {
+			name: route.tool!.name,
+			arguments: { wildcard: "draft" },
+		});
+		expect(removed).toEqual(["draft"]);
+	});
+
+	test("an unpaired surrogate in a tool parameter returns a protocol error", async () => {
+		const { rpc } = setup();
+		const { body } = await rpc("tools/call", {
+			name: "post_posts_id_delete",
+			arguments: { id: "\ud800" },
+		});
+		expect(body.result?.isError === true || body.error?.code === -32602).toBe(
+			true,
+		);
+	});
+
 	test("a tool passes a wildcard following a literal prefix to its handler", async () => {
 		const { app, rpc } = setup();
 		const files = Route.get("/file-*")

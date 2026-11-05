@@ -19,8 +19,8 @@ type Tool = {
 	/** Tool definition sent to clients */
 	readonly definition: Json;
 
-	/** Pattern parameter names, `*` is `wildcard` */
-	readonly params: readonly string[];
+	/** Pattern parameters by the argument that fills them, `wildcard` fills `*` */
+	readonly params: ReadonlyMap<string, string>;
 };
 
 /** JSON-RPC error */
@@ -482,9 +482,10 @@ export class Mcp {
 			const form = route as Route.Post;
 			// names are unique, app.use() throws for two routes sharing one
 
-			const params = Array.from(
-				route.pattern.matchAll(parameters),
-				([, name]) => name ?? "wildcard",
+			const params = new Map(
+				Array.from(route.pattern.matchAll(parameters), ([, name]) =>
+					name ? [name, name] : ["wildcard", "*"],
+				),
 			);
 
 			const properties: Json = {};
@@ -497,8 +498,8 @@ export class Mcp {
 					required.add(field);
 			}
 
-			for (const param of params) {
-				const schema = route.paramSchemas?.[param === "wildcard" ? "*" : param];
+			for (const [param, key] of params) {
+				const schema = route.paramSchemas?.[key];
 				properties[param] = schema ? Mcp.#json(schema) : { type: "string" };
 				required.add(param);
 			}
@@ -555,7 +556,7 @@ export class Mcp {
 		if (typeof args !== "object" || Array.isArray(args))
 			throw new RpcError(-32602, "Tool arguments must be an object");
 
-		const missing = tool.params.filter(
+		const missing = [...tool.params.keys()].filter(
 			(param) =>
 				typeof args[param] !== "string" && typeof args[param] !== "number",
 		);
@@ -567,15 +568,14 @@ export class Mcp {
 		try {
 			pathname = route.url({
 				params: Object.fromEntries(
-					tool.params.map((param) => [
-						param === "wildcard" ? "*" : param,
-						String(args[param]),
-					]),
+					Array.from(tool.params, ([param, key]) => [key, String(args[param])]),
 				),
 			} as never);
 		} catch (error) {
-			// a value such as `..` or `/host` would leave its place in the path
-			if (!(error instanceof TypeError)) throw error;
+			// a value such as `..` or `/host` would leave its place in the path,
+			// and one with a lone surrogate cannot be encoded
+			if (!(error instanceof TypeError || error instanceof URIError))
+				throw error;
 			return Mcp.#error(`Parameters do not match ${route.pattern}`);
 		}
 
@@ -588,7 +588,7 @@ export class Mcp {
 		const body = new FormData();
 
 		for (const [name, value] of Object.entries(args)) {
-			if (tool.params.includes(name)) continue;
+			if (tool.params.has(name)) continue;
 			for (const item of Array.isArray(value) ? value : [value]) {
 				if (item == null || item === false) continue;
 				const text =

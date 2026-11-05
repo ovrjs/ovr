@@ -207,7 +207,7 @@ export class Multipart extends Request {
 	/** Owned storage for headers and boundaries spanning input chunks. */
 	readonly #scratch: Uint8Array<ArrayBuffer>;
 
-	/** First delimiter, which opens the first part or closes an empty form */
+	/** Dash and boundary, the first delimiter without a new line before it */
 	readonly #opening: Needle;
 
 	/** Part boundary needle */
@@ -545,8 +545,15 @@ export class Multipart extends Request {
 		let complete = false;
 
 		try {
-			if (!(await this.#findConcat(this.#opening)))
-				throw new Malformed("Missing Opening Boundary");
+			let preamble = await this.#findConcat(this.#opening);
+			// the first delimiter starts the body or a line, one mentioned within
+			// a line of the preamble is not one
+			if (
+				preamble?.length &&
+				!(preamble.at(-2) === 13 && preamble.at(-1) === 10)
+			)
+				preamble = await this.#findConcat(this.#boundary);
+			if (!preamble) throw new Malformed("Missing Opening Boundary");
 
 			// a form without fields sends only the closing delimiter
 			for (let i = 0; !(await this.#closed()); i++) {

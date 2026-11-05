@@ -331,6 +331,28 @@ describe("Array and object schemas", () => {
 		expect(JSON.stringify(data)).toBe(JSON.stringify(input));
 	});
 
+	test("a valid large array can match the second branch of a union", () => {
+		const schema = Schema.union([
+			Schema.array(Schema.string()),
+			Schema.array(Schema.number()),
+		]);
+		const input = Array<number>(150_000).fill(1);
+		expect(valid(schema.parse(input))).toHaveLength(input.length);
+	});
+
+	test("a declared form field called __proto__ cannot supply inherited privileges", async () => {
+		const form = new Form({
+			["__proto__"]: Field.hidden().json(
+				Schema.object({ admin: Schema.boolean() }),
+			),
+		});
+		const result = formValid(
+			await form.parse(new URLSearchParams([["__proto__", '{"admin":true}']])),
+		);
+		expect(Reflect.get(result.data, "admin")).toBeUndefined();
+		expect(Object.hasOwn(result.data, "__proto__")).toBe(true);
+	});
+
 	test("declared __proto__ properties remain own properties after validation", () => {
 		const input = JSON.parse('{"__proto__":{"admin":true}}');
 		const data = valid(

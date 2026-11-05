@@ -1467,6 +1467,21 @@ describe("hostile and malformed bodies", () => {
 		).rejects.toThrow(TypeError);
 	});
 
+	it("only an opening delimiter at the start of a line can introduce fields", async () => {
+		const multipart = new Multipart(
+			request("XyZ", [
+				encode("The preamble mentions "),
+				encode(
+					'--XyZ\r\nContent-Disposition: form-data; name="role"\r\n\r\nadmin\r\n',
+				),
+				encode(
+					'--XyZ\r\nContent-Disposition: form-data; name="title"\r\n\r\nhello\r\n--XyZ--\r\n',
+				),
+			]),
+		);
+		expect(await fields(multipart)).toEqual([["title", "hello"]]);
+	});
+
 	it("a boundary prefix inside file data cannot introduce a field", async () => {
 		const content =
 			'photo\r\n--XyZsuffix\r\nContent-Disposition: form-data; name="role"\r\n\r\nadmin';

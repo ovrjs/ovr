@@ -1107,14 +1107,29 @@ function managed(
 	return { app, service, storage, created, post, start, submit };
 }
 
-/** Tokens a policy has spent, by bucket name and scope; freeze the clock so none refill. */
-const spent = async (name: string, scope?: string) =>
-	(await rows(db.rate_limits))
-		.map((bucket) => ({ key: JSON.parse(bucket.key), tokens: bucket.tokens }))
-		.filter(
-			({ key }) => key[0] === name && (scope === undefined || key[3] === scope),
-		)
-		.reduce((sum, { key, tokens }) => sum + key[1] - tokens, 0);
+/** The key a rate limit bucket is stored under, a hash of its policy, scope, and identity */
+const bucket = async (
+	name: string,
+	limit: number,
+	interval: number,
+	scope: string,
+	identity = "192.0.2.1",
+) =>
+	Codec.Base64Url.encode(
+		new Uint8Array(
+			await crypto.subtle.digest(
+				"SHA-256",
+				Codec.encode(JSON.stringify([name, limit, interval, scope, identity])),
+			),
+		),
+	);
+
+/** Tokens a policy has spent from one client's bucket; freeze the clock so none refill. */
+const spent = async (...policy: Parameters<typeof bucket>) => {
+	const key = await bucket(...policy);
+	const found = (await rows(db.rate_limits)).find((row) => row.key === key);
+	return found ? policy[1] - found.tokens : 0;
+};
 
 describe("configured passkey callbacks", () => {
 	test("public signup cannot override a server-default role used by an admin edit form", async () => {
@@ -1812,14 +1827,10 @@ test("the database retains the built-in auth policies across service instances",
 	);
 	expect(response.headers.get("location")).toBe("/account");
 	// verification has its own bucket
-	expect(
-		(await rows(db.rate_limits)).map((bucket) =>
-			JSON.parse(bucket.key).slice(0, 4),
-		),
-	).toEqual(
+	expect((await rows(db.rate_limits)).map((row) => row.key)).toEqual(
 		expect.arrayContaining([
-			["auth:register:" + origin, 5, 600000, "options"],
-			["auth:register:" + origin, 5, 600000, "verify"],
+			await bucket("auth:register:" + origin, 5, 600000, "options"),
+			await bucket("auth:register:" + origin, 5, 600000, "verify"),
 		]),
 	);
 });
@@ -1968,14 +1979,14 @@ test("invalid registration options do not spend the signup budget", async () => 
 			422,
 		);
 	}
-	expect(await spent(register, "options")).toBe(1);
+	expect(await spent(register, 5, 600000, "options")).toBe(1);
 	const data = new FormData();
 	data.set("bootstrap", start.bootstrap);
 	data.set("email", "user@example.com");
 	expect((await state.post(start.endpoint, data, start.cookie)).status).toBe(
 		200,
 	);
-	expect(await spent(register, "options")).toBe(2);
+	expect(await spent(register, 5, 600000, "options")).toBe(2);
 	clock.mockRestore();
 });
 

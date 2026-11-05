@@ -219,7 +219,7 @@ console.log({ applied });
 - Each migration and its history record commit in one transaction, so a failing migration leaves nothing behind.
 - Concurrent runs wait on an advisory lock, so each migration applies once.
 - Editing or deleting an applied migration, or adding one that sorts before an applied migration, is an error.
-- Statements that cannot run in a transaction, such as `CREATE INDEX CONCURRENTLY`, are not supported.
+- Statements that cannot run in a transaction, such as `CREATE INDEX CONCURRENTLY`, are not supported, and neither are `BEGIN`, `COMMIT`, or `ROLLBACK`, which would end the migration's transaction. Migrations run through PL/pgSQL's `EXECUTE`, which rejects them.
 
 To build an index on a large production table without blocking writes:
 

@@ -3,7 +3,7 @@ import { type Database, owned } from "../database/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
-import { Time } from "../util/index.js";
+import { Codec, Time } from "../util/index.js";
 
 /**
  * Internal to ovr, which counts each client this way.
@@ -142,9 +142,20 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 				"Rate limiting requires a trusted client IP in App.fetch(request, { ip }), or an explicit authenticated key",
 			);
 		const { limit, interval } = this.#options;
-		// Different policies cannot interpret the same stored token balance differently.
+		// Different policies cannot interpret the same stored token balance
+		// differently. Hashed, so a long name, scope, or identity always fits
+		// in the primary key's index.
 		const retry = await this.#consume(
-			JSON.stringify([this.#name, limit, interval, scope, identity]),
+			Codec.Base64Url.encode(
+				new Uint8Array(
+					await crypto.subtle.digest(
+						"SHA-256",
+						Codec.encode(
+							JSON.stringify([this.#name, limit, interval, scope, identity]),
+						),
+					),
+				),
+			),
 		);
 		if (retry === true) return true;
 		const now = Date.now();

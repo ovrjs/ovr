@@ -676,6 +676,23 @@ describe.each(drivers)("$name", (driver) => {
 		},
 	);
 
+	test.skipIf(!driver.errors)(
+		"an explicit COMMIT in a failing migration cannot leave unrecorded changes",
+		async () => {
+			await expect(
+				db.migrate([
+					{
+						id: "0001",
+						sql: "BEGIN; CREATE TABLE other (id int); COMMIT; SELECT 1 / 0",
+					},
+				]),
+			).rejects.toThrow();
+			expect(await db.sql`SELECT to_regclass('other')::text AS name`).toEqual([
+				{ name: null },
+			]);
+		},
+	);
+
 	test("a lazy query cannot execute after its transaction releases the connection", async () => {
 		await db.sql`CREATE TABLE other (id integer)`;
 		const result = await db.sql(async (t) => ({
