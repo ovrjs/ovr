@@ -326,7 +326,7 @@ const connect = Route.get("/connect").use(async (c) => {
 app.use(new Mcp({ auth }), connect);
 ```
 
-`request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified. `request.client.id` is the address of its metadata document, so its origin is who publishes the agent: show it, with where the user will return and what the agent can do. `auth.consent(c)` also sets headers that stop other sites from framing the page.
+`request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, offering only theirs in the browser's picker, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified. `request.client.id` is the address of its metadata document, so its origin is who publishes the agent: show it, with where the user will return and what the agent can do. `auth.consent(c)` also sets headers that stop other sites from framing the page.
 
 Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint given `auth` have none of these endpoints.
 

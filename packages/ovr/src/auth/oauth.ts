@@ -349,11 +349,16 @@ export function oauth(
 			if (!input || input.issues)
 				return c.text("Authentication failed. Try again.", 400);
 
+			const pending = await asked(c, input.data.request);
+			if (!pending) return;
+
 			try {
 				await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
 					method: "login",
 					action: paths.approve,
 					fields: await Passkey.fields({ request: input.data.request }),
+					// only the asked user's passkeys can allow it
+					allow: await storage.credentials.list(pending.user),
 				});
 			} catch (error) {
 				if (!unverified(error)) throw error;

@@ -195,7 +195,13 @@ export class Passkey {
 		auth: State,
 		token: string,
 		label: (() => string | Promise<string>) | undefined,
-		expected: { method: "register" | "login"; action: string; fields?: string },
+		expected: {
+			method: "register" | "login";
+			action: string;
+			fields?: string;
+			/** Credential IDs a login is limited to, for a user already known */
+			allow?: readonly string[];
+		},
 	) {
 		const result = Schema.string()
 			.json(Passkey.#bootstrap)
@@ -283,6 +289,13 @@ export class Passkey {
 					rpId: rp,
 					timeout: Time.minute,
 					userVerification: "required",
+					// the picker offers only the user's passkeys
+					...(expected.allow?.length && {
+						allowCredentials: expected.allow.map((id) => ({
+							type: "public-key" as const,
+							id,
+						})),
+					}),
 				} satisfies PublicKeyCredentialRequestOptionsJSON,
 			});
 	}

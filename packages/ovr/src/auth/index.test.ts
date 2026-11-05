@@ -3412,6 +3412,41 @@ describe("agents", () => {
 		expect(await response.json()).toHaveProperty("options.challenge");
 	});
 
+	test("the approval prompt offers only the signed-in user's passkeys", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const passkey = (id: string, owner: string): Auth.Credential => ({
+			id,
+			user: owner,
+			publicKey: "key",
+			counter: 0,
+			eligible: true,
+			backedUp: false,
+		});
+		for (const credential of [
+			passkey("mine-1", user),
+			passkey("mine-2", user),
+			passkey("theirs", "someone-else"),
+		])
+			await db.sql`INSERT INTO ${db.auth_credentials} ${db.sql.values(db.auth_credentials, credential)}`;
+
+		const html = await consentPage(browser, agent);
+		const response = await browser(attribute(html, "data-endpoint"), {
+			method: "POST",
+			headers: { origin },
+			body: form({
+				request: attribute(html, 'name="request" value'),
+				bootstrap: attribute(html, "data-bootstrap"),
+			}),
+		});
+		expect(response.status).toBe(200);
+		const { options } = await response.json();
+		expect(
+			options.allowCredentials.map((c: { id: string }) => c.id).sort(),
+		).toEqual(["mine-1", "mine-2"]);
+		expect(options.allowCredentials[0].type).toBe("public-key");
+	});
+
 	test("native Deny works after the browser module adds passkey inputs", async () => {
 		const { browser } = agents();
 		await browser("/sign-in");

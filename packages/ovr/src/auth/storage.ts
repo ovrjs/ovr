@@ -67,6 +67,8 @@ export namespace Storage {
 	/** Credential lookup and compare-and-swap updates. */
 	export interface Credentials {
 		get(id: string): Result<Auth.Credential | null | undefined>;
+		/** IDs of the user's credentials */
+		list(user: string): Result<readonly string[]>;
 		/** Save `credential` only if the record still matches `previous`. */
 		update(
 			credential: Auth.Credential,
@@ -527,6 +529,13 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 					SELECT * FROM ${Storage.credentials} WHERE id = ${id}
 				`.parse(Storage.credentials)
 			)[0],
+		list: async (user) => {
+			const { columns } = Storage.credentials;
+			const rows = await this.#db.sql`
+				SELECT ${columns.id} FROM ${Storage.credentials} WHERE ${columns.user} = ${user}
+			`.parse(Schema.object({ id: Schema.string() }));
+			return rows.map((row) => row.id);
+		},
 		update: async (credential, previous) => {
 			const { columns } = Storage.credentials;
 			const rows = await this.#db.sql`
