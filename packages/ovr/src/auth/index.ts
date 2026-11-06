@@ -1,11 +1,12 @@
 import { type App, agents, mount } from "../app/index.js";
 import { type Context as ContextType, sessions } from "../context/index.js";
 import { type Database, references } from "../database/index.js";
+import type { Field, Form } from "../form/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Mcp } from "../mcp/index.js";
 import type { Route } from "../route/index.js";
-import type { Field, Form, Schema } from "../schema/index.js";
+import type { Schema } from "../schema/index.js";
 import type { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
 import { configure } from "./configure.js";

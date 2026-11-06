@@ -1,7 +1,8 @@
 import type { Context as ContextType } from "../context/index.js";
+import { Field, Form } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
-import { Field, Form, Schema } from "../schema/index.js";
+import { Schema } from "../schema/index.js";
 import { Codec, Size, Time } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";

@@ -1,6 +1,7 @@
+import { Form as FormSchema } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Form as FormSchema, Schema as ValueSchema } from "../schema/index.js";
+import { Schema as ValueSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Method, Mime } from "../util/index.js";
 import type { Util } from "../util/index.js";

@@ -1,7 +1,8 @@
 import { App } from "../app/index.js";
+import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
-import { Field, Schema } from "../schema/index.js";
+import { Schema } from "../schema/index.js";
 import { Mcp } from "./index.js";
 import { describe, expect, test } from "vitest";
 

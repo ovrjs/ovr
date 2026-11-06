@@ -1,6 +1,6 @@
 import type { Context as ContextType } from "../context/index.js";
 import type { Cookie as CookieType } from "../cookie/index.js";
-import type { Form } from "../schema/index.js";
+import type { Form } from "../form/index.js";
 import type { Trie } from "../trie/index.js";
 
 export namespace Middleware {

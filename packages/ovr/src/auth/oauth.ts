@@ -1,10 +1,10 @@
 import { crossOrigin } from "../app/index.js";
 import type { Context } from "../context/index.js";
+import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Limiter, network } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
-import { Field } from "../schema/index.js";
 import { Codec, Header, Size, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";

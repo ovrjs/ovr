@@ -9,4 +9,5 @@ export { Multipart } from "./multipart/index.js";
 export { Render } from "./render/index.js";
 export { Route } from "./route/index.js";
 export { Table } from "./table/index.js";
-export { Field, Form, Schema } from "./schema/index.js";
+export { Field, Form } from "./form/index.js";
+export { Schema } from "./schema/index.js";

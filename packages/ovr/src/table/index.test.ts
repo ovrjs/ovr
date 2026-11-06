@@ -1,4 +1,5 @@
-import { Field, Form, Schema } from "../schema/index.js";
+import { Field, Form } from "../form/index.js";
+import { Schema } from "../schema/index.js";
 import { Table } from "./index.js";
 import { describe, expect, test } from "vitest";
 

@@ -1,4 +1,5 @@
-import { Field, Schema } from "../schema/index.js";
+import { Field } from "../form/index.js";
+import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
 import { Database, owned } from "./index.js";
 import { PGlite } from "@electric-sql/pglite";
