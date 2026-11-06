@@ -1132,6 +1132,45 @@ const spent = async (...policy: Parameters<typeof bucket>) => {
 };
 
 describe("configured passkey callbacks", () => {
+	test("invalid UTF-8 in clientDataJSON is an authentication failure, not an internal error", async () => {
+		const state = managed();
+		const start = await state.start("register");
+		const credential = await registration(
+			start.options.challenge,
+			await pair(),
+		);
+		credential.response.clientDataJSON = Codec.Base64Url.encode(
+			Uint8Array.of(0xff),
+		);
+
+		const response = await state.submit(start, credential);
+		expect(response.status).toBe(303);
+		expect(
+			new URL(response.headers.get("location")!).searchParams.get("_auth"),
+		).toBe("register");
+		expect(await state.created()).toEqual([]);
+		expect(await rows(db.auth_credentials)).toEqual([]);
+		expect(await rows(db.auth_sessions)).toEqual([]);
+	});
+
+	test("invalid UTF-8 in a multipart header is a client error on the passkey endpoint", async () => {
+		const state = managed();
+		const response = await state.app.fetch(origin + "/_passkey/options/login", {
+			method: "POST",
+			headers: {
+				origin,
+				"content-type": "multipart/form-data; boundary=invalid",
+			},
+			ip: "192.0.2.1",
+			body: bytes(
+				Codec.encode('--invalid\r\nContent-Disposition: form-data; name="'),
+				Uint8Array.of(0xff),
+				Codec.encode('"\r\n\r\nvalue\r\n--invalid--\r\n'),
+			),
+		});
+		expect(response.status).toBe(400);
+	});
+
 	test("public signup cannot override a server-default role used by an admin edit form", async () => {
 		const accounts = new Table(
 			"signup_accounts",

@@ -359,6 +359,14 @@ export class Passkey {
 	}
 
 	#client(value: string, state: Storage.Challenge) {
+		let json: string;
+		try {
+			json = Codec.decode(Passkey.#decode(value));
+		} catch (error) {
+			// invalid UTF-8, sent by the client
+			if (error instanceof Issue) throw error;
+			throw new Issue("client data");
+		}
 		const result = Schema.string()
 			.json(
 				Schema.object({
@@ -370,7 +378,7 @@ export class Passkey {
 					crossOrigin: Schema.literal(false).optional(),
 				}),
 			)
-			.parse(Codec.decode(Passkey.#decode(value)));
+			.parse(json);
 		if (result.issues) throw new Issue("client data");
 	}
 

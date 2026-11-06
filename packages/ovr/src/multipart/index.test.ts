@@ -1574,6 +1574,29 @@ describe("hostile and malformed bodies", () => {
 });
 
 describe("quoted header parameters", () => {
+	it.each([
+		["file", "レポート.pdf"],
+		["説明", "notes.txt"],
+	])(
+		"preserves a browser's Unicode field %s and filename %s",
+		async (name, filename) => {
+			const form = new FormData();
+			form.set(name, new File(["content"], filename, { type: "text/plain" }));
+			const request = new Request("http://localhost", {
+				method: "POST",
+				body: form,
+			});
+			const native = (await request.clone().formData()).get(name);
+			expect(native).toBeInstanceOf(File);
+
+			const parsed = (await new Multipart(request).data()).get(name);
+			expect(parsed).toBeInstanceOf(File);
+			if (!(parsed instanceof File)) throw new Error("Missing uploaded file");
+			expect(parsed.name).toBe(filename);
+			expect(await parsed.text()).toBe("content");
+		},
+	);
+
 	it("keeps a ; or an escaped quote inside a quoted value", async () => {
 		const body =
 			'--XyZ\r\nContent-Disposition: form-data; name="na;me"; filename="notes;v2 \\"final\\".txt"\r\n\r\ncontent\r\n--XyZ--\r\n';

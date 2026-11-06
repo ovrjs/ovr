@@ -78,8 +78,13 @@ class Part extends Request {
 	constructor(req: Request, body: ReadableStream, rawHeaders: Uint8Array) {
 		const headers: [string, string][] = [];
 
+		// each byte as one character, so `Headers` accepts the UTF-8 bytes
+		// browsers send in names and filenames, decoded below
+		let text = "";
+		for (const byte of rawHeaders) text += String.fromCharCode(byte);
+
 		// create headers
-		for (const line of Codec.decode(rawHeaders).split("\r\n")) {
+		for (const line of text.split("\r\n")) {
 			const colon = line.indexOf(":");
 
 			if (colon !== -1) {
@@ -108,9 +113,25 @@ class Part extends Request {
 
 		[this.type] = Header.shift(this.headers.get(Header.name.type));
 
-		({ name: this.name = null, filename: this.filename = null } = Header.params(
+		const { name, filename } = Header.params(
 			this.headers.get(Header.name.disp),
-		));
+		);
+		this.name = Part.#utf8(name);
+		this.filename = Part.#utf8(filename);
+	}
+
+	/**
+	 * @param value Header parameter, one character per byte
+	 * @returns The UTF-8 text it encodes, or `null` without one
+	 */
+	static #utf8(value: string | undefined) {
+		if (value === undefined) return null;
+		try {
+			return Codec.decode(Uint8Array.from(value, (c) => c.charCodeAt(0)));
+		} catch {
+			// not UTF-8, the client's error
+			throw new Malformed("Invalid Part Header");
+		}
 	}
 
 	/**
