@@ -69,6 +69,8 @@ new Route("GET", "/files/*").use((c) => {
 
 The wildcard is decoded too, except for encoded `/` and `\`, so a request cannot add segments to the path: `/files/..%2Fsecret` gives `"..%2Fsecret"`, not `"../secret"`.
 
+It can follow other text in its segment, as in `/files-*`, but not a parameter: nothing would tell where `/:id*` ends the parameter and starts the wildcard, so the pattern is a type error. Use `/:id/*`.
+
 ## Prioritization
 
 Routes are prioritized in this order:

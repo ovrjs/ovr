@@ -29,6 +29,24 @@ export type ExtractParams<Pattern extends string = string> =
 				? { "*": string }
 				: {};
 
+/**
+ * The last segment of a pattern, the only one a wildcard can end.
+ *
+ * @template P Route pattern
+ */
+type Last<P extends string> = P extends `${string}/${infer R}` ? Last<R> : P;
+
+/**
+ * `P`, or a message when a parameter runs into the wildcard, as in `/:id*`,
+ * where nothing tells them apart.
+ *
+ * @template P Route pattern
+ */
+type Checked<P extends string> =
+	Last<P> extends `${string}:${string}*`
+		? "Separate the parameter from the wildcard, as in /:id/*"
+		: P;
+
 /** Whitespace `String.prototype.trim` removes */
 type Space =
 	| " "
@@ -422,9 +440,10 @@ export class Route<
 	 * @param method HTTP Method
 	 * @param pattern Route pattern
 	 */
-	constructor(method: Route.Method, pattern: Pattern) {
+	constructor(method: Route.Method, pattern: Checked<Pattern>) {
 		this.method = method;
-		this.#pattern = pattern;
+		// the message type only reaches here from a pattern already rejected
+		this.#pattern = pattern as Pattern;
 	}
 
 	/** Description for agents, only described routes are served to them */
@@ -511,13 +530,10 @@ export class Route<
 	describe<D extends string>(
 		description: Trim<D> extends ""
 			? never
-			: // `:wildcard` and `*` would both be the tool's `wildcard` argument,
-				// in separate segments or as `:wildcard*`
+			: // `:wildcard` and `*` would both be the tool's `wildcard` argument
 				["wildcard" | "*"] extends [keyof ExtractParams<Pattern>]
 				? "Rename :wildcard, a tool's * argument is named wildcard"
-				: Pattern extends `${string}:wildcard*${string}`
-					? "Rename :wildcard, a tool's * argument is named wildcard"
-					: D,
+				: D,
 	) {
 		this.#configure("describe");
 		this.#description = description;
@@ -754,7 +770,7 @@ export class Route<
 	 * @param pattern Route pattern
 	 * @returns GET `Route` with added components
 	 */
-	static get<Pattern extends string>(pattern: Pattern) {
+	static get<Pattern extends string>(pattern: Checked<Pattern>) {
 		const route = Route.#withComponents(new Route(Method.get, pattern));
 
 		return Object.assign(route, {
@@ -773,7 +789,7 @@ export class Route<
 	 * @param pattern Route pattern
 	 * @returns POST `Route` with added components
 	 */
-	static post<Pattern extends string>(pattern: Pattern) {
+	static post<Pattern extends string>(pattern: Checked<Pattern>) {
 		return Route.#withComponents(new Route(Method.post, pattern)) as Route.Post<
 			Pattern,
 			ExtractParams<Pattern>,

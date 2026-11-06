@@ -991,6 +991,28 @@ describe("chained routes", () => {
 		Route.post("/padded").describe(" Text\u00a0");
 	});
 
+	test("a parameter cannot run into the wildcard", () => {
+		void (() => {
+			// nothing tells where the parameter ends and the wildcard starts
+			// @ts-expect-error
+			Route.get("/files/:id*");
+			// @ts-expect-error
+			Route.post("/files/:wildcard*");
+			// @ts-expect-error
+			new Route("GET", "/files/report-:id*");
+		});
+
+		// apart, or after other text, they are fine
+		expectTypeOf(
+			Route.get("/files/:id/*").pattern,
+		).toEqualTypeOf<"/files/:id/*">();
+		expect(
+			Route.get("/files/:id/report-*").url({ params: { id: "1", "*": "x" } }),
+		).toBe("/files/1/report-x");
+		Route.get("/files-*");
+		Route.get("/:a/:b");
+	});
+
 	test("params convert values before the middleware runs", async () => {
 		const show = Route.get("/posts/:id/:slug")
 			.params({ id: Schema.number().preprocess(Number).int() })
