@@ -10,19 +10,19 @@ type Read = {
 	result: IteratorResult<Chunk, void>;
 };
 
-/** Chunk of a rendered element: text, or HTML */
+/** Chunk of a rendered element: text, or markup */
 class Chunk {
-	/** Text, or HTML when `safe` */
+	/** Text, or markup when `safe` */
 	readonly value: string;
 
-	/** `true` if the value is HTML, which is not escaped */
+	/** `true` if the value is markup, which is not escaped */
 	readonly safe: boolean | undefined;
 
 	/**
 	 * Chunk of a rendered element.
 	 *
-	 * @param value Text, escaped when it is rendered as HTML
-	 * @param safe Set to `true` if the value is safe HTML that should not be escaped
+	 * @param value Text, escaped when it is rendered as markup
+	 * @param safe Set to `true` if the value is safe markup that should not be escaped
 	 */
 	constructor(value: unknown, safe?: boolean) {
 		this.value = String(value ?? "");
@@ -30,7 +30,7 @@ class Chunk {
 	}
 
 	/**
-	 * @returns Safe HTML to render
+	 * @returns Safe markup to render
 	 */
 	toString(): string {
 		return this.safe ? this.value : Markup.escape(this.value);
@@ -63,7 +63,7 @@ export class Tag extends Chunk {
 		this.closed = closed;
 	}
 
-	/** @returns The tag's HTML, built when it is written */
+	/** @returns The tag's markup, built when it is written */
 	override toString() {
 		const { name, props } = this;
 		if (!props) return `</${name}>`;
@@ -118,7 +118,7 @@ export class Group extends Chunk {
 export namespace Markup {
 	/** Markup options */
 	export type Options = {
-		/** Set to `true` to disable escaping for non-HTML use */
+		/** Set to `true` to disable escaping, for content that is not markup */
 		safe?: boolean;
 	};
 
@@ -132,10 +132,10 @@ export namespace Markup {
  * same elements to Markdown.
  */
 export class Markup {
-	/** Regex to find escape character for HTML attributes */
+	/** Regex to find escape character for attributes */
 	static readonly #attr = /[&"<]/g;
 
-	/** Regex to find escape character for HTML content */
+	/** Regex to find escape character for content */
 	static readonly #content = /[&<]/g;
 
 	/** Escape character map */
@@ -256,7 +256,7 @@ export class Markup {
 	 *
 	 * @param element Element to render
 	 * @param options Markup options
-	 * @returns `ReadableStream` of HTML
+	 * @returns `ReadableStream` of markup
 	 */
 	static stream(element: JSX.Element, options?: Markup.Options) {
 		return Markup.#readable(
@@ -308,7 +308,7 @@ export class Markup {
 	}
 
 	/**
-	 * Converts a render into a fully concatenated string of HTML.
+	 * Converts a render into a fully concatenated string of markup.
 	 *
 	 * ### WARNING
 	 *
@@ -316,17 +316,17 @@ export class Markup {
 	 *
 	 * @param element Element to render
 	 * @param options Markup options
-	 * @returns Concatenated HTML
+	 * @returns Concatenated markup
 	 */
 	static async string(element: JSX.Element, options?: Markup.Options) {
 		return (await Array.fromAsync(new Markup(element, options))).join("");
 	}
 
 	/**
-	 * Render raw HTML and dangerously bypass escaping. It is written as it is
+	 * Render raw markup and dangerously bypass escaping. It is written as it is
 	 * in Markdown too, which can contain HTML.
 	 *
-	 * @param html Safe html to render
+	 * @param html Safe markup to render
 	 * @returns New _safe_ `Chunk`
 	 */
 	static raw(html: unknown) {
@@ -334,11 +334,11 @@ export class Markup {
 	}
 
 	/**
-	 * Escapes strings of HTML.
+	 * Escapes text for markup.
 	 *
 	 * @param html String to escape
-	 * @param attr Set to `true` if the value is an attribute, otherwise it's a string of HTML content
-	 * @returns Escaped string of HTML
+	 * @param attr Set to `true` if the value is an attribute, otherwise it is content
+	 * @returns Escaped text
 	 */
 	static escape(html: string, attr?: boolean) {
 		return html.replace(

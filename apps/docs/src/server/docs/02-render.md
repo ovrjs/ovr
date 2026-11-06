@@ -115,7 +115,7 @@ To render any element on its own (for example, if you aren't returning it from `
 
 ### Async iterable
 
-Create a new `Markup` async iterable that yields escaped `Chunk`s of HTML.
+Create a new `Markup` async iterable that yields escaped `Chunk`s of markup.
 
 ```tsx
 import { Markup } from "ovr";
@@ -127,7 +127,7 @@ function Component() {
 const markup = new Markup(<Component />);
 
 for await (const chunk of markup) {
-	console.log(chunk.toString()); // HTML string
+	console.log(chunk.toString()); // markup string
 }
 ```
 
@@ -159,7 +159,7 @@ new Markup(element, { safe: true });
 
 Turn an element into a `ReadableStream` using `Markup.stream`.
 
-This stream is optimized for generating HTML---it ensures backpressure is properly handled for slower clients and generation stops if the client aborts the request.
+This stream is optimized for generating markup---it ensures backpressure is properly handled for slower clients and generation stops if the client aborts the request.
 
 ```tsx
 import { Markup } from "ovr";
@@ -177,7 +177,7 @@ const response = new Response(stream, {
 
 ### String
 
-Convert any element into a `string` of HTML with `Markup.string`. This iterates through the render and joins the results into a single string.
+Convert any element into a `string` of markup with `Markup.string`. This iterates through the render and joins the results into a single string.
 
 ```tsx
 import { Markup } from "ovr";
@@ -189,9 +189,9 @@ function Component() {
 const str = await Markup.string(<Component />);
 ```
 
-### Raw HTML
+### Raw markup
 
-To render safe HTML **without escaping**, use `Markup.raw`.
+To render safe markup **without escaping**, use `Markup.raw`.
 
 ```tsx
 import { Markup } from "ovr";
@@ -227,4 +227,4 @@ const md = await Markdown.string(<Post />, { base: "https://example.com" });
 // Read the [docs](https://example.com/docs).
 ```
 
-Each block, such as a paragraph or a list, is written once it closes, so a stream still sends the page as it renders. When the element has a `<main>`, only its contents are written. Scripts, styles, and hidden elements are left out, forms are described by their fields, and links resolve against `base`. HTML from `Markup.raw` is written as it is, since Markdown can contain HTML.
+Each block, such as a paragraph or a list, is written once it closes, so a stream still sends the page as it renders. When the element has a `<main>`, only its contents are written. Scripts, styles, and hidden elements are left out, forms are described by their fields, and links resolve against `base`. Raw markup from `Markup.raw` is written as it is, since Markdown can contain HTML.
