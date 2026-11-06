@@ -33,7 +33,7 @@ class Chunk {
 	 * @returns Safe HTML to render
 	 */
 	toString(): string {
-		return this.safe ? this.value : Html.escape(this.value);
+		return this.safe ? this.value : Markup.escape(this.value);
 	}
 }
 
@@ -81,7 +81,7 @@ export class Tag extends Chunk {
 				// just put the key without the value
 				opening += ` ${key}`;
 			} else if (typeof value === "string") {
-				opening += ` ${key}="${Html.escape(value, true)}"`;
+				opening += ` ${key}="${Markup.escape(value, true)}"`;
 			} else if (typeof value === "number" || typeof value === "bigint") {
 				opening += ` ${key}="${value}"`;
 			}
@@ -115,8 +115,8 @@ export class Group extends Chunk {
 	}
 }
 
-export namespace Html {
-	/** HTML options */
+export namespace Markup {
+	/** Markup options */
 	export type Options = {
 		/** Set to `true` to disable escaping for non-HTML use */
 		safe?: boolean;
@@ -127,10 +127,11 @@ export namespace Html {
 }
 
 /**
- * Renders an element to HTML, as an `AsyncIterable` of chunks, a stream, or a
- * string. `Markdown` renders the same elements to Markdown.
+ * Renders an element to markup, such as HTML, SVG, or XML, as an
+ * `AsyncIterable` of chunks, a stream, or a string. `Markdown` renders the
+ * same elements to Markdown.
  */
-export class Html {
+export class Markup {
 	/** Regex to find escape character for HTML attributes */
 	static readonly #attr = /[&"<]/g;
 
@@ -143,16 +144,16 @@ export class Html {
 	/** Element to render */
 	readonly #element: JSX.Element;
 
-	/** HTML options */
-	readonly #options: Html.Options | undefined;
+	/** Markup options */
+	readonly #options: Markup.Options | undefined;
 
 	/**
 	 * Creates an `AsyncIterable` that renders the `Element`.
 	 *
 	 * @param element Element to render
-	 * @param options HTML options
+	 * @param options Markup options
 	 */
-	constructor(element: JSX.Element, options?: Html.Options) {
+	constructor(element: JSX.Element, options?: Markup.Options) {
 		this.#element = element;
 		this.#options = options;
 	}
@@ -185,7 +186,7 @@ export class Html {
 				// any async iterable - lazily resolve
 				for await (const children of element) {
 					if (children instanceof Chunk) yield children;
-					else yield* new Html(children, this.#options);
+					else yield* new Markup(children, this.#options);
 				}
 				return;
 			}
@@ -196,7 +197,7 @@ export class Html {
 					// sync generator - lazily resolve, avoids loading all in memory
 					for (const children of element) {
 						if (children instanceof Chunk) yield children;
-						else yield* new Html(children, this.#options);
+						else yield* new Markup(children, this.#options);
 					}
 					return;
 				}
@@ -205,7 +206,7 @@ export class Html {
 				// process children in parallel
 				const renders = Array.from(
 					element,
-					(el) => new Html(el, this.#options),
+					(el) => new Markup(el, this.#options),
 				);
 				const n = renders.length;
 				// chunks are queued, never changed, the same chunk may be rendered again
@@ -218,7 +219,7 @@ export class Html {
 				const complete = new Uint8Array(n);
 				let current = 0;
 
-				for await (const m of Html.#merge(renders)) {
+				for await (const m of Markup.#merge(renders)) {
 					if (m.result.done) {
 						complete[m.i] = 1;
 
@@ -254,11 +255,13 @@ export class Html {
 	 * Use `render` when possible to avoid the overhead of the stream.
 	 *
 	 * @param element Element to render
-	 * @param options HTML options
+	 * @param options Markup options
 	 * @returns `ReadableStream` of HTML
 	 */
-	static stream(element: JSX.Element, options?: Html.Options) {
-		return Html.#readable(new Html(element, options)[Symbol.asyncIterator]());
+	static stream(element: JSX.Element, options?: Markup.Options) {
+		return Markup.#readable(
+			new Markup(element, options)[Symbol.asyncIterator](),
+		);
 	}
 
 	/**
@@ -312,11 +315,11 @@ export class Html {
 	 * This negates streaming benefits and buffers the result into a string.
 	 *
 	 * @param element Element to render
-	 * @param options HTML options
+	 * @param options Markup options
 	 * @returns Concatenated HTML
 	 */
-	static async string(element: JSX.Element, options?: Html.Options) {
-		return (await Array.fromAsync(new Html(element, options))).join("");
+	static async string(element: JSX.Element, options?: Markup.Options) {
+		return (await Array.fromAsync(new Markup(element, options))).join("");
 	}
 
 	/**
@@ -339,10 +342,10 @@ export class Html {
 	 */
 	static escape(html: string, attr?: boolean) {
 		return html.replace(
-			attr ? Html.#attr : Html.#content,
+			attr ? Markup.#attr : Markup.#content,
 			(c) =>
 				// @ts-expect-error - private method type error
-				Html.#map[c],
+				Markup.#map[c],
 		);
 	}
 
@@ -353,7 +356,7 @@ export class Html {
 	 * @param renders Resolved in parallel.
 	 * @yields Iteration result and index of the resolved generator.
 	 */
-	static async *#merge(renders: Html[]) {
+	static async *#merge(renders: Markup[]) {
 		const generators = renders.map((render) => render[Symbol.asyncIterator]());
 		const ready: Read[] = [];
 		let cursor = 0;

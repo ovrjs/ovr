@@ -24,7 +24,7 @@ if (import.meta.env.DEV) {
 		}
 	}
 
-	const render = new o.Html(<Component />);
+	const render = new o.Markup(<Component />);
 
 	const time = performance.now();
 	for await (const _chunk of render);

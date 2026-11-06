@@ -2,7 +2,7 @@ import { type Store, users } from "./store";
 import * as content from "@/server/demo/auth/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Auth, Html, Route } from "ovr";
+import { Auth, Markup, Route } from "ovr";
 
 /** Auth stores its data in the demo database; the application creates accounts. */
 export function configure(
@@ -47,7 +47,7 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 			<Layout head={<Meta {...content.frontmatter} />}>
 				<h1>{content.frontmatter.title}</h1>
 
-				{Html.raw(content.html)}
+				{Markup.raw(content.html)}
 
 				<div class="mt-8 flex justify-center">
 					<div>

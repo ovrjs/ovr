@@ -1,4 +1,4 @@
-import { Html, Tag } from "../html/index.js";
+import { Markup, Tag } from "../markup/index.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 
 export namespace JSX {
@@ -74,13 +74,13 @@ export class JSX {
 	static async *jsx<P extends JSX.Props = JSX.Props>(
 		tag: ((props: P) => JSX.Element) | string,
 		props: P,
-	): AsyncGenerator<Html.Chunk, void, unknown> {
+	): AsyncGenerator<Markup.Chunk, void, unknown> {
 		// this function doesn't need to be called recursively
 		// JSX will be transformed into `jsx()` function calls automatically
 
 		if (typeof tag === "function") {
 			// component or fragment
-			yield* new Html(tag(props));
+			yield* new Markup(tag(props));
 			return;
 		}
 
@@ -95,7 +95,7 @@ export class JSX {
 
 		if (closed) return;
 
-		yield* new Html(props.children);
+		yield* new Markup(props.children);
 
 		yield new Tag(tag);
 	}

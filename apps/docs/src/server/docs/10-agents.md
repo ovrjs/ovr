@@ -29,7 +29,7 @@ Submit: Create post
 - Links and images are absolute, so an agent can follow them.
 - Forms are described by where they submit, their fields with types, choices, and current values, and errors from a failed submission.
 - Scripts, styles, and elements with `hidden` or `aria-hidden="true"` are left out. `<noscript>` content is kept, since agents do not run scripts.
-- HTML from `Html.raw` is written as it is, since Markdown can contain HTML.
+- HTML from `Markup.raw` is written as it is, since Markdown can contain HTML.
 
 To render Markdown yourself, such as part of a page, use [`Markdown`](/02-render#markdown).
 

@@ -1,7 +1,7 @@
 import { App } from "../app/index.js";
 import { Field, Form } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
-import { Html } from "../html/index.js";
+import { Markup } from "../markup/index.js";
 import { Schema } from "../schema/index.js";
 import { Route } from "./index.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
@@ -196,7 +196,7 @@ describe("Route schema helpers", () => {
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
 
-		const html = await Html.string(profile.Form({}));
+		const html = await Markup.string(profile.Form({}));
 
 		expect(html.includes('action="/profile"')).toBe(true);
 		expect(html.includes('method="GET"')).toBe(true);
@@ -211,7 +211,7 @@ describe("Route schema helpers", () => {
 		const state = new URL(
 			"http://localhost:5173/signup?tab=profile&_form=stale&_return=%2Fold#details",
 		);
-		const html = await Html.string(submit.Form({ state }));
+		const html = await Markup.string(submit.Form({ state }));
 
 		expect(
 			html.includes(
@@ -644,7 +644,7 @@ describe("editing records", () => {
 			file: "not a file",
 			note: null,
 		};
-		const html = await Html.string(
+		const html = await Markup.string(
 			update.Form({ params: { id: "1" }, values: post }),
 		);
 
@@ -656,7 +656,7 @@ describe("editing records", () => {
 
 		// submitted values restored from the URL override the record
 		const state = new URL("http://localhost:5173/posts/1?title=Typed");
-		const restored = await Html.string(
+		const restored = await Markup.string(
 			update.Form({ params: { id: "1" }, values: post, state }),
 		);
 
@@ -668,7 +668,7 @@ describe("editing records", () => {
 		const update = Route.post("/posts/:id")
 			.fields(fields)
 			.use((c) => c.text("ok"));
-		const html = await Html.string([
+		const html = await Markup.string([
 			update.Form({ params: { id: "1" }, submit: "Save changes" }),
 			update.Form({ params: { id: "1" } }),
 		]);
@@ -681,14 +681,14 @@ describe("editing records", () => {
 	test("a Form without fields is still a button to submit, unless given children", async () => {
 		const remove = Route.post("/posts/:id/delete").use((c) => c.text("ok"));
 		expect(
-			await Html.string(
+			await Markup.string(
 				remove.Form({ params: { id: "1" }, submit: "Delete" }),
 			),
 		).toBe(
 			'<form action="/posts/1/delete" method="POST" enctype="multipart/form-data"><button>Delete</button></form>',
 		);
 		expect(
-			await Html.string(
+			await Markup.string(
 				remove.Form({
 					params: { id: "1" },
 					children: jsx("button", { children: "Remove" }),
@@ -701,7 +701,7 @@ describe("editing records", () => {
 
 	test("Field and component accept initial values too", async () => {
 		const form = Form.from(fields);
-		const html = await Html.string([
+		const html = await Markup.string([
 			form.Field({ name: "title", values: { title: "One" } }),
 			form.component({ name: "body", values: { body: "Two" } }).Control(),
 		]);
@@ -715,7 +715,7 @@ describe("editing records", () => {
 			.fields({ body: Field.textarea() })
 			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
-		const html = await Html.string(
+		const html = await Markup.string(
 			update.Form({ params: { id: "1" }, values: { body } }),
 		);
 
@@ -739,7 +739,7 @@ describe("editing records", () => {
 				: parsed.invalid({ email: "Already registered" });
 			const state = new URL("https://example.com/edit");
 			for (const pair of result.search ?? []) state.searchParams.set(...pair);
-			const html = await Html.string(
+			const html = await Markup.string(
 				form.Fields({ state, values: { title: "Old title", tags: ["a"] } }),
 			);
 
@@ -796,7 +796,7 @@ describe("invalid after parsing", () => {
 describe("chained routes", () => {
 	test("forms are WebMCP tools for browser agents", async () => {
 		const render = (element: unknown) =>
-			Html.string(element as Parameters<typeof Html.string>[0]);
+			Markup.string(element as Parameters<typeof Markup.string>[0]);
 
 		// a form that may change data waits for the user to submit it
 		const create = Route.post("/posts")
@@ -932,9 +932,9 @@ describe("chained routes", () => {
 		);
 
 		// components build their URLs the same way
-		const html = await Html.string(
+		const html = await Markup.string(
 			page.Anchor({ params: { name: "a/b" }, children: "Hi" }) as Parameters<
-				typeof Html.string
+				typeof Markup.string
 			>[0],
 		);
 		expect(html).toContain('href="/hello/a%2Fb"');

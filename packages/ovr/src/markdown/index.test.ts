@@ -1,7 +1,7 @@
 import { App } from "../app/index.js";
 import { Field } from "../form/index.js";
-import { Html } from "../html/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
+import { Markup } from "../markup/index.js";
 import { Route } from "../route/index.js";
 import { Markdown } from "./index.js";
 import { describe, expect, test } from "vitest";
@@ -189,7 +189,7 @@ describe("Markdown", () => {
 		const output = await md(table());
 		expect(output.match(/One/g)).toHaveLength(512);
 		expect(output.length).toBeLessThan(
-			10 * (await Html.string(table())).length,
+			10 * (await Markup.string(table())).length,
 		);
 	});
 
@@ -306,18 +306,18 @@ describe("Markdown", () => {
 				h(
 					"html",
 					null,
-					h("head", null, Html.raw('<script src="/app.js"></script>')),
+					h("head", null, Markup.raw('<script src="/app.js"></script>')),
 					h(
 						"body",
 						null,
-						Html.raw("<nav>Raw nav</nav>"),
+						Markup.raw("<nav>Raw nav</nav>"),
 						h(
 							"main",
 							null,
 							h("h1", null, "Doc"),
-							Html.raw('<pre class="shiki"><code>  indented\n</code></pre>'),
-							h("p", null, "Press ", Html.raw("<kbd>K</kbd>"), " now"),
-							h("div", null, Html.raw("<p>One</p>"), h("p", null, "Two")),
+							Markup.raw('<pre class="shiki"><code>  indented\n</code></pre>'),
+							h("p", null, "Press ", Markup.raw("<kbd>K</kbd>"), " now"),
+							h("div", null, Markup.raw("<p>One</p>"), h("p", null, "Two")),
 						),
 					),
 				),

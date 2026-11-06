@@ -1,6 +1,6 @@
 import type { PluginSimple } from "markdown-it";
 import type MarkdownIt from "markdown-it";
-import { Html } from "ovr";
+import { Markup } from "ovr";
 
 export const codeControls: PluginSimple = (md: MarkdownIt) => {
 	const defaultFence =
@@ -15,7 +15,7 @@ export const codeControls: PluginSimple = (md: MarkdownIt) => {
 
 		const code = defaultFence(tokens, i, opts, env, self);
 		const lang = token.info?.trim().split(/\s+/).join() ?? "";
-		const escaped = Html.escape(token.content, true);
+		const escaped = Markup.escape(token.content, true);
 
 		return `
 <div class="bg-base-900 rounded-none sm:rounded-md my-6 -mx-4 sm:mx-0 shadow-sm selection:bg-base-50 selection:text-base-900 *:rounded-t-md">

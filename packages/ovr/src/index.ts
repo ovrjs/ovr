@@ -6,7 +6,7 @@ export { Mcp } from "./mcp/index.js";
 export { JSX } from "./jsx/index.js";
 export type { Middleware } from "./middleware/index.js";
 export { Multipart } from "./multipart/index.js";
-export { Html } from "./html/index.js";
+export { Markup } from "./markup/index.js";
 export { Markdown } from "./markdown/index.js";
 export { Route } from "./route/index.js";
 export { Table } from "./table/index.js";

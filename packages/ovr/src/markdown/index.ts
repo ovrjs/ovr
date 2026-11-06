@@ -1,5 +1,5 @@
-import { Group, Html, Tag } from "../html/index.js";
 import type { JSX } from "../jsx/index.js";
+import { Group, Markup, Tag } from "../markup/index.js";
 
 /** Parsed element */
 type Node = {
@@ -176,7 +176,7 @@ class Writer {
 	}
 
 	/** @param chunk Rendered chunk, read by its kind instead of parsing its HTML */
-	chunk(chunk: Html.Chunk) {
+	chunk(chunk: Markup.Chunk) {
 		if (chunk instanceof Group) {
 			for (const child of chunk.chunks) this.chunk(child);
 		} else if (chunk instanceof Tag) {
@@ -213,7 +213,7 @@ class Writer {
 	}
 
 	/**
-	 * Raw HTML, such as from `Html.html`, is valid Markdown, so it is
+	 * Raw HTML, such as from `Markup.raw`, is valid Markdown, so it is
 	 * written as it is.
 	 *
 	 * @param html HTML
@@ -964,7 +964,7 @@ class Writer {
 
 /**
  * Renders an element to Markdown, as an `AsyncIterable` of blocks, a stream,
- * or a string, from the same elements `Html` renders. Each top level block is
+ * or a string, from the same elements `Markup` renders. Each top level block is
  * written as soon as it closes, and when the page has a `<main>` element, only
  * its contents are kept. Raw HTML is written as it is.
  *
@@ -994,7 +994,7 @@ export class Markdown {
 	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
 		const writer = new Writer(this.#options);
 
-		for await (const chunk of new Html(this.#element)) {
+		for await (const chunk of new Markup(this.#element)) {
 			writer.chunk(chunk);
 			const text = writer.read();
 			if (text) yield text;
@@ -1010,7 +1010,7 @@ export class Markdown {
 	 * @returns `ReadableStream` of Markdown
 	 */
 	static stream(element: JSX.Element, options?: Markdown.Options) {
-		return Html.stream(new Markdown(element, options), { safe: true });
+		return Markup.stream(new Markdown(element, options), { safe: true });
 	}
 
 	/**

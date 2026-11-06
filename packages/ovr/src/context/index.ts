@@ -1,8 +1,8 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { Form as FormSchema } from "../form/index.js";
-import { Html } from "../html/index.js";
 import { Markdown } from "../markdown/index.js";
+import { Markup } from "../markup/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
@@ -435,7 +435,7 @@ export class Context<
 				}
 			}
 
-			this.res.body = Html.stream(r, {
+			this.res.body = Markup.stream(r, {
 				// other defined types are safe
 				safe: Boolean(mime && !Mime.markup(mime)),
 			});

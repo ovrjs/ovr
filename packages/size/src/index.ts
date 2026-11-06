@@ -1,5 +1,5 @@
-export const bytes = 117833;
-export const kb = 117.83;
+export const bytes = 117835;
+export const kb = 117.84;
 
 export const App = { bytes: 49339, kb: 49.34 } as const;
 
@@ -11,13 +11,13 @@ export const Field = { bytes: 29243, kb: 29.24 } as const;
 
 export const Form = { bytes: 29238, kb: 29.24 } as const;
 
-export const Html = { bytes: 3330, kb: 3.33 } as const;
-
 export const JSX = { bytes: 4122, kb: 4.12 } as const;
 
 export const Limiter = { bytes: 16730, kb: 16.73 } as const;
 
 export const Markdown = { bytes: 13656, kb: 13.66 } as const;
+
+export const Markup = { bytes: 3332, kb: 3.33 } as const;
 
 export const Mcp = { bytes: 40549, kb: 40.55 } as const;
 
@@ -35,10 +35,10 @@ export const sizes = {
 	Database,
 	Field,
 	Form,
-	Html,
 	JSX,
 	Limiter,
 	Markdown,
+	Markup,
 	Mcp,
 	Multipart,
 	Route,
