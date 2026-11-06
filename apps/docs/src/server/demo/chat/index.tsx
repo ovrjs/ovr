@@ -27,7 +27,7 @@ export const chat = ovr.Route.get("/demo/chat").use((c) => {
 		<Layout head={<Meta {...chatContent.frontmatter} />}>
 			<h1>{chatContent.frontmatter.title}</h1>
 
-			{ovr.Render.html(chatContent.html)}
+			{ovr.Html.raw(chatContent.html)}
 
 			<hr />
 

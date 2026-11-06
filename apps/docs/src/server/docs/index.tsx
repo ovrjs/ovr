@@ -40,7 +40,7 @@ export const page = ovr.Route.get("/:slug")
 			<Layout head={<Meta {...result.frontmatter} />}>
 				<h1>{result.frontmatter.title}</h1>
 
-				{ovr.Render.html(result.html)}
+				{ovr.Html.raw(result.html)}
 
 				<hr />
 

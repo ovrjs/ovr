@@ -4,9 +4,9 @@ import * as o from "ovr";
 import { bench, describe, expect } from "vitest";
 
 const url = baseline("render");
-const { Render: Before }: { Render: typeof o.Render } = await import(url);
+const { Render: Before }: { Render: typeof o.Html } = await import(url);
 const { JSX: Original }: { JSX: typeof o.JSX } = await import(
-	baseline("jsx", { "../render/index.js": url })
+	baseline("jsx", { "../html/index.js": url })
 );
 
 function page(jsx: typeof o.JSX.jsx, count = 500) {
@@ -18,7 +18,7 @@ function page(jsx: typeof o.JSX.jsx, count = 500) {
 }
 
 expect((await Array.fromAsync(new Before(page(Original.jsx)))).join("")).toBe(
-	(await Array.fromAsync(new o.Render(page(o.JSX.jsx)))).join(""),
+	(await Array.fromAsync(new o.Html(page(o.JSX.jsx)))).join(""),
 );
 
 const paths = [
@@ -90,14 +90,14 @@ describe("rendering hot path", () => {
 		bench(
 			`render ${count} sibling elements`,
 			async () => {
-				for await (const _ of new o.Render(page(o.JSX.jsx, count)));
+				for await (const _ of new o.Html(page(o.JSX.jsx, count)));
 			},
 			options,
 		);
 	}
 
 	bench("render 100 fragments", async () => {
-		for await (const _ of new o.Render(
+		for await (const _ of new o.Html(
 			Array.from({ length: 100 }, (_, i) =>
 				o.JSX.jsx(o.JSX.Fragment, { children: ["Hello, world!", i] }),
 			),

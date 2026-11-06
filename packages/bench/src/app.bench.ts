@@ -15,7 +15,7 @@ function* Component() {
 
 describe("render", () => {
 	bench("generate 500", async () => {
-		const r = new o.Render(o.JSX.jsx(Component, {}));
+		const r = new o.Html(o.JSX.jsx(Component, {}));
 		for await (const _r of r);
 	});
 });

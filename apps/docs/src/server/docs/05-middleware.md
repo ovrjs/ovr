@@ -126,7 +126,7 @@ app.use(() => new Response("Hello world"));
 
 #### Stream
 
-Any value that is returned from middleware will be passed into [`Render.stream`](/02-render#stream) and assigned to `Context.res.body`.
+Any value that is returned from middleware will be passed into [`Html.stream`](/02-render#stream), or [`Markdown.stream`](/02-render#markdown) when the request asks for Markdown, and assigned to `Context.res.body`.
 
 Returning a value sets the `content-type` header to `html` unless it has already been set. Markup content types such as `html`, `xml`, and `svg` will be escaped during the render while other content types will not.
 

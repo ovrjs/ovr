@@ -1,5 +1,5 @@
+import { Group, Html, Tag } from "../html/index.js";
 import type { JSX } from "../jsx/index.js";
-import { Group, Render, Tag } from "./index.js";
 
 /** Parsed element */
 type Node = {
@@ -47,8 +47,9 @@ export namespace Markdown {
 		readonly base?: string | URL | undefined;
 
 		/**
-		 * Names the tool that submits a form, if there is one. The form is then
-		 * described by its tool, with only its values and messages.
+		 * @internal Names the tool that submits a form, if there is one, set by
+		 * an MCP endpoint. The form is then described by its tool, with only its
+		 * values and messages.
 		 *
 		 * @param method Form method
 		 * @param action Resolved form action
@@ -59,12 +60,8 @@ export namespace Markdown {
 	};
 }
 
-/**
- * Streaming Markdown, written from the rendered elements, so no HTML is parsed.
- * Each top level block is written as soon as it closes. When the page has a
- * `<main>` element, only its contents are kept. Raw HTML is written as it is.
- */
-export class Markdown {
+/** Writes Markdown from rendered chunks, one block at a time */
+class Writer {
 	/** Elements and their contents that are not written */
 	static readonly #skip = new Set([
 		"head",
@@ -97,7 +94,7 @@ export class Markdown {
 
 	/** Block elements, everything else is inline */
 	static readonly #blockTags = new Set([
-		...Markdown.#containers,
+		...Writer.#containers,
 		// raw HTML, its own block between blocks
 		"!",
 		"p",
@@ -142,7 +139,7 @@ export class Markdown {
 	readonly #stack: Node[] = [];
 
 	/** Inline content at the top level */
-	#pending: Node = Markdown.#node("");
+	#pending: Node = Writer.#node("");
 
 	/** Depth inside a skipped element */
 	#skipping = 0;
@@ -168,41 +165,20 @@ export class Markdown {
 	}
 
 	/** @returns The rest of the Markdown */
-	#end() {
+	end() {
 		while (this.#stack.length) this.#close(this.#stack.at(-1)!.tag);
 		this.#flush();
 		if (this.#main === "before") {
 			for (const block of this.#before) this.#write(block, true);
 		}
 		if (this.#count) this.#output += "\n";
-		return this.#read();
-	}
-
-	/**
-	 * Renders the element to HTML and streams it as Markdown.
-	 *
-	 * @param element Element to render
-	 * @param options Conversion options
-	 * @returns `ReadableStream` of Markdown
-	 */
-	static stream(element: JSX.Element, options?: Markdown.Options) {
-		return Render.stream(
-			(async function* () {
-				const markdown = new Markdown(options);
-				for await (const chunk of new Render(element)) {
-					markdown.#chunk(chunk);
-					yield markdown.#read();
-				}
-				yield markdown.#end();
-			})(),
-			{ safe: true },
-		);
+		return this.read();
 	}
 
 	/** @param chunk Rendered chunk, read by its kind instead of parsing its HTML */
-	#chunk(chunk: Render.Chunk) {
+	chunk(chunk: Html.Chunk) {
 		if (chunk instanceof Group) {
-			for (const child of chunk.chunks) this.#chunk(child);
+			for (const child of chunk.chunks) this.chunk(child);
 		} else if (chunk instanceof Tag) {
 			if (!chunk.props) return this.#close(chunk.name);
 
@@ -219,7 +195,8 @@ export class Markdown {
 		else this.#text(chunk.value);
 	}
 
-	#read() {
+	/** @returns Markdown written since it was last read */
+	read() {
 		const output = this.#output;
 		this.#output = "";
 		return output;
@@ -236,7 +213,7 @@ export class Markdown {
 	}
 
 	/**
-	 * Raw HTML, such as from `Render.html`, is valid Markdown, so it is
+	 * Raw HTML, such as from `Html.html`, is valid Markdown, so it is
 	 * written as it is.
 	 *
 	 * @param html HTML
@@ -244,7 +221,7 @@ export class Markdown {
 	#raw(html: string) {
 		if (!html || this.#skipping) return;
 		const parent = this.#stack.at(-1);
-		if (parent) parent.children.push(Markdown.#node("!", {}, html));
+		if (parent) parent.children.push(Writer.#node("!", {}, html));
 		else {
 			// its own block at the top level
 			this.#flush();
@@ -259,7 +236,7 @@ export class Markdown {
 		}
 
 		if (
-			Markdown.#skip.has(tag) ||
+			Writer.#skip.has(tag) ||
 			"hidden" in attrs ||
 			attrs["aria-hidden"] === "true"
 		) {
@@ -271,7 +248,7 @@ export class Markdown {
 		// what came before is dropped, and its contents are read as top level
 		if (tag === "main" && this.#main === "before") {
 			this.#stack.length = 0;
-			this.#pending = Markdown.#node("");
+			this.#pending = Writer.#node("");
 			this.#before = [];
 			this.#main = "inside";
 			this.#depth = 1;
@@ -283,15 +260,15 @@ export class Markdown {
 		}
 
 		if (!this.#stack.length) {
-			if (Markdown.#containers.has(tag)) {
+			if (Writer.#containers.has(tag)) {
 				this.#flush();
 				return;
 			}
 
-			if (Markdown.#blockTags.has(tag)) this.#flush();
+			if (Writer.#blockTags.has(tag)) this.#flush();
 		}
 
-		const node = Markdown.#node(tag, attrs);
+		const node = Writer.#node(tag, attrs);
 		(this.#stack.at(-1) ?? this.#pending).children.push(node);
 		this.#stack.push(node);
 	}
@@ -314,13 +291,13 @@ export class Markdown {
 		const index = this.#stack.findLastIndex((node) => node.tag === tag);
 
 		if (index === -1) {
-			if (!this.#stack.length && Markdown.#containers.has(tag)) this.#flush();
+			if (!this.#stack.length && Writer.#containers.has(tag)) this.#flush();
 			return;
 		}
 
 		const [node] = this.#stack.splice(index);
 
-		if (!index && Markdown.#blockTags.has(node!.tag)) {
+		if (!index && Writer.#blockTags.has(node!.tag)) {
 			// a complete top level block
 			this.#pending.children.pop();
 			this.#flush();
@@ -332,7 +309,7 @@ export class Markdown {
 	#flush() {
 		const pending = this.#pending;
 		if (!pending.children.length) return;
-		this.#pending = Markdown.#node("");
+		this.#pending = Writer.#node("");
 		this.#write(this.#block(pending));
 	}
 
@@ -365,7 +342,7 @@ export class Markdown {
 		};
 
 		for (const child of children) {
-			if (typeof child === "string" || !Markdown.#blockTags.has(child.tag)) {
+			if (typeof child === "string" || !Writer.#blockTags.has(child.tag)) {
 				run.push(child);
 			} else {
 				paragraph();
@@ -407,7 +384,7 @@ export class Markdown {
 			case "figcaption":
 			case "legend":
 				return tag === "dt"
-					? Markdown.#wrap(this.#paragraph(children), "**")
+					? Writer.#wrap(this.#paragraph(children), "**")
 					: this.#paragraph(children);
 			case "h1":
 			case "h2":
@@ -419,7 +396,7 @@ export class Markdown {
 				return text && `${"#".repeat(Number(tag[1]))} ${text}`;
 			}
 			case "summary":
-				return Markdown.#wrap(this.#paragraph(children), "**");
+				return Writer.#wrap(this.#paragraph(children), "**");
 			case "ul":
 			case "ol":
 			case "menu":
@@ -477,8 +454,8 @@ export class Markdown {
 		const language = /(?:^|\s)lang(?:uage)?-(\S+)/.exec(
 			code?.attrs.class ?? node.attrs.class ?? "",
 		)?.[1];
-		const text = Markdown.#content(node).replace(/^\n/, "").replace(/\n$/, "");
-		const fence = "`".repeat(Math.max(3, Markdown.#ticks(text) + 1));
+		const text = Writer.#content(node).replace(/^\n/, "").replace(/\n$/, "");
+		const fence = "`".repeat(Math.max(3, Writer.#ticks(text) + 1));
 		return `${fence}${language ?? ""}\n${text}\n${fence}`;
 	}
 
@@ -560,7 +537,7 @@ export class Markdown {
 			for (const child of parent.children) {
 				if (typeof child === "string") continue;
 				if (child.tag === "label" && child.attrs.for)
-					labels.set(child.attrs.for, Markdown.#plain(child));
+					labels.set(child.attrs.for, Writer.#plain(child));
 				collect(child);
 			}
 		};
@@ -581,7 +558,7 @@ export class Markdown {
 			// a tool's form shows its hidden values, such as an ID, which the
 			// tool's arguments need and the page shows nowhere else
 			if (type === "hidden" && tool && name && attrs.value !== undefined) {
-				const entry = Markdown.#field(name, name, type);
+				const entry = Writer.#field(name, name, type);
 				entry.value.push(attrs.value);
 				fields.push(entry);
 				byName.set(name, entry);
@@ -603,18 +580,18 @@ export class Markdown {
 					group.options.push(`${value}${label !== value ? ` (${label})` : ""}`);
 					group.lone = false;
 				} else {
-					group = Markdown.#field(legend || label, name, type);
+					group = Writer.#field(legend || label, name, type);
 					group.options.push(`${value}${label !== value ? ` (${label})` : ""}`);
 					group.lone = type === "checkbox" && attrs.value === undefined;
 					fields.push(group);
 					byName.set(name, group);
 				}
 				if ("checked" in attrs) group.value.push(value);
-				Markdown.#rules(group, attrs);
+				Writer.#rules(group, attrs);
 				return;
 			}
 
-			const entry = Markdown.#field(label, name, type);
+			const entry = Writer.#field(label, name, type);
 
 			if (control.tag === "select") {
 				if ("multiple" in attrs) entry.type = "select multiple";
@@ -622,7 +599,7 @@ export class Markdown {
 					for (const child of parent.children) {
 						if (typeof child === "string") continue;
 						if (child.tag === "option") {
-							const text = Markdown.#plain(child);
+							const text = Writer.#plain(child);
 							const value = child.attrs.value ?? text;
 							entry.options.push(
 								`${value}${text && text !== value ? ` (${text})` : ""}`,
@@ -633,11 +610,11 @@ export class Markdown {
 				};
 				options(control);
 			} else if (control.tag === "textarea") {
-				const value = Markdown.#content(control).replace(/^\n/, "");
+				const value = Writer.#content(control).replace(/^\n/, "");
 				if (value) entry.value.push(value);
 			} else if (attrs.value) entry.value.push(attrs.value);
 
-			Markdown.#rules(entry, attrs);
+			Writer.#rules(entry, attrs);
 			fields.push(entry);
 			byName.set(name, entry);
 		};
@@ -658,7 +635,7 @@ export class Markdown {
 						break;
 					case "button":
 						if ((child.attrs.type ?? "submit") === "submit")
-							submits.push(Markdown.#plain(child) || "Submit");
+							submits.push(Writer.#plain(child) || "Submit");
 						break;
 					case "label":
 						// controls inside use the label
@@ -666,12 +643,12 @@ export class Markdown {
 							child,
 							child.attrs.for
 								? labels.get(child.attrs.for)
-								: Markdown.#plain(child, true),
+								: Writer.#plain(child, true),
 							true,
 						);
 						break;
 					case "legend":
-						legend = Markdown.#plain(child);
+						legend = Writer.#plain(child);
 						break;
 					case "fieldset": {
 						const outer = legend;
@@ -727,9 +704,9 @@ export class Markdown {
 				)
 				.filter((f) => f.value.length || f.notes.length)
 				.map((f) => {
-					let line = `- ${Markdown.#code(f.name)}`;
+					let line = `- ${Writer.#code(f.name)}`;
 					if (f.value.length)
-						line += `: ${f.value.map((v) => Markdown.#code(v)).join(", ")}`;
+						line += `: ${f.value.map((v) => Writer.#code(v)).join(", ")}`;
 					for (const note of f.notes) line += `\n  - ${note}`;
 					return line;
 				});
@@ -738,11 +715,11 @@ export class Markdown {
 			lines.push(
 				"",
 				...fields.map((f) => {
-					let line = `- ${Markdown.#escape(f.label)} ${Markdown.#code(f.name)} (${[f.type, ...f.rules].join(", ")})`;
+					let line = `- ${Writer.#escape(f.label)} ${Writer.#code(f.name)} (${[f.type, ...f.rules].join(", ")})`;
 					if (f.options.length)
-						line += `, options: ${f.options.map((o) => Markdown.#code(o)).join(", ")}`;
+						line += `, options: ${f.options.map((o) => Writer.#code(o)).join(", ")}`;
 					if (f.value.length)
-						line += `, value: ${f.value.map((v) => Markdown.#code(v)).join(", ")}`;
+						line += `, value: ${f.value.map((v) => Writer.#code(v)).join(", ")}`;
 					for (const note of f.notes) line += `\n  - ${note}`;
 					return line;
 				}),
@@ -751,7 +728,7 @@ export class Markdown {
 
 		if (notes.length) lines.push("", ...notes);
 		if (submits.length)
-			lines.push("", `Submit: ${submits.map(Markdown.#escape).join(", ")}`);
+			lines.push("", `Submit: ${submits.map(Writer.#escape).join(", ")}`);
 
 		return lines.join("\n");
 	}
@@ -765,7 +742,7 @@ export class Markdown {
 
 		for (const child of children) {
 			if (typeof child === "string") {
-				out += Markdown.#escape(child.replace(/\s+/g, " "));
+				out += Writer.#escape(child.replace(/\s+/g, " "));
 				continue;
 			}
 
@@ -780,22 +757,22 @@ export class Markdown {
 					break;
 				case "strong":
 				case "b":
-					out += Markdown.#wrap(inner(), "**");
+					out += Writer.#wrap(inner(), "**");
 					break;
 				case "em":
 				case "i":
 				case "cite":
 				case "dfn":
-					out += Markdown.#wrap(inner(), "_");
+					out += Writer.#wrap(inner(), "_");
 					break;
 				case "del":
 				case "s":
-					out += Markdown.#wrap(inner(), "~~");
+					out += Writer.#wrap(inner(), "~~");
 					break;
 				case "code":
 				case "kbd":
 				case "samp":
-					out += Markdown.#code(Markdown.#content(child).replace(/\s+/g, " "));
+					out += Writer.#code(Writer.#content(child).replace(/\s+/g, " "));
 					break;
 				case "a": {
 					const text = inner().trim();
@@ -806,7 +783,7 @@ export class Markdown {
 						break;
 					}
 					const url = resolved ? this.#href(resolved) : href;
-					const destination = Markdown.#destination(url);
+					const destination = Writer.#destination(url);
 					out +=
 						text === url || !text
 							? `<${destination}>`
@@ -816,7 +793,7 @@ export class Markdown {
 				case "img": {
 					const url = child.attrs.src && this.#url(child.attrs.src);
 					if (url)
-						out += `![${Markdown.#escape(child.attrs.alt ?? "")}](${Markdown.#destination(this.#href(url))})`;
+						out += `![${Writer.#escape(child.attrs.alt ?? "")}](${Writer.#destination(this.#href(url))})`;
 					break;
 				}
 				case "input":
@@ -826,7 +803,7 @@ export class Markdown {
 					// controls outside of a form do nothing without a script
 					break;
 				default:
-					out += Markdown.#blockTags.has(child.tag)
+					out += Writer.#blockTags.has(child.tag)
 						? ` ${this.#blocks(child.children, "\n")} `
 						: inner();
 			}
@@ -843,7 +820,7 @@ export class Markdown {
 		try {
 			// parsed first, browsers remove characters such as tabs from the scheme
 			const url = new URL(href, this.#options.base ?? "http://localhost/");
-			if (Markdown.#schemes.has(url.protocol)) return url;
+			if (Writer.#schemes.has(url.protocol)) return url;
 		} catch {}
 	}
 
@@ -917,7 +894,7 @@ export class Markdown {
 		for (const child of node.children) {
 			if (typeof child === "string") text += child;
 			else if (!omitControls || !["select", "textarea"].includes(child.tag))
-				text += " " + Markdown.#plain(child, omitControls) + " ";
+				text += " " + Writer.#plain(child, omitControls) + " ";
 		}
 		return text.replace(/\s+/g, " ").trim();
 	}
@@ -933,7 +910,7 @@ export class Markdown {
 					? child
 					: child.tag === "br"
 						? "\n"
-						: Markdown.#content(child),
+						: Writer.#content(child),
 			)
 			.join("");
 	}
@@ -945,7 +922,7 @@ export class Markdown {
 	static #code(text: string) {
 		// one line, so a value cannot start a line of its own, such as a form
 		text = text.replace(/\s*[\r\n]+\s*/g, " ");
-		const ticks = "`".repeat(Markdown.#ticks(text) + 1);
+		const ticks = "`".repeat(Writer.#ticks(text) + 1);
 		const pad = /^`|`$|^ .* $/.test(text) ? " " : "";
 		return `${ticks}${pad}${text}${pad}${ticks}`;
 	}
@@ -982,5 +959,68 @@ export class Markdown {
 			.replace(/(^|[^\p{L}\p{N}])_|_(?=[^\p{L}\p{N}]|$)/gu, (m) =>
 				m.replace("_", "\\_"),
 			);
+	}
+}
+
+/**
+ * Renders an element to Markdown, as an `AsyncIterable` of blocks, a stream,
+ * or a string, from the same elements `Html` renders. Each top level block is
+ * written as soon as it closes, and when the page has a `<main>` element, only
+ * its contents are kept. Raw HTML is written as it is.
+ *
+ * ```tsx
+ * const markdown = await Markdown.string(<Post post={post} />, { base: url });
+ * ```
+ */
+export class Markdown {
+	/** Element to render */
+	readonly #element: JSX.Element;
+
+	/** Markdown options */
+	readonly #options: Markdown.Options | undefined;
+
+	/**
+	 * Creates an `AsyncIterable` that renders the element to Markdown.
+	 *
+	 * @param element Element to render
+	 * @param options Markdown options
+	 */
+	constructor(element: JSX.Element, options?: Markdown.Options) {
+		this.#element = element;
+		this.#options = options;
+	}
+
+	/** @yields Markdown as each block completes */
+	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
+		const writer = new Writer(this.#options);
+
+		for await (const chunk of new Html(this.#element)) {
+			writer.chunk(chunk);
+			const text = writer.read();
+			if (text) yield text;
+		}
+
+		const text = writer.end();
+		if (text) yield text;
+	}
+
+	/**
+	 * @param element Element to render
+	 * @param options Markdown options
+	 * @returns `ReadableStream` of Markdown
+	 */
+	static stream(element: JSX.Element, options?: Markdown.Options) {
+		return Html.stream(new Markdown(element, options), { safe: true });
+	}
+
+	/**
+	 * Converts a render into a fully concatenated string of Markdown.
+	 *
+	 * @param element Element to render
+	 * @param options Markdown options
+	 * @returns Concatenated Markdown
+	 */
+	static async string(element: JSX.Element, options?: Markdown.Options) {
+		return (await Array.fromAsync(new Markdown(element, options))).join("");
 	}
 }

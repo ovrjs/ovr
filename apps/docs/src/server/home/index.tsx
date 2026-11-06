@@ -38,7 +38,7 @@ export const page = o.Route.get("/")
 
 				<hr />
 
-				{o.Render.html(result.html)}
+				{o.Html.raw(result.html)}
 
 				<hr />
 			</Layout>

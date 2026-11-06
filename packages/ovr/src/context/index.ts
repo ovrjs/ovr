@@ -1,10 +1,10 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { Form as FormSchema } from "../form/index.js";
+import { Html } from "../html/index.js";
+import { Markdown } from "../markdown/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
-import { Render } from "../render/index.js";
-import { Markdown } from "../render/markdown.js";
 import { Route } from "../route/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
@@ -435,7 +435,7 @@ export class Context<
 				}
 			}
 
-			this.res.body = Render.stream(r, {
+			this.res.body = Html.stream(r, {
 				// other defined types are safe
 				safe: Boolean(mime && !Mime.markup(mime)),
 			});

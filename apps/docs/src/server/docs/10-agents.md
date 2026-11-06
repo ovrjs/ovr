@@ -29,7 +29,9 @@ Submit: Create post
 - Links and images are absolute, so an agent can follow them.
 - Forms are described by where they submit, their fields with types, choices, and current values, and errors from a failed submission.
 - Scripts, styles, and elements with `hidden` or `aria-hidden="true"` are left out. `<noscript>` content is kept, since agents do not run scripts.
-- HTML from `Render.html` is written as it is, since Markdown can contain HTML.
+- HTML from `Html.raw` is written as it is, since Markdown can contain HTML.
+
+To render Markdown yourself, such as part of a page, use [`Markdown`](/02-render#markdown).
 
 Browsers get HTML: Markdown is only used when it is listed in `Accept` and preferred at least as much as HTML. These responses include `Vary: Accept` for caches. Responses with another content type, such as XML, are not converted. A page served from a static file, such as a prerendered one, never reaches the app, so it is always HTML.
 

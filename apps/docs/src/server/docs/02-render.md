@@ -1,11 +1,11 @@
 ---
 title: Render
-description: Easily parallelize async operations and render strings with ovr.
+description: Easily parallelize async operations and render HTML or Markdown with ovr.
 ---
 
 ## JSX
 
-ovr has a built in JSX import source that can be used to parallelize component renders and output HTML. You can also use the [`Render`](#render) class on it's own without using JSX.
+ovr has a built in JSX import source that can be used to parallelize component renders and output [HTML](#html) or [Markdown](#markdown). You can also render elements on their own without using JSX.
 
 Components are functions that return a `JSX.Element`. Use them to declaratively describe and reuse parts of your HTML.
 
@@ -89,7 +89,7 @@ function Page() {
 
 ## Data types
 
-You can `return` or `yield` most data types from a component, they will be rendered as you might expect. Each of these data types can also be used to create a new [`Render`](#render).
+You can `return` or `yield` most data types from a component, they will be rendered as you might expect. Each of these data types can also be rendered on its own, with [`Html`](#html) or [`Markdown`](#markdown).
 
 ```tsx
 function* DataTypes() {
@@ -107,34 +107,34 @@ function* DataTypes() {
 }
 ```
 
-> Check out the [source code](https://github.com/ovrjs/ovr/blob/main/packages/ovr/src/render/index.ts) for the `Render` class to understand how ovr evaluates each data type.
+> Check out the [source code](https://github.com/ovrjs/ovr/blob/main/packages/ovr/src/html/index.ts) for the `Html` class to understand how ovr evaluates each data type.
 
-## Render
+## HTML
 
-To render any element on it's own (for example, if you aren't using returning them from `Middleware` or need to call them separately), use the `Render` class.
+To render any element on its own (for example, if you aren't returning it from `Middleware` or need to call it separately), use the `Html` class.
 
 ### Async iterable
 
-Create a new `Render` async iterable that yields escaped `Chunk`s of HTML.
+Create a new `Html` async iterable that yields escaped `Chunk`s of HTML.
 
 ```tsx
-import { Render } from "ovr";
+import { Html } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const render = new Render(<Component />);
+const html = new Html(<Component />);
 
-for await (const chunk of render) {
+for await (const chunk of html) {
 	console.log(chunk.toString()); // HTML string
 }
 ```
 
-> Any of the supported [data types](#data-types) can also be rendered directly without JSX. For example, the following array can be passed into `Render` running all async operations in parallel.
+> Any of the supported [data types](#data-types) can also be rendered directly without JSX. For example, the following array can be passed into `Html` running all async operations in parallel.
 
 ```ts
-const render = new Render([
+const html = new Html([
 	async () => "hello",
 	"world",
 	[
@@ -144,31 +144,31 @@ const render = new Render([
 	],
 ]);
 
-for await (const chunk of render) {
+for await (const chunk of html) {
 	console.log(chunk.toString());
 }
 ```
 
-Set `Render.Options.safe` to `true` to bypass HTML escaping to render [other types of content](/05-middleware#return-value).
+Set `Html.Options.safe` to `true` to bypass HTML escaping to render [other types of content](/05-middleware#return-value).
 
 ```ts
-new Render(element, { safe: true });
+new Html(element, { safe: true });
 ```
 
 ### Stream
 
-Turn an element into a `ReadableStream` using `Render.stream`. This pipes a `Render` into a `ReadableStream`.
+Turn an element into a `ReadableStream` using `Html.stream`.
 
 This stream is optimized for generating HTML---it ensures backpressure is properly handled for slower clients and generation stops if the client aborts the request.
 
 ```tsx
-import { Render } from "ovr";
+import { Html } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const stream = Render.stream(<Component />);
+const stream = Html.stream(<Component />);
 
 const response = new Response(stream, {
 	headers: { "content-type": "text/html; charset=utf-8" },
@@ -177,28 +177,54 @@ const response = new Response(stream, {
 
 ### String
 
-Convert any element into a `string` of HTML with `Render.string`. This iterates through the `Render` and joins the results into a single string.
+Convert any element into a `string` of HTML with `Html.string`. This iterates through the render and joins the results into a single string.
 
 ```tsx
-import { Render } from "ovr";
+import { Html } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const str = await Render.string(<Component />);
+const str = await Html.string(<Component />);
 ```
 
 ### Raw HTML
 
-To render safe HTML **without escaping**, use the `Render.html` method.
+To render safe HTML **without escaping**, use `Html.raw`.
 
 ```tsx
-import { Render } from "ovr";
+import { Html } from "ovr";
 
 const html = "<p>Safe to render</p>";
 
 function Component() {
-	return <div>{Render.html(html)}</div>;
+	return <div>{Html.raw(html)}</div>;
 }
 ```
+
+## Markdown
+
+`Markdown` renders the same elements to Markdown, with the same ways in: an async iterable, a stream, and a string. Pages already render as Markdown for [agents that ask for it](/10-agents#markdown), use `Markdown` to render it yourself, such as to write files or answer with part of a page.
+
+```tsx
+import { Markdown } from "ovr";
+
+function Post() {
+	return (
+		<article>
+			<h1>Hello</h1>
+			<p>
+				Read the <a href="/docs">docs</a>.
+			</p>
+		</article>
+	);
+}
+
+const md = await Markdown.string(<Post />, { base: "https://example.com" });
+// # Hello
+//
+// Read the [docs](https://example.com/docs).
+```
+
+Each block, such as a paragraph or a list, is written once it closes, so a stream still sends the page as it renders. When the element has a `<main>`, only its contents are written. Scripts, styles, and hidden elements are left out, forms are described by their fields, and links resolve against `base`. HTML from `Html.raw` is written as it is, since Markdown can contain HTML.

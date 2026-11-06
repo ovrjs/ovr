@@ -33,7 +33,7 @@ class Chunk {
 	 * @returns Safe HTML to render
 	 */
 	toString(): string {
-		return this.safe ? this.value : Render.escape(this.value);
+		return this.safe ? this.value : Html.escape(this.value);
 	}
 }
 
@@ -81,7 +81,7 @@ export class Tag extends Chunk {
 				// just put the key without the value
 				opening += ` ${key}`;
 			} else if (typeof value === "string") {
-				opening += ` ${key}="${Render.escape(value, true)}"`;
+				opening += ` ${key}="${Html.escape(value, true)}"`;
 			} else if (typeof value === "number" || typeof value === "bigint") {
 				opening += ` ${key}="${value}"`;
 			}
@@ -115,8 +115,8 @@ export class Group extends Chunk {
 	}
 }
 
-export namespace Render {
-	/** Render options */
+export namespace Html {
+	/** HTML options */
 	export type Options = {
 		/** Set to `true` to disable escaping for non-HTML use */
 		safe?: boolean;
@@ -126,7 +126,11 @@ export namespace Render {
 	export type Chunk = InstanceType<typeof Chunk>;
 }
 
-export class Render {
+/**
+ * Renders an element to HTML, as an `AsyncIterable` of chunks, a stream, or a
+ * string. `Markdown` renders the same elements to Markdown.
+ */
+export class Html {
 	/** Regex to find escape character for HTML attributes */
 	static readonly #attr = /[&"<]/g;
 
@@ -139,16 +143,16 @@ export class Render {
 	/** Element to render */
 	readonly #element: JSX.Element;
 
-	/** Render options */
-	readonly #options: Render.Options | undefined;
+	/** HTML options */
+	readonly #options: Html.Options | undefined;
 
 	/**
 	 * Creates an `AsyncIterable` that renders the `Element`.
 	 *
 	 * @param element Element to render
-	 * @param options Render options
+	 * @param options HTML options
 	 */
-	constructor(element: JSX.Element, options?: Render.Options) {
+	constructor(element: JSX.Element, options?: Html.Options) {
 		this.#element = element;
 		this.#options = options;
 	}
@@ -181,7 +185,7 @@ export class Render {
 				// any async iterable - lazily resolve
 				for await (const children of element) {
 					if (children instanceof Chunk) yield children;
-					else yield* new Render(children, this.#options);
+					else yield* new Html(children, this.#options);
 				}
 				return;
 			}
@@ -192,7 +196,7 @@ export class Render {
 					// sync generator - lazily resolve, avoids loading all in memory
 					for (const children of element) {
 						if (children instanceof Chunk) yield children;
-						else yield* new Render(children, this.#options);
+						else yield* new Html(children, this.#options);
 					}
 					return;
 				}
@@ -201,7 +205,7 @@ export class Render {
 				// process children in parallel
 				const renders = Array.from(
 					element,
-					(el) => new Render(el, this.#options),
+					(el) => new Html(el, this.#options),
 				);
 				const n = renders.length;
 				// chunks are queued, never changed, the same chunk may be rendered again
@@ -214,7 +218,7 @@ export class Render {
 				const complete = new Uint8Array(n);
 				let current = 0;
 
-				for await (const m of Render.#merge(renders)) {
+				for await (const m of Html.#merge(renders)) {
 					if (m.result.done) {
 						complete[m.i] = 1;
 
@@ -250,13 +254,11 @@ export class Render {
 	 * Use `render` when possible to avoid the overhead of the stream.
 	 *
 	 * @param element Element to render
-	 * @param options Render options
+	 * @param options HTML options
 	 * @returns `ReadableStream` of HTML
 	 */
-	static stream(element: JSX.Element, options?: Render.Options) {
-		return Render.#readable(
-			new Render(element, options)[Symbol.asyncIterator](),
-		);
+	static stream(element: JSX.Element, options?: Html.Options) {
+		return Html.#readable(new Html(element, options)[Symbol.asyncIterator]());
 	}
 
 	/**
@@ -310,20 +312,21 @@ export class Render {
 	 * This negates streaming benefits and buffers the result into a string.
 	 *
 	 * @param element Element to render
-	 * @param options Render options
+	 * @param options HTML options
 	 * @returns Concatenated HTML
 	 */
-	static async string(element: JSX.Element, options?: Render.Options) {
-		return (await Array.fromAsync(new Render(element, options))).join("");
+	static async string(element: JSX.Element, options?: Html.Options) {
+		return (await Array.fromAsync(new Html(element, options))).join("");
 	}
 
 	/**
-	 * Render raw HTML and dangerously bypass escaping.
+	 * Render raw HTML and dangerously bypass escaping. It is written as it is
+	 * in Markdown too, which can contain HTML.
 	 *
 	 * @param html Safe html to render
 	 * @returns New _safe_ `Chunk`
 	 */
-	static html(html: unknown) {
+	static raw(html: unknown) {
 		return new Chunk(html, true);
 	}
 
@@ -336,21 +339,21 @@ export class Render {
 	 */
 	static escape(html: string, attr?: boolean) {
 		return html.replace(
-			attr ? Render.#attr : Render.#content,
+			attr ? Html.#attr : Html.#content,
 			(c) =>
 				// @ts-expect-error - private method type error
-				Render.#map[c],
+				Html.#map[c],
 		);
 	}
 
 	/**
-	 * Merges `Render[]` into a single `AsyncGenerator`, resolving all in parallel.
-	 * The return of each `Render` is yielded from the generator with `done: true`.
+	 * Merges renders into a single `AsyncGenerator`, resolving all in parallel.
+	 * The return of each render is yielded from the generator with `done: true`.
 	 *
 	 * @param renders Resolved in parallel.
 	 * @yields Iteration result and index of the resolved generator.
 	 */
-	static async *#merge(renders: Render[]) {
+	static async *#merge(renders: Html[]) {
 		const generators = renders.map((render) => render[Symbol.asyncIterator]());
 		const ready: Read[] = [];
 		let cursor = 0;

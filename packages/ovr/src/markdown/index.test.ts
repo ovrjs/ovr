@@ -1,13 +1,12 @@
 import { App } from "../app/index.js";
 import { Field } from "../form/index.js";
+import { Html } from "../html/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
-import { Render } from "./index.js";
-import { Markdown } from "./markdown.js";
+import { Markdown } from "./index.js";
 import { describe, expect, test } from "vitest";
 
-const md = (element: JSX.Element, options?: Markdown.Options) =>
-	new Response(Markdown.stream(element, options)).text();
+const md = Markdown.string;
 
 /** Element with props and children, like JSX */
 const h = (
@@ -190,7 +189,7 @@ describe("Markdown", () => {
 		const output = await md(table());
 		expect(output.match(/One/g)).toHaveLength(512);
 		expect(output.length).toBeLessThan(
-			10 * (await Render.string(table())).length,
+			10 * (await Html.string(table())).length,
 		);
 	});
 
@@ -307,18 +306,18 @@ describe("Markdown", () => {
 				h(
 					"html",
 					null,
-					h("head", null, Render.html('<script src="/app.js"></script>')),
+					h("head", null, Html.raw('<script src="/app.js"></script>')),
 					h(
 						"body",
 						null,
-						Render.html("<nav>Raw nav</nav>"),
+						Html.raw("<nav>Raw nav</nav>"),
 						h(
 							"main",
 							null,
 							h("h1", null, "Doc"),
-							Render.html('<pre class="shiki"><code>  indented\n</code></pre>'),
-							h("p", null, "Press ", Render.html("<kbd>K</kbd>"), " now"),
-							h("div", null, Render.html("<p>One</p>"), h("p", null, "Two")),
+							Html.raw('<pre class="shiki"><code>  indented\n</code></pre>'),
+							h("p", null, "Press ", Html.raw("<kbd>K</kbd>"), " now"),
+							h("div", null, Html.raw("<p>One</p>"), h("p", null, "Two")),
 						),
 					),
 				),
@@ -469,6 +468,17 @@ describe("Markdown", () => {
 				"",
 			].join("\n"),
 		);
+	});
+
+	test("iterates, streams, and strings the same Markdown", async () => {
+		const page = () => [h("h1", null, "One"), h("p", null, "Two")];
+		const expected = "# One\n\nTwo\n";
+
+		expect((await Array.fromAsync(new Markdown(page()))).join("")).toBe(
+			expected,
+		);
+		expect(await new Response(Markdown.stream(page())).text()).toBe(expected);
+		expect(await Markdown.string(page())).toBe(expected);
 	});
 
 	test("writes each block once it closes", async () => {

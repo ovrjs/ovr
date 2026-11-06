@@ -1,5 +1,5 @@
 import { Multipart } from "../multipart/index.js";
-import { Render } from "../render/index.js";
+import { Html } from "../html/index.js";
 import type { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
 import { Field, Form } from "./index.js";
@@ -541,7 +541,7 @@ describe("Form schema", () => {
 			Codec.Base64Url.encode(Codec.encode(JSON.stringify(tampered))),
 		);
 
-		const html = await Render.string(form.Field({ name: "name", state: url }));
+		const html = await Html.string(form.Field({ name: "name", state: url }));
 
 		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes('value="{')).toBe(false);
@@ -565,8 +565,8 @@ describe("Form schema", () => {
 
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const name = await Render.string(form.Field({ name: "name", state: url }));
-		const email = await Render.string(
+		const name = await Html.string(form.Field({ name: "name", state: url }));
+		const email = await Html.string(
 			form.Field({ name: "email", state: url }),
 		);
 
@@ -589,7 +589,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const html = await Render.string(form.Fields({ state: url }));
+		const html = await Html.string(form.Fields({ state: url }));
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(1);
@@ -603,7 +603,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set("first", "ross");
 
-		const html = await Render.string(form.Fields({ state: url }));
+		const html = await Html.string(form.Fields({ state: url }));
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(0);
@@ -615,8 +615,8 @@ describe("Form schema", () => {
 			role: Field.radio(["reader", "admin"], { label: "Role" }),
 		});
 
-		const email = await Render.string(form.Field({ name: "email" }));
-		const role = await Render.string(form.Field({ name: "role" }));
+		const email = await Html.string(form.Field({ name: "email" }));
+		const role = await Html.string(form.Field({ name: "role" }));
 
 		expect(email.includes(">Email Address</label>")).toBe(true);
 		expect(email.includes(' label="Email Address"')).toBe(false);
@@ -634,9 +634,9 @@ describe("Form schema", () => {
 			"https://example.com/search?q=travel+backpack&sort=newest&inStock=on",
 		);
 
-		const q = await Render.string(form.Field({ name: "q", state: url }));
-		const sort = await Render.string(form.Field({ name: "sort", state: url }));
-		const inStock = await Render.string(
+		const q = await Html.string(form.Field({ name: "q", state: url }));
+		const sort = await Html.string(form.Field({ name: "sort", state: url }));
+		const inStock = await Html.string(
 			form.Field({ name: "inStock", state: url }),
 		);
 
@@ -662,8 +662,8 @@ describe("Form schema", () => {
 		url.searchParams.set("sort", "oldest");
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const q = await Render.string(form.Field({ name: "q", state: url }));
-		const sort = await Render.string(form.Field({ name: "sort", state: url }));
+		const q = await Html.string(form.Field({ name: "q", state: url }));
+		const sort = await Html.string(form.Field({ name: "sort", state: url }));
 
 		expect(q.includes('value="travel backpack"')).toBe(true);
 		expect(sort.includes("aria-invalid")).toBe(true);
@@ -702,11 +702,11 @@ describe("Form schema", () => {
 			),
 		);
 
-		const name = await Render.string(form.Field({ name: "name", state: url }));
-		const email = await Render.string(
+		const name = await Html.string(form.Field({ name: "name", state: url }));
+		const email = await Html.string(
 			form.Field({ name: "email", state: url }),
 		);
-		const password = await Render.string(
+		const password = await Html.string(
 			form.Field({ name: "password", state: url }),
 		);
 
@@ -761,7 +761,7 @@ describe("Form schema", () => {
 			),
 		);
 
-		const html = await Render.string(form.Field({ name: "name", state: url }));
+		const html = await Html.string(form.Field({ name: "name", state: url }));
 
 		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes("aria-invalid")).toBe(false);

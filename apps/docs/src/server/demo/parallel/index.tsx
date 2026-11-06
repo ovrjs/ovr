@@ -22,7 +22,7 @@ export const parallel = ovr.Route.get("/demo/parallel").use((c) => {
 		<Layout head={<Meta {...parallelContent.frontmatter} />}>
 			<h1>{parallelContent.frontmatter.title}</h1>
 
-			{ovr.Render.html(parallelContent.html)}
+			{ovr.Html.raw(parallelContent.html)}
 
 			<div class="grid grid-cols-3 gap-2 sm:grid-cols-6">
 				<Delays />

@@ -14,7 +14,7 @@ import { clsx } from "clsx";
 import * as o from "ovr";
 
 const Assets = () => {
-	return o.Render.html(script.tags + style.tags);
+	return o.Html.raw(script.tags + style.tags);
 };
 
 export const createLayout =

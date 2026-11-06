@@ -9,7 +9,7 @@ export const seo = ovr.Route.get("/demo/seo").use((c) => {
 	return (
 		<Layout head={<Meta {...seoContent.frontmatter} />}>
 			<h1>{seoContent.frontmatter.title}</h1>
-			{ovr.Render.html(seoContent.html)}
+			{ovr.Html.raw(seoContent.html)}
 		</Layout>
 	);
 });

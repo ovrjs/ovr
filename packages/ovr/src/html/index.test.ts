@@ -1,5 +1,5 @@
 import { JSX } from "../jsx/index.js";
-import { Render } from "./index.js";
+import { Html } from "./index.js";
 import { expect, test, vi } from "vitest";
 
 const deferred = () => {
@@ -9,14 +9,14 @@ const deferred = () => {
 };
 
 test("escape content", () => {
-	const escaped = Render.escape(`&<script>console.log("hello")</script>`);
+	const escaped = Html.escape(`&<script>console.log("hello")</script>`);
 
 	expect(escaped.includes("&amp")).toBe(true);
 	expect(escaped.includes("<")).toBe(false);
 });
 
 test("escape attribute", () => {
-	const escaped = Render.escape(`&<script>console.log("hello")</script>`, true);
+	const escaped = Html.escape(`&<script>console.log("hello")</script>`, true);
 
 	expect(escaped.includes("&amp")).toBe(true);
 	expect(escaped.includes("<")).toBe(false);
@@ -30,15 +30,15 @@ test("fragment", () => {
 
 test("generators preserve trusted HTML and escape ordinary children", async () => {
 	function* sync() {
-		yield Render.html("<b>trusted</b>");
+		yield Html.raw("<b>trusted</b>");
 		yield "<&";
 	}
 	async function* async() {
-		yield Render.html("<b>trusted</b>");
+		yield Html.raw("<b>trusted</b>");
 		yield "<&";
 	}
 	for (const element of [sync(), async()]) {
-		expect((await Array.fromAsync(new Render(element))).join("")).toBe(
+		expect((await Array.fromAsync(new Html(element))).join("")).toBe(
 			"<b>trusted</b>&lt;&amp;",
 		);
 	}
@@ -48,7 +48,7 @@ test("parallel children render in source order", async () => {
 	const first = deferred();
 	const second = deferred();
 	const started: number[] = [];
-	const render = new Render([
+	const render = new Html([
 		() => {
 			started.push(1);
 			return first.promise;
@@ -83,7 +83,7 @@ test("parallel child errors close sibling generators", async () => {
 
 	await expect(
 		Array.fromAsync(
-			new Render([
+			new Html([
 				async () => {
 					throw new Error("failed");
 				},
@@ -95,10 +95,10 @@ test("parallel child errors close sibling generators", async () => {
 });
 
 test("a chunk rendered more than once is never changed", async () => {
-	const star = Render.html("★");
+	const star = Html.raw("★");
 	const later = new Promise((resolve) => setTimeout(() => resolve("a"), 5));
 
 	// the second child renders while the first waits, so its chunks are queued
-	expect(await Render.string([later, [star, "b"]])).toBe("a★b");
-	expect(await Render.string([star, star])).toBe("★★");
+	expect(await Html.string([later, [star, "b"]])).toBe("a★b");
+	expect(await Html.string([star, star])).toBe("★★");
 });

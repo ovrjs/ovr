@@ -9,7 +9,7 @@ export const ssePage = ovr.Route.get("/demo/sse").use((c) => {
 	return (
 		<Layout head={<Meta {...sseContent.frontmatter} />}>
 			<h1>{sseContent.frontmatter.title}</h1>
-			{ovr.Render.html(sseContent.html)}
+			{ovr.Html.raw(sseContent.html)}
 			<p>
 				Check out the server sent events{" "}
 				<sse.Anchor data-no-prefetch>demo</sse.Anchor>.
@@ -25,7 +25,7 @@ export const sse = ovr.Route.get("/sse/event").use((c) => {
 	// set the content-type header to create a SSE
 	c.res.headers.set("content-type", "text/event-stream");
 
-	// passed into `Render.stream`
+	// passed into `Html.stream`
 	return async function* () {
 		yield "data: server\n\n";
 		await delay();
