@@ -149,7 +149,7 @@ for await (const chunk of markup) {
 }
 ```
 
-Set `Markup.Options.safe` to `true` to bypass HTML escaping to render [other types of content](/05-middleware#return-value).
+Set `Markup.Options.safe` to `true` to skip escaping, for content that is not markup, such as plain text or server-sent events.
 
 ```ts
 new Markup(element, { safe: true });
