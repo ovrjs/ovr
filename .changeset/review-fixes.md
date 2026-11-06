@@ -4,7 +4,7 @@
 
 Fixes and changes to existing behavior:
 
-- **`Render` is `Markup`:** it renders HTML and other markup such as XML, next to `Markdown`, which renders the same elements to Markdown. `Render.html` is `Markup.raw`, `Render.Options` is `Markup.Options`, and `Render.Chunk` is `Markup.Chunk`. A chunk's `value` is its text before escaping, or its HTML when `safe`, and `toString()` returns its HTML.
+- **`Render` is `Markup`:** it renders HTML and other markup such as XML, next to `Markdown`, which renders the same elements to Markdown. `Render.html` is `Markup.raw`, `Render.Options` is `Markup.Options`, and `Render.Chunk` is `Markup.Chunk`. The `safe` option is `raw`, like `Markup.raw`. A chunk's `value` is its text before escaping, or its markup when `raw`, and `toString()` returns its markup.
 - **Trailing slash:** a request no route matches is redirected only when the other spelling of its path matches a route. A matched route always answers, so its handler no longer runs and is then replaced by a redirect.
 - **Routes:** `route.url()` fills parameters and wildcards anywhere in a segment, such as `/file-:id` and `/files-*`. It throws for a parameter that would leave its segment, empty, `.`, or `..`, and when a value would make the path start with `//`, which browsers read as another host.
 - **Responses:** a returned `Response` keeps each of its `Set-Cookie` headers, added to cookies already set. Content returned with a `Content-Type` such as `Text/HTML` or `text/html ; charset=utf-8` is escaped as markup, since media types ignore case and spaces. `Markup.string(element)` is static, like `Markup.stream`.

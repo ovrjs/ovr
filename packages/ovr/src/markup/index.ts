@@ -12,28 +12,28 @@ type Read = {
 
 /** Chunk of a rendered element: text, or markup */
 class Chunk {
-	/** Text, or markup when `safe` */
+	/** Text, or markup when `raw` */
 	readonly value: string;
 
 	/** `true` if the value is markup, which is not escaped */
-	readonly safe: boolean | undefined;
+	readonly raw: boolean | undefined;
 
 	/**
 	 * Chunk of a rendered element.
 	 *
 	 * @param value Text, escaped when it is rendered as markup
-	 * @param safe Set to `true` if the value is safe markup that should not be escaped
+	 * @param raw Set to `true` if the value is safe markup that should not be escaped
 	 */
-	constructor(value: unknown, safe?: boolean) {
+	constructor(value: unknown, raw?: boolean) {
 		this.value = String(value ?? "");
-		this.safe = safe;
+		this.raw = raw;
 	}
 
 	/**
 	 * @returns Safe markup to render
 	 */
 	toString(): string {
-		return this.safe ? this.value : Markup.escape(this.value);
+		return this.raw ? this.value : Markup.escape(this.value);
 	}
 }
 
@@ -119,7 +119,7 @@ export namespace Markup {
 	/** Markup options */
 	export type Options = {
 		/** Set to `true` to disable escaping, for content that is not markup */
-		safe?: boolean;
+		raw?: boolean;
 	};
 
 	/** Rendered `Chunk` instance */
@@ -176,7 +176,7 @@ export class Markup {
 		}
 
 		if (element instanceof Chunk) {
-			// already escaped or safe
+			// already escaped or raw
 			yield element;
 			return;
 		}
@@ -247,7 +247,7 @@ export class Markup {
 		}
 
 		// primitive or other object
-		yield new Chunk(element, this.#options?.safe);
+		yield new Chunk(element, this.#options?.raw);
 	}
 
 	/**

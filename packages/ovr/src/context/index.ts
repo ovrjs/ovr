@@ -436,8 +436,8 @@ export class Context<
 			}
 
 			this.res.body = Markup.stream(r, {
-				// other defined types are safe
-				safe: Boolean(mime && !Mime.markup(mime)),
+				// other defined types are not markup, so they are not escaped
+				raw: Boolean(mime && !Mime.markup(mime)),
 			});
 
 			if (!mime) {

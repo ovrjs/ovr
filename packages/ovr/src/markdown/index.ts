@@ -191,7 +191,7 @@ class Writer {
 			}
 			this.#open(chunk.name, attrs);
 			if (chunk.closed) this.#close(chunk.name);
-		} else if (chunk.safe) this.#raw(chunk.value);
+		} else if (chunk.raw) this.#raw(chunk.value);
 		else this.#text(chunk.value);
 	}
 
@@ -1010,7 +1010,7 @@ export class Markdown {
 	 * @returns `ReadableStream` of Markdown
 	 */
 	static stream(element: JSX.Element, options?: Markdown.Options) {
-		return Markup.stream(new Markdown(element, options), { safe: true });
+		return Markup.stream(new Markdown(element, options), { raw: true });
 	}
 
 	/**

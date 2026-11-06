@@ -149,10 +149,10 @@ for await (const chunk of markup) {
 }
 ```
 
-Set `Markup.Options.safe` to `true` to skip escaping, for content that is not markup, such as plain text or server-sent events.
+Set `Markup.Options.raw` to `true` to skip escaping, for content that is not markup, such as plain text or server-sent events.
 
 ```ts
-new Markup(element, { safe: true });
+new Markup(element, { raw: true });
 ```
 
 ### Stream
