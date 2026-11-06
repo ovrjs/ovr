@@ -46,7 +46,7 @@ export const database = new Database(
 | `default` | Columns the database supplies, with a `DEFAULT`, identity, or generated column  |
 | `schema`  | Postgres schema containing the table, the connection's search path when omitted |
 
-Tables are available on the database by name, so a module only needs to export `database`. A table can't be named `sql`, `migrate`, or `check`.
+Tables are available on the database by name, so a module only needs to export `database`. A table can't be named `sql`, `migrate`, or `check`, or share another table's name; either is a type error.
 
 A table is a schema of its rows:
 

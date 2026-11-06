@@ -51,7 +51,7 @@ Auth limits sign-in per client IP, so your server must pass the trusted client I
 app.fetch(request, { ip });
 ```
 
-`users` is your users table, which must be in `database` too. Its form fields, other than `id` and columns with defaults, are the registration form. Columns with defaults, such as a `role` an admin form edits, are set by the server, so a signup cannot choose them. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
+`users` is your users table, which must be in `database` too. Its form fields, other than `id` and columns with defaults, are the registration form. Columns with defaults, such as a `role` an admin form edits, are set by the server, so a signup cannot choose them. Registering inserts the account with its fields and a new ID, in the transaction that stores the first passkey, so both are saved or neither is. Its other columns, such as a creation date, need defaults or `null`, otherwise passing the table is a type error. Do anything else a new account needs after registration, on the `redirect` page. The session is created after this transaction; if that fails, the account remains registered and the user can log in normally.
 
 ## Forms
 

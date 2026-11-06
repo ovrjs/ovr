@@ -8,7 +8,7 @@ import type { Mcp } from "../mcp/index.js";
 import type { Route } from "../route/index.js";
 import type { Schema } from "../schema/index.js";
 import type { Table } from "../table/index.js";
-import { Codec, Time } from "../util/index.js";
+import { Codec } from "../util/index.js";
 import { configure } from "./configure.js";
 import { Metadata } from "./metadata.js";
 import { oauth } from "./oauth.js";
@@ -65,6 +65,22 @@ export namespace Auth {
 		: never;
 
 	/**
+	 * Columns of a users table Auth cannot fill when it creates a user, other
+	 * than `id`, form fields, nullable columns, and columns with defaults.
+	 *
+	 * @template U Users table
+	 */
+	export type Unfilled<U extends Users> =
+		U extends Table<string, infer S, infer O>
+			? Exclude<
+					Table.Key<S>,
+					| "id"
+					| Table.Defaulted<S, O>
+					| { [K in keyof S]: S[K] extends Field.Any ? K : never }[keyof S]
+				>
+			: never;
+
+	/**
 	 * Registration fields of a users table, its form fields except `id` and
 	 * columns with defaults.
 	 *
@@ -115,7 +131,10 @@ export namespace Auth {
 		 * signup cannot choose them. Its other columns need defaults or must be nullable. The first
 		 * field, such as an email, names the passkey.
 		 */
-		readonly users: U;
+		readonly users: U &
+			([Unfilled<U>] extends [never]
+				? unknown
+				: `Give the users table's ${Unfilled<U>} column a default`);
 		/** Authentication page, also used for generic failure redirects. Defaults to /login. */
 		readonly page?: string;
 		/** Destination after registration or login. Defaults to /. */
@@ -212,18 +231,6 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 		// often from the environment, so its length is checked here
 		if (secrets.some((secret) => Codec.encode(secret).length < 32))
 			throw new TypeError("Auth secret must contain at least 32 bytes");
-		for (const name of ["idle", "lifetime"] as const) {
-			const value = options[name];
-			if (
-				value !== undefined &&
-				(!Number.isSafeInteger(value) ||
-					value < Time.second ||
-					value > 365 * Time.day)
-			)
-				throw new TypeError(
-					`Auth ${name} must be a time in milliseconds, from one second to a year`,
-				);
-		}
 		// the users table Auth's tables reference in this database, for its check
 		const chosen = references.get(options.database) ?? new Map();
 		for (const table of Storage.owners) {

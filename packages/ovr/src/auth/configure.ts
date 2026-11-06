@@ -24,16 +24,6 @@ export function configure<U extends Auth.Users>(
 ) {
 	type Shape = Form.Shape;
 	const { users } = options;
-	for (const [name, column] of Object.entries(users.columns))
-		if (
-			name !== "id" &&
-			!field(users.shape[name]) &&
-			!column.nullable &&
-			!(users.options.default as readonly string[] | undefined)?.includes(name)
-		)
-			throw new TypeError(
-				`Auth creates users, so the users table's ${name} column needs a default`,
-			);
 	const defaults = (users.options.default ?? []) as readonly string[];
 	/**
 	 * The table's form fields, other than `id` and columns with defaults,
@@ -68,18 +58,17 @@ export function configure<U extends Auth.Users>(
 	const page = options.page ?? "/login";
 	const redirect = options.redirect ?? "/";
 	// Auth's own paths are fixed, only these come from options
-	for (const path of [page, redirect]) {
+	for (const path of [page, redirect, options.consent ?? "/connect"]) {
 		if (
 			!path.startsWith("/") ||
 			path.startsWith("//") ||
 			/[\\?#:*\s]/.test(path) ||
+			(path.length > 1 && path.endsWith("/")) ||
 			new URL(path, options.origin).pathname !== path
 		)
 			throw new TypeError(
 				"Auth paths must be literal local paths without queries or trailing slashes",
 			);
-		if (path.length > 1 && path.endsWith("/"))
-			throw new TypeError("Auth paths cannot have trailing slashes");
 	}
 	const endpoints = [
 		paths.register,

@@ -2305,28 +2305,28 @@ describe("migration SQL", () => {
 				throw new Error("Not connected");
 			},
 		};
-		const table = (shape: Table.Shape, options = {}) => {
-			const people = new Table("people", shape, options);
-			return new Auth({
+		const shape = {
+			id: Schema.string(),
+			email: Field.email(),
+			plan: Schema.string(),
+			note: Schema.string().nullable(),
+		};
+		const defaulted = new Table("people", shape, { default: ["plan"] });
+		new Auth({
+			...settings,
+			database: new Database(pool, [defaulted, ...Auth.tables]),
+			users: defaulted,
+		});
+		// type errors, never run
+		void (() => {
+			const people = new Table("people", shape);
+			new Auth({
 				...settings,
 				database: new Database(pool, [people, ...Auth.tables]),
-				users: people as Auth.Users,
+				// @ts-expect-error registration only fills fields, plan needs a default
+				users: people,
 			});
-		};
-
-		// registration only fills fields, so other columns need defaults
-		expect(() =>
-			table({
-				id: Schema.string(),
-				email: Field.email(),
-				plan: Schema.string(),
-			}),
-		).toThrow("plan column needs a default");
-		table(
-			{ id: Schema.string(), email: Field.email(), plan: Schema.string() },
-			{ default: ["plan"] },
-		);
-		// type errors, never run
+		});
 		void (() => {
 			const people = new Table("people", { email: Field.email() });
 			new Auth({

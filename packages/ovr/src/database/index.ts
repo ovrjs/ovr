@@ -49,12 +49,20 @@ export namespace Database {
 	export type Reserved = "sql" | "migrate" | "check";
 
 	/**
-	 * Tables with reserved names are rejected.
+	 * Tables with reserved names, or a name another table has, are rejected.
 	 *
 	 * @template T Tables to check
 	 */
 	export type Valid<T extends readonly Table.Any[]> = {
-		readonly [I in keyof T]: T[I] extends { name: Reserved } ? never : T[I];
+		readonly [I in keyof T]: T[I] extends { name: Reserved }
+			? never
+			: string extends T[I]["name"]
+				? T[I]
+				: T[I]["name"] extends {
+							[J in keyof T]: J extends I ? never : T[J]["name"];
+					  }[number]
+					? never
+					: T[I];
 	};
 
 	/** SQL template tag and helpers bound to a pool or transaction. */
@@ -595,14 +603,8 @@ class Base<T extends readonly Table.Any[]> {
 		this.#tables = tables;
 		this.sql = Base.#tag(pool, (fn) => this.#transaction(fn)) as Base<T>["sql"];
 
+		// reserved and repeated names are type errors
 		for (const table of tables) {
-			// sql, migrate, check, or a table listed before: reserved names are
-			// also a type error
-			if (Object.hasOwn(this, table.name))
-				throw new TypeError(
-					`Database table name ${table.name} is not available`,
-				);
-
 			Object.defineProperty(this, table.name, {
 				value: table,
 				enumerable: true,

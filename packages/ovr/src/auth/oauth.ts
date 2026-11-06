@@ -94,13 +94,6 @@ export function oauth(
 	const page = options.page ?? "/login";
 	const consent = options.consent ?? "/connect";
 
-	if (
-		!consent.startsWith("/") ||
-		consent.startsWith("//") ||
-		new URL(consent, origin).pathname !== consent
-	)
-		throw new TypeError("Auth consent must be a literal local path");
-
 	const limiter = new Limiter(`auth:tokens:${origin}`, {
 		limit: 60,
 		interval: Time.minute,

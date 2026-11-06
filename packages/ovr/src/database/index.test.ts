@@ -303,14 +303,17 @@ describe("sql", () => {
 		expect(await db.sql`SELECT 1`.catch(() => "caught")).toBe("caught");
 	});
 
-	test("rejects reserved and duplicate table names", () => {
-		const sql = new Table("sql", { id: Schema.string() });
-
-		expect(
+	test("reserved and duplicate table names are type errors", () => {
+		// type errors, never run
+		void (() => {
+			const sql = new Table("sql", { id: Schema.string() });
+			const other = new Table("users", { id: Schema.string() });
 			// @ts-expect-error reserved table names are a type error
-			() => new Database(mock().pool, [sql]),
-		).toThrow(TypeError);
-		expect(() => new Database(mock().pool, [users, users])).toThrow(TypeError);
+			new Database(mock().pool, [sql]);
+			// @ts-expect-error two tables cannot share a name
+			new Database(mock().pool, [users, other]);
+		});
+		new Database(mock().pool, [users, posts]);
 	});
 });
 
