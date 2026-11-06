@@ -52,16 +52,47 @@ export class Tag extends Chunk {
 	readonly closed: boolean | undefined;
 
 	/**
-	 * @param html The tag's HTML
 	 * @param name Tag name
 	 * @param props Props of a start tag
 	 * @param closed The element has no end tag
 	 */
-	constructor(html: string, name: string, props?: JSX.Props, closed?: boolean) {
-		super(html, true);
+	constructor(name: string, props?: JSX.Props, closed?: boolean) {
+		super("", true);
 		this.name = name;
 		this.props = props;
 		this.closed = closed;
+	}
+
+	/** @returns The tag's HTML, built when it is written */
+	override toString() {
+		const { name, props } = this;
+		if (!props) return `</${name}>`;
+
+		// faster to concatenate attributes than to yield them as separate chunks
+		let opening = name;
+
+		for (const key in props) {
+			// more memory efficient to skip children instead of destructuring and using ...rest
+			if (key === "children") continue;
+
+			const value = props[key];
+
+			if (value === true) {
+				// just put the key without the value
+				opening += ` ${key}`;
+			} else if (typeof value === "string") {
+				opening += ` ${key}="${Render.escape(value, true)}"`;
+			} else if (typeof value === "number" || typeof value === "bigint") {
+				opening += ` ${key}="${value}"`;
+			}
+			// otherwise, don't include the attribute
+		}
+
+		return name === "html"
+			? `<!doctype html><${opening}>`
+			: name === "xml"
+				? `<?${opening}?>`
+				: `<${opening}>`;
 	}
 }
 

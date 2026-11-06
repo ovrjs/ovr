@@ -84,48 +84,20 @@ export class JSX {
 			return;
 		}
 
-		// intrinsic element
-		// faster to concatenate attributes than to yield them as separate chunks
-		let opening = tag;
-
-		for (const key in props) {
-			// more memory efficient to skip children instead of destructuring and using ...rest
-			if (key === "children") continue;
-
-			const value = props[key];
-
-			if (value === true) {
-				// just put the key without the value
-				opening += ` ${key}`;
-			} else if (typeof value === "string") {
-				opening += ` ${key}="${Render.escape(value, true)}"`;
-			} else if (typeof value === "number" || typeof value === "bigint") {
-				opening += ` ${key}="${value}"`;
-			}
-			// otherwise, don't include the attribute
-		}
+		// intrinsic element, its HTML is only built if it is written as HTML
 
 		// if children and a void element, render it like normal
 		// to account for cases like XML <link>content</link>
 		// assumes the user knows what they are doing
 		const closed = props.children == null && JSX.#void.has(tag);
 
-		yield new Tag(
-			tag === "html"
-				? `<!doctype html><${opening}>`
-				: tag === "xml"
-					? `<?${opening}?>`
-					: `<${opening}>`,
-			tag,
-			props,
-			closed,
-		);
+		yield new Tag(tag, props, closed);
 
 		if (closed) return;
 
 		yield* new Render(props.children);
 
-		yield new Tag(`</${tag}>`, tag);
+		yield new Tag(tag);
 	}
 
 	/**
