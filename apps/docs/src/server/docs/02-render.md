@@ -191,17 +191,23 @@ const str = await Markup.string(<Component />);
 
 ### Raw markup
 
-To render safe markup **without escaping**, use `Markup.raw`.
+To render safe markup **without escaping**, use `Markup.raw`. Text is escaped, so `&&` in an inline script would become `&amp;&amp;` and break it.
 
 ```tsx
 import { Markup } from "ovr";
 
-const html = "<p>Safe to render</p>";
-
-function Component() {
-	return <div>{Markup.raw(html)}</div>;
+function Theme() {
+	return (
+		<script>
+			{Markup.raw(
+				`if (matchMedia("(prefers-color-scheme: dark)").matches && !localStorage.theme) document.documentElement.dataset.theme = "dark";`,
+			)}
+		</script>
+	);
 }
 ```
+
+Use it for markup you trust, such as HTML from a Markdown processor or an SVG file, never for user input.
 
 ## Markdown
 
