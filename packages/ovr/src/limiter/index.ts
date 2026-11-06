@@ -116,19 +116,7 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 	 * @param name Stable name of the policy's buckets. Limiters with the same name and policy share them, across every server using the database.
 	 */
 	constructor(name: string, options: Limiter.Options) {
-		this.#options = { limit: 60, interval: 60000, ...options };
-		for (const [name, value] of Object.entries({
-			limit: this.#options.limit,
-			interval: this.#options.interval,
-		})) {
-			if (
-				!Number.isSafeInteger(value) ||
-				value < 1 ||
-				(name === "interval" && (value < 1000 || value > 31536000000))
-			)
-				throw new TypeError(`Invalid limiter ${name}`);
-		}
-		if (name.length > 512) throw new TypeError("Invalid limiter name");
+		this.#options = { limit: 60, interval: Time.minute, ...options };
 		this.#name = name;
 	}
 

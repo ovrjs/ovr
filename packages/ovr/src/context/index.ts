@@ -3,6 +3,7 @@ import { Cookie } from "../cookie/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
+import { Markdown } from "../render/markdown.js";
 import { Route } from "../route/index.js";
 import { Form as FormSchema } from "../schema/index.js";
 import type { Trie } from "../trie/index.js";
@@ -399,7 +400,7 @@ export class Context<
 				this.res.headers.append(Header.name.vary, "Accept");
 
 				if (Context.#markdown(this.req)) {
-					this.res.body = Render.markdown(r, {
+					this.res.body = Markdown.stream(r, {
 						base: this.url,
 						tool: agent.get(this.req)?.tool,
 					});

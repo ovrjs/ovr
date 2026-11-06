@@ -281,11 +281,7 @@ export class Mcp {
 				{
 					jsonrpc: "2.0",
 					id,
-					error: {
-						code: error.code,
-						message: error.message,
-						...(error.data === undefined ? {} : { data: error.data }),
-					},
+					error: { code: error.code, message: error.message, data: error.data },
 				},
 				error.status,
 			);
@@ -446,9 +442,7 @@ export class Mcp {
 	#server() {
 		return {
 			capabilities: { tools: {}, resources: {} },
-			...(this.#options.instructions
-				? { instructions: this.#options.instructions }
-				: {}),
+			instructions: this.#options.instructions,
 		};
 	}
 
@@ -484,50 +478,40 @@ export class Mcp {
 			case "tools/call":
 				return this.#call(c, params, session);
 			case "resources/list":
+			case "resources/templates/list": {
+				// pages with parameters are templates
+				const templates = method !== "resources/list";
 				return {
-					resources: this.#pages(false).map((route) => ({
-						uri: new URL(route.pattern, c.url).href,
-						name: route.pattern,
-						...(route.description ? { description: route.description } : {}),
-						mimeType: Mime.type.md,
-					})),
+					[templates ? "resourceTemplates" : "resources"]:
+						this.#app!.routes.filter(
+							(route) =>
+								route.method === Method.get &&
+								route.description &&
+								/[:*]/.test(route.pattern) === templates,
+						).map((route) => {
+							const { href } = new URL(
+								route.pattern.replace(parameters, (_, name?: string) =>
+									name ? `{${name}}` : "{+wildcard}",
+								),
+								c.url,
+							);
+							return {
+								[templates ? "uriTemplate" : "uri"]: templates
+									? href.replaceAll("%7B", "{").replaceAll("%7D", "}")
+									: href,
+								name: route.pattern,
+								description: route.description,
+								mimeType: Mime.type.md,
+							};
+						}),
 					...cache,
 				};
-			case "resources/templates/list":
-				return {
-					resourceTemplates: this.#pages(true).map((route) => ({
-						uriTemplate: new URL(
-							route.pattern.replace(parameters, (_, name?: string) =>
-								name ? `{${name}}` : "{+wildcard}",
-							),
-							c.url,
-						).href
-							.replaceAll("%7B", "{")
-							.replaceAll("%7D", "}"),
-						name: route.pattern,
-						...(route.description ? { description: route.description } : {}),
-						mimeType: Mime.type.md,
-					})),
-					...cache,
-				};
+			}
 			case "resources/read":
 				return this.#resource(c, params, session);
 			default:
 				throw new RpcError(-32601, "Method not found", 404);
 		}
-	}
-
-	/**
-	 * @param templates Pages with parameters
-	 * @returns GET routes agents can read
-	 */
-	#pages(templates: boolean) {
-		return this.#app!.routes.filter(
-			(route) =>
-				route.method === Method.get &&
-				route.description &&
-				/[:*]/.test(route.pattern) === templates,
-		);
 	}
 
 	/**
@@ -621,21 +605,17 @@ export class Mcp {
 		if (typeof args !== "object" || Array.isArray(args))
 			throw new RpcError(-32602, "Tool arguments must be an object");
 
-		const missing = [...tool.params.keys()].filter(
-			(param) =>
-				typeof args[param] !== "string" && typeof args[param] !== "number",
-		);
-		if (missing.length)
-			return Mcp.#error(`Missing required parameter: ${missing.join(", ")}`);
-
 		// reported like the form's issues, where a browser would get a 404
 		const issues: { path: string; message: string }[] = [];
 		for (const [param, key] of tool.params) {
-			const result = tool.route.paramSchemas?.[key]?.parse(String(args[param]));
-			for (const issue of result?.issues ?? [])
-				issues.push({ path: param, message: issue.message });
+			const value = args[param];
+			for (const { message } of typeof value === "string" ||
+			typeof value === "number"
+				? (tool.route.paramSchemas?.[key]?.parse(String(value)).issues ?? [])
+				: [{ message: "Required field" }])
+				issues.push({ path: param, message });
 		}
-		if (issues.length) return Mcp.#error(Mcp.#issues(issues));
+		if (issues.length) return Mcp.#result(Mcp.#issues(issues), true);
 
 		const { route } = tool;
 		let pathname: string;
@@ -650,13 +630,13 @@ export class Mcp {
 			// and one with a lone surrogate cannot be encoded
 			if (!(error instanceof TypeError || error instanceof URIError))
 				throw error;
-			return Mcp.#error(`Parameters do not match ${route.pattern}`);
+			return Mcp.#result(`Parameters do not match ${route.pattern}`, true);
 		}
 
 		const url = new URL(pathname, c.url.origin);
 		// a more specific pattern could select another route
 		if (this.#app!.find(route.method, url.pathname) !== route)
-			return Mcp.#error(`Parameters do not match ${route.pattern}`);
+			return Mcp.#result(`Parameters do not match ${route.pattern}`, true);
 
 		const read = route.method === Method.get;
 		const body = new FormData();
@@ -681,13 +661,9 @@ export class Mcp {
 
 		return this.#fetch(
 			c,
-			new Request(url, {
-				method: route.method,
-				headers: this.#headers(c),
-				signal: c.req.signal,
-				...(read ? {} : { body }),
-			}),
 			session,
+			url,
+			read ? undefined : { method: route.method, body },
 		);
 	}
 
@@ -709,22 +685,9 @@ export class Mcp {
 		if (!this.#readable(c, url))
 			throw new RpcError(-32002, "Resource not found");
 
-		const req = new Request(url, {
-			headers: this.#headers(c),
-			signal: c.req.signal,
-		});
-		const call: Parameters<typeof agent.set>[1] = {
-			session,
-			tool: this.#tool(c),
-		};
-		agent.set(req, call);
-		const res = await this.#app!.fetch(req, { ip: c.ip });
-
+		const res = await this.#run(c, session, url);
 		// the page's form has issues, such as a search with invalid parameters
-		if (call.issues) {
-			await res.body?.cancel();
-			throw new RpcError(-32602, Mcp.#issues(call.issues));
-		}
+		if (typeof res === "string") throw new RpcError(-32602, res);
 
 		const text = await Mcp.#text(res);
 
@@ -775,89 +738,90 @@ export class Mcp {
 	}
 
 	/**
+	 * Requests a page of the app as the agent.
+	 *
 	 * @param c Request context
-	 * @returns Headers for requests an agent makes
+	 * @param session Session the token authorizes
+	 * @param url URL to request
+	 * @param init Method and body
+	 * @returns The response, or the form's issues instead of the redirect back to it
 	 */
-	#headers(c: Context) {
-		return {
-			accept: Mime.type.md,
-			origin: c.url.origin,
-			"sec-fetch-site": "same-origin",
+	async #run(c: Context, session: unknown, url: URL, init?: RequestInit) {
+		const req = new Request(url, {
+			...init,
+			headers: {
+				accept: Mime.type.md,
+				origin: c.url.origin,
+				"sec-fetch-site": "same-origin",
+			},
+			signal: c.req.signal,
+		});
+		const call: Parameters<typeof agent.set>[1] = {
+			session,
+			tool: this.#tool(c),
 		};
+		agent.set(req, call);
+		const res = await this.#app!.fetch(req, { ip: c.ip });
+		if (!call.issues) return res;
+
+		await res.body?.cancel();
+		return Mcp.#issues(call.issues);
 	}
 
 	/**
-	 * Fetches from the app as the agent, following same-origin redirects.
+	 * Calls the app as the agent, following redirects to pages it can read.
 	 *
 	 * @param c Request context
-	 * @param req Request to make
 	 * @param session Session the token authorizes
+	 * @param url URL to request
+	 * @param init Method and body
 	 * @returns Tool result
 	 */
-	async #fetch(c: Context, req: Request, session: unknown) {
+	async #fetch(c: Context, session: unknown, url: URL, init?: RequestInit) {
 		let redirected: URL | undefined;
 
 		for (let i = 0; ; i++) {
-			const call: Parameters<typeof agent.set>[1] = {
-				session,
-				tool: this.#tool(c),
-			};
-			agent.set(req, call);
-			const res = await this.#app!.fetch(req, { ip: c.ip });
-
-			// the form's issues, instead of the redirect back to it
-			if (call.issues) {
-				await res.body?.cancel();
-				return Mcp.#error(Mcp.#issues(call.issues));
-			}
+			const res = await this.#run(c, session, url, init);
+			if (typeof res === "string") return Mcp.#result(res, true);
 
 			const location = res.headers.get(Header.name.loc);
 
 			if (location && res.status >= 300 && res.status < 400) {
 				await res.body?.cancel();
-				const next = new URL(location, req.url);
+				const next = new URL(location, url);
+				const readable = this.#readable(c, next);
 
-				if (!this.#readable(c, next) || i === Mcp.#redirects) {
-					return {
-						content: [
-							{
-								type: "text",
-								// another site is where the app sends the user, such as a
-								// checkout, but the address of a page of this app that agents
-								// cannot read stays private, with any token in it
-								text:
-									next.origin !== c.url.origin
-										? `Redirected to ${next.href}`
-										: this.#readable(c, next)
-											? `Redirected to ${next.pathname}${next.search}`
-											: "Redirected",
-							},
-						],
-						isError: false,
-					};
+				if (readable && i < Mcp.#redirects) {
+					url = redirected = next;
+					init = undefined;
+					continue;
 				}
 
-				redirected = next;
-				req = new Request(next, {
-					headers: this.#headers(c),
-					signal: c.req.signal,
-				});
-				continue;
+				// another site is where the app sends the user, such as a checkout,
+				// but the address of a page of this app that agents cannot read
+				// stays private, with any token in it
+				return Mcp.#result(
+					next.origin !== c.url.origin
+						? `Redirected to ${next.href}`
+						: readable
+							? `Redirected to ${next.pathname}${next.search}`
+							: "Redirected",
+				);
 			}
 
 			const text = await Mcp.#text(res);
-			const lines = [
-				...(redirected
-					? [`Redirected to ${redirected.pathname}${redirected.search}`]
-					: []),
-				...(res.ok ? [] : [`${res.status} ${res.statusText}`.trim()]),
-				...(text ? [text] : []),
-			];
 
-			return {
-				content: [{ type: "text", text: lines.join("\n\n") }],
-				isError: !res.ok,
-			};
+			return Mcp.#result(
+				[
+					redirected &&
+						`Redirected to ${redirected.pathname}${redirected.search}`,
+					!res.ok && `${res.status} ${res.statusText}`.trim(),
+					text,
+				]
+					.filter(Boolean)
+					.join("\n\n"),
+				!res.ok,
+			);
 		}
 	}
 
@@ -870,10 +834,11 @@ export class Mcp {
 	}
 
 	/**
-	 * @param text Error message for the agent
-	 * @returns Tool error result
+	 * @param text Text for the agent
+	 * @param isError The call failed
+	 * @returns Tool result
 	 */
-	static #error(text: string) {
-		return { content: [{ type: "text", text }], isError: true };
+	static #result(text: string, isError = false) {
+		return { content: [{ type: "text", text }], isError };
 	}
 }

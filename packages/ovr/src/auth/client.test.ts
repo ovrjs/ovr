@@ -164,7 +164,14 @@ function setup() {
 	vi.stubGlobal("document", {
 		getElementById: (id: string) => scripts.get(id),
 		createElement: () => new Input(),
+		querySelectorAll: () => [],
 	});
+	vi.stubGlobal(
+		"MutationObserver",
+		class {
+			observe() {}
+		},
+	);
 	vi.stubGlobal("navigator", { credentials: { create, get } });
 	vi.stubGlobal("fetch", fetcher);
 	const NativeFormData = globalThis.FormData;
@@ -178,9 +185,9 @@ function setup() {
 			}
 		},
 	);
-	// Execute the exact served JavaScript module, without browser auto-initialization in this unit harness.
+	// Execute the exact served JavaScript module, no scripts are on the page yet
 	const init: typeof listen = new Function(
-		`${source.slice(0, source.indexOf("// Modules execute")).replace("export function", "function")}\nreturn listen;`,
+		`${source.replace("export function", "function")}\nreturn listen;`,
 	)();
 	return {
 		first,

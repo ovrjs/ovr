@@ -32,8 +32,6 @@ Submit: Create post
 
 Browsers get HTML: Markdown is only used when it is listed in `Accept` and preferred at least as much as HTML. These responses include `Vary: Accept` for caches. Responses with another content type, such as XML, are not converted.
 
-`Render.markdown(element, { base })` streams Markdown from any element.
-
 ## MCP
 
 Add an `Mcp` endpoint to the app. Agents connect to `/mcp`.

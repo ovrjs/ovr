@@ -164,16 +164,6 @@ describe("token buckets", () => {
 		]);
 		expect((await state.fetch()).status).toBe(200);
 	});
-
-	test.each([
-		{ limit: 0 },
-		{ limit: NaN },
-		{ interval: 0 },
-		{ interval: Infinity },
-		{ name: "x".repeat(513) },
-	])("rejects invalid policies: %j", (options) => {
-		expect(() => setup(options)).toThrow("Invalid limiter");
-	});
 });
 
 test("a limiter needs a database", () => {

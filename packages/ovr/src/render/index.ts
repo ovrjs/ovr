@@ -1,6 +1,5 @@
 import type { JSX } from "../jsx/index.js";
 import { Codec, Size } from "../util/index.js";
-import { Markdown, type Markdown as MarkdownType } from "./markdown.js";
 
 /** Completed generator read */
 type Read = {
@@ -48,9 +47,6 @@ export namespace Render {
 		/** Set to `true` to disable escaping for non-HTML use */
 		safe?: boolean;
 	};
-
-	/** Markdown options */
-	export type Markdown = MarkdownType.Options;
 
 	/** Rendered `Chunk` instance */
 	export type Chunk = InstanceType<typeof Chunk>;
@@ -184,32 +180,6 @@ export class Render {
 	static stream(element: JSX.Element, options?: Render.Options) {
 		return Render.#readable(
 			new Render(element, options)[Symbol.asyncIterator](),
-		);
-	}
-
-	/**
-	 * Renders the element to HTML and streams it as Markdown. Each block is
-	 * written once it is complete. When the page has a `<main>` element, only
-	 * its contents are written. Forms are described with their fields.
-	 *
-	 * @param element Element to render
-	 * @param options Markdown options
-	 * @returns `ReadableStream` of Markdown
-	 */
-	static markdown(element: JSX.Element, options?: Render.Markdown) {
-		const html = new Render(element);
-
-		return Render.#readable(
-			(async function* () {
-				const markdown = new Markdown(options);
-
-				for await (const chunk of html) {
-					const text = markdown.write(String(chunk));
-					if (text) yield text;
-				}
-
-				yield markdown.end();
-			})(),
 		);
 	}
 

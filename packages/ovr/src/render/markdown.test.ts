@@ -338,9 +338,9 @@ describe("Markdown responses", () => {
 		expect(await res.text()).toBe("<rss></rss>");
 	});
 
-	test("Render.markdown streams Markdown", async () => {
+	test("Markdown.stream streams Markdown", async () => {
 		const text = await new Response(
-			Render.markdown([
+			Markdown.stream([
 				jsx("h2", { children: "Hi" }),
 				Promise.resolve(jsx("p", { children: "later" })),
 			]),

@@ -49,6 +49,7 @@
 		"@electric-sql/pglite": "^0.5.10",
 		"@electric-sql/pglite-socket": "^0.2.13",
 		"@types/pg": "^8.23.1",
-		"pg": "^8.23.1"
+		"pg": "^8.23.1",
+		"rolldown": "^1.2.1"
 	}
 }

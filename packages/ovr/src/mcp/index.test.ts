@@ -559,7 +559,11 @@ describe("Mcp", () => {
 		});
 		expect(missing.body.result).toMatchObject({
 			isError: true,
-			content: [{ text: "Missing required parameter: id" }],
+			content: [
+				{
+					text: `422 Unprocessable Content\n\n${JSON.stringify({ issues: [{ path: "id", message: "Required field" }] })}`,
+				},
+			],
 		});
 
 		const gone = await rpc("tools/call", {

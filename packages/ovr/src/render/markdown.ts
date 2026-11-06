@@ -1,3 +1,6 @@
+import type { JSX } from "../jsx/index.js";
+import { Render } from "./index.js";
+
 /** Parsed element */
 type Node = {
 	/** Lowercase tag name, `""` for an implicit paragraph */
@@ -240,6 +243,25 @@ export class Markdown {
 		}
 		if (this.#count) this.#output += "\n";
 		return this.#read();
+	}
+
+	/**
+	 * Renders the element to HTML and streams it as Markdown.
+	 *
+	 * @param element Element to render
+	 * @param options Conversion options
+	 * @returns `ReadableStream` of Markdown
+	 */
+	static stream(element: JSX.Element, options?: Markdown.Options) {
+		return Render.stream(
+			(async function* () {
+				const markdown = new Markdown(options);
+				for await (const html of new Render(element))
+					yield markdown.write(String(html));
+				yield markdown.end();
+			})(),
+			{ safe: true },
+		);
 	}
 
 	/**
