@@ -266,7 +266,7 @@ const passkeys = await database.sql`
 `.parse(database.auth_credentials);
 ```
 
-Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted as new ones are written. Each browser can have 10 outstanding ceremonies, see [rate limiting](#rate-limiting).
+Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted periodically as new ones are written. Each browser can have 10 outstanding ceremonies, see [rate limiting](#rate-limiting).
 
 ## Rate limiting
 
@@ -354,7 +354,7 @@ const agents = await database.sql`
 	WHERE ${database.auth_tokens.columns.user} = ${session.user}
 		AND ${database.auth_tokens.columns.kind} = 'refresh'
 		AND ${database.auth_tokens.columns.expiration} > ${Date.now()}
-`;
+`.parse(Schema.object({ client: Schema.string() }));
 
 // for example, the agent the user chose from the list
 const [{ client }] = agents;

@@ -19,6 +19,8 @@ type Pending = {
 	readonly client: string;
 	readonly name: string;
 	readonly redirect: string;
+	/** The request named `redirect`, so the code exchange must name it too */
+	readonly named: boolean;
 	readonly challenge: string;
 	readonly resource: string;
 	readonly state: string | null;
@@ -409,7 +411,8 @@ export function oauth(
 					client: pending.client,
 					resource: pending.resource,
 					scope: "",
-					redirect: pending.redirect,
+					// compared at the exchange only when the request named it (OAuth 2.1)
+					...(pending.named && { redirect: pending.redirect }),
 					challenge: pending.challenge,
 					expiration: Date.now() + lifetime.code,
 				});
@@ -523,6 +526,7 @@ export function oauth(
 						client: client.id,
 						name: client.name,
 						redirect,
+						named: query.has("redirect_uri"),
 						challenge,
 						resource,
 						state: query.get("state"),
@@ -569,7 +573,8 @@ export function oauth(
 					if (code) {
 						const verifier = params.get("code_verifier") ?? "";
 						if (
-							token.redirect !== params.get("redirect_uri") ||
+							(token.redirect !== undefined &&
+								token.redirect !== params.get("redirect_uri")) ||
 							!/^[\w.~-]{43,128}$/.test(verifier) ||
 							(await hash(verifier)) !== token.challenge
 						)

@@ -171,7 +171,7 @@ Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your d
 const database = new Database(pool, [posts, Limiter.table]);
 ```
 
-Each admitted request refills and consumes a token in one atomic statement, so every worker shares one budget and a fresh function instance does not receive a fresh budget. Expired buckets are deleted as new ones are written. Database failures fail closed. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. Identical policies with the same name, scope, and identity intentionally share a budget, so give independent route quotas distinct names. Changing a policy creates a fresh bucket.
+Each admitted request refills and consumes a token in one atomic statement, so every worker shares one budget and a fresh function instance does not receive a fresh budget. Expired buckets are deleted periodically as new ones are written. Database failures fail closed. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. Identical policies with the same name, scope, and identity intentionally share a budget, so give independent route quotas distinct names. Changing a policy creates a fresh bucket.
 
 Network-level and distributed abuse protection still belong at your deployment edge.
 

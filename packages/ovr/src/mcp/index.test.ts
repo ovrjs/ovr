@@ -585,6 +585,44 @@ describe("Mcp", () => {
 		expect(unknown.body.error.code).toBe(-32602);
 	});
 
+	test("a tool supplies a declared form field that also names a path parameter", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Route.post("/records/:id")
+				.describe("Update a record")
+				.fields({ id: Field.hidden(), title: Field.text() })
+				.use(async (c) => {
+					const result = await c.data();
+					if (result.issues) return c.redirect(result.url, 303);
+					return c.json({ path: c.params.id, ...result.data });
+				}),
+		);
+
+		const form = new FormData();
+		form.set("id", "7");
+		form.set("title", "Updated");
+		const browser = await app.fetch("http://localhost/records/7", {
+			method: "POST",
+			body: form,
+		});
+		expect(await browser.json()).toEqual({
+			path: "7",
+			id: "7",
+			title: "Updated",
+		});
+
+		const { body } = await rpc("tools/call", {
+			name: "post_records_id",
+			arguments: { id: "7", title: "Updated" },
+		});
+		expect(body.result.isError).toBe(false);
+		expect(JSON.parse(body.result.content[0].text)).toEqual({
+			path: "7",
+			id: "7",
+			title: "Updated",
+		});
+	});
+
 	test("an invalid request ID cannot execute a tool", async () => {
 		const { app, posts } = setup();
 		const init = request("tools/call", {
@@ -789,6 +827,7 @@ describe("Mcp", () => {
 			app: App,
 			body: Record<string, unknown>,
 			version: string | null = "2025-06-18",
+			headers: Record<string, string> = {},
 		) => {
 			const res = await app.fetch("http://localhost/mcp", {
 				method: "POST",
@@ -796,6 +835,7 @@ describe("Mcp", () => {
 					"content-type": "application/json",
 					accept: "application/json, text/event-stream",
 					...(version && { "mcp-protocol-version": version }),
+					...headers,
 				},
 				body: JSON.stringify({ jsonrpc: "2.0", ...body }),
 			});
@@ -844,6 +884,21 @@ describe("Mcp", () => {
 				null,
 			);
 			expect(body.result.protocolVersion).toBe("2025-11-25");
+		});
+
+		test("the initialized notification is a response middleware sees as one", async () => {
+			const { app } = setup();
+			// like an app's not-found page, which renders when nothing responded
+			let body: unknown;
+			app.use(async (c, next) => {
+				await next();
+				body = c.res.body;
+			});
+			const { status } = await legacy(app, {
+				method: "notifications/initialized",
+			});
+			expect(status).toBe(202);
+			expect(body).toBeNull();
 		});
 
 		test("the initialized notification is accepted", async () => {
@@ -912,6 +967,32 @@ describe("Mcp", () => {
 					},
 				});
 			}
+		});
+
+		test("Mcp-Method and Mcp-Name headers an earlier client sends must match", async () => {
+			const { app, posts } = setup();
+			const call = {
+				id: 8,
+				method: "tools/call",
+				params: { name: "post_posts", arguments: { title: "Smuggled" } },
+			};
+			// a proxy allowing tools/list would otherwise let a tool call through
+			for (const headers of [
+				{ "mcp-method": "tools/list" },
+				{ "mcp-method": "tools/call", "mcp-name": "get_posts" },
+			]) {
+				const { status, body } = await legacy(app, call, "2025-11-25", headers);
+				expect(status).toBe(400);
+				expect(body.error.code).toBe(-32020);
+			}
+			expect([...posts.values()]).not.toContain("Smuggled");
+
+			// matching headers, or none, are fine
+			const matching = await legacy(app, call, "2025-11-25", {
+				"mcp-method": "tools/call",
+				"mcp-name": "post_posts",
+			});
+			expect(matching.body.result.isError).toBe(false);
 		});
 
 		test("server/discover is for the 2026-07-28 version only", async () => {

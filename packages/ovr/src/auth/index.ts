@@ -97,7 +97,7 @@ export namespace Auth {
 		 * columns with defaults, are the registration form, and registering
 		 * inserts the row in the transaction that stores the first passkey.
 		 * Columns with defaults, such as a role, are set by the server, so a
-		 * signup cannot choose them. Its other columns need defaults. The first
+		 * signup cannot choose them. Its other columns need defaults or must be nullable. The first
 		 * field, such as an email, names the passkey.
 		 */
 		readonly users: U;

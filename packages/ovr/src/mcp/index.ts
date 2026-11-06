@@ -207,8 +207,10 @@ export class Mcp {
 
 			const message = await this.#read(c);
 			if (!("id" in message)) {
-				// notification
+				// notification, answered with an empty body, which is a response,
+				// so middleware treating no body as not found leaves it alone
 				c.res.status = 202;
+				c.res.body = null;
 				return;
 			}
 
@@ -247,6 +249,9 @@ export class Mcp {
 			if (legacy) {
 				if (method === "server/discover")
 					throw new RpcError(-32601, "Method not found", 404);
+				// earlier clients need not send them, but sent ones must match, so
+				// a proxy routing on them sees the request that runs
+				Mcp.#mirror(c, method, params, true);
 			} else this.#validate(c, method, params, version, header);
 
 			const { ttlMs, cacheScope, ...result } = await this.#dispatch(
@@ -356,7 +361,7 @@ export class Mcp {
 
 	/**
 	 * Checks the protocol version, and the headers a request must mirror from
-	 * its body.
+	 * its body, for the 2026-07-28 version.
 	 *
 	 * @param c Request context
 	 * @param method JSON-RPC method
@@ -371,9 +376,6 @@ export class Mcp {
 		version: unknown,
 		header: string | null,
 	) {
-		const mismatch = (message: string) =>
-			new RpcError(-32020, `Header mismatch: ${message}`, 400);
-
 		if (typeof version !== "string" || !Mcp.#versions.includes(version))
 			throw new RpcError(-32022, "Unsupported protocol version", 400, {
 				supported: [...Mcp.#versions, ...Mcp.#legacy],
@@ -381,9 +383,29 @@ export class Mcp {
 			});
 
 		if (header !== version)
-			throw mismatch("MCP-Protocol-Version does not match the request");
+			throw new RpcError(
+				-32020,
+				"Header mismatch: MCP-Protocol-Version does not match the request",
+				400,
+			);
 
-		if (c.req.headers.get("mcp-method") !== method)
+		Mcp.#mirror(c, method, params);
+	}
+
+	/**
+	 * Checks the headers a request mirrors from its body.
+	 *
+	 * @param c Request context
+	 * @param method JSON-RPC method
+	 * @param params Request params
+	 * @param optional Check only the headers that are sent
+	 */
+	static #mirror(c: Context, method: string, params: Json, optional?: boolean) {
+		const mismatch = (message: string) =>
+			new RpcError(-32020, `Header mismatch: ${message}`, 400);
+
+		const sent = c.req.headers.get("mcp-method");
+		if ((sent !== null || !optional) && sent !== method)
 			throw mismatch("Mcp-Method does not match the request method");
 
 		const name =
@@ -395,6 +417,7 @@ export class Mcp {
 
 		if (name !== undefined) {
 			let value = c.req.headers.get("mcp-name");
+			if (value === null && optional) return;
 			const encoded = value && /^=\?base64\?(.*)\?=$/.exec(value);
 			if (encoded) {
 				try {
@@ -638,8 +661,11 @@ export class Mcp {
 		const read = route.method === Method.get;
 		const body = new FormData();
 
+		const { shape } = route as Route.Post;
 		for (const [name, value] of Object.entries(args)) {
-			if (tool.params.has(name)) continue;
+			// a parameter is in the path, and also sent when a field has its name
+			if (tool.params.has(name) && !(shape && Object.hasOwn(shape, name)))
+				continue;
 			for (const item of Array.isArray(value) ? value : [value]) {
 				if (item == null || item === false) continue;
 				const text =

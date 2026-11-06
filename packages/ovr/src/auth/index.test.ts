@@ -2743,6 +2743,38 @@ describe("agents", () => {
 			ip,
 		});
 
+	test("the code exchange needs redirect_uri only when the authorization request named it", async () => {
+		for (const named of [false, true]) {
+			const { app, browser } = agents();
+			const authorize = new URL(`${origin}/oauth/authorize`);
+			authorize.search = new URLSearchParams({
+				response_type: "code",
+				client_id: agent,
+				// the agent registered one callback, so it may be left out
+				...(named && { redirect_uri: callback }),
+				code_challenge: await challenge(),
+				code_challenge_method: "S256",
+				resource: mcp,
+			}).toString();
+			await browser("/sign-in");
+			const consent = await browser(authorize.href);
+			const html = await (
+				await browser(consent.headers.get("location")!)
+			).text();
+			const approved = await allow(browser, html, await enroll(user));
+			const location = new URL(approved.headers.get("location")!);
+			expect(location.origin + location.pathname).toBe(callback);
+
+			const exchanged = await token(app, {
+				grant_type: "authorization_code",
+				client_id: agent,
+				code: location.searchParams.get("code")!,
+				code_verifier: verifier,
+			});
+			expect(exchanged.status).toBe(named ? 400 : 200);
+		}
+	});
+
 	test("a grant ends 30 days after approval, however often it is refreshed", async () => {
 		const now = Date.now();
 		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
@@ -3464,6 +3496,34 @@ describe("agents", () => {
 		const credential = await assertion(options.challenge, passkey.keys, {
 			handle: null,
 		});
+		const approved = await browser("/oauth/approve", {
+			method: "POST",
+			headers: { origin },
+			body: form({ request, ceremony, credential: JSON.stringify(credential) }),
+		});
+		expect(approved.status).toBe(303);
+		expect(
+			new URL(approved.headers.get("location")!).searchParams.get("code"),
+		).toBeTruthy();
+	});
+
+	test("an allowed passkey can approve an agent with the user handle left out", async () => {
+		const { browser } = agents();
+		await browser("/sign-in");
+		const passkey = await enroll(user);
+		const html = await consentPage(browser, agent);
+		const request = attribute(html, 'name="request" value');
+		const started = await browser(attribute(html, "data-endpoint"), {
+			method: "POST",
+			headers: { origin },
+			body: form({ request, bootstrap: attribute(html, "data-bootstrap") }),
+		});
+		const { ceremony, options } = await started.json();
+		const credential = await assertion(options.challenge, passkey.keys, {
+			handle: null,
+		});
+		// as PublicKeyCredential.toJSON() writes it, without the key
+		delete (credential.response as { userHandle?: unknown }).userHandle;
 		const approved = await browser("/oauth/approve", {
 			method: "POST",
 			headers: { origin },

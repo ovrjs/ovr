@@ -518,6 +518,38 @@ describe.each(drivers)("$name", (driver) => {
 		}
 	});
 
+	test("dates inside JSON union branches round trip without changing string branches", async () => {
+		const events = new Table("events", {
+			id: Schema.number().int(),
+			meta: Schema.object({
+				event: Schema.union([
+					Schema.object({
+						kind: Schema.literal("scheduled"),
+						at: Schema.date(),
+					}),
+					Schema.object({ kind: Schema.literal("draft"), at: Schema.string() }),
+				]),
+			}),
+		});
+		const database = new Database(pool, [events]);
+		await database.sql`CREATE TABLE events (id integer PRIMARY KEY, meta jsonb NOT NULL)`;
+		try {
+			const at = new Date("2026-11-04T12:00:00.000Z");
+			await database.sql`INSERT INTO ${events} ${database.sql.values(events, [
+				{ id: 1, meta: { event: { kind: "scheduled", at } } },
+				{ id: 2, meta: { event: { kind: "draft", at: at.toISOString() } } },
+			])}`;
+			expect(
+				await database.sql`SELECT * FROM ${events} ORDER BY id`.parse(events),
+			).toEqual([
+				{ id: 1, meta: { event: { kind: "scheduled", at } } },
+				{ id: 2, meta: { event: { kind: "draft", at: at.toISOString() } } },
+			]);
+		} finally {
+			await database.sql`DROP TABLE events`;
+		}
+	});
+
 	test("migrate applies once", async () => {
 		expect(await migrate()).toEqual(["0001_init"]);
 		expect(await migrate()).toEqual([]);

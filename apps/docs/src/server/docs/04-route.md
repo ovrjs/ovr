@@ -159,6 +159,8 @@ The `Anchor`, `Button`, and `Form` components of `Route.get` and `Route.post` ta
 - `search` - [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/URLSearchParams) to append to the URL, passed into `URLSearchParams` constructor to create the query string.
 - `hash` - [fragment hash](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) appended with a `#` at the end of the URL.
 
+`Form` also takes `submit`, the label of its button, and for routes with [`fields`](/07-schema#post-forms), `state`, the current page's `c.url` so an invalid submission returns to it, and `values`, a record's current values to [edit](/07-schema#edit-a-record).
+
 ```tsx
 const page = Route.get("/hello/:name").use(() => {
 	return (

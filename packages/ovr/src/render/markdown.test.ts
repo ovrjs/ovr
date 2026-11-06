@@ -133,6 +133,17 @@ describe("Markdown", () => {
 		expect(md("<nav>Nav</nav><p>Body</p>")).toBe("Nav\n\nBody\n");
 	});
 
+	test("main ends at its own close, whatever is left open or nested inside", () => {
+		expect(
+			md(
+				"<nav>Nav secret</nav><main><p>Hello</main><footer>Footer secret</footer>",
+			),
+		).toBe("Hello\n");
+		expect(md("<main><main>A</main><p>B</p></main><p>After</p>")).toBe(
+			"A\n\nB\n",
+		);
+	});
+
 	test("finds main inside any wrapper, such as a custom element", () => {
 		expect(
 			md(
@@ -203,6 +214,25 @@ describe("Markdown", () => {
 				"",
 			].join("\n"),
 		);
+	});
+
+	test("a tool's form shows its hidden values, other forms do not", () => {
+		const html =
+			'<form method="post" action="/x"><input type="hidden" name="id" value="abc-123"><input name="title" value="Hi"><button>Save</button></form>';
+		expect(
+			md(html, { base: "https://example.com/", tool: () => "x_post" }),
+		).toBe(
+			[
+				"**Form:** `POST https://example.com/x` (tool `x_post`)",
+				"",
+				"- `id`: `abc-123`",
+				"- `title`: `Hi`",
+				"",
+				"Submit: Save",
+				"",
+			].join("\n"),
+		);
+		expect(md(html, { base: "https://example.com/" })).not.toContain("abc-123");
 	});
 
 	test("a tool's form keeps only values, a single checkbox as a boolean", () => {

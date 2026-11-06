@@ -74,7 +74,11 @@ export class Passkey {
 			clientDataJSON: Schema.string(),
 			authenticatorData: Schema.string(),
 			signature: Schema.string(),
-			userHandle: Schema.union([Schema.string(), Schema.literal(null)]),
+			// browsers leave it out, rather than send null, when there is none
+			userHandle: Schema.union([
+				Schema.string(),
+				Schema.literal(null),
+			]).optional(),
 		}),
 	});
 	readonly #c: Auth.Context;

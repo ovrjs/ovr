@@ -203,6 +203,9 @@ export class Markdown {
 	/** Reader mode: before, inside, or after `<main>` */
 	#main: "before" | "inside" | "after" = "before";
 
+	/** `<main>` elements open, so a nested one does not end the outer one */
+	#depth = 0;
+
 	/** Output before `<main>`, written at the end if there is no `<main>` */
 	#before: string[] = [];
 
@@ -387,6 +390,11 @@ export class Markdown {
 			this.#pending = Markdown.#node("");
 			this.#before = [];
 			this.#main = "inside";
+			this.#depth = 1;
+			return;
+		}
+		if (tag === "main" && this.#main === "inside") {
+			this.#depth++;
 			return;
 		}
 
@@ -415,13 +423,19 @@ export class Markdown {
 			return;
 		}
 
+		if (tag === "main" && this.#main === "inside") {
+			if (--this.#depth) return;
+			// elements left open end with it, so nothing after it is written
+			while (this.#stack.length) this.#close(this.#stack.at(-1)!.tag);
+			this.#flush();
+			this.#main = "after";
+			return;
+		}
+
 		const index = this.#stack.findLastIndex((node) => node.tag === tag);
 
 		if (index === -1) {
-			if (!this.#stack.length && Markdown.#containers.has(tag)) {
-				this.#flush();
-				if (tag === "main" && this.#main === "inside") this.#main = "after";
-			}
+			if (!this.#stack.length && Markdown.#containers.has(tag)) this.#flush();
 			return;
 		}
 
@@ -652,6 +666,7 @@ export class Markdown {
 		const method = (node.attrs.method ?? "GET").toUpperCase();
 		// an unsafe action is described as the page itself
 		const action = this.#url(node.attrs.action ?? "") ?? this.#url("")!;
+		const tool = this.#options.tool?.(method, action);
 		const labels = new Map<string, string>();
 		const fields: Field[] = [];
 		const byName = new Map<string, Field>();
@@ -680,6 +695,15 @@ export class Markdown {
 
 			if (type === "submit" || type === "image") {
 				submits.push(attrs.value ?? "Submit");
+				return;
+			}
+			// a tool's form shows its hidden values, such as an ID, which the
+			// tool's arguments need and the page shows nowhere else
+			if (type === "hidden" && tool && name && attrs.value !== undefined) {
+				const entry = Markdown.#field(name, name, type);
+				entry.value.push(attrs.value);
+				fields.push(entry);
+				byName.set(name, entry);
 				return;
 			}
 			if (!name || type === "hidden" || type === "button" || type === "reset")
@@ -808,7 +832,6 @@ export class Markdown {
 		};
 		visit(node);
 
-		const tool = this.#options.tool?.(method, action);
 		const lines = [
 			`**Form:** \`${method} ${this.#href(action)}\`${tool ? ` (tool \`${tool}\`)` : ""}`,
 		];

@@ -465,13 +465,31 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 					return decoded;
 				};
 			}
+			case "union": {
+				const options = base.options.map(
+					(option) => [option, Sql.#dates(option.def)] as const,
+				);
+
+				if (!options.some(([, convert]) => convert)) return;
+
+				// the first branch the converted value matches, so a string
+				// in a branch without a date stays a string
+				return (value) => {
+					for (const [option, convert] of options) {
+						const converted = convert ? convert(value) : value;
+						if (!option.parse(converted).issues) return converted;
+					}
+
+					return value;
+				};
+			}
 		}
 	}
 }
 
 /**
  * Migrations a library's tables bring, by table. Tables of one library share
- * one list, applied by `database.migrate` in its own ID order before the application's.
+ * one list, applied by `database.migrate` in the order it lists them, before the application's.
  */
 export const owned = new WeakMap<Table.Any, readonly Database.Migration[]>();
 

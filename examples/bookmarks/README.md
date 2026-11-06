@@ -28,7 +28,9 @@ A small application written against the current `next` branch. Start with
 | POST   | `/mcp`                  | MCP endpoint for agents                                   |
 
 `app.use(auth)` mounts the authentication routes and browser script, and
-`app.use(mcp)` the MCP endpoint.
+`app.use(mcp)` the MCP endpoint. Since `mcp` is given `auth`, it also mounts
+the OAuth endpoints agents sign in with (`/oauth/*` and the
+`/.well-known/oauth-*` metadata).
 `auth.forms(c)` supplies the registration, login, and logout components.
 
 Every CRUD handler authenticates before doing work. Reads and mutations include
@@ -119,6 +121,6 @@ schema diff engine or query builder.
 Writing this example led to `submit` labels on route forms, `Database.unique`
 for constraint errors, and versioned Auth migrations. Chained routes let
 `.params({ id })` check IDs with the table's own column schema before the
-handler runs, so an invalid UUID is a 404. A parse-or-redirect helper was left
+handler runs, so an invalid UUID is a 404, and an agent gets the issue. A parse-or-redirect helper was left
 out on purpose: it would save one line per handler but add a second way to read
 form data, and `c.data()` already returns everything needed.
