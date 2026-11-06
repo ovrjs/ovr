@@ -2,15 +2,16 @@
 "ovr": major
 ---
 
-Fixes from an independent review:
+Fixes and changes to existing behavior:
 
 - **Trailing slash:** a request no route matches is redirected only when the other spelling of its path matches a route. A matched route always answers, so its handler no longer runs and is then replaced by a redirect.
-- **Multipart:** the parser skips the rest of a part its reader stopped reading, so a file's bytes are never parsed as further fields. A part that ends without its boundary, a body without the closing delimiter, and one without an opening boundary throw `TypeError`; a form without fields, only the closing delimiter, still parses. Boundary searches are linear whatever boundary the client chooses. Quoted header parameters can contain `;` and escaped quotes.
-- **Routes:** `route.url()` throws for a parameter that would leave its segment: empty, `.`, or `..`. A wildcard after other text, such as `/files-*`, is filled in. `c.redirect(route)` throws for a route with parameters, use `route.url({ params })`. `route.params()` checks whole parameter names.
-- **Responses:** a returned `Response` keeps each of its `Set-Cookie` headers, added to cookies already set.
-- **Forms:** field names such as `constructor` are unexpected fields, not inherited properties.
-- **Markdown for agents:** large code and tables no longer overflow the stack, and option values and field names cannot start lines of their own.
-- `Render.string(element)` is static, like `Render.stream`.
-- `Limiter.Context` includes `session`, so a `key` can count each signed-in user.
-- Tables can store dates inside JSON columns, as ISO strings read back as dates.
-- **Agent sign-in:** downloads of client ID metadata documents are limited per client IP and host, with a higher limit per host in all, at most two at once per IP, and client IDs without a document are remembered for a minute, so one client cannot block an agent's host for everyone. Authorization errors are answered with a 400 page instead of being redirected to the client, client IDs must be written exactly as their URL, a used code is kept until its tokens expire so a late replay still revokes them, and an unavailable rate limiter throws to the app instead of answering 503.
+- **Routes:** `route.url()` fills parameters and wildcards anywhere in a segment, such as `/file-:id` and `/files-*`. It throws for a parameter that would leave its segment, empty, `.`, or `..`, and when a value would make the path start with `//`, which browsers read as another host.
+- **Responses:** a returned `Response` keeps each of its `Set-Cookie` headers, added to cookies already set. Content returned with a `Content-Type` such as `Text/HTML` or `text/html ; charset=utf-8` is escaped as markup, since media types ignore case and spaces. `Render.string(element)` is static, like `Render.stream`.
+- **Multipart:**
+  - The parser skips the rest of a part its reader stopped reading, so a file's bytes are never parsed as further fields.
+  - A part that ends without its boundary, a body without the closing delimiter, and one without an opening boundary throw `TypeError`. A form without fields, only the closing delimiter, still parses.
+  - Only a delimiter starting the body or a line opens the first part, a line in a part that starts with the boundary rejects the body, as RFC 2046 does not allow it, and nothing after the closing delimiter is parsed. Spaces and tabs after a delimiter are ignored, as RFC 2046 requires of receivers.
+  - Boundaries must be 1 to 70 RFC 2046 characters; a boundary of 252 or more characters made parsing loop forever. Boundary searches are linear whatever boundary the client chooses.
+  - Quoted header parameters can contain `;` and escaped quotes, and decode only `%22`, `%0D`, and `%0A`, the escapes browsers write in filenames, so a file named `100%41.txt` keeps its name.
+- **Forms:** a route's `Form` renders its fields, if any, and a submit button labelled with `submit`, so one without fields, such as a delete, is no longer empty; children replace both. Radio, select, checkbox, and multiselect fields say "Select an option" when nothing or an option that is not offered is sent, instead of "Required field". Field names such as `constructor` are unexpected fields, not inherited properties.
+- **Schemas:** a `__proto__` key is kept as data, in an object's shape, passed through by `loose()`, or named by `pick` or `omit`, instead of changing the parsed object's prototype. Unions and arrays with very many issues no longer overflow the stack.

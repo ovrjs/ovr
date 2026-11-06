@@ -14,4 +14,4 @@ const create = Route.post("/posts").fields({ title }).use(handler);
 
 Each step returns the route. `route.params(schemas)` checks and converts pattern parameters before the middleware runs, types `c.params` with the converted values, and responds 404 when one fails. `route.describe(text)` describes the route for AI agents; undescribed routes are never served to them. `Route.post(pattern)` requires a pattern, the generated hash patterns are removed.
 
-`route.middleware` is read-only; add middleware with `use`. Once `app.use()` mounts a route, it is final, and configuring it throws. `route.pathname()` is removed: `route.url({ params })` builds the path, typed exactly when it has no `search` or `hash`. A route's `Form` renders its fields, if any, and a submit button labelled with `submit`; children replace both.
+`route.middleware` is read-only; add middleware with `use`. Once `app.use()` mounts a route, it is final, and configuring it throws. `route.pathname()` is removed: `route.url({ params })` builds the path, typed exactly when it has no `search` or `hash`.
