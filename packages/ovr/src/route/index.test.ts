@@ -982,6 +982,13 @@ describe("chained routes", () => {
 		Route.post("/blank").describe("");
 		// @ts-expect-error
 		Route.post("/blank").describe(" \n\t ");
+		// @ts-expect-error
+		Route.post("/blank").describe(" \r ");
+		// @ts-expect-error
+		Route.post("/blank").describe("\u00a0");
+		// @ts-expect-error
+		Route.post("/blank").describe("\u3000\ufeff");
+		Route.post("/padded").describe(" Text\u00a0");
 	});
 
 	test("params convert values before the middleware runs", async () => {

@@ -644,6 +644,8 @@ describe("Mcp", () => {
 		void (() => {
 			// @ts-expect-error both would be the tool's `wildcard` argument
 			Route.post("/remove/:wildcard/*").describe("Remove the selected file");
+			// @ts-expect-error in one segment too
+			Route.post("/remove/:wildcard*").describe("Remove the selected file");
 			// either alone is a tool
 			Route.post("/remove/:wildcard").describe("Remove the selected file");
 			Route.post("/remove/*").describe("Remove the selected file");

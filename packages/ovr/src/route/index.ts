@@ -29,16 +29,43 @@ export type ExtractParams<Pattern extends string = string> =
 				? { "*": string }
 				: {};
 
+/** Whitespace `String.prototype.trim` removes */
+type Space =
+	| " "
+	| "\t"
+	| "\n"
+	| "\v"
+	| "\f"
+	| "\r"
+	| "\u00a0"
+	| "\u1680"
+	| "\u2000"
+	| "\u2001"
+	| "\u2002"
+	| "\u2003"
+	| "\u2004"
+	| "\u2005"
+	| "\u2006"
+	| "\u2007"
+	| "\u2008"
+	| "\u2009"
+	| "\u200a"
+	| "\u2028"
+	| "\u2029"
+	| "\u202f"
+	| "\u205f"
+	| "\u3000"
+	| "\ufeff";
+
 /**
  * `S` without leading or trailing whitespace
  *
  * @template S String to trim
  */
-type Trim<S extends string> = S extends ` ${infer R}` | `${infer R} `
+type Trim<S extends string> = S extends
+	`${Space}${infer R}` | `${infer R}${Space}`
 	? Trim<R>
-	: S extends `\n${infer R}` | `${infer R}\n` | `\t${infer R}` | `${infer R}\t`
-		? Trim<R>
-		: S;
+	: S;
 
 /**
  * Helper type to insert a record of params into a resolved string.
@@ -484,10 +511,13 @@ export class Route<
 	describe<D extends string>(
 		description: Trim<D> extends ""
 			? never
-			: // `:wildcard` and `*` would both be the tool's `wildcard` argument
+			: // `:wildcard` and `*` would both be the tool's `wildcard` argument,
+				// in separate segments or as `:wildcard*`
 				["wildcard" | "*"] extends [keyof ExtractParams<Pattern>]
 				? "Rename :wildcard, a tool's * argument is named wildcard"
-				: D,
+				: Pattern extends `${string}:wildcard*${string}`
+					? "Rename :wildcard, a tool's * argument is named wildcard"
+					: D,
 	) {
 		this.#configure("describe");
 		this.#description = description;
