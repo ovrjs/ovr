@@ -1,4 +1,4 @@
-import { Render } from "../render/index.js";
+import { Render, Tag } from "../render/index.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 
 export namespace JSX {
@@ -105,22 +105,27 @@ export class JSX {
 			// otherwise, don't include the attribute
 		}
 
-		if (tag === "html") {
-			yield Render.html(`<!doctype html><${opening}>`);
-		} else if (tag === "xml") {
-			yield Render.html(`<?${opening}?>`);
-		} else {
-			yield Render.html(`<${opening}>`);
-		}
-
 		// if children and a void element, render it like normal
 		// to account for cases like XML <link>content</link>
 		// assumes the user knows what they are doing
-		if (props.children == null && JSX.#void.has(tag)) return;
+		const closed = props.children == null && JSX.#void.has(tag);
+
+		yield new Tag(
+			tag === "html"
+				? `<!doctype html><${opening}>`
+				: tag === "xml"
+					? `<?${opening}?>`
+					: `<${opening}>`,
+			tag,
+			props,
+			closed,
+		);
+
+		if (closed) return;
 
 		yield* new Render(props.children);
 
-		yield Render.html(`</${tag}>`);
+		yield new Tag(`</${tag}>`, tag);
 	}
 
 	/**

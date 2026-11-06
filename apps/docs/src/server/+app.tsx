@@ -1,4 +1,3 @@
-import * as content from "@/lib/content";
 import * as demo from "@/server/demo";
 import * as docs from "@/server/docs";
 import * as home from "@/server/home";
@@ -69,16 +68,6 @@ export default {
 	// The auth demo is local-development-only. Production entry points must supply their actual trusted peer IP.
 	fetch: (request: Request) =>
 		app.fetch(request, import.meta.env.DEV ? { ip: "127.0.0.1" } : {}),
-	prerender: () => {
-		const docPrerender = content.slugs().map((slug) => "/" + slug);
-
-		return [
-			home.page.url(),
-			docs.llms.url(),
-			seo.robots.url(),
-			seo.sitemap.url(),
-			...docPrerender,
-			...docPrerender.map((p) => p + ".md"),
-		];
-	},
+	// pages are not prerendered, so agents asking for Markdown reach the app
+	prerender: () => [docs.llms.url(), seo.robots.url(), seo.sitemap.url()],
 };

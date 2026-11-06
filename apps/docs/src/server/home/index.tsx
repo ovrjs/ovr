@@ -1,3 +1,4 @@
+import * as content from "@/lib/content";
 import * as result from "@/server/home/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
@@ -6,6 +7,10 @@ import * as o from "ovr";
 export const page = o.Route.get("/")
 	.describe("Overview of ovr, the streaming web framework, and its features")
 	.use((c) => {
+		content.cache(c);
+		// agents read the page's source
+		if (c.md(content.md(result))) return;
+
 		const Layout = createLayout(c);
 
 		return (

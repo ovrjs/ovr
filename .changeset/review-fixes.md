@@ -7,6 +7,7 @@ Fixes and changes to existing behavior:
 - **Trailing slash:** a request no route matches is redirected only when the other spelling of its path matches a route. A matched route always answers, so its handler no longer runs and is then replaced by a redirect.
 - **Routes:** `route.url()` fills parameters and wildcards anywhere in a segment, such as `/file-:id` and `/files-*`. It throws for a parameter that would leave its segment, empty, `.`, or `..`, and when a value would make the path start with `//`, which browsers read as another host.
 - **Responses:** a returned `Response` keeps each of its `Set-Cookie` headers, added to cookies already set. Content returned with a `Content-Type` such as `Text/HTML` or `text/html ; charset=utf-8` is escaped as markup, since media types ignore case and spaces. `Render.string(element)` is static, like `Render.stream`.
+- **Rendering:** a chunk rendered while an earlier sibling is still rendering is no longer changed, so a `Render.html()` value used in more than one place renders the same each time.
 - **Multipart:**
   - The parser skips the rest of a part its reader stopped reading, so a file's bytes are never parsed as further fields.
   - A part that ends without its boundary, a body without the closing delimiter, and one without an opening boundary throw `TypeError`. A form without fields, only the closing delimiter, still parses.

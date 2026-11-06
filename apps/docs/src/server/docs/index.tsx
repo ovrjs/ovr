@@ -19,20 +19,6 @@ export const llms = ovr.Route.get("/llms.txt")
 		);
 	});
 
-/**
- * `/04-route.md`, a page as Markdown, served before `page`, whose slug only
- * names pages.
- */
-export const markdown: ovr.Middleware = (c, next) => {
-	const slug = /^\/([^/]+)\.md$/.exec(c.url.pathname)?.[1];
-	const result = slug && content.get(slug);
-	if (!result) return next();
-
-	c.res.body = content.md(result);
-	c.res.status = 200;
-	c.res.headers.set("content-type", "text/markdown; charset=UTF-8");
-};
-
 export const page = ovr.Route.get("/:slug")
 	.describe(
 		"Read a page of the ovr documentation, starting with 01-get-started",
@@ -43,6 +29,10 @@ export const page = ovr.Route.get("/:slug")
 		const result = content.get(c.params.slug);
 
 		if (!result) return;
+
+		content.cache(c);
+		// agents read the page's source
+		if (c.md(content.md(result))) return;
 
 		const Layout = createLayout(c);
 

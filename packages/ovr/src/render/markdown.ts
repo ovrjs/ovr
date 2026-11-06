@@ -1,12 +1,12 @@
 import type { JSX } from "../jsx/index.js";
-import { Render } from "./index.js";
+import { Group, Render, Tag } from "./index.js";
 
 /** Parsed element */
 type Node = {
-	/** Lowercase tag name, `""` for an implicit paragraph */
+	/** Tag name, `""` for an implicit paragraph, `"!"` for raw HTML */
 	tag: string;
 
-	/** Decoded attributes */
+	/** Attributes */
 	attrs: Record<string, string>;
 
 	/** Child elements and decoded text */
@@ -60,8 +60,9 @@ export namespace Markdown {
 }
 
 /**
- * Streaming HTML to Markdown conversion. Each top level block is written as soon as
- * it closes. When the page has a `<main>` element, only its contents are kept.
+ * Streaming Markdown, written from the rendered elements, so no HTML is parsed.
+ * Each top level block is written as soon as it closes. When the page has a
+ * `<main>` element, only its contents are kept. Raw HTML is written as it is.
  */
 export class Markdown {
 	/** Elements and their contents that are not written */
@@ -76,26 +77,6 @@ export class Markdown {
 		"object",
 		"dialog",
 		"math",
-	]);
-
-	/** Elements with raw text content */
-	static readonly #raw = new Set(["script", "style", "textarea", "title"]);
-
-	/** Elements without closing tags */
-	static readonly #void = new Set([
-		"area",
-		"base",
-		"br",
-		"col",
-		"embed",
-		"hr",
-		"img",
-		"input",
-		"link",
-		"meta",
-		"source",
-		"track",
-		"wbr",
 	]);
 
 	/** Containers that are not written themselves at the top level */
@@ -117,6 +98,8 @@ export class Markdown {
 	/** Block elements, everything else is inline */
 	static readonly #blockTags = new Set([
 		...Markdown.#containers,
+		// raw HTML, its own block between blocks
+		"!",
 		"p",
 		"h1",
 		"h2",
@@ -153,46 +136,7 @@ export class Markdown {
 		"menu",
 	]);
 
-	/** Elements that close an open element of the same group */
-	static readonly #implicit: Record<string, string[]> = {
-		p: ["p"],
-		li: ["li"],
-		dt: ["dt", "dd"],
-		dd: ["dt", "dd"],
-		tr: ["tr", "td", "th"],
-		td: ["td", "th"],
-		th: ["td", "th"],
-		option: ["option"],
-	};
-
-	/** Named character references */
-	static readonly #entities: Record<string, string> = {
-		amp: "&",
-		lt: "<",
-		gt: ">",
-		quot: '"',
-		apos: "'",
-		nbsp: " ",
-		copy: "©",
-		reg: "®",
-		mdash: "—",
-		ndash: "–",
-		hellip: "…",
-		rsquo: "’",
-		lsquo: "‘",
-		rdquo: "”",
-		ldquo: "“",
-		middot: "·",
-		times: "×",
-	};
-
 	readonly #options: Markdown.Options;
-
-	/** Unparsed input */
-	#input = "";
-
-	/** Raw text element being read */
-	#rawTag: string | undefined;
 
 	/** Open elements below the top level */
 	readonly #stack: Node[] = [];
@@ -223,19 +167,8 @@ export class Markdown {
 		this.#options = options;
 	}
 
-	/**
-	 * @param html Next chunk of HTML
-	 * @returns Markdown that is complete
-	 */
-	write(html: string) {
-		this.#input += html;
-		this.#parse(false);
-		return this.#read();
-	}
-
 	/** @returns The rest of the Markdown */
-	end() {
-		this.#parse(true);
+	#end() {
 		while (this.#stack.length) this.#close(this.#stack.at(-1)!.tag);
 		this.#flush();
 		if (this.#main === "before") {
@@ -256,24 +189,34 @@ export class Markdown {
 		return Render.stream(
 			(async function* () {
 				const markdown = new Markdown(options);
-				for await (const html of new Render(element))
-					yield markdown.write(String(html));
-				yield markdown.end();
+				for await (const chunk of new Render(element)) {
+					markdown.#chunk(chunk);
+					yield markdown.#read();
+				}
+				yield markdown.#end();
 			})(),
 			{ safe: true },
 		);
 	}
 
-	/**
-	 * Converts a complete HTML string.
-	 *
-	 * @param html HTML
-	 * @param options Conversion options
-	 * @returns Markdown
-	 */
-	static convert(html: string, options?: Markdown.Options) {
-		const markdown = new Markdown(options);
-		return markdown.write(html) + markdown.end();
+	/** @param chunk Rendered chunk, read by its kind instead of parsing its HTML */
+	#chunk(chunk: Render.Chunk) {
+		if (chunk instanceof Group) {
+			for (const child of chunk.chunks) this.#chunk(child);
+		} else if (chunk instanceof Tag) {
+			if (!chunk.props) return this.#close(chunk.name);
+
+			const attrs: Record<string, string> = {};
+			for (const name in chunk.props) {
+				const value = chunk.props[name];
+				// as `jsx` writes them, `true` is an attribute without a value
+				if (name !== "children" && value != null && value !== false)
+					attrs[name.toLowerCase()] = value === true ? "" : String(value);
+			}
+			this.#open(chunk.name, attrs);
+			if (chunk.closed) this.#close(chunk.name);
+		} else if (chunk.safe) this.#raw(chunk.value);
+		else this.#text(chunk.value);
 	}
 
 	#read() {
@@ -282,117 +225,36 @@ export class Markdown {
 		return output;
 	}
 
-	/** @param end Parse incomplete input as text */
-	#parse(end: boolean) {
-		let input = this.#input;
-
-		while (input) {
-			if (this.#rawTag) {
-				const close = input.toLowerCase().indexOf(`</${this.#rawTag}`);
-				if (close === -1) {
-					if (!end) break;
-					this.#text(input);
-					input = "";
-					break;
-				}
-				this.#text(input.slice(0, close));
-				input = input.slice(close);
-				this.#rawTag = undefined;
-				continue;
-			}
-
-			const lt = input.indexOf("<");
-
-			if (lt !== 0) {
-				let text = lt === -1 ? input : input.slice(0, lt);
-
-				if (lt === -1 && !end) {
-					// hold back a character reference that may continue in the next chunk
-					const amp = text.lastIndexOf("&");
-					if (amp !== -1 && amp > text.length - 12 && !text.includes(";", amp))
-						text = text.slice(0, amp);
-				}
-
-				this.#text(text);
-				input = input.slice(text.length);
-				if (lt === -1) break;
-				continue;
-			}
-
-			if (input.startsWith("<!--")) {
-				const close = input.indexOf("-->");
-				if (close === -1) break;
-				input = input.slice(close + 3);
-				continue;
-			}
-
-			if (input[1] === "!" || input[1] === "?") {
-				const close = input.indexOf(">");
-				if (close === -1) break;
-				input = input.slice(close + 1);
-				continue;
-			}
-
-			const closing = input[1] === "/";
-			const start = closing ? 2 : 1;
-
-			if (!/[a-z]/i.test(input[start] ?? (end ? "" : "a"))) {
-				// not a tag
-				this.#text("<");
-				input = input.slice(1);
-				continue;
-			}
-
-			// find the end of the tag outside of quoted attribute values
-			let quote: string | undefined;
-			let i = start;
-			for (; i < input.length; i++) {
-				const char = input[i];
-				if (quote) {
-					if (char === quote) quote = undefined;
-				} else if (char === '"' || char === "'") quote = char;
-				else if (char === ">") break;
-			}
-			if (i === input.length) break; // incomplete
-
-			const source = input.slice(start, i);
-			input = input.slice(i + 1);
-			const tag = /^[^\s/>]+/.exec(source)![0].toLowerCase();
-
-			if (closing) {
-				this.#close(tag);
-			} else {
-				const attrs: Record<string, string> = {};
-				for (const [, name, a, b, c] of source
-					.slice(tag.length)
-					.matchAll(
-						/([^\s"'=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g,
-					)) {
-					attrs[name!.toLowerCase()] = this.#decode(a ?? b ?? c ?? "");
-				}
-				this.#open(tag, attrs);
-				if (Markdown.#void.has(tag) || source.endsWith("/")) this.#close(tag);
-				else if (Markdown.#raw.has(tag)) this.#rawTag = tag;
-			}
-		}
-
-		this.#input = input;
-	}
-
-	/** @param text Decoded and added to the open element */
+	/** @param text Added to the open element */
 	#text(text: string) {
 		if (!text || this.#skipping) return;
 		const parent = this.#stack.at(-1) ?? this.#pending;
-		const decoded = this.#decode(text);
 		const last = parent.children.length - 1;
 		if (typeof parent.children[last] === "string")
-			parent.children[last] += decoded;
-		else parent.children.push(decoded);
+			parent.children[last] += text;
+		else parent.children.push(text);
+	}
+
+	/**
+	 * Raw HTML, such as from `Render.html`, is valid Markdown, so it is
+	 * written as it is.
+	 *
+	 * @param html HTML
+	 */
+	#raw(html: string) {
+		if (!html || this.#skipping) return;
+		const parent = this.#stack.at(-1);
+		if (parent) parent.children.push(Markdown.#node("!", {}, html));
+		else {
+			// its own block at the top level
+			this.#flush();
+			this.#write(html);
+		}
 	}
 
 	#open(tag: string, attrs: Record<string, string>) {
 		if (this.#skipping) {
-			if (!Markdown.#void.has(tag)) this.#skipping++;
+			this.#skipping++;
 			return;
 		}
 
@@ -401,7 +263,7 @@ export class Markdown {
 			"hidden" in attrs ||
 			attrs["aria-hidden"] === "true"
 		) {
-			if (!Markdown.#void.has(tag)) this.#skipping = 1;
+			this.#skipping = 1;
 			return;
 		}
 
@@ -420,11 +282,6 @@ export class Markdown {
 			return;
 		}
 
-		const implicit = Markdown.#implicit[tag];
-		if (implicit && implicit.includes(this.#stack.at(-1)?.tag ?? "")) {
-			this.#close(this.#stack.at(-1)!.tag);
-		}
-
 		if (!this.#stack.length) {
 			if (Markdown.#containers.has(tag)) {
 				this.#flush();
@@ -441,7 +298,7 @@ export class Markdown {
 
 	#close(tag: string) {
 		if (this.#skipping) {
-			if (!Markdown.#void.has(tag)) this.#skipping--;
+			this.#skipping--;
 			return;
 		}
 
@@ -579,6 +436,8 @@ export class Markdown {
 				return this.#table(node);
 			case "form":
 				return this.#form(node);
+			case "!":
+				return children[0] as string;
 			default:
 				return this.#blocks(children);
 		}
@@ -916,6 +775,9 @@ export class Markdown {
 				case "br":
 					out += "\n";
 					break;
+				case "!":
+					out += child.children[0];
+					break;
 				case "strong":
 				case "b":
 					out += Markdown.#wrap(inner(), "**");
@@ -1006,32 +868,16 @@ export class Markdown {
 	}
 
 	/**
-	 * @param text Text with character references
-	 * @returns Decoded text
-	 */
-	#decode(text: string) {
-		if (!text.includes("&")) return text;
-		return text.replace(
-			/&(?:#(\d+)|#x([\da-f]+)|([a-z]+\d*));/gi,
-			(match, dec, hex, name) => {
-				if (dec || hex) {
-					const code = parseInt(dec ?? hex, dec ? 10 : 16);
-					return code > 0 && code <= 0x10ffff
-						? String.fromCodePoint(code)
-						: match;
-				}
-				return Markdown.#entities[name.toLowerCase()] ?? match;
-			},
-		);
-	}
-
-	/**
 	 * @param tag Tag name
 	 * @param attrs Attributes
 	 * @returns New element node
 	 */
-	static #node(tag: string, attrs: Record<string, string> = {}): Node {
-		return { tag, attrs, children: [] };
+	static #node(
+		tag: string,
+		attrs: Record<string, string> = {},
+		...children: string[]
+	): Node {
+		return { tag, attrs, children };
 	}
 
 	static #field(label: string, name: string, type: string): Field {

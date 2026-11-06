@@ -93,3 +93,12 @@ test("parallel child errors close sibling generators", async () => {
 	).rejects.toThrow("failed");
 	expect(closed).toBe(true);
 });
+
+test("a chunk rendered more than once is never changed", async () => {
+	const star = Render.html("★");
+	const later = new Promise((resolve) => setTimeout(() => resolve("a"), 5));
+
+	// the second child renders while the first waits, so its chunks are queued
+	expect(await Render.string([later, [star, "b"]])).toBe("a★b");
+	expect(await Render.string([star, star])).toBe("★★");
+});

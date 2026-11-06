@@ -1,5 +1,6 @@
 import type { FrontmatterSchema } from "@/lib/md";
 import type { Result } from "@robino/md";
+import type { Middleware } from "ovr";
 
 export const content = import.meta.glob<Result<typeof FrontmatterSchema>>(
 	`@/server/docs/*.md`,
@@ -32,6 +33,15 @@ export const demos = {
 			{ eager: true },
 		)),
 };
+
+/**
+ * Pages only change with a deployment, which clears Vercel's cache, so the
+ * cache keeps them, a copy for each `Accept`, HTML or Markdown.
+ *
+ * @param c Request context
+ */
+export const cache = (c: Pick<Middleware.Context, "res">) =>
+	c.res.headers.set("cache-control", "public, max-age=0, s-maxage=31536000");
 
 export const md = (result: Result<typeof FrontmatterSchema>) => {
 	return `# ${result.frontmatter.title}\n\n${

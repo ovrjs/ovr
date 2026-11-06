@@ -10,34 +10,77 @@ type Read = {
 	result: IteratorResult<Chunk, void>;
 };
 
-/** Chunk containing the HTML from a rendered element */
+/** Chunk of a rendered element: text, or HTML */
 class Chunk {
-	/** Safe value to render */
-	#value: string;
+	/** Text, or HTML when `safe` */
+	readonly value: string;
+
+	/** `true` if the value is HTML, which is not escaped */
+	readonly safe: boolean | undefined;
 
 	/**
-	 * Chunk containing the HTML from a rendered element.
+	 * Chunk of a rendered element.
 	 *
-	 * @param html string of HTML to escape
-	 * @param safe Set to `true` if the HTML is safe and should not be escaped
+	 * @param value Text, escaped when it is rendered as HTML
+	 * @param safe Set to `true` if the value is safe HTML that should not be escaped
 	 */
-	constructor(html: unknown, safe?: boolean) {
-		const value = String(html ?? "");
-		this.#value = safe ? value : Render.escape(value);
+	constructor(value: unknown, safe?: boolean) {
+		this.value = String(value ?? "");
+		this.safe = safe;
 	}
 
 	/**
-	 * @returns Safe value to render
+	 * @returns Safe HTML to render
 	 */
-	toString() {
-		return this.#value;
+	toString(): string {
+		return this.safe ? this.value : Render.escape(this.value);
 	}
+}
+
+/**
+ * Start or end tag of an element, internal to ovr. It keeps the element's
+ * name and props, so the render can also be written as Markdown.
+ */
+export class Tag extends Chunk {
+	/** Tag name */
+	readonly name: string;
+
+	/** Props of a start tag, `undefined` for an end tag */
+	readonly props: JSX.Props | undefined;
+
+	/** `true` for a start tag without an end tag, such as `<input>` */
+	readonly closed: boolean | undefined;
 
 	/**
-	 * @param chunk Chunk to append to the end of the chunk
+	 * @param html The tag's HTML
+	 * @param name Tag name
+	 * @param props Props of a start tag
+	 * @param closed The element has no end tag
 	 */
-	concat(chunk: Chunk) {
-		this.#value += chunk;
+	constructor(html: string, name: string, props?: JSX.Props, closed?: boolean) {
+		super(html, true);
+		this.name = name;
+		this.props = props;
+		this.closed = closed;
+	}
+}
+
+/**
+ * Chunks a later sibling rendered while an earlier one was still rendering,
+ * yielded together once they are next. Internal to ovr.
+ */
+export class Group extends Chunk {
+	/** Chunks in order */
+	readonly chunks: Chunk[];
+
+	/** @param chunks Chunks in order */
+	constructor(chunks: Chunk[]) {
+		super("", true);
+		this.chunks = chunks;
+	}
+
+	override toString() {
+		return this.chunks.join("");
 	}
 }
 
@@ -130,7 +173,13 @@ export class Render {
 					(el) => new Render(el, this.#options),
 				);
 				const n = renders.length;
-				const queue = new Array<Chunk | null>(n);
+				// chunks are queued, never changed, the same chunk may be rendered again
+				const queue = new Array<Chunk[] | null>(n);
+				const queued = (i: number) => {
+					const chunks = queue[i]!;
+					queue[i] = null;
+					return chunks.length === 1 ? chunks[0]! : new Group(chunks);
+				};
 				const complete = new Uint8Array(n);
 				let current = 0;
 
@@ -140,11 +189,8 @@ export class Render {
 
 						if (m.i === current) {
 							while (++current < n) {
-								if (queue[current]) {
-									// yield whatever is in the next queue even if it hasn't completed yet
-									yield queue[current]!;
-									queue[current] = null;
-								}
+								// yield whatever is in the next queue even if it hasn't completed yet
+								if (queue[current]) yield queued(current);
 
 								// if it hasn't completed, stop iterating to the next
 								if (!complete[current]) break;
@@ -154,13 +200,12 @@ export class Render {
 						yield m.result.value; // stream the current value directly
 					} else {
 						// queue the value for later
-						if (queue[m.i]) queue[m.i]!.concat(m.result.value);
-						else queue[m.i] = m.result.value;
+						(queue[m.i] ??= []).push(m.result.value);
 					}
 				}
 
 				// clear the queue
-				yield* queue.filter((chunk) => chunk !== null);
+				for (let i = 0; i < n; i++) if (queue[i]) yield queued(i);
 				return;
 			}
 		}

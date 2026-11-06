@@ -105,6 +105,7 @@ Route.get("/api/:id").use((c) => {
 	c.cookie.set(name, value, options); // set cookie
 
 	if (c.etag(str)) return; // ETag - sets 304 if match
+	if (c.md(source, status)) return; // Markdown source, when it is asked for, see Agents
 
 	// return anything from middleware (see next section)
 	return <p>stream</p>;

@@ -128,6 +128,9 @@ export class Context<
 	/** Forwarded app options */
 	readonly #options: App.Options;
 
+	/** `Vary: Accept` is set */
+	#varied = false;
+
 	/** Cached result from `data()` to avoid re-reading request bodies. */
 	#parsed?: Promise<Context.Result<Shape>>;
 
@@ -181,6 +184,31 @@ export class Context<
 		this.res.body = body;
 		this.res.status = status;
 		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.text));
+	}
+
+	/**
+	 * Responds with Markdown when the request asks for Markdown, such as an
+	 * agent's, instead of the Markdown written from the page. Use it for a page
+	 * that is a Markdown document, so agents read its source.
+	 *
+	 * ```tsx
+	 * if (c.md(post.body)) return;
+	 *
+	 * return <Post post={post} />;
+	 * ```
+	 *
+	 * @param body Markdown body
+	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
+	 * @returns `true` if it responded, otherwise the page renders for the browser
+	 */
+	md(body: BodyInit | null, status?: number) {
+		if (!this.#markdown()) return false;
+
+		this.res.body = body;
+		this.res.status = status;
+		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
+
+		return true;
 	}
 
 	/**
@@ -397,9 +425,7 @@ export class Context<
 
 			if (!mime || mime === Mime.type.html) {
 				// pages are HTML for browsers and Markdown for agents that ask for it
-				this.res.headers.append(Header.name.vary, "Accept");
-
-				if (Context.#markdown(this.req)) {
+				if (this.#markdown()) {
 					this.res.body = Markdown.stream(r, {
 						base: this.url,
 						tool: agent.get(this.req)?.tool,
@@ -424,11 +450,17 @@ export class Context<
 	}
 
 	/**
-	 * @param req Request
+	 * The response depends on `Accept` once this is asked, so it varies by it.
+	 *
 	 * @returns `true` if the request asks for Markdown over HTML
 	 */
-	static #markdown(req: Request) {
-		const accept = req.headers.get(Header.name.accept);
+	#markdown() {
+		if (!this.#varied) {
+			this.#varied = true;
+			this.res.headers.append(Header.name.vary, "Accept");
+		}
+
+		const accept = this.req.headers.get(Header.name.accept);
 		// only an explicit request, browsers accept */*
 		const markdown = Header.quality(accept, Mime.type.md, true);
 

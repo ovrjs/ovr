@@ -7,7 +7,7 @@ An ovr app works for AI agents the same way it works for people. Pages render as
 
 ## Markdown
 
-A request with `Accept: text/markdown` gets the page as Markdown. Nothing changes in your routes: the JSX renders to HTML as usual, and ovr converts it while it streams, writing each block as soon as it is complete.
+A request with `Accept: text/markdown` gets the page as Markdown. Nothing changes in your routes: the same JSX renders as Markdown instead of HTML, writing each block as soon as it is complete.
 
 ```sh
 curl -H "Accept: text/markdown" https://example.com/posts
@@ -29,8 +29,25 @@ Submit: Create post
 - Links and images are absolute, so an agent can follow them.
 - Forms are described by where they submit, their fields with types, choices, and current values, and errors from a failed submission.
 - Scripts, styles, and elements with `hidden` or `aria-hidden="true"` are left out. `<noscript>` content is kept, since agents do not run scripts.
+- HTML from `Render.html` is written as it is, since Markdown can contain HTML.
 
-Browsers get HTML: Markdown is only used when it is listed in `Accept` and preferred at least as much as HTML. These responses include `Vary: Accept` for caches. Responses with another content type, such as XML, are not converted.
+Browsers get HTML: Markdown is only used when it is listed in `Accept` and preferred at least as much as HTML. These responses include `Vary: Accept` for caches. Responses with another content type, such as XML, are not converted. A page served from a static file, such as a prerendered one, never reaches the app, so it is always HTML.
+
+### Markdown source
+
+A page that is a Markdown document, such as a blog post or a docs page, can give agents its source instead. Its HTML from a Markdown processor, with highlighted code, is often several times longer.
+
+```tsx
+const post = Route.get("/posts/:slug").use(async (c) => {
+	const post = await posts.get(c.params.slug);
+
+	if (c.md(post.markdown)) return;
+
+	return <Post html={post.html} />;
+});
+```
+
+`c.md(body, status)` responds with the Markdown and returns `true` when the request asks for Markdown, otherwise it returns `false` and the page renders for the browser. It runs in the handler, after the route's middleware, such as a sign-in check.
 
 ## MCP
 
