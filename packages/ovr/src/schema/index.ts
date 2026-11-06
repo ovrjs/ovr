@@ -46,6 +46,7 @@ const own = (data: Record<string, unknown>, name: string, value: unknown) => {
  * Add issues to a list, one at a time, since spreading a very long list
  * into `push` overflows the stack.
  *
+ * @template I Issue
  * @param issues List to add to
  * @param more Issues to add
  */
@@ -257,6 +258,7 @@ export namespace Schema {
 	 * Object schema with extend capability.
 	 *
 	 * @template S Object shape type
+	 * @template M How unknown keys are handled, `strip` by default
 	 */
 	export type Object<
 		S extends Object.Shape,
@@ -1913,6 +1915,13 @@ class ObjectSchema<
 	extend<E extends Schema.Object.Shape>(
 		extra: E,
 	): Schema.Object<ShapeUtil.Extend<Shape, E>, Mode>;
+	/**
+	 * Merge the shape of `extra`, an object schema, into the current shape.
+	 *
+	 * @template E Extra shape type
+	 * @param extra Object schema to merge
+	 * @returns New object schema with the merged shape
+	 */
 	extend<E extends Schema.Object.Shape>(
 		extra: Schema.Object<E>,
 	): Schema.Object<ShapeUtil.Extend<Shape, E>, Mode>;
@@ -2701,6 +2710,7 @@ class FieldSchema<
 	 * Use this for non-sensitive values that should refill after an invalid
 	 * redirect.
 	 *
+	 * @template U Input type, one that can persist: not a password or file
 	 * @returns Field that persists submitted values across invalid redirects
 	 */
 	persist<
@@ -2996,7 +3006,15 @@ export namespace Field {
 	/** Value type for select and radio options */
 	export type Values = readonly [string, ...string[]];
 
-	/** Field instance type */
+	/**
+	 * Field instance type
+	 *
+	 * @template Output Parsed value
+	 * @template Tag Element tag
+	 * @template Type Input type
+	 * @template Values Options of a select, radio, or checkbox group
+	 * @template Stream Whether the field streams as a multipart part
+	 */
 	export type Instance<
 		Output = unknown,
 		Tag extends Field.Tag = "input",
@@ -3295,6 +3313,7 @@ export class Field {
 	}
 
 	/**
+	 * @template T Input type
 	 * @param props Input props
 	 * @returns Generic input field
 	 */
@@ -3449,6 +3468,7 @@ export class Field {
 	}
 
 	/**
+	 * @template T Input type, `number` or `range`
 	 * @param props Input props
 	 * @returns Input field
 	 */

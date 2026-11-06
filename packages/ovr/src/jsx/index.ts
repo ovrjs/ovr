@@ -2,7 +2,17 @@ import { Render } from "../render/index.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 
 export namespace JSX {
+	/**
+	 * `T`, or a promise of it.
+	 *
+	 * @template T Value
+	 */
 	type MaybePromise<T> = T | Promise<T>;
+	/**
+	 * `T`, or a function returning it.
+	 *
+	 * @template T Value
+	 */
 	type MaybeFunction<T> = T | (() => T);
 
 	/** Standard HTML elements */
@@ -56,6 +66,7 @@ export class JSX {
 	 * The main function of the JSX transform cycle, each time JSX is encountered
 	 * it is passed into `jsx` to be resolved.
 	 *
+	 * @template P Props of the element or component
 	 * @param tag tag name or function component
 	 * @param props object containing all the properties and attributes passed to the element or component
 	 * @yields `Chunk`s of HTML

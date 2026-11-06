@@ -160,6 +160,7 @@ export class Context<
 	/**
 	 * Creates a JSON response.
 	 *
+	 * @template D Data, not a `bigint`, which JSON cannot represent
 	 * @param data passed into JSON.stringify to create the body
 	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 */
@@ -184,6 +185,7 @@ export class Context<
 	/**
 	 * Creates a redirect response.
 	 *
+	 * @template L Location: a URL, or a route without parameters
 	 * @param location redirect `Location` header
 	 * @param status HTTP status code
 	 *
@@ -297,7 +299,11 @@ export class Context<
 					: this.url.searchParams,
 			);
 
-			/** Add the URL to return to with the encoded invalid state. */
+			/**
+			 * Add the URL to return to with the encoded invalid state.
+			 *
+			 * @template R Parse result, with its search parameters
+			 */
 			const invalid = <R extends { search: FormSchema.Parse.Result.Search }>(
 				result: R,
 			) => {

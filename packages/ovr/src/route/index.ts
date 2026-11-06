@@ -29,7 +29,11 @@ export type ExtractParams<Pattern extends string = string> =
 				? { "*": string }
 				: {};
 
-/** `S` without leading or trailing whitespace */
+/**
+ * `S` without leading or trailing whitespace
+ *
+ * @template S String to trim
+ */
 type Trim<S extends string> = S extends ` ${infer R}` | `${infer R} `
 	? Trim<R>
 	: S extends `\n${infer R}` | `${infer R}\n` | `\t${infer R}` | `${infer R}\t`
@@ -283,7 +287,12 @@ export namespace Route {
 			>
 		: string;
 
-	/** A given option's value, `never` when it is missing or `undefined`. */
+	/**
+	 * A given option's value, `never` when it is missing or `undefined`.
+	 *
+	 * @template O Options
+	 * @template K Option name
+	 */
 	type Present<O, K extends string> = K extends keyof O
 		? NonNullable<O[K]>
 		: never;
@@ -468,6 +477,7 @@ export class Route<
 	 * Describe the route for agents. Only described routes are served to
 	 * them: as MCP tools, and GET routes as resources too.
 	 *
+	 * @template D Description, a string literal that is not blank
 	 * @param description What the route does, written for an agent, not blank
 	 * @returns The route
 	 */
@@ -488,6 +498,7 @@ export class Route<
 	 * Check and convert pattern parameters before the middleware runs.
 	 * A parameter that fails its schema responds `404`.
 	 *
+	 * @template P Schemas keyed by parameter name
 	 * @param schemas Schemas keyed by parameter name
 	 * @returns The route, with converted `c.params` types
 	 */
@@ -510,6 +521,7 @@ export class Route<
 	 * Set the form fields that `c.data()` parses, and that the route's `Form`
 	 * renders by default.
 	 *
+	 * @template S Field shape
 	 * @param fields Field shape or form schema
 	 * @returns The route with form helpers
 	 */

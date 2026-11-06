@@ -39,10 +39,20 @@ export class Mime {
 		mp: "multipart/form-data",
 	} as const;
 
+	/**
+	 * @template T Subtype
+	 * @param type Subtype, such as `html`
+	 * @returns The `text/` media type
+	 */
 	static #text<T extends string>(type: T) {
 		return `text/${type}` as const;
 	}
 
+	/**
+	 * @template T Subtype
+	 * @param type Subtype, such as `json`
+	 * @returns The `application/` media type
+	 */
 	static #application<T extends string>(type: T) {
 		return `application/${type}` as const;
 	}
@@ -93,8 +103,9 @@ export class Header {
 	} as const;
 
 	/**
-	 * @param mime
-	 * @returns mime; charset=utf-8
+	 * @template M Media type
+	 * @param mime Media type
+	 * @returns The media type with `; charset=utf-8`
 	 */
 	static utf8<M extends string>(mime: M) {
 		return `${mime}; charset=utf-8` as const;

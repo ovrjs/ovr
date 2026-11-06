@@ -111,6 +111,8 @@ export namespace Cookie {
 	 * Configuration options for setting a cookie.
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie)
+	 *
+	 * @template Name Cookie name, whose `__Host-` or `__Secure-` prefix requires options
 	 */
 	export type Options<Name extends string = string> =
 		Name extends `__${"host" | "secure"}-${string}`
@@ -154,6 +156,7 @@ export class Cookie {
 	/**
 	 * Sets a cookie on the response using the `Set-Cookie` header.
 	 *
+	 * @template Name Cookie name, whose prefix selects the options it requires
 	 * @param name Name of the cookie
 	 * @param value Value to store
 	 * @param options Options configuration

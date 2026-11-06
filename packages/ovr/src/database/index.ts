@@ -35,7 +35,11 @@ export namespace Database {
 		readonly sql: string;
 	}
 
-	/** Tables accessible by name on the database, none when names are unknown so any database is a `Database`. */
+	/**
+	 * Tables accessible by name on the database, none when names are unknown so any database is a `Database`.
+	 *
+	 * @template T Tables of the database
+	 */
 	export type Tables<T extends readonly Table.Any[]> =
 		string extends T[number]["name"]
 			? {}
@@ -44,7 +48,11 @@ export namespace Database {
 	/** Names used by database members, tables cannot use them. */
 	export type Reserved = "sql" | "migrate" | "check";
 
-	/** Tables with reserved names are rejected. */
+	/**
+	 * Tables with reserved names are rejected.
+	 *
+	 * @template T Tables to check
+	 */
 	export type Valid<T extends readonly Table.Any[]> = {
 		readonly [I in keyof T]: T[I] extends { name: Reserved } ? never : T[I];
 	};
@@ -63,6 +71,7 @@ export namespace Database {
 		 * Validate rows and build the `(columns) VALUES (...)` of an insert.
 		 * Omitted columns use their SQL default.
 		 *
+		 * @template T Table to insert into
 		 * @param table Table to insert into
 		 * @param rows One row or several, an empty list throws
 		 * @returns Columns and values
@@ -75,6 +84,7 @@ export namespace Database {
 		/**
 		 * Validate values and build the assignments of an update.
 		 *
+		 * @template T Table to update
 		 * @param table Table to update
 		 * @param values Columns to change
 		 * @returns Assignments
@@ -82,11 +92,19 @@ export namespace Database {
 		set<T extends Table.Any>(table: T, values: Update<T>): Sql;
 	}
 
-	/** Insert values of a table. */
+	/**
+	 * Insert values of a table.
+	 *
+	 * @template T Table
+	 */
 	export type Insert<T extends Table.Any> =
 		T extends Table<string, infer S, infer O> ? Table.Insert<S, O> : never;
 
-	/** Update values of a table. */
+	/**
+	 * Update values of a table.
+	 *
+	 * @template T Table
+	 */
 	export type Update<T extends Table.Any> =
 		T extends Table<string, infer S, any> ? Table.Update<S> : never;
 
@@ -205,6 +223,8 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 	/**
 	 * Run the query once, the first time the result is requested.
 	 *
+	 * @template A Result of `resolve`
+	 * @template B Result of `reject`
 	 * @param resolve Receives the rows
 	 * @param reject Receives the query or validation error
 	 * @returns Promise of the callback result
@@ -217,6 +237,7 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 	}
 
 	/**
+	 * @template B Result of `reject`
 	 * @param reject Receives the query or validation error
 	 * @returns Promise of the rows or the callback result
 	 */
@@ -509,7 +530,11 @@ export const referenced = new WeakMap<
  */
 export const references = new WeakMap<object, Map<Table.Any, Table.Any>>();
 
-/** Database members, tables are added by name. */
+/**
+ * Database members, tables are added by name.
+ *
+ * @template T Tables of the database
+ */
 class Base<T extends readonly Table.Any[]> {
 	/** Names database members use. */
 	/** Postgres types able to store each kind of column value, preferred first. */
@@ -1163,6 +1188,8 @@ class Base<T extends readonly Table.Any[]> {
  *
  * const rows = await database.sql`SELECT * FROM ${database.users}`.parse(database.users);
  * ```
+ *
+ * @template T Tables of the database, each available by name
  */
 export const Database = Base as Omit<typeof Base, "prototype"> &
 	(new <const T extends readonly Table.Any[]>(
@@ -1170,6 +1197,10 @@ export const Database = Base as Omit<typeof Base, "prototype"> &
 		tables: T & Database.Valid<T>,
 	) => Database<T>);
 
-/** Postgres database with its tables accessible by name. */
+/**
+ * Postgres database with its tables accessible by name.
+ *
+ * @template T Tables of the database
+ */
 export type Database<T extends readonly Table.Any[] = readonly Table.Any[]> =
 	Base<T> & Database.Tables<T>;

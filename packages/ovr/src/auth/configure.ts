@@ -12,7 +12,11 @@ import { Passkey } from "./passkey.js";
 import type { State } from "./state.js";
 import type { Storage } from "./storage.js";
 
-/** Construct startup-complete handlers and request-scoped UI components. */
+/**
+ * Construct startup-complete handlers and request-scoped UI components.
+ *
+ * @template U Users table
+ */
 export function configure<U extends Auth.Users>(
 	options: Auth.Options<U>,
 	storage: Storage,

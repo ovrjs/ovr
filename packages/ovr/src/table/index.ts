@@ -4,10 +4,18 @@ export namespace Table {
 	/** Column schemas keyed by column name. */
 	export type Shape = Schema.Object.Shape;
 
-	/** Column name of a shape. */
+	/**
+	 * Column name of a shape.
+	 *
+	 * @template S Table shape
+	 */
 	export type Key<S extends Shape> = Extract<keyof S, string>;
 
-	/** Postgres schema and the columns the database supplies. */
+	/**
+	 * Postgres schema and the columns the database supplies.
+	 *
+	 * @template S Table shape
+	 */
 	export interface Options<S extends Shape = Shape> {
 		/** Schema containing the table, defaults to the connection's search path. */
 		readonly schema?: string;
@@ -22,10 +30,19 @@ export namespace Table {
 	/** Any table. */
 	export type Any = Table<string, any, any>;
 
-	/** Row returned from the table. */
+	/**
+	 * Row returned from the table.
+	 *
+	 * @template S Table shape
+	 */
 	export type Row<S extends Shape> = { [K in keyof S]: Schema.Infer<S[K]> };
 
-	/** Column names that may be omitted from an insert: nullable or supplied by the database. */
+	/**
+	 * Column names that may be omitted from an insert: nullable or supplied by the database.
+	 *
+	 * @template S Table shape
+	 * @template O Table options
+	 */
 	export type Defaulted<S extends Shape, O extends Options<S>> =
 		| Extract<NonNullable<O["default"]>[number], Key<S>>
 		| {
@@ -36,12 +53,21 @@ export namespace Table {
 						: never;
 		  }[Key<S>];
 
-	/** Values accepted by `sql.values` for one row. */
+	/**
+	 * Values accepted by `sql.values` for one row.
+	 *
+	 * @template S Table shape
+	 * @template O Table options
+	 */
 	export type Insert<S extends Shape, O extends Options<S>> = {
 		[K in Exclude<Key<S>, Defaulted<S, O>>]: Schema.Infer<S[K]>;
 	} & { [K in Defaulted<S, O>]?: Schema.Infer<S[K]> };
 
-	/** Values accepted by `sql.set`. */
+	/**
+	 * Values accepted by `sql.set`.
+	 *
+	 * @template S Table shape
+	 */
 	export type Update<S extends Shape> = Partial<Row<S>>;
 
 	/** Kind of value a column stores, each compatible with several Postgres types. */

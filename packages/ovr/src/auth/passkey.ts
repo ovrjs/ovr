@@ -14,11 +14,19 @@ import type { Storage } from "./storage.js";
 import { Token } from "./token.js";
 
 export namespace Passkey {
-	/** Composable authentication form with an accessible error component. */
+	/**
+	 * Composable authentication form with an accessible error component.
+	 *
+	 * @template Pattern Pattern of the route the form submits to
+	 */
 	export type Component<Pattern extends string> = Route.Form<Pattern> & {
 		Error: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 	};
-	/** POST route contract retaining typed pathname parameters. */
+	/**
+	 * POST route contract retaining typed pathname parameters.
+	 *
+	 * @template Pattern Route pattern
+	 */
 	export interface Post<Pattern extends string> extends Pick<
 		Route.Post,
 		"Fields" | "extend" | "names"
@@ -90,7 +98,11 @@ export class Passkey {
 		this.#auth = auth;
 	}
 
-	/** Complete a passkey POST schema at startup, before mounting it in an App. */
+	/**
+	 * Complete a passkey POST schema at startup, before mounting it in an App.
+	 *
+	 * @template T Passkey POST route
+	 */
 	static prepare<T extends Pick<Passkey.Post<string>, "extend" | "names">>(
 		route: T,
 	) {
@@ -101,7 +113,11 @@ export class Passkey {
 		return route;
 	}
 
-	/** Create a form in the handler before returning JSX. */
+	/**
+	 * Create a form in the handler before returning JSX.
+	 *
+	 * @template Pattern Pattern of the route the form submits to
+	 */
 	form<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
 		method: "register" | "login",

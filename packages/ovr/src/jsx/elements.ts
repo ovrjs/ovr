@@ -711,6 +711,12 @@ type VideoAttributes = Attributes<{
 }>;
 
 // XML
+/**
+ * Attributes of an XML element.
+ *
+ * @template P Element attributes
+ * @template Children Children the element accepts
+ */
 type XMLAttributes<
 	P extends JSX.Props = JSX.Props,
 	Children = JSX.Element,
@@ -744,6 +750,12 @@ type AtomLinkAttributes = {
 
 // SVG
 // SVG
+/**
+ * Attributes of an SVG element.
+ *
+ * @template P Element attributes
+ * @template Children Children the element accepts
+ */
 type SvgAttributes<
 	P extends JSX.Props = JSX.Props,
 	Children = JSX.Element,

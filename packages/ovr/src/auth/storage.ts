@@ -9,6 +9,11 @@ import { Table } from "../table/index.js";
 import { Codec, Time } from "../util/index.js";
 import type { Auth } from "./index.js";
 
+/**
+ * A value, or a promise of it, from storage.
+ *
+ * @template T Value
+ */
 type Result<T> = T | Promise<T>;
 
 export namespace Storage {

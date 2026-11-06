@@ -21,7 +21,11 @@ export namespace Auth {
 	export type Context = Pick<ContextType, "url" | "cookie" | "res" | "form"> & {
 		data: (options?: { payload: number }) => Promise<unknown>;
 	};
-	/** Request-scoped UI pieces with application field names preserved. */
+	/**
+	 * Request-scoped UI pieces with application field names preserved.
+	 *
+	 * @template Shape Registration fields of the users table
+	 */
 	export interface Forms<Shape extends Form.Shape> {
 		Register: Route.Form<string> & {
 			Field: Form<Shape>["Field"];
@@ -48,7 +52,11 @@ export namespace Auth {
 		};
 	};
 
-	/** Columns of a users table the server sets with defaults, such as a role. */
+	/**
+	 * Columns of a users table the server sets with defaults, such as a role.
+	 *
+	 * @template U Users table
+	 */
 	export type Defaulted<U extends Users> = U["options"] extends {
 		readonly default: readonly (infer K)[];
 	}
@@ -58,6 +66,8 @@ export namespace Auth {
 	/**
 	 * Registration fields of a users table, its form fields except `id` and
 	 * columns with defaults.
+	 *
+	 * @template U Users table
 	 */
 	export type Fields<U extends Users> = {
 		[
@@ -69,7 +79,11 @@ export namespace Auth {
 		]: Extract<U["shape"][K], Field.Any>;
 	};
 
-	/** Authentication configuration; all instances share the database. */
+	/**
+	 * Authentication configuration; all instances share the database.
+	 *
+	 * @template U Users table
+	 */
 	export interface Options<U extends Users = Users> {
 		/** Signing secret(s), each at least 32 UTF-8 bytes. Seal with the first; accept all during rotation. */
 		readonly secret: string | readonly [string, ...string[]];
@@ -145,7 +159,11 @@ export namespace Auth {
 	}
 }
 
-/** Complete passkey authentication stored in the application's Postgres database. */
+/**
+ * Complete passkey authentication stored in the application's Postgres database.
+ *
+ * @template U Users table, whose form fields are the registration form
+ */
 export class Auth<U extends Auth.Users = Auth.Users> {
 	/**
 	 * Tables Auth stores its data in, include them in the database's tables.
