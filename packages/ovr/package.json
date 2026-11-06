@@ -1,6 +1,6 @@
 {
 	"name": "ovr",
-	"description": "The Streaming Framework",
+	"description": "Your app is the API. Each route serves people a page and agents Markdown and MCP tools, with forms, Postgres, and passkey sign-in built in.",
 	"version": "6.2.5",
 	"license": "MIT",
 	"repository": {

@@ -1,5 +1,7 @@
 # ovr
 
+Your app is the API. Write each route once: people get pages and forms, agents get Markdown and MCP tools, through the same handler. Forms, validation, Postgres, and passkey sign-in are built in, with zero dependencies.
+
 ovr supports only the latest Node.js LTS release and current browsers.
 
 ```bash

@@ -48,37 +48,36 @@ export const page = o.Route.get("/")
 function* Features() {
 	const features = [
 		{
-			title: "Async Generator JSX",
-			href: "/#introduction",
+			title: "People and Agents",
+			href: "/10-agents",
 			content:
-				"Stream HTML with familiar JSX components, no client-side JS required.",
+				"Pages as Markdown, routes as MCP tools, and forms as WebMCP tools.",
 		},
 		{
-			title: "Performance First",
-			href: "/demo/parallel",
-			noPrefetch: true,
-			content: "Run operations in parallel and stream results on the fly.",
-		},
-		{
-			title: "Type-Safe Forms",
+			title: "Generated Forms",
 			href: "/demo/form",
 			noPrefetch: true,
-			content: "Generate forms, validate input, and stream uploads.",
+			content: "Forms from schemas, with validation and values kept on errors.",
 		},
 		{
-			title: "Lightweight",
-			href: "https://npmgraph.js.org/?q=ovr",
-			content: "Essential features, zero dependencies.",
+			title: "Postgres",
+			href: "/08-database",
+			content: "Tables, typed queries, and migrations.",
 		},
 		{
-			title: "Streaming Uploads",
-			href: "/06-multipart",
-			content: "Low memory multipart form data streaming.",
+			title: "Passkey Sign-In",
+			href: "/09-auth",
+			content: "For people, and for the agents they approve.",
 		},
 		{
-			title: "Web Standards",
+			title: "Streaming JSX",
+			href: "/#streaming",
+			content: "Components render in parallel and stream in order.",
+		},
+		{
+			title: "Zero Dependencies",
 			href: "/01-get-started#compatibility",
-			content: "Built on the Fetch API, ovr runs everywhere.",
+			content: "Built on web standards, ovr runs anywhere fetch does.",
 		},
 	];
 
