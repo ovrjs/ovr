@@ -64,7 +64,7 @@ const done = Route.post("/todos/:id/done")
 >
 	<div>
 		<label for="text">Todo</label>
-		<input id="text" type="text" name="text" />
+		<input id="text" required type="text" name="text" />
 	</div>
 	<button>Add</button>
 </form>
@@ -84,7 +84,7 @@ The form also names its tool for [WebMCP](/10-agents#webmcp), so an agent in the
 
 **Form:** `POST https://example.com/todos`
 
-- Todo `text` (text)
+- Todo `text` (text, required)
 
 Submit: Add
 ```

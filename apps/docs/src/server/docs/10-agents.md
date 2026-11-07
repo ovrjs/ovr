@@ -20,14 +20,14 @@ curl -H "Accept: text/markdown" https://example.com/posts
 
 **Form:** `POST https://example.com/posts`
 
-- Title `title` (text)
+- Title `title` (text, required)
 
 Submit: Create post
 ```
 
 - When the page has a `<main>` element, only its contents are written, leaving out the navigation and footer.
 - Links and images are absolute, so an agent can follow them.
-- Forms are described by where they submit, their fields with types, choices, and current values, and errors from a failed submission.
+- Forms are described by where they submit, their fields with types, rules such as `required`, choices, and current values, and errors from a failed submission.
 - Scripts, styles, and elements with `hidden` or `aria-hidden="true"` are left out. `<noscript>` content is kept, since agents do not run scripts.
 - Raw markup from `Markup.raw` is written as it is, since Markdown can contain HTML.
 

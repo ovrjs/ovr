@@ -314,7 +314,7 @@ describe("Mcp", () => {
 				// not a tool, so described in full
 				"**Form:** `POST http://localhost/notes/7/archive`",
 				"",
-				"- reason `reason` (text)",
+				"- reason `reason` (text, required)",
 				"",
 				"Submit: Submit",
 				"",

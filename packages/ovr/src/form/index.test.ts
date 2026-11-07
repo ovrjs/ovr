@@ -1,5 +1,5 @@
-import { Multipart } from "../multipart/index.js";
 import { Markup } from "../markup/index.js";
+import { Multipart } from "../multipart/index.js";
 import type { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
 import { Field, Form } from "./index.js";
@@ -593,8 +593,44 @@ describe("Form schema", () => {
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(1);
-		expect(html.includes('<input id="first" autofocus')).toBe(true);
-		expect(html.includes('<input id="second" autofocus')).toBe(false);
+		expect(html.includes('<input id="first" required autofocus')).toBe(true);
+		expect(html.includes('<input id="second" required autofocus')).toBe(false);
+	});
+
+	test("render marks controls that can't be left empty as required", async () => {
+		const form = Form.from({
+			text: Field.text(),
+			optional: Field.text().optional(),
+			fallback: Field.text().default("x"),
+			number: Field.number(),
+			file: Field.file(),
+			agree: Field.checkbox(),
+			tags: Field.checkboxes(["a", "b"]),
+			size: Field.radio(["s", "m"]),
+			kinds: Field.multiselect(["a", "b"]),
+			token: Field.hidden(),
+		});
+		const html = await Markup.string(form.Fields());
+		const required = (name: string) =>
+			[...html.matchAll(/<(?:input|select|textarea)\b[^>]*>/g)]
+				.map(([tag]) => tag)
+				.filter((tag) => tag.includes(`name="${name}"`))
+				.map((tag) => / required[ >]/.test(tag));
+
+		expect(required("text")).toEqual([true]);
+		expect(required("optional")).toEqual([false]);
+		expect(required("fallback")).toEqual([false]);
+		expect(required("number")).toEqual([true]);
+		expect(required("file")).toEqual([true]);
+		expect(required("agree")).toEqual([false]);
+		expect(required("tags")).toEqual([false, false]);
+		expect(required("size")).toEqual([true, true]);
+		expect(required("kinds")).toEqual([true]);
+		expect(required("token")).toEqual([false]);
+
+		expect(
+			await Markup.string(form.Field({ name: "text", required: false })),
+		).not.toContain("required");
 	});
 
 	test("render state without issues does not autofocus the first field", async () => {

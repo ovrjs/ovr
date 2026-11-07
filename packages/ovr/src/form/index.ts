@@ -665,6 +665,9 @@ class FieldSchema<
 	/** Field options */
 	readonly #options: Field.Options<Values, Tag>;
 
+	/** If the control can't be left empty, found on first render */
+	#requires?: boolean;
+
 	/**
 	 * Create a new field.
 	 *
@@ -694,6 +697,18 @@ class FieldSchema<
 		this.parts = parts;
 		this.streaming = stream;
 		this.#persist = persist;
+	}
+
+	/**
+	 * @returns `true` when the control can't be left empty
+	 */
+	#required() {
+		return (this.#requires ??=
+			// a lone checkbox reads as false, and `required` on each box of a
+			// group would make every box required
+			this.type !== "checkbox" &&
+			this.type !== "hidden" &&
+			Boolean(this.parse(this.#read(new URLSearchParams(), "")).issues));
 	}
 
 	/**
@@ -808,6 +823,7 @@ class FieldSchema<
 		const hidden = this.type === "hidden";
 		const { label = props.name, ...control } = {
 			id: hidden ? undefined : props.name,
+			required: this.#required(),
 			autofocus: issue && state?.issues?.[0] === issue,
 			"aria-invalid": issue && "true",
 			"aria-describedby": issueId,

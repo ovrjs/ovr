@@ -94,11 +94,13 @@ export const page = Route.get("/signup").use((c) => (
 >
 	<div>
 		<label for="name">name</label>
-		<input id="name" type="text" name="name" />
+		<input id="name" required type="text" name="name" />
 	</div>
 	<button>Submit</button>
 </form>
 ```
+
+A control is `required` when leaving it empty fails validation, so browsers and screen readers know before submitting, and agents reading the page as Markdown see it too. Fields made `.optional()` or given a `.default()` are not required. A lone `Field.checkbox()` never is, since unchecked is `false`, and neither are the boxes of `Field.checkboxes()`, where `required` would mean every box. Pass `required={false}` to leave it to the server, or add `novalidate` to the form to show only the server's messages.
 
 > Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, a `label` prop can be passed into the field during creation for a custom label: `Field.text({ label: "Full Name" })`.
 

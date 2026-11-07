@@ -88,7 +88,7 @@ With the email field configured above, `<Register />` generates this HTML. Gener
 <form action="/auth/register" method="POST" enctype="multipart/form-data">
 	<div>
 		<label for="email">Email</label>
-		<input id="email" type="email" name="email" />
+		<input id="email" required type="email" name="email" />
 	</div>
 	<input type="hidden" name="credential" />
 	<input type="hidden" name="ceremony" />
