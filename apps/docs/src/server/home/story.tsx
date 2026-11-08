@@ -387,8 +387,8 @@ export const Story = async () => {
 					<Step
 						n={3}
 						lines={[
-							[1, 2],
-							[26, 27],
+							[2, 2],
+							[27, 27],
 						]}
 						caption="agent · text/markdown · POST /mcp"
 						title="Agents read it and call a tool"
