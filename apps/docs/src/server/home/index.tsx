@@ -2,7 +2,6 @@ import * as content from "@/lib/content";
 import * as result from "@/server/home/index.md";
 import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
-import { Stream } from "@/server/home/stream";
 import { HomeLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as size from "@ovrjs/size";
@@ -52,8 +51,6 @@ export const page = o.Route.get("/")
 						page as Markdown or call the route as an MCP tool. Your handlers do
 						not change.
 					</p>
-
-					<Stream />
 
 					<Story />
 

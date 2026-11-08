@@ -5,6 +5,7 @@
  */
 export class ScrollStory extends HTMLElement {
 	connectedCallback() {
+		const code = this.querySelector<HTMLElement>("[data-code]");
 		const lines = [
 			...this.querySelectorAll<HTMLElement>("[data-code] [data-line]"),
 		];
@@ -27,6 +28,12 @@ export class ScrollStory extends HTMLElement {
 							ranges.some(([from, to]) => n >= from! && n <= to!),
 						);
 					}
+
+					if (code)
+						this.#reveal(
+							code,
+							lines.filter((line) => line.hasAttribute("data-lit")),
+						);
 				}
 			},
 			// a step is current while it crosses the middle of the screen
@@ -37,5 +44,31 @@ export class ScrollStory extends HTMLElement {
 			observer.observe(step);
 
 		this.dataset.ready = "";
+	}
+
+	/**
+	 * Scroll the source to the lit lines: all of them when they fit, or else
+	 * the last range, which is the one the step is about.
+	 */
+	#reveal(code: HTMLElement, lit: HTMLElement[]) {
+		const first = lit[0];
+		const last = lit.at(-1);
+		if (!first || !last) return;
+
+		const top = (line: HTMLElement) =>
+			line.getBoundingClientRect().top -
+			code.getBoundingClientRect().top +
+			code.scrollTop;
+		const bottom = top(last) + last.offsetHeight;
+		const fits = bottom - top(first) <= code.clientHeight - 32;
+
+		code.scrollTo({
+			top: fits
+				? (top(first) + bottom - code.clientHeight) / 2
+				: bottom - code.clientHeight + 16,
+			behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+				? "instant"
+				: "smooth",
+		});
 	}
 }

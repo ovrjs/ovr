@@ -1,4 +1,5 @@
 import * as source from "@/server/home/story.md";
+import { type Chunk, Stream } from "@/server/home/stream";
 import * as o from "ovr";
 
 /** Lines of the highlighted source, numbered from 1 for the steps to point at. */
@@ -12,32 +13,64 @@ const lines = source.html
 		),
 	);
 
+/** The source line that waits for the todos. */
+const waits =
+	lines.findIndex((line) =>
+		line.replace(/<[^>]+>/g, "").includes("await db.todos()"),
+	) + 1;
+
 /**
  * Run the todo routes from the source in an app of their own, so the story
- * shows what ovr sends agents for them.
+ * replays what ovr sends for them.
  */
 const outputs = (async () => {
 	const todos = [
 		{ id: "1", text: "Buy milk", done: false },
 		{ id: "2", text: "Walk the dog", done: false },
 	];
-	const open = () => todos.filter((todo) => !todo.done);
+
+	// the todos come back once both requests have sent what they can without them
+	let phase: Chunk["phase"] = 0;
+	let resolve!: () => void;
+	const query = new Promise<void>((r) => (resolve = r));
+
+	const db = {
+		async todos() {
+			await query;
+			return todos.filter((todo) => !todo.done);
+		},
+		async add(text: string) {
+			todos.push({ id: String(todos.length + 1), text, done: false });
+		},
+		async done(id: string) {
+			todos.find((todo) => todo.id === id)!.done = true;
+		},
+	};
 
 	const list = o.Route.get("/todos")
 		.describe("List the todos")
 		.use(() => (
 			<main>
 				<h1>Todos</h1>
-				<ul>
-					{open().map((todo) => (
-						<li>
-							{todo.text} <done.Form params={{ id: todo.id }} submit="Done" />
-						</li>
-					))}
-				</ul>
+				<Todos />
 				<add.Form submit="Add" />
 			</main>
 		));
+
+	async function Todos() {
+		const todos = await db.todos();
+
+		return (
+			<ul>
+				{todos.map((todo) => (
+					<li>
+						{todo.text}
+						<done.Form params={{ id: todo.id }} submit="Done" />
+					</li>
+				))}
+			</ul>
+		);
+	}
 
 	const add = o.Route.post("/todos")
 		.describe("Add a todo")
@@ -46,29 +79,46 @@ const outputs = (async () => {
 			const result = await c.data();
 			if (result.issues) return c.redirect(result.url, 303);
 
-			todos.push({
-				id: String(todos.length + 1),
-				text: result.data.text,
-				done: false,
-			});
+			await db.add(result.data.text);
 			c.redirect(list, 303);
 		});
 
 	const done = o.Route.post("/todos/:id/done")
 		.describe("Mark a todo as done")
-		.use((c) => {
-			todos.find((todo) => todo.id === c.params.id)!.done = true;
+		.use(async (c) => {
+			await db.done(c.params.id);
 			c.redirect(list, 303);
 		});
 
 	const app = new o.App().use(list, add, done, new o.Mcp({ name: "todos" }));
-	const origin = "https://example.com";
 
-	const markdown = await (
-		await app.fetch(
-			new Request(`${origin}/todos`, { headers: { accept: "text/markdown" } }),
-		)
-	).text();
+	/** Request the list, keeping each chunk of the response as it arrives. */
+	const stream = async (accept: string) => {
+		const res = await app.fetch(
+			new Request("https://example.com/todos", { headers: { accept } }),
+		);
+		const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+		const chunks: Chunk[] = [];
+
+		for (let read = await reader.read(); !read.done; read = await reader.read())
+			chunks.push({ phase, value: read.value });
+
+		// the caret ends on the last line instead of an empty one below it
+		while (!chunks.at(-1)!.value.trim()) chunks.pop();
+		chunks.at(-1)!.value = chunks.at(-1)!.value.trimEnd();
+
+		return chunks;
+	};
+
+	setTimeout(() => {
+		phase = 1;
+		resolve();
+	});
+
+	const [html, md] = await Promise.all([
+		stream("text/html"),
+		stream("text/markdown"),
+	]);
 
 	const call = {
 		method: "tools/call",
@@ -76,7 +126,12 @@ const outputs = (async () => {
 	};
 
 	return {
-		markdown: markdown.trim().split("\n"),
+		html,
+		md,
+		markdown: md
+			.map((chunk) => chunk.value)
+			.join("")
+			.split("\n"),
 		call: JSON.stringify(call, null, 2),
 	};
 })();
@@ -225,7 +280,7 @@ const Agent = (props: { markdown: string[]; call: string }) => (
 );
 
 /** A numbered step's caption, title, and text. */
-export const Heading = (props: {
+const Heading = (props: {
 	n: number;
 	caption: string;
 	title: string;
@@ -275,7 +330,7 @@ const Step = (props: {
 
 /** The todo routes, followed for a person and for an agent as you scroll. */
 export const Story = async () => {
-	const { markdown, call } = await outputs;
+	const { html, md, markdown, call } = await outputs;
 
 	return (
 		<scroll-story class="block">
@@ -295,12 +350,28 @@ export const Story = async () => {
 
 				<div>
 					<Step
+						n={1}
+						lines={[[1, 24]]}
+						snippet={[[1, 24]]}
+						caption="person and agent · GET /todos"
+						title="One route, two requests"
+						figure={<Stream html={html} md={md} await={waits} />}
+					>
+						<p>
+							The list route renders once and streams both ways: HTML for a
+							browser, Markdown when the request accepts{" "}
+							<code>text/markdown</code>. The heading goes out while{" "}
+							<code>db.todos()</code> runs, and the rest follows in order.
+						</p>
+					</Step>
+
+					<Step
 						n={2}
 						lines={[
-							[1, 16],
-							[29, 34],
+							[17, 20],
+							[37, 42],
 						]}
-						snippet={[[29, 34]]}
+						snippet={[[37, 42]]}
 						caption="person · text/html · POST /todos/1/done"
 						title="People see it and click Done"
 						figure={<Browser click />}
@@ -315,8 +386,8 @@ export const Story = async () => {
 					<Step
 						n={3}
 						lines={[
-							[1, 16],
-							[29, 34],
+							[1, 24],
+							[37, 42],
 						]}
 						caption="agent · text/markdown · POST /mcp"
 						title="Agents read it and call a tool"

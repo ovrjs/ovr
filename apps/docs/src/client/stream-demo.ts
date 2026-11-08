@@ -32,13 +32,14 @@ export class StreamDemo extends HTMLElement {
 		const panes = [...this.querySelectorAll("pre")].filter((pre) =>
 			pre.querySelector("[data-phase]"),
 		);
-		const line = [...this.querySelectorAll(".line")].find((line) =>
-			line.textContent?.includes("await"),
+		// the source line that waits, beside the demo and with it on small screens
+		const waiting = document.querySelectorAll(
+			`[data-line="${this.dataset.await}"]`,
 		);
 
 		// a replay starts over
 		for (const old of this.querySelectorAll(".caret")) old.remove();
-		line?.removeAttribute("data-waiting");
+		for (const line of waiting) line.removeAttribute("data-waiting");
 
 		for (const pane of panes) {
 			// keep the size of the finished output, so the page doesn't move
@@ -82,9 +83,9 @@ export class StreamDemo extends HTMLElement {
 		await phase(0, 500);
 		if (run !== this.#run) return;
 
-		line?.setAttribute("data-waiting", "");
+		for (const line of waiting) line.setAttribute("data-waiting", "");
 		await wait(1400);
-		line?.removeAttribute("data-waiting");
+		for (const line of waiting) line.removeAttribute("data-waiting");
 		if (run !== this.#run) return;
 
 		await phase(1, 1600);

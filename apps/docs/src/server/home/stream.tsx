@@ -1,71 +1,7 @@
-import { Heading } from "@/server/home/story";
-import * as source from "@/server/home/stream.md";
 import * as o from "ovr";
 
 /** A chunk as it left the stream, before or after `db.todos()` resolved. */
-type Chunk = { phase: 0 | 1; value: string };
-
-const add = o.Route.post("/todos")
-	.describe("Add a todo")
-	.fields({ text: o.Field.text({ label: "Todo" }) })
-	.use(() => {});
-
-let captured: Promise<{ html: Chunk[]; md: Chunk[] }> | undefined;
-
-/**
- * Render the component in the source as HTML and as Markdown at once,
- * keeping each chunk ovr streams, so the demo replays real output.
- */
-const capture = async () => {
-	let phase: Chunk["phase"] = 0;
-	let resolve!: () => void;
-	const query = new Promise<void>((r) => (resolve = r));
-
-	async function Todos() {
-		await query;
-
-		return (
-			<ul>
-				{["Buy milk", "Walk the dog"].map((text) => (
-					<li>{text}</li>
-				))}
-			</ul>
-		);
-	}
-
-	const Page = () => (
-		<main>
-			<h1>Todos</h1>
-			<Todos />
-			<add.Form submit="Add" />
-		</main>
-	);
-
-	const html: Chunk[] = [];
-	const md: Chunk[] = [];
-	const drain = async (stream: AsyncIterable<unknown>, out: Chunk[]) => {
-		for await (const chunk of stream) out.push({ phase, value: String(chunk) });
-	};
-
-	// the query resolves once both streams have sent what they can without it
-	setTimeout(() => {
-		phase = 1;
-		resolve();
-	});
-
-	await Promise.all([
-		drain(new o.Markup(<Page />), html),
-		drain(new o.Markdown(<Page />), md),
-	]);
-
-	// the caret ends on the last line instead of an empty one below the output
-	for (const chunks of [html, md]) {
-		while (!chunks.at(-1)!.value.trim()) chunks.pop();
-		chunks.at(-1)!.value = chunks.at(-1)!.value.trimEnd();
-	}
-
-	return { html, md };
-};
+export type Chunk = { phase: 0 | 1; value: string };
 
 const voids = new Set(["input"]);
 
@@ -86,7 +22,7 @@ const indent = (chunks: Chunk[]) => {
 		const { i } = tokens[t]!;
 		const tag = value.startsWith("<");
 
-		if (tag && value.length > 56) {
+		if (tag && value.length > 44) {
 			// one attribute a line, as a formatter would
 			const [name, ...attrs] = value
 				.slice(1, -1)
@@ -156,71 +92,46 @@ const Output = (props: { children: o.JSX.Element }) => (
 	</pre>
 );
 
-/** The highlighted source, without the Markdown processor's code controls */
-const code = source.html.match(/<pre[\s\S]*<\/pre>/)![0];
-
-/** The source with the HTML and Markdown it streams, replayed in the browser. */
-export const Stream = async () => {
-	const { html, md } = await (captured ??= capture());
-	const pieces = indent(html);
+/**
+ * The HTML and Markdown one request each streamed, replayed in the browser.
+ *
+ * @param props.await The source line that waits for the todos
+ */
+export const Stream = (props: {
+	html: Chunk[];
+	md: Chunk[];
+	await: number;
+}) => {
+	const pieces = indent(props.html);
 
 	return (
-		<stream-demo class="block">
-			<div class="mb-8 grid max-w-2xl gap-4">
-				<Heading
-					n={1}
-					caption="person and agent · GET /todos"
-					title="One route, two requests"
-				>
-					<p>
-						The list route renders once and streams both ways: HTML for a
-						browser, Markdown when the request accepts{" "}
-						<code>text/markdown</code>. The heading goes out while{" "}
-						<code>db.todos()</code> runs, and the rest follows in order.
-					</p>
-				</Heading>
-			</div>
-			<div class="grid gap-x-4 gap-y-6 lg:grid-cols-2">
-				<Pane caption="todos.tsx">
-					<div class="[&_pre]:my-0 [&_pre]:py-4 [&_pre]:text-sm [&_pre]:leading-5 [&_pre]:[tab-size:2]">
-						{o.Markup.raw(code)}
-					</div>
-				</Pane>
-				<div class="grid gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-1">
-					<Pane caption="person">
-						<Request accept="text/html" />
-						<Output>
-							{html.map((chunk, i) => (
-								<span data-phase={chunk.phase}>
-									{pieces[i]!.map((piece) =>
-										piece.tag ? (
-											<span class="text-base-400">{piece.value}</span>
-										) : (
-											piece.value
-										),
-									)}
-								</span>
-							))}
-						</Output>
-					</Pane>
-					<Pane caption="agent">
-						<Request accept="text/markdown" />
-						<Output>
-							{md.map((chunk) => (
-								<span data-phase={chunk.phase}>{chunk.value}</span>
-							))}
-						</Output>
-					</Pane>
-				</div>
-			</div>
-
-			<div class="mt-3 flex justify-end">
-				<button
-					type="button"
-					data-replay
-					hidden
-					class="button ghost shrink-0 gap-2"
-				>
+		<stream-demo class="grid gap-6" data-await={props.await}>
+			<Pane caption="person">
+				<Request accept="text/html" />
+				<Output>
+					{props.html.map((chunk, i) => (
+						<span data-phase={chunk.phase}>
+							{pieces[i]!.map((piece) =>
+								piece.tag ? (
+									<span class="text-base-400">{piece.value}</span>
+								) : (
+									piece.value
+								),
+							)}
+						</span>
+					))}
+				</Output>
+			</Pane>
+			<Pane caption="agent">
+				<Request accept="text/markdown" />
+				<Output>
+					{props.md.map((chunk) => (
+						<span data-phase={chunk.phase}>{chunk.value}</span>
+					))}
+				</Output>
+			</Pane>
+			<div class="-mt-3 flex justify-end">
+				<button type="button" data-replay hidden class="button ghost gap-2">
 					<span class="icon-[lucide--rotate-cw]"></span> Replay
 				</button>
 			</div>
