@@ -134,10 +134,19 @@ const Pane = (props: {
 }) => (
 	<figure class={`my-0 flex min-w-0 flex-col ${props.class ?? ""}`}>
 		<figcaption class="caption mb-2">{props.caption}</figcaption>
-		<div class="bg-base-900 text-base-100 ring-base-800 -mx-4 flex grow flex-col overflow-hidden shadow-sm ring-1 sm:mx-0 sm:rounded-md">
+		<div class="bg-base-900 text-base-100 ring-base-800 -mx-4 flex grow [scrollbar-gutter:auto] flex-col overflow-hidden shadow-sm ring-1 sm:mx-0 sm:rounded-md">
 			{props.children}
 		</div>
 	</figure>
+);
+
+/** The request a pane answers: the same route, asking for a different type. */
+const Request = (props: { accept: string }) => (
+	<div class="border-base-800 text-base-400 border-b px-4 py-2 font-mono text-sm leading-5">
+		GET /todos
+		<br />
+		Accept: <span class="text-base-50">{props.accept}</span>
+	</div>
 );
 
 const Output = (props: { children: o.JSX.Element }) => (
@@ -163,7 +172,8 @@ export const Stream = async () => {
 					</div>
 				</Pane>
 				<div class="grid gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-1">
-					<Pane caption="person · text/html">
+					<Pane caption="person">
+						<Request accept="text/html" />
 						<Output>
 							{html.map((chunk, i) => (
 								<span data-phase={chunk.phase}>
@@ -178,7 +188,8 @@ export const Stream = async () => {
 							))}
 						</Output>
 					</Pane>
-					<Pane caption="agent · text/markdown">
+					<Pane caption="agent">
+						<Request accept="text/markdown" />
 						<Output>
 							{md.map((chunk) => (
 								<span data-phase={chunk.phase}>{chunk.value}</span>
@@ -190,8 +201,9 @@ export const Stream = async () => {
 
 			<div class="mt-3 flex items-center justify-between gap-3">
 				<p class="text-muted-foreground my-0 text-sm">
-					One render, streamed both ways: the heading goes out while{" "}
-					<code>db.todos()</code> runs, and the rest follows in order.
+					One route, two requests. The <code>Accept</code> header picks HTML or
+					Markdown from the same render, and both stream: the heading goes out
+					while <code>db.todos()</code> runs, and the rest follows in order.
 				</p>
 				<button
 					type="button"
