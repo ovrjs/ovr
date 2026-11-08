@@ -229,8 +229,10 @@ const Step = (props: {
 		class="my-0 grid content-center gap-4 py-10 lg:min-h-[80vh]"
 	>
 		<p class="caption my-0">
-			<span class="text-accent">{String(props.n).padStart(2, "0")}</span> ·{" "}
-			{props.caption}
+			<span class="text-heading-foreground">
+				{String(props.n).padStart(2, "0")}
+			</span>{" "}
+			· {props.caption}
 		</p>
 		<h3 class="my-0 text-2xl">{props.title}</h3>
 		<div class="[&>p]:my-0">{props.children}</div>

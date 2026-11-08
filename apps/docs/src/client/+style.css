@@ -100,20 +100,12 @@
 
 @layer base {
 	:root {
-		/* paper and ink, with one blue */
-		--base: oklch(0.55 0.015 80);
-		--light-start: 0.982;
-		--light-end: 0.165;
-		--chroma-start: 0.006;
-		--chroma-end: 0.01;
-		--accent: oklch(0.53 0.19 262);
-		--accent-background: light-dark(var(--accent), oklch(0.72 0.14 262));
-		--accent-foreground: light-dark(var(--base-50), var(--base-950));
+		--accent: var(--base-500);
 		--grid-line: light-dark(
-			oklch(0.5 0.02 80 / 0.13),
-			oklch(0.85 0.02 80 / 0.07)
+			oklch(from var(--base-500) l 0 h / 0.13),
+			oklch(from var(--base-300) l 0 h / 0.07)
 		);
-		--border-radius: 6px;
+		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
 		--font-family-mono: "Inconsolata Variable", monospace;
@@ -122,13 +114,13 @@
 		--shiki-foreground: var(--base-100);
 		--shiki-background: var(--base-900);
 		--shiki-token-constant: var(--base-50);
-		--shiki-token-string: oklch(0.83 0.07 80);
+		--shiki-token-string: var(--base-300);
 		--shiki-token-comment: var(--base-400);
-		--shiki-token-keyword: oklch(0.74 0.12 262);
-		--shiki-token-parameter: var(--base-200);
-		--shiki-token-function: var(--base-50);
-		--shiki-token-string-expression: oklch(0.83 0.07 80);
-		--shiki-token-punctuation: var(--base-400);
+		--shiki-token-keyword: var(--base-400);
+		--shiki-token-parameter: var(--base-300);
+		--shiki-token-function: var(--base-300);
+		--shiki-token-string-expression: var(--base-200);
+		--shiki-token-punctuation: var(--base-500);
 		--shiki-token-link: var(--base-300);
 	}
 
@@ -194,11 +186,6 @@
 	h5,
 	h6 {
 		@apply font-headings font-medium tracking-tight;
-	}
-
-	.prose a:not(.button, h1 a, h2 a, h3 a, h4 a) {
-		text-decoration-color: var(--accent-background);
-		text-decoration-thickness: 1.5px;
 	}
 
 	/* a caption above a figure, like a file name or a request */

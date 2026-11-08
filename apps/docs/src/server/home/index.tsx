@@ -32,7 +32,7 @@ export const page = o.Route.get("/")
 					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
 					<div class="mb-14 flex gap-3">
-						<a href="/01-get-started" class="button accent h-11 px-5 text-base">
+						<a href="/01-get-started" class="button h-11 px-5 text-base">
 							Get Started
 						</a>
 						<a
@@ -125,12 +125,10 @@ function* Features() {
 		yield (
 			<a
 				href={feature.href}
-				class="bg-background border-secondary hover:border-accent group rounded-md border p-5 no-underline transition-colors"
+				class="bg-background border-secondary hover:border-foreground group rounded-md border p-5 no-underline transition-colors"
 				data-no-prefetch={feature.noPrefetch}
 			>
-				<h3 class="group-hover:text-accent my-0 text-lg transition-colors">
-					{feature.title}
-				</h3>
+				<h3 class="my-0 text-lg transition-colors">{feature.title}</h3>
 				<p class="text-muted-foreground mt-1 mb-0 text-sm">{feature.content}</p>
 			</a>
 		);
