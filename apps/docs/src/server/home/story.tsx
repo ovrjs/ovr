@@ -336,7 +336,8 @@ export const Story = async () => {
 		<scroll-story class="block">
 			<div class="grid gap-x-12 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
 				<div class="hidden pt-10 lg:block">
-					<div class="sticky top-6">
+					{/* centered in the window once stuck, and never closer than the top gap */}
+					<div class="sticky top-[max(1.5rem,calc(50vh-25rem))]">
 						<p class="caption mt-0 mb-2">todos.tsx</p>
 						<Dark>
 							{/* tighter lines, so the whole source fits beside the steps */}

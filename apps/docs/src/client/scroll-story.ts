@@ -3,6 +3,9 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** How long a finished figure rests before it plays again. */
 const rest = 2500;
 
+/** How much faster than it played a figure rewinds before playing again. */
+const rewind = 6;
+
 /**
  * Lights up the lines of the source each step is about, and marks a step as
  * played once it reaches the middle of the screen. Its figure plays again
@@ -74,7 +77,20 @@ export class ScrollStory extends HTMLElement {
 			await wait(rest);
 			if (this.#current !== step) break;
 
-			for (const animation of animations) animation.currentTime = 0;
+			// rewind quickly, instead of jumping back to the start
+			for (const animation of animations) {
+				animation.playbackRate = -rewind;
+				animation.play();
+			}
+			await Promise.all(animations.map((animation) => animation.finished));
+
+			for (const animation of animations) animation.playbackRate = 1;
+			// a step scrolled past stays finished
+			if (this.#current !== step) {
+				for (const animation of animations) animation.finish();
+				break;
+			}
+			for (const animation of animations) animation.play();
 		}
 
 		delete step.dataset.looping;
