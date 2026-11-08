@@ -74,13 +74,37 @@ export const outputs = (async () => {
 
 	/** What the add route's handler got from each submission. */
 	const submitted: (
-		| { issues: { path: unknown; message: string }[] }
+		| { issues: { path: readonly unknown[]; message: string }[] }
 		| { data: { text: string } }
 	)[] = [];
 
+	// the fields section's table, with a pool that keeps what it is sent
+	const table = new o.Table(
+		"todos",
+		{
+			id: o.Schema.string().uuid(),
+			text: o.Field.text({ label: "Todo" }),
+			done: o.Schema.boolean(),
+		},
+		{ default: ["id", "done"] },
+	);
+	const inserted: { text: string; values: unknown[] }[] = [];
+	const database = new o.Database(
+		{
+			async query(text, values = []) {
+				inserted.push({ text, values });
+				return { rows: [] };
+			},
+			async connect() {
+				throw new Error("The home page runs no transactions");
+			},
+		},
+		[table],
+	);
+
 	const add = o.Route.post("/todos")
 		.describe("Add a todo")
-		.fields({ text: o.Field.text({ label: "Todo" }) })
+		.fields({ text: table.shape.text })
 		.use(async (c) => {
 			const result = await c.data();
 			submitted.push(
@@ -96,6 +120,9 @@ export const outputs = (async () => {
 			if (result.issues) return c.redirect(result.url, 303);
 
 			await db.add(result.data.text);
+			await database.sql`
+				INSERT INTO ${table} ${database.sql.values(table, result.data)}
+			`;
 			c.redirect(list, 303);
 		});
 
@@ -188,6 +215,7 @@ export const outputs = (async () => {
 
 	return {
 		submitted,
+		inserted: inserted[0]!,
 		schema: (
 			tools.result.tools as { name: string; inputSchema: unknown }[]
 		).find((tool) => tool.name === "post_todos")!.inputSchema,

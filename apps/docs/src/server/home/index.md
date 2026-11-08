@@ -110,10 +110,31 @@ The same "Done" button a person clicks is a tool call with an `id` for an agent.
 
 ## Define a field once
 
-The add route's one field becomes the form people fill in, the check on the server, the line agents read, and the input of its MCP tool. Make it optional or rename its label, and all four follow.
+Columns can be form fields, so the add route takes `text` straight from the todos table. That one definition is the form people fill in, the data the handler gets, the column the insert writes, the line agents read, and the input of the MCP tool.
 
 ```tsx
-.fields({ text: Field.text({ label: "Todo" }) })
+const todos = new Table(
+	"todos",
+	{
+		id: Schema.string().uuid(),
+		text: Field.text({ label: "Todo" }),
+		done: Schema.boolean(),
+	},
+	{ default: ["id", "done"] },
+);
+
+const add = Route.post("/todos")
+	.describe("Add a todo")
+	.fields({ text: todos.shape.text })
+	.use(async (c) => {
+		const result = await c.data();
+		if (result.issues) return c.redirect(result.url, 303);
+
+		await db.sql`
+			INSERT INTO ${todos} ${db.sql.values(todos, result.data)}
+		`;
+		c.redirect(list, 303);
+	});
 ```
 
 The form, with its WebMCP tool:
@@ -134,7 +155,21 @@ The form, with its WebMCP tool:
 </form>
 ```
 
-The check on the server, from `await c.data()`: an empty `text` gives the issue "Required field", and `"Buy bread"` gives `{ text: "Buy bread" }`.
+What the handler gets from `await c.data()`:
+
+```ts
+// text = "Buy bread"
+result.data; // { text: "Buy bread" }
+
+// text = ""
+result.issues; // [{ path: ["text"], message: "Required field" }]
+```
+
+The insert it sends to Postgres:
+
+```sql
+INSERT INTO "todos" ("text") VALUES ($1) -- $1 = 'Buy bread'
+```
 
 The line agents read:
 
