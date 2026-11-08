@@ -369,9 +369,9 @@ export const Story = async () => {
 						n={2}
 						lines={[
 							[17, 20],
-							[37, 42],
+							[26, 31],
 						]}
-						snippet={[[37, 42]]}
+						snippet={[[26, 31]]}
 						caption="person · text/html · POST /todos/1/done"
 						title="People see it and click Done"
 						figure={<Browser click />}
@@ -386,8 +386,8 @@ export const Story = async () => {
 					<Step
 						n={3}
 						lines={[
-							[1, 24],
-							[37, 42],
+							[1, 2],
+							[26, 27],
 						]}
 						caption="agent · text/markdown · POST /mcp"
 						title="Agents read it and call a tool"
@@ -395,8 +395,8 @@ export const Story = async () => {
 					>
 						<p>
 							The same handler streams the page as Markdown, with each form and
-							where it posts. Described routes are{" "}
-							<a href="/10-agents#mcp">MCP</a> tools, so the agent calls “Done”
+							where it posts. A route with <code>.describe()</code> is also an{" "}
+							<a href="/10-agents#mcp">MCP</a> tool, so the agent calls “Done”
 							as <code>post_todos_id_done</code>: the handler runs as it did for
 							the click, follows its redirect, and returns the page as Markdown.
 						</p>

@@ -33,6 +33,13 @@ async function Todos() {
 	);
 }
 
+const done = Route.post("/todos/:id/done")
+	.describe("Mark a todo as done")
+	.use(async (c) => {
+		await db.done(c.params.id);
+		c.redirect(list, 303);
+	});
+
 const add = Route.post("/todos")
 	.describe("Add a todo")
 	.fields({ text: Field.text({ label: "Todo" }) })
@@ -41,13 +48,6 @@ const add = Route.post("/todos")
 		if (result.issues) return c.redirect(result.url, 303);
 
 		await db.add(result.data.text);
-		c.redirect(list, 303);
-	});
-
-const done = Route.post("/todos/:id/done")
-	.describe("Mark a todo as done")
-	.use(async (c) => {
-		await db.done(c.params.id);
 		c.redirect(list, 303);
 	});
 ```
