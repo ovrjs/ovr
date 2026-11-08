@@ -1,5 +1,6 @@
 import * as content from "@/lib/content";
 import * as result from "@/server/home/index.md";
+import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
 import { Stream } from "@/server/home/stream";
 import { HomeLayout } from "@/ui/layout";
@@ -73,7 +74,7 @@ export const page = o.Route.get("/")
 					<h2 id="streaming" class="mt-2 mb-5">
 						Rendered how browsers read
 					</h2>
-					<div class="grid items-center gap-x-12 gap-y-6 lg:grid-cols-2">
+					<div class="grid gap-8">
 						<div class="grid max-w-2xl gap-4 [&>p]:my-0">
 							<p class="text-lg">
 								ovr evaluates components in parallel and streams HTML in order,
@@ -99,16 +100,7 @@ export const page = o.Route.get("/")
 								with no hydration bundle and no buffering.
 							</p>
 						</div>
-						<video
-							class="ring-secondary aspect-16/7.5 w-full rounded-md object-cover ring-1"
-							aria-label="A network waterfall of a website loading. The head is streamed immediately, so JavaScript and CSS download while the rest of the body streams in."
-							src="https://zsbsjhwuth2a2ck8.public.blob.vercel-storage.com/html-streaming-network-Owka5ZckQQIo791h0LQ771O5ZZV3Wb.mp4"
-							autoplay
-							loop
-							muted
-							loading="lazy"
-							playsinline
-						></video>
+						<Network />
 					</div>
 				</section>
 

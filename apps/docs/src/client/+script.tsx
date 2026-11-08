@@ -8,6 +8,13 @@ if (document.querySelector("scroll-story")) {
 	);
 }
 
+if (document.querySelector("network-demo")) {
+	customElements.define(
+		"network-demo",
+		(await import("@/client/network-demo")).NetworkDemo,
+	);
+}
+
 if (document.querySelector("stream-grid")) {
 	customElements.define(
 		"stream-grid",

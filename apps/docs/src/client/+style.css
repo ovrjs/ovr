@@ -239,6 +239,19 @@
 		}
 	}
 
+	network-demo {
+		/* only what has arrived so far, keeping the space of the rest */
+		[data-chunk]:not([data-arrived]),
+		[data-response]:not([data-arrived]),
+		[data-paint]:not([data-shown]) {
+			visibility: hidden;
+		}
+
+		&[data-playing] [data-playhead] {
+			opacity: 0.4;
+		}
+	}
+
 	scroll-story {
 		[data-code] [data-line] {
 			transition: opacity 0.3s ease-out;
