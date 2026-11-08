@@ -228,7 +228,7 @@ const Step = (props: {
 	lines: Lines;
 	/**
 	 * Lines shown with the step on small screens, where the source isn't
-	 * beside it, left out when an earlier step already showed them
+	 * beside it, left out when the page already showed them
 	 */
 	snippet?: Lines;
 	caption: string;
@@ -282,7 +282,6 @@ export const Story = async () => {
 					<Step
 						n={1}
 						lines={[[1, 16]]}
-						snippet={[[1, 16]]}
 						caption="person · GET /todos"
 						title="People get a page"
 						figure={<Browser />}
