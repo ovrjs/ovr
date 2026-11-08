@@ -3,7 +3,7 @@ import { type Chunk, Stream } from "@/server/home/stream";
 import * as o from "ovr";
 
 /** Lines of the highlighted source, numbered from 1 for the steps to point at. */
-const lines = source.html
+export const lines = source.html
 	.match(/<code[^>]*>([\s\S]*?)<\/code>/)![1]!
 	.split("\n")
 	.map((line, i) =>
@@ -23,7 +23,7 @@ const waits =
  * Run the todo routes from the source in an app of their own, so the story
  * replays what ovr sends for them.
  */
-const outputs = (async () => {
+export const outputs = (async () => {
 	const todos = [
 		{ id: "1", text: "Buy milk", done: false },
 		{ id: "2", text: "Walk the dog", done: false },
@@ -72,11 +72,27 @@ const outputs = (async () => {
 		);
 	}
 
+	/** What the add route's handler got from each submission. */
+	const submitted: (
+		| { issues: { path: unknown; message: string }[] }
+		| { data: { text: string } }
+	)[] = [];
+
 	const add = o.Route.post("/todos")
 		.describe("Add a todo")
 		.fields({ text: o.Field.text({ label: "Todo" }) })
 		.use(async (c) => {
 			const result = await c.data();
+			submitted.push(
+				result.issues
+					? {
+							issues: result.issues.map(({ path, message }) => ({
+								path,
+								message,
+							})),
+						}
+					: { data: result.data },
+			);
 			if (result.issues) return c.redirect(result.url, 303);
 
 			await db.add(result.data.text);
@@ -120,12 +136,61 @@ const outputs = (async () => {
 		stream("text/markdown"),
 	]);
 
+	const origin = "https://example.com";
+
+	// the add form submitted empty, then filled in
+	for (const text of ["", "Buy bread"]) {
+		const body = new FormData();
+		body.set("text", text);
+		await app.fetch(
+			new Request(`${origin}/todos`, {
+				method: "POST",
+				body,
+				headers: { origin, "sec-fetch-site": "same-origin" },
+			}),
+		);
+	}
+
+	const version = "2026-07-28";
+	const tools = await (
+		await app.fetch(
+			new Request(`${origin}/mcp`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					accept: "application/json, text/event-stream",
+					"mcp-protocol-version": version,
+					"mcp-method": "tools/list",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "tools/list",
+					params: {
+						_meta: {
+							"io.modelcontextprotocol/protocolVersion": version,
+							"io.modelcontextprotocol/clientInfo": {
+								name: "agent",
+								version: "1",
+							},
+							"io.modelcontextprotocol/clientCapabilities": {},
+						},
+					},
+				}),
+			}),
+		)
+	).json();
+
 	const call = {
 		method: "tools/call",
 		params: { name: "post_todos_id_done", arguments: { id: "1" } },
 	};
 
 	return {
+		submitted,
+		schema: (
+			tools.result.tools as { name: string; inputSchema: unknown }[]
+		).find((tool) => tool.name === "post_todos")!.inputSchema,
 		html,
 		md,
 		markdown: md
@@ -137,9 +202,9 @@ const outputs = (async () => {
 })();
 
 /** Line ranges of the source each step is about. */
-type Lines = [from: number, to: number][];
+export type Lines = [from: number, to: number][];
 
-const Code = (props: {
+export const Code = (props: {
 	lines: Lines;
 	class?: string;
 	"data-code"?: boolean;
@@ -160,9 +225,9 @@ const Code = (props: {
 	</pre>
 );
 
-const Dark = (props: { children: o.JSX.Element; class?: string }) => (
+export const Dark = (props: { children: o.JSX.Element; class?: string }) => (
 	<div
-		class={`bg-base-900 text-base-100 ring-base-800 -mx-4 overflow-x-auto font-mono shadow-sm ring-1 sm:mx-0 sm:rounded-md ${props.class ?? ""}`}
+		class={`bg-base-900 text-base-100 ring-base-800 -mx-4 [scrollbar-gutter:auto] overflow-x-auto font-mono shadow-sm ring-1 sm:mx-0 sm:rounded-md ${props.class ?? ""}`}
 	>
 		{props.children}
 	</div>

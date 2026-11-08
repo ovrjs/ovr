@@ -11,7 +11,7 @@ const voids = new Set(["input"]);
  * @param chunks HTML chunks
  * @returns Pieces of each chunk, tags apart from text
  */
-const indent = (chunks: Chunk[]) => {
+export const indent = (chunks: Chunk[]) => {
 	const tokens = chunks.flatMap((chunk, i) =>
 		(chunk.value.match(/<[^>]+>|[^<]+/g) ?? []).map((value) => ({ i, value })),
 	);

@@ -108,10 +108,48 @@ post_todos_id_done   Mark a todo as done   { id: string }
 
 The same "Done" button a person clicks is a tool call with an `id` for an agent. With [Auth](/09-auth#agents), the user approves the agent with their passkey, and it acts as them through the same handlers.
 
-These docs are an ovr app. Connect your agent to them:
+## Define a field once
 
-```sh
-claude mcp add --transport http ovr https://ovrjs.com/mcp
+The add route's one field becomes the form people fill in, the check on the server, the line agents read, and the input of its MCP tool. Make it optional or rename its label, and all four follow.
+
+```tsx
+.fields({ text: Field.text({ label: "Todo" }) })
+```
+
+The form, with its WebMCP tool:
+
+```html
+<form
+	action="/todos"
+	method="POST"
+	enctype="multipart/form-data"
+	toolname="post_todos"
+	tooldescription="Add a todo"
+>
+	<div>
+		<label for="text">Todo</label>
+		<input id="text" required type="text" name="text" />
+	</div>
+	<button>Add</button>
+</form>
+```
+
+The check on the server, from `await c.data()`: an empty `text` gives the issue "Required field", and `"Buy bread"` gives `{ text: "Buy bread" }`.
+
+The line agents read:
+
+```md
+- Todo `text` (text, required)
+```
+
+The input of the `post_todos` tool:
+
+```json
+{
+	"type": "object",
+	"properties": { "text": { "type": "string", "title": "Todo" } },
+	"required": ["text"]
+}
 ```
 
 ## Streaming
@@ -166,6 +204,12 @@ ovr is intentionally constrained. These rules keep the framework small and shape
 
 ```sh
 npm i ovr
+```
+
+These docs are an ovr app. Connect your agent to them:
+
+```sh
+claude mcp add --transport http ovr https://ovrjs.com/mcp
 ```
 
 Continue with [Get Started](/01-get-started).

@@ -271,6 +271,41 @@
 		}
 	}
 
+	fields-demo {
+		/* the line the field is defined on */
+		[data-field] {
+			@apply bg-base-700 -mx-4 inline-block w-[calc(100%+2rem)] px-4;
+		}
+
+		figure[style*="--card"] > div {
+			outline: 1px solid transparent;
+			outline-offset: 3px;
+		}
+
+		/* each thing the field becomes, in turn */
+		@media (prefers-reduced-motion: no-preference) {
+			figure[style*="--card"] > div {
+				animation: card 10s ease-in-out infinite;
+				animation-delay: calc(var(--card) * 2.5s);
+			}
+		}
+	}
+
+	@keyframes card {
+		0%,
+		3% {
+			outline-color: transparent;
+		}
+		7%,
+		21% {
+			outline-color: var(--color-foreground);
+		}
+		25%,
+		100% {
+			outline-color: transparent;
+		}
+	}
+
 	scroll-story {
 		[data-code] [data-line] {
 			transition: opacity 0.3s ease-out;

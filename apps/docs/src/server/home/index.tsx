@@ -1,4 +1,5 @@
 import * as content from "@/lib/content";
+import { Fields } from "@/server/home/fields";
 import * as result from "@/server/home/index.md";
 import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
@@ -53,17 +54,10 @@ export const page = o.Route.get("/")
 					</p>
 
 					<Story />
+				</section>
 
-					<div class="mt-10 grid max-w-2xl gap-4">
-						<p class="my-0">
-							With <a href="/09-auth#agents">Auth</a>, the user approves the
-							agent with their passkey, and it acts as them through the same
-							handlers. These docs are an ovr app. Connect your agent to them:
-						</p>
-						<pre class="bg-base-900 text-base-100 -mx-4 my-0 rounded-none px-4 py-3 text-sm sm:mx-0 sm:rounded-md">
-							claude mcp add --transport http ovr https://ovrjs.com/mcp
-						</pre>
-					</div>
+				<section class="mt-28">
+					<Fields />
 				</section>
 
 				<section class="mt-28">
@@ -109,29 +103,42 @@ export const page = o.Route.get("/")
 					</div>
 				</section>
 
-				<section class="mt-28">
-					<p class="caption my-0">constraints</p>
-					<h2 class="mt-2 mb-6">Intentionally constrained</h2>
-					<ol class="m-0 grid list-none gap-x-6 gap-y-8 p-0 sm:grid-cols-3">
-						<Constraints />
-					</ol>
-				</section>
-
-				<section class="border-secondary mt-28 border-t pt-12">
-					<p class="caption my-0">get started</p>
-					<h2 class="mt-2 mb-6">Build your first route</h2>
-					<div class="flex flex-wrap items-center gap-3">
-						<pre class="bg-base-900 text-base-100 my-0 rounded-md px-4 py-0 text-sm leading-11">
-							npm i ovr
-						</pre>
-						<a href="/01-get-started" class="button h-11 px-5 text-base">
-							Get Started
-						</a>
+				<section class="border-secondary mt-28 grid gap-x-12 gap-y-14 border-t pt-12 lg:grid-cols-2">
+					<div>
+						<p class="caption my-0">get started</p>
+						<h2 class="mt-2 mb-6">Build your first route</h2>
+						<div class="grid justify-items-start gap-2">
+							<p class="caption my-0">install</p>
+							<Command>npm i ovr</Command>
+							<p class="caption mt-4 mb-0">
+								connect your agent to these docs, an ovr app
+							</p>
+							<Command>
+								claude mcp add --transport http ovr https://ovrjs.com/mcp
+							</Command>
+							<a href="/01-get-started" class="button mt-6 h-11 px-5 text-base">
+								Get Started
+							</a>
+						</div>
+					</div>
+					<div>
+						<p class="caption my-0">constraints</p>
+						<h2 class="mt-2 mb-6">Intentionally constrained</h2>
+						<ol class="m-0 grid list-none gap-6 p-0">
+							<Constraints />
+						</ol>
 					</div>
 				</section>
 			</HomeLayout>
 		);
 	});
+
+/** A command to copy, in the dark of the code blocks. */
+const Command = (props: { children: o.JSX.Element }) => (
+	<pre class="bg-base-900 text-base-100 -mx-4 my-0 max-w-[calc(100%+2rem)] overflow-x-auto rounded-none px-4 py-2.5 text-sm sm:mx-0 sm:max-w-full sm:rounded-md">
+		{props.children}
+	</pre>
+);
 
 function* Constraints() {
 	const constraints = [
