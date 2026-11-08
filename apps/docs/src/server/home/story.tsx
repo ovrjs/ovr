@@ -224,6 +224,25 @@ const Agent = (props: { markdown: string[]; call: string }) => (
 	</div>
 );
 
+/** A numbered step's caption, title, and text. */
+export const Heading = (props: {
+	n: number;
+	caption: string;
+	title: string;
+	children: o.JSX.Element;
+}) => (
+	<>
+		<p class="caption my-0">
+			<span class="text-heading-foreground">
+				{String(props.n).padStart(2, "0")}
+			</span>{" "}
+			· {props.caption}
+		</p>
+		<h3 class="my-0 text-2xl">{props.title}</h3>
+		<div class="[&>p]:my-0">{props.children}</div>
+	</>
+);
+
 const Step = (props: {
 	n: number;
 	lines: Lines;
@@ -242,14 +261,9 @@ const Step = (props: {
 		data-lines={props.lines.map((range) => range.join("-")).join(",")}
 		class="my-0 grid content-center gap-4 py-10 lg:min-h-[80vh]"
 	>
-		<p class="caption my-0">
-			<span class="text-heading-foreground">
-				{String(props.n).padStart(2, "0")}
-			</span>{" "}
-			· {props.caption}
-		</p>
-		<h3 class="my-0 text-2xl">{props.title}</h3>
-		<div class="[&>p]:my-0">{props.children}</div>
+		<Heading n={props.n} caption={props.caption} title={props.title}>
+			{props.children}
+		</Heading>
 		{props.snippet && (
 			<Dark class="lg:hidden">
 				<Code lines={props.snippet} />
@@ -281,32 +295,20 @@ export const Story = async () => {
 
 				<div>
 					<Step
-						n={1}
-						lines={[[1, 16]]}
-						caption="person · GET /todos"
-						title="People get a page"
-						figure={<Browser />}
-					>
-						<p>
-							The list route streams HTML, with a form to finish each todo and
-							one to add another.
-						</p>
-					</Step>
-
-					<Step
 						n={2}
 						lines={[
-							[10, 10],
+							[1, 16],
 							[29, 34],
 						]}
 						snippet={[[29, 34]]}
-						caption="person · POST /todos/1/done"
-						title="A click submits a form"
+						caption="person · text/html · POST /todos/1/done"
+						title="People see it and click Done"
 						figure={<Browser click />}
 					>
 						<p>
-							“Done” posts to the done route, which redirects back to the list.
-							It works before any JavaScript loads.
+							The list route streams a page with a form for each todo. “Done”
+							posts to the done route, which redirects back to the list, and it
+							works before any JavaScript loads.
 						</p>
 					</Step>
 

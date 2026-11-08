@@ -42,18 +42,18 @@ export const page = o.Route.get("/")
 					</div>
 				</section>
 
-				<Stream />
-
-				<section class="mt-28">
+				<section>
 					<p class="caption my-0">people and agents</p>
 					<h2 class="mt-2 mb-5">One app for people and agents</h2>
-					<p class="max-w-2xl text-lg">
+					<p class="mb-16 max-w-2xl text-lg">
 						Most apps are built twice: a website for people, then an API or MCP
 						server for agents. With ovr, the routes are the API. Describe a
 						route, and people get a page with a form while agents read the same
 						page as Markdown or call the route as an MCP tool. Your handlers do
 						not change.
 					</p>
+
+					<Stream />
 
 					<Story />
 

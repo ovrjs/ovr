@@ -1,3 +1,4 @@
+import { Heading } from "@/server/home/story";
 import * as source from "@/server/home/stream.md";
 import * as o from "ovr";
 
@@ -165,6 +166,20 @@ export const Stream = async () => {
 
 	return (
 		<stream-demo class="block">
+			<div class="mb-8 grid max-w-2xl gap-4">
+				<Heading
+					n={1}
+					caption="person and agent · GET /todos"
+					title="One route, two requests"
+				>
+					<p>
+						The list route renders once and streams both ways: HTML for a
+						browser, Markdown when the request accepts{" "}
+						<code>text/markdown</code>. The heading goes out while{" "}
+						<code>db.todos()</code> runs, and the rest follows in order.
+					</p>
+				</Heading>
+			</div>
 			<div class="grid gap-x-4 gap-y-6 lg:grid-cols-2">
 				<Pane caption="todos.tsx">
 					<div class="[&_pre]:my-0 [&_pre]:py-4 [&_pre]:text-sm [&_pre]:leading-5 [&_pre]:[tab-size:2]">
@@ -199,12 +214,7 @@ export const Stream = async () => {
 				</div>
 			</div>
 
-			<div class="mt-3 flex items-center justify-between gap-3">
-				<p class="text-muted-foreground my-0 text-sm">
-					One route, two requests. The <code>Accept</code> header picks HTML or
-					Markdown from the same render, and both stream: the heading goes out
-					while <code>db.todos()</code> runs, and the rest follows in order.
-				</p>
+			<div class="mt-3 flex justify-end">
 				<button
 					type="button"
 					data-replay
