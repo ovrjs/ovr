@@ -302,8 +302,7 @@
 		@media (prefers-reduced-motion: no-preference) {
 			&[data-ready] {
 				[data-cursor],
-				[data-request],
-				[data-call] {
+				[data-request] {
 					opacity: 0;
 				}
 
@@ -343,11 +342,7 @@
 						animation: target var(--play) ease-out both;
 					}
 
-					[data-call] {
-						animation: call var(--play) ease-out both;
-					}
-
-					/* the call is written a line at a time once its box is in */
+					/* the call is written a line at a time in its box */
 					[data-call] [style*="--line"] {
 						animation: write var(--play) ease-out both;
 						animation-delay: calc(var(--line) * 60ms);
@@ -433,19 +428,6 @@
 		100% {
 			background-color: var(--base-700);
 			color: var(--base-50);
-		}
-	}
-
-	@keyframes call {
-		0%,
-		28% {
-			transform: translateY(6px);
-			opacity: 0;
-		}
-		36%,
-		100% {
-			transform: none;
-			opacity: 1;
 		}
 	}
 
