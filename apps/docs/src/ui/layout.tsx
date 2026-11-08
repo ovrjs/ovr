@@ -1,7 +1,6 @@
 import * as content from "@/lib/content";
 import * as demos from "@/server/demo";
 import * as docs from "@/server/docs";
-import * as homeResult from "@/server/home/index.md";
 import * as badge from "@/ui/badge";
 import { FavIcon } from "@/ui/favicon";
 import { FontPreload } from "@/ui/font-preload";
@@ -17,92 +16,121 @@ const Assets = () => {
 	return o.Markup.raw(script.tags + style.tags);
 };
 
+/** The document around each page. */
+const Document = (props: { head: o.JSX.Element; children: o.JSX.Element }) => {
+	return (
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+				<Assets />
+				<FontPreload />
+				<FavIcon />
+				{props.head}
+			</head>
+			<body>
+				<drab-prefetch
+					trigger="a[href^='/']:not([data-no-prefetch])"
+					prerender
+					class="block"
+				>
+					<SkipLink />
+					{props.children}
+				</drab-prefetch>
+			</body>
+		</html>
+	);
+};
+
+/** A docs page, with the nav beside it and its table of contents. */
 export const createLayout =
 	(c: o.Middleware.Context<any, any>) =>
-	(props: {
-		head: o.JSX.Element;
-		children: o.JSX.Element;
-		/** A wider page without the table of contents, such as the home page */
-		wide?: boolean;
-	}) => {
+	(props: { head: o.JSX.Element; children: o.JSX.Element }) => {
 		return (
-			<html lang="en">
-				<head>
-					<meta charset="utf-8" />
-					<meta
-						name="viewport"
-						content="width=device-width, initial-scale=1.0"
-					/>
-					<Assets />
-					<FontPreload />
-					<FavIcon />
-					{props.head}
-				</head>
-				<body>
-					<drab-prefetch
-						trigger="a[href^='/']:not([data-no-prefetch])"
-						prerender
-						class="block"
-					>
-						<SkipLink />
-						<header class="flex justify-between gap-4 p-4 md:hidden">
+			<Document head={props.head}>
+				<header class="flex justify-between gap-4 p-4 md:hidden">
+					<HomeLink />
+					<nav>
+						<Popover
+							title="ovr"
+							titleHref="/"
+							trigger={{
+								children: <span class="icon-[lucide--align-justify]"></span>,
+							}}
+						>
+							<div class="flex flex-col gap-4">
+								<Nav c={c} />
+							</div>
+						</Popover>
+					</nav>
+				</header>
+				<div class="flex">
+					<div>
+						<nav class="sticky top-0 z-10 hidden max-h-dvh min-w-52 flex-col gap-4 overflow-y-auto p-4 md:flex">
 							<HomeLink />
-							<nav>
-								<Popover
-									title="ovr"
-									titleHref="/"
-									trigger={{
-										children: (
-											<span class="icon-[lucide--align-justify]"></span>
-										),
-									}}
-								>
-									<div class="flex flex-col gap-4">
-										<Nav c={c} />
-									</div>
-								</Popover>
-							</nav>
-						</header>
-						<div class="flex">
-							<div>
-								<nav class="sticky top-0 z-10 hidden max-h-dvh min-w-52 flex-col gap-4 overflow-y-auto p-4 md:flex">
-									<HomeLink />
-									<Nav c={c} />
-								</nav>
-							</div>
-							<div class="flex w-full min-w-0 flex-row-reverse justify-between">
-								{!props.wide && <TOC c={c} />}
-								<div class="flex w-full min-w-0 justify-center">
-									{/* the page's own content, which agents read as Markdown */}
-									<main
-										id="content"
-										class={clsx(
-											"prose mb-16 w-full min-w-0 px-4 pt-3.5 pb-4",
-											props.wide ? "max-w-5xl" : "max-w-3xl",
-										)}
-									>
-										{props.children}
-									</main>
-								</div>
-							</div>
+							<Nav c={c} />
+						</nav>
+					</div>
+					<div class="flex w-full min-w-0 flex-row-reverse justify-between">
+						<TOC c={c} />
+						<div class="flex w-full min-w-0 justify-center">
+							{/* the page's own content, which agents read as Markdown */}
+							<main
+								id="content"
+								class="prose mb-16 w-full max-w-3xl min-w-0 px-4 pt-3.5 pb-4"
+							>
+								{props.children}
+							</main>
 						</div>
-					</drab-prefetch>
-				</body>
-			</html>
+					</div>
+				</div>
+			</Document>
 		);
 	};
 
+/** The home page, full width with links across the top instead of the nav. */
+export const HomeLayout = (props: {
+	head: o.JSX.Element;
+	children: o.JSX.Element;
+}) => {
+	return (
+		<Document head={props.head}>
+			<header class="mx-auto flex max-w-5xl items-center justify-between gap-4 p-4">
+				<HomeLink />
+				<nav>
+					<ul class="flex items-center gap-1">
+						<li>
+							<a href="/01-get-started" class="button ghost">
+								Docs
+							</a>
+						</li>
+						<li>
+							<a href="/demo/memory" data-no-prefetch class="button ghost">
+								Demo
+							</a>
+						</li>
+						<li>
+							<GitHub />
+						</li>
+						<li class="max-sm:[&_.DocSearch-Button-Keys,&_.DocSearch-Button-Placeholder]:hidden">
+							<doc-search />
+						</li>
+					</ul>
+				</nav>
+			</header>
+			<main
+				id="content"
+				class="prose mx-auto mb-16 w-full max-w-5xl min-w-0 px-4 pb-4"
+			>
+				{props.children}
+			</main>
+		</Document>
+	);
+};
+
 const TOC = ({ c }: { c: o.Middleware.Context }) => {
-	const { pathname } = c.url;
-
-	let result: ReturnType<typeof content.get>;
-
-	if (pathname === "/") {
-		result = homeResult;
-	} else {
-		result = content.get(pathname.slice(1));
-		if (!result) return;
-	}
+	const result = content.get(c.url.pathname.slice(1));
+	if (!result) return;
 
 	return (
 		<div>

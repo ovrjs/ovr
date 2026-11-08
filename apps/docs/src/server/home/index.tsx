@@ -2,7 +2,7 @@ import * as content from "@/lib/content";
 import * as result from "@/server/home/index.md";
 import { Story } from "@/server/home/story";
 import { Stream } from "@/server/home/stream";
-import { createLayout } from "@/ui/layout";
+import { HomeLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as size from "@ovrjs/size";
 import * as o from "ovr";
@@ -15,13 +15,12 @@ export const page = o.Route.get("/")
 		// agents read the page's source
 		if (c.md(content.md(result))) return;
 
-		const Layout = createLayout(c);
 		// the people and agents section is told by the story instead
 		const rest = result.html.slice(result.html.indexOf('<h2 id="streaming"'));
 
 		return (
-			<Layout wide head={<Meta {...result.frontmatter} />}>
-				<section class="relative isolate pt-10 pb-4 sm:pt-16">
+			<HomeLayout head={<Meta {...result.frontmatter} />}>
+				<section class="relative isolate pt-6 pb-4 sm:pt-12">
 					<div
 						aria-hidden="true"
 						class="paper-grid pointer-events-none absolute -inset-x-4 -top-8 -z-10 h-[34rem]"
@@ -81,7 +80,7 @@ export const page = o.Route.get("/")
 				</section>
 
 				<div class="mx-auto mt-16 max-w-3xl">{o.Markup.raw(rest)}</div>
-			</Layout>
+			</HomeLayout>
 		);
 	});
 

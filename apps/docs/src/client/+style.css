@@ -109,7 +109,7 @@
 
 		--font-family-serif: "Literata Variable", serif;
 		--font-family-mono: "Inconsolata Variable", monospace;
-		--font-family-headings: var(--font-family-serif);
+		--font-family-headings: "Inconsolata Variable", sans-serif;
 
 		--shiki-foreground: var(--base-100);
 		--shiki-background: var(--base-900);
@@ -185,7 +185,7 @@
 	h4,
 	h5,
 	h6 {
-		@apply font-headings font-medium tracking-tight;
+		@apply font-headings;
 	}
 
 	/* a caption above a figure, like a file name or a request */
@@ -230,7 +230,7 @@
 		}
 
 		.caret {
-			@apply bg-base-200 ml-px inline-block h-4 w-2 translate-y-0.5;
+			@apply bg-base-200 mt-0.5 ml-px inline-block h-4 w-2 align-top;
 			animation: caret 1s steps(1) infinite;
 		}
 	}

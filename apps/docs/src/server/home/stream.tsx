@@ -57,6 +57,12 @@ const capture = async () => {
 		drain(new o.Markdown(<Page />), md),
 	]);
 
+	// the caret ends on the last line instead of an empty one below the output
+	for (const chunks of [html, md]) {
+		while (!chunks.at(-1)!.value.trim()) chunks.pop();
+		chunks.at(-1)!.value = chunks.at(-1)!.value.trimEnd();
+	}
+
 	return { html, md };
 };
 
