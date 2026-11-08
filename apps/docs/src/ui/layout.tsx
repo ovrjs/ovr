@@ -112,9 +112,6 @@ export const HomeLayout = (props: {
 						<li>
 							<GitHub />
 						</li>
-						<li class="max-sm:[&_.DocSearch-Button-Keys,&_.DocSearch-Button-Placeholder]:hidden">
-							<doc-search />
-						</li>
 					</ul>
 				</nav>
 			</header>
@@ -258,8 +255,6 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 					<badge.Size />
 				</li>
 			</ul>
-
-			<doc-search />
 		</>
 	);
 };

@@ -1,11 +1,6 @@
 import "drab/prefetch/define";
 import "drab/share/define";
 
-customElements.define(
-	"doc-search",
-	(await import("@/client/doc-search")).DocSearch,
-);
-
 if (document.querySelector("scroll-story")) {
 	customElements.define(
 		"scroll-story",

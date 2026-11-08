@@ -195,13 +195,12 @@
 		@apply text-muted-foreground font-mono text-sm tracking-wide;
 	}
 
-	/* graph paper, fading out from the top */
+	/* graph paper, fading out at every edge */
 	.paper-grid {
-		mask-image: radial-gradient(
-			ellipse 70% 90% at 50% 0%,
-			black 35%,
-			transparent 80%
-		);
+		mask-image:
+			linear-gradient(to bottom, transparent, black 25%),
+			radial-gradient(ellipse 70% 90% at 50% 0%, black 35%, transparent 80%);
+		mask-composite: intersect;
 		background-image:
 			linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
 			linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
@@ -362,24 +361,6 @@
 	@keyframes caret {
 		50% {
 			opacity: 0;
-		}
-	}
-
-	doc-search {
-		button {
-			@apply bg-background text-foreground border-secondary w-full border;
-
-			.DocSearch-Button-Container {
-				@apply flex w-full gap-2;
-			}
-
-			.DocSearch-Button-Keys {
-				@apply flex gap-1;
-
-				kbd {
-					@apply border-secondary rounded-sm border;
-				}
-			}
 		}
 	}
 }
