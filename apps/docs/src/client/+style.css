@@ -258,14 +258,13 @@
 			left: 40%;
 		}
 
-		[data-row] > span:first-child,
-		[data-strike] {
+		[data-row] > span:first-child {
 			@apply line-through opacity-40;
 		}
 
-		/* the form line the agent calls, full width so its highlight fits */
+		/* the form the agent calls */
 		[data-target] {
-			@apply -mx-4 px-4;
+			@apply bg-base-700 text-base-50 rounded-xs box-decoration-clone;
 		}
 
 		@media (prefers-reduced-motion: no-preference) {
@@ -276,9 +275,16 @@
 					opacity: 0;
 				}
 
-				[data-row] > span:first-child,
-				[data-strike] {
+				[data-row] > span:first-child {
 					@apply no-underline opacity-100;
+				}
+
+				[data-target] {
+					@apply bg-transparent text-inherit;
+				}
+
+				[data-call] [style*="--line"] {
+					opacity: 0;
 				}
 
 				[data-played] {
@@ -297,8 +303,7 @@
 						animation: press var(--play) ease-out both;
 					}
 
-					[data-row] > span:first-child,
-					[data-strike] {
+					[data-row] > span:first-child {
 						animation: finish var(--play) ease-out both;
 					}
 
@@ -308,6 +313,12 @@
 
 					[data-call] {
 						animation: call var(--play) ease-out both;
+					}
+
+					/* the call is written a line at a time once its box is in */
+					[data-call] [style*="--line"] {
+						animation: write var(--play) ease-out both;
+						animation-delay: calc(var(--line) * 60ms);
 					}
 
 					[data-request] {
@@ -382,28 +393,37 @@
 
 	@keyframes target {
 		0%,
-		12% {
+		10% {
 			background-color: transparent;
+			color: inherit;
 		}
 		22%,
-		60% {
-			background-color: var(--base-700);
-		}
-		72%,
 		100% {
-			background-color: transparent;
+			background-color: var(--base-700);
+			color: var(--base-50);
 		}
 	}
 
 	@keyframes call {
 		0%,
-		30% {
+		28% {
 			transform: translateY(6px);
 			opacity: 0;
 		}
-		45%,
+		36%,
 		100% {
 			transform: none;
+			opacity: 1;
+		}
+	}
+
+	@keyframes write {
+		0%,
+		36% {
+			opacity: 0;
+		}
+		40%,
+		100% {
 			opacity: 1;
 		}
 	}

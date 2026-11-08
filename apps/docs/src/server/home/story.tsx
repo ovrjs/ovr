@@ -183,45 +183,46 @@ const Browser = (props: { click?: boolean }) => (
 );
 
 /** The todo page as an agent reads it, and the tool call it makes from it. */
-const Agent = (props: { markdown: string[]; call: string }) => {
-	const Lines = (lines: { from: number; to?: number }) =>
-		props.markdown.slice(lines.from, lines.to).map((line) => (
-			<span
-				class="block min-h-5"
-				data-target={line.includes("/todos/1/done") ? "" : undefined}
-			>
-				{/* nothing on a blank line for the strike to cross */}
-				{line.trim() && line}
-			</span>
-		));
+const Agent = (props: { markdown: string[]; call: string }) => (
+	<div class="grid gap-3">
+		<Dark>
+			<pre class="my-0 py-4 text-sm leading-5 whitespace-pre-wrap">
+				{props.markdown.map((line) => {
+					// the form the agent calls, marked from its method to its URL
+					const at = line.includes("/todos/1/done") ? line.indexOf("POST") : -1;
 
-	// the first todo's lines, finished by the call
-	const from = props.markdown.indexOf("- Buy milk");
-	const to = props.markdown.indexOf("- Walk the dog");
-
-	return (
-		<div class="grid gap-3">
-			{/* no scrollbar gutter, so the target's highlight reaches the edge */}
-			<Dark class="[scrollbar-gutter:auto]">
-				<pre class="my-0 [scrollbar-gutter:auto] py-4 text-sm leading-5 whitespace-pre-wrap">
-					<Lines from={0} to={from} />
-					<span class="block" data-strike>
-						<Lines from={from} to={to} />
-					</span>
-					<Lines from={to} />
+					return (
+						<span class="block min-h-5">
+							{at === -1 ? (
+								line
+							) : (
+								<>
+									{line.slice(0, at)}
+									<span data-target>{line.slice(at, -1)}</span>
+									{line.slice(-1)}
+								</>
+							)}
+						</span>
+					);
+				})}
+			</pre>
+		</Dark>
+		<div data-call>
+			<Dark class="bg-base-800">
+				<pre class="my-0 py-4 text-sm leading-5">
+					{props.call.split("\n").map((line, i) => (
+						<span class="block" style={`--line: ${i}`}>
+							{line}
+						</span>
+					))}
 				</pre>
 			</Dark>
-			<div data-call>
-				<Dark class="bg-base-800">
-					<pre class="my-0 py-4 text-sm leading-5">{props.call}</pre>
-				</Dark>
-			</div>
-			<p data-request class="caption my-0">
-				post_todos_id_done → 303 See Other → GET /todos
-			</p>
 		</div>
-	);
-};
+		<p data-request class="caption my-0">
+			post_todos_id_done → 303 See Other → GET /todos
+		</p>
+	</div>
+);
 
 const Step = (props: {
 	n: number;
