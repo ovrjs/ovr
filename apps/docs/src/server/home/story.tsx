@@ -146,7 +146,7 @@ const Code = (props: {
 }) => (
 	<pre
 		data-code={props["data-code"]}
-		class={`shiki my-0 py-4 text-sm leading-5 [tab-size:2] ${props.class ?? ""}`}
+		class={`shiki my-0 text-sm [tab-size:2] ${props.class ?? "py-4 leading-5"}`}
 	>
 		<code>
 			{o.Markup.raw(
@@ -335,14 +335,15 @@ export const Story = async () => {
 	return (
 		<scroll-story class="block">
 			<div class="grid gap-x-12 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-				<div class="hidden lg:block">
-					<div class="sticky top-[10vh]">
-						<p class="caption mt-10 mb-2">todos.tsx</p>
+				<div class="hidden pt-10 lg:block">
+					<div class="sticky top-6">
+						<p class="caption mt-0 mb-2">todos.tsx</p>
 						<Dark>
+							{/* tighter lines, so the whole source fits beside the steps */}
 							<Code
 								data-code
 								lines={[[1, lines.length]]}
-								class="max-h-[80vh] [scrollbar-width:none] overflow-y-auto"
+								class="max-h-[calc(100vh-5rem)] [scrollbar-width:none] overflow-y-auto py-3 leading-[1.125rem]"
 							/>
 						</Dark>
 					</div>
