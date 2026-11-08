@@ -216,7 +216,10 @@ const Browser = (props: { click?: boolean }) => (
 const Step = (props: {
 	n: number;
 	lines: Lines;
-	/** Lines shown with the step on small screens, when they differ */
+	/**
+	 * Lines shown with the step on small screens, where the source isn't
+	 * beside it, left out when an earlier step already showed them
+	 */
 	snippet?: Lines;
 	caption: string;
 	title: string;
@@ -236,9 +239,11 @@ const Step = (props: {
 		</p>
 		<h3 class="my-0 text-2xl">{props.title}</h3>
 		<div class="[&>p]:my-0">{props.children}</div>
-		<Dark class="lg:hidden">
-			<Code lines={props.snippet ?? props.lines} />
-		</Dark>
+		{props.snippet && (
+			<Dark class="lg:hidden">
+				<Code lines={props.snippet} />
+			</Dark>
+		)}
 		{props.figure}
 	</section>
 );
@@ -267,6 +272,7 @@ export const Story = async () => {
 					<Step
 						n={1}
 						lines={[[1, 16]]}
+						snippet={[[1, 16]]}
 						caption="person · GET /todos"
 						title="People get a page"
 						figure={<Browser />}
