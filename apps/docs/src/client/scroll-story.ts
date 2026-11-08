@@ -9,7 +9,8 @@ const rewind = 6;
 /**
  * Lights up the lines of the source each step is about, and marks a step as
  * played once it reaches the middle of the screen. Its figure plays again
- * while it stays there, and stays finished as you scroll on.
+ * while it stays there, except the tool call, and stays finished as you
+ * scroll on.
  */
 export class ScrollStory extends HTMLElement {
 	/** The step in the middle of the screen. */
@@ -63,9 +64,13 @@ export class ScrollStory extends HTMLElement {
 		this.dataset.ready = "";
 	}
 
-	/** Play the step's figure again each time it finishes, while it is current. */
+	/**
+	 * Play the step's figure again each time it finishes, while it is current.
+	 * The agent's tool call plays once.
+	 */
 	async #loop(step: HTMLElement) {
-		if (step.dataset.looping !== undefined) return;
+		if (step.dataset.looping !== undefined || step.querySelector("[data-call]"))
+			return;
 		step.dataset.looping = "";
 
 		while (this.#current === step) {
