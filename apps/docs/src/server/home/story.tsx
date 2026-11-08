@@ -70,45 +70,14 @@ const outputs = (async () => {
 		)
 	).text();
 
-	const version = "2026-07-28";
 	const call = {
 		method: "tools/call",
 		params: { name: "post_todos_id_done", arguments: { id: "1" } },
 	};
-	const response = await app.fetch(
-		new Request(`${origin}/mcp`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				accept: "application/json, text/event-stream",
-				"mcp-protocol-version": version,
-				"mcp-method": call.method,
-				"mcp-name": call.params.name,
-			},
-			body: JSON.stringify({
-				jsonrpc: "2.0",
-				id: 1,
-				method: call.method,
-				params: {
-					...call.params,
-					_meta: {
-						"io.modelcontextprotocol/protocolVersion": version,
-						"io.modelcontextprotocol/clientInfo": {
-							name: "agent",
-							version: "1",
-						},
-						"io.modelcontextprotocol/clientCapabilities": {},
-					},
-				},
-			}),
-		}),
-	);
-	const { result } = await response.json();
 
 	return {
-		markdown,
+		markdown: markdown.trim().split("\n"),
 		call: JSON.stringify(call, null, 2),
-		result: result.content[0].text as string,
 	};
 })();
 
@@ -213,6 +182,47 @@ const Browser = (props: { click?: boolean }) => (
 	</div>
 );
 
+/** The todo page as an agent reads it, and the tool call it makes from it. */
+const Agent = (props: { markdown: string[]; call: string }) => {
+	const Lines = (lines: { from: number; to?: number }) =>
+		props.markdown.slice(lines.from, lines.to).map((line) => (
+			<span
+				class="block min-h-5"
+				data-target={line.includes("/todos/1/done") ? "" : undefined}
+			>
+				{/* nothing on a blank line for the strike to cross */}
+				{line.trim() && line}
+			</span>
+		));
+
+	// the first todo's lines, finished by the call
+	const from = props.markdown.indexOf("- Buy milk");
+	const to = props.markdown.indexOf("- Walk the dog");
+
+	return (
+		<div class="grid gap-3">
+			{/* no scrollbar gutter, so the target's highlight reaches the edge */}
+			<Dark class="[scrollbar-gutter:auto]">
+				<pre class="my-0 [scrollbar-gutter:auto] py-4 text-sm leading-5 whitespace-pre-wrap">
+					<Lines from={0} to={from} />
+					<span class="block" data-strike>
+						<Lines from={from} to={to} />
+					</span>
+					<Lines from={to} />
+				</pre>
+			</Dark>
+			<div data-call>
+				<Dark class="bg-base-800">
+					<pre class="my-0 py-4 text-sm leading-5">{props.call}</pre>
+				</Dark>
+			</div>
+			<p data-request class="caption my-0">
+				post_todos_id_done → 303 See Other → GET /todos
+			</p>
+		</div>
+	);
+};
+
 const Step = (props: {
 	n: number;
 	lines: Lines;
@@ -250,7 +260,7 @@ const Step = (props: {
 
 /** The todo routes, followed for a person and for an agent as you scroll. */
 export const Story = async () => {
-	const { markdown, call, result } = await outputs;
+	const { markdown, call } = await outputs;
 
 	return (
 		<scroll-story class="block">
@@ -302,48 +312,20 @@ export const Story = async () => {
 
 					<Step
 						n={3}
-						lines={[[1, 16]]}
-						caption="agent · GET /todos · Accept: text/markdown"
-						title="Agents read the same page"
-						figure={
-							<Dark>
-								<pre class="my-0 py-4 text-sm leading-5 whitespace-pre-wrap">
-									{markdown.trim()}
-								</pre>
-							</Dark>
-						}
+						lines={[
+							[1, 16],
+							[29, 34],
+						]}
+						caption="agent · text/markdown · POST /mcp"
+						title="Agents read it and call a tool"
+						figure={<Agent markdown={markdown} call={call} />}
 					>
 						<p>
-							The same handler streams Markdown instead of HTML. Each form names
-							the tool that submits it.
-						</p>
-					</Step>
-
-					<Step
-						n={4}
-						lines={[[29, 34]]}
-						caption="agent · POST /mcp"
-						title="And call it as a tool"
-						figure={
-							<div class="grid gap-3" data-call>
-								<Dark>
-									<pre class="my-0 py-4 text-sm leading-5">{call}</pre>
-								</Dark>
-								<Dark class="bg-base-800">
-									<pre
-										data-result
-										class="my-0 py-4 text-sm leading-5 whitespace-pre-wrap"
-									>
-										{result.trim()}
-									</pre>
-								</Dark>
-							</div>
-						}
-					>
-						<p>
-							Described routes are <a href="/10-agents#mcp">MCP</a> tools. The
-							call runs the same handler, follows its redirect, and returns the
-							page as Markdown.
+							The same handler streams the page as Markdown, with each form and
+							where it posts. Described routes are{" "}
+							<a href="/10-agents#mcp">MCP</a> tools, so the agent calls “Done”
+							as <code>post_todos_id_done</code>: the handler runs as it did for
+							the click, follows its redirect, and returns the page as Markdown.
 						</p>
 					</Step>
 				</div>

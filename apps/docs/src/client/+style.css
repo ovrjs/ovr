@@ -258,41 +258,60 @@
 			left: 40%;
 		}
 
-		[data-row] > span:first-child {
+		[data-row] > span:first-child,
+		[data-strike] {
 			@apply line-through opacity-40;
+		}
+
+		/* the form line the agent calls, full width so its highlight fits */
+		[data-target] {
+			@apply -mx-4 px-4;
 		}
 
 		@media (prefers-reduced-motion: no-preference) {
 			&[data-ready] {
 				[data-cursor],
 				[data-request],
-				[data-result] {
+				[data-call] {
 					opacity: 0;
 				}
 
-				[data-row] > span:first-child {
+				[data-row] > span:first-child,
+				[data-strike] {
 					@apply no-underline opacity-100;
 				}
 
 				[data-played] {
+					--play: 2.6s;
+
+					/* the agent reads before it calls, so give it longer */
+					&:has([data-call]) {
+						--play: 3.4s;
+					}
+
 					[data-cursor] {
-						animation: cursor 2.6s ease-in-out both;
+						animation: cursor var(--play) ease-in-out both;
 					}
 
 					[data-done] {
-						animation: press 2.6s ease-out both;
+						animation: press var(--play) ease-out both;
 					}
 
-					[data-row] > span:first-child {
-						animation: finish 2.6s ease-out both;
+					[data-row] > span:first-child,
+					[data-strike] {
+						animation: finish var(--play) ease-out both;
+					}
+
+					[data-target] {
+						animation: target var(--play) ease-out both;
+					}
+
+					[data-call] {
+						animation: call var(--play) ease-out both;
 					}
 
 					[data-request] {
-						animation: appear 2.6s ease-out both;
-					}
-
-					[data-result] {
-						animation: appear 1.4s ease-out both;
+						animation: appear var(--play) ease-out both;
 					}
 				}
 			}
@@ -355,6 +374,34 @@
 			opacity: 0;
 		}
 		85%,
+		100% {
+			transform: none;
+			opacity: 1;
+		}
+	}
+
+	@keyframes target {
+		0%,
+		12% {
+			background-color: transparent;
+		}
+		22%,
+		60% {
+			background-color: var(--base-700);
+		}
+		72%,
+		100% {
+			background-color: transparent;
+		}
+	}
+
+	@keyframes call {
+		0%,
+		30% {
+			transform: translateY(6px);
+			opacity: 0;
+		}
+		45%,
 		100% {
 			transform: none;
 			opacity: 1;
