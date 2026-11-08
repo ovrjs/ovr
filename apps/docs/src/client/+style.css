@@ -234,6 +234,24 @@
 	}
 
 	stream-demo {
+		pre[data-above] {
+			mask-image: linear-gradient(to bottom, transparent, black 3rem);
+		}
+
+		pre[data-below] {
+			mask-image: linear-gradient(to top, transparent, black 3rem);
+		}
+
+		pre[data-above][data-below] {
+			mask-image: linear-gradient(
+				to bottom,
+				transparent,
+				black 3rem,
+				black calc(100% - 3rem),
+				transparent
+			);
+		}
+
 		.caret {
 			@apply bg-base-200 mt-0.5 ml-px inline-block h-4 w-2 align-top;
 			animation: caret 1s steps(1) infinite;

@@ -64,32 +64,27 @@ const indent = (chunks: Chunk[]) => {
 	return pieces;
 };
 
+/** A dark pane with the request it answers above what it streamed. */
 const Pane = (props: {
-	caption: string;
+	who: string;
+	accept: string;
 	children: o.JSX.Element;
-	class?: string;
 }) => (
-	<figure class={`my-0 flex min-w-0 flex-col ${props.class ?? ""}`}>
-		<figcaption class="caption mb-2">{props.caption}</figcaption>
-		<div class="bg-base-900 text-base-100 ring-base-800 -mx-4 flex grow [scrollbar-gutter:auto] flex-col overflow-hidden shadow-sm ring-1 sm:mx-0 sm:rounded-md">
-			{props.children}
-		</div>
+	<figure class="bg-base-900 text-base-100 ring-base-800 -mx-4 my-0 flex min-w-0 [scrollbar-gutter:auto] flex-col overflow-hidden shadow-sm ring-1 sm:mx-0 sm:rounded-md">
+		{/* the same route, asking for a different type */}
+		<figcaption class="border-base-800 text-base-400 flex justify-between gap-4 border-b px-4 py-2 font-mono text-sm leading-5">
+			<span>
+				GET /todos
+				<br />
+				Accept: <span class="text-base-50">{props.accept}</span>
+			</span>
+			<span>{props.who}</span>
+		</figcaption>
+		{/* on wide screens both panes fit beside the source, following the stream like a terminal */}
+		<pre class="my-0 [scrollbar-width:none] overflow-x-auto py-4 text-sm leading-5 [tab-size:2] lg:max-h-[30vh] lg:overflow-y-auto">
+			<code>{props.children}</code>
+		</pre>
 	</figure>
-);
-
-/** The request a pane answers: the same route, asking for a different type. */
-const Request = (props: { accept: string }) => (
-	<div class="border-base-800 text-base-400 border-b px-4 py-2 font-mono text-sm leading-5">
-		GET /todos
-		<br />
-		Accept: <span class="text-base-50">{props.accept}</span>
-	</div>
-);
-
-const Output = (props: { children: o.JSX.Element }) => (
-	<pre class="my-0 grow overflow-x-auto py-4 text-sm leading-5 [tab-size:2]">
-		<code>{props.children}</code>
-	</pre>
 );
 
 /**
@@ -105,30 +100,24 @@ export const Stream = (props: {
 	const pieces = indent(props.html);
 
 	return (
-		<stream-demo class="grid gap-6" data-await={props.await}>
-			<Pane caption="person">
-				<Request accept="text/html" />
-				<Output>
-					{props.html.map((chunk, i) => (
-						<span data-phase={chunk.phase}>
-							{pieces[i]!.map((piece) =>
-								piece.tag ? (
-									<span class="text-base-400">{piece.value}</span>
-								) : (
-									piece.value
-								),
-							)}
-						</span>
-					))}
-				</Output>
+		<stream-demo class="grid gap-4" data-await={props.await}>
+			<Pane who="person" accept="text/html">
+				{props.html.map((chunk, i) => (
+					<span data-phase={chunk.phase}>
+						{pieces[i]!.map((piece) =>
+							piece.tag ? (
+								<span class="text-base-400">{piece.value}</span>
+							) : (
+								piece.value
+							),
+						)}
+					</span>
+				))}
 			</Pane>
-			<Pane caption="agent">
-				<Request accept="text/markdown" />
-				<Output>
-					{props.md.map((chunk) => (
-						<span data-phase={chunk.phase}>{chunk.value}</span>
-					))}
-				</Output>
+			<Pane who="agent" accept="text/markdown">
+				{props.md.map((chunk) => (
+					<span data-phase={chunk.phase}>{chunk.value}</span>
+				))}
 			</Pane>
 			<div class="-mt-3 flex justify-end">
 				<button type="button" data-replay hidden class="button ghost gap-2">

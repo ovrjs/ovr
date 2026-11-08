@@ -9,6 +9,19 @@ export class StreamDemo extends HTMLElement {
 	#run = 0;
 
 	connectedCallback() {
+		// fade the edges a pane can scroll past
+		for (const pane of this.#panes()) {
+			const edges = () => {
+				pane.toggleAttribute("data-above", pane.scrollTop > 0);
+				pane.toggleAttribute(
+					"data-below",
+					pane.scrollTop + pane.clientHeight < pane.scrollHeight - 1,
+				);
+			};
+			pane.addEventListener("scroll", edges, { passive: true });
+			new ResizeObserver(edges).observe(pane);
+		}
+
 		if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
 		const replay = this.querySelector<HTMLButtonElement>("[data-replay]")!;
@@ -27,11 +40,16 @@ export class StreamDemo extends HTMLElement {
 		observer.observe(this.querySelector("[data-phase]")!.closest("pre")!);
 	}
 
-	async #play() {
-		const run = ++this.#run;
-		const panes = [...this.querySelectorAll("pre")].filter((pre) =>
+	/** The panes the chunks stream into. */
+	#panes() {
+		return [...this.querySelectorAll("pre")].filter((pre) =>
 			pre.querySelector("[data-phase]"),
 		);
+	}
+
+	async #play() {
+		const run = ++this.#run;
+		const panes = this.#panes();
 		// the source line that waits, beside the demo and with it on small screens
 		const waiting = document.querySelectorAll(
 			`[data-line="${this.dataset.await}"]`,
@@ -43,7 +61,8 @@ export class StreamDemo extends HTMLElement {
 
 		for (const pane of panes) {
 			// keep the size of the finished output, so the page doesn't move
-			(pane as HTMLElement).style.minHeight = `${pane.clientHeight}px`;
+			pane.style.minHeight = `${pane.clientHeight}px`;
+			pane.scrollTop = 0;
 			for (const chunk of pane.querySelectorAll("[data-phase]"))
 				(chunk as HTMLElement).hidden = true;
 		}
@@ -73,6 +92,8 @@ export class StreamDemo extends HTMLElement {
 						if (run !== this.#run) return;
 						chunk.hidden = false;
 						chunk.after(carets[p]!);
+						// follow the stream, like a terminal
+						pane.scrollTo({ top: pane.scrollHeight, behavior: "smooth" });
 						await wait((ms * chunk.textContent!.length) / total / 2);
 					}
 				}),

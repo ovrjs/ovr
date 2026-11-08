@@ -342,7 +342,7 @@ export const Story = async () => {
 							<Code
 								data-code
 								lines={[[1, lines.length]]}
-								class="max-h-[80vh] overflow-y-auto"
+								class="max-h-[80vh] [scrollbar-width:none] overflow-y-auto"
 							/>
 						</Dark>
 					</div>
