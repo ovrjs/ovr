@@ -374,7 +374,7 @@ export const Story = async () => {
 						]}
 						snippet={[[26, 31]]}
 						caption="person · text/html · POST /todos/1/done"
-						title="People see it and submit a form"
+						title="People see it and click Done"
 						figure={<Browser click />}
 					>
 						<p>
