@@ -1,12 +1,18 @@
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** How long a finished replay rests before the next. */
+const rest = 2500;
+
 /**
  * Replays the chunks rendered into it, as they streamed: the first part of
- * each pane, a pause while the query runs, then the rest.
+ * each pane, a pause while the query runs, then the rest, again and again
+ * while it is on screen.
  */
 export class StreamDemo extends HTMLElement {
 	/** Increments to stop a replay that is still running. */
 	#run = 0;
+	#visible = false;
+	#looping = false;
 
 	connectedCallback() {
 		// fade the edges a pane can scroll past
@@ -24,20 +30,23 @@ export class StreamDemo extends HTMLElement {
 
 		if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-		const replay = this.querySelector<HTMLButtonElement>("[data-replay]")!;
-		replay.hidden = false;
-		replay.addEventListener("click", () => this.#play());
-
-		const observer = new IntersectionObserver(
+		// play while the output is in view, the demo may be taller than the screen
+		new IntersectionObserver(
 			([entry]) => {
-				if (!entry?.isIntersecting) return;
-				observer.disconnect();
-				this.#play();
+				this.#visible = Boolean(entry?.isIntersecting);
+				if (this.#visible && !this.#looping) this.#loop();
 			},
 			{ threshold: 0.3 },
-		);
-		// start when the output comes into view, the demo may be taller than the screen
-		observer.observe(this.querySelector("[data-phase]")!.closest("pre")!);
+		).observe(this.querySelector("[data-phase]")!.closest("pre")!);
+	}
+
+	async #loop() {
+		this.#looping = true;
+		while (this.#visible) {
+			await this.#play();
+			await wait(rest);
+		}
+		this.#looping = false;
 	}
 
 	/** The panes the chunks stream into. */

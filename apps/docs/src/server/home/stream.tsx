@@ -119,11 +119,6 @@ export const Stream = (props: {
 					<span data-phase={chunk.phase}>{chunk.value}</span>
 				))}
 			</Pane>
-			<div class="flex justify-end">
-				<button type="button" data-replay hidden class="button ghost gap-2">
-					<span class="icon-[lucide--rotate-cw]"></span> Replay
-				</button>
-			</div>
 		</stream-demo>
 	);
 };

@@ -1,9 +1,17 @@
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** How long a finished figure rests before it plays again. */
+const rest = 2500;
+
 /**
  * Lights up the lines of the source each step is about, and marks a step as
- * played once it reaches the middle of the screen, so its figure plays once
- * and stays finished as you scroll on.
+ * played once it reaches the middle of the screen. Its figure plays again
+ * while it stays there, and stays finished as you scroll on.
  */
 export class ScrollStory extends HTMLElement {
+	/** The step in the middle of the screen. */
+	#current: HTMLElement | undefined;
+
 	connectedCallback() {
 		const code = this.querySelector<HTMLElement>("[data-code]");
 		const lines = [
@@ -12,10 +20,16 @@ export class ScrollStory extends HTMLElement {
 		const observer = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
-					if (!entry.isIntersecting) continue;
-
 					const step = entry.target as HTMLElement;
+
+					if (!entry.isIntersecting) {
+						if (this.#current === step) this.#current = undefined;
+						continue;
+					}
+
 					step.dataset.played = "";
+					this.#current = step;
+					this.#loop(step);
 
 					const ranges = step.dataset
 						.lines!.split(",")
@@ -44,6 +58,26 @@ export class ScrollStory extends HTMLElement {
 			observer.observe(step);
 
 		this.dataset.ready = "";
+	}
+
+	/** Play the step's figure again each time it finishes, while it is current. */
+	async #loop(step: HTMLElement) {
+		if (step.dataset.looping !== undefined) return;
+		step.dataset.looping = "";
+
+		while (this.#current === step) {
+			const animations = step.getAnimations({ subtree: true });
+			// nothing moves, as with reduced motion
+			if (!animations.length) break;
+
+			await Promise.all(animations.map((animation) => animation.finished));
+			await wait(rest);
+			if (this.#current !== step) break;
+
+			for (const animation of animations) animation.currentTime = 0;
+		}
+
+		delete step.dataset.looping;
 	}
 
 	/**

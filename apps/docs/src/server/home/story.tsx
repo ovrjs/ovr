@@ -361,8 +361,7 @@ export const Story = async () => {
 						<p>
 							The list route renders once and streams both ways: HTML for a
 							browser, Markdown when the request accepts{" "}
-							<code>text/markdown</code>. The heading goes out while{" "}
-							<code>db.todos()</code> runs, and the rest follows in order.
+							<code>text/markdown</code>.
 						</p>
 					</Step>
 

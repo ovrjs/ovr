@@ -1,11 +1,16 @@
 import * as network from "@/lib/network";
 
+/** How long a finished load rests before it plays again. */
+const rest = 2500;
+
 /**
- * Replays the page load drawn in it, streamed or buffered, when it comes into
- * view and when a mode is picked.
+ * Replays the page load drawn in it, streamed or buffered, again and again
+ * while it is on screen, starting over when a mode is picked.
  */
 export class NetworkDemo extends HTMLElement {
 	#frame = 0;
+	#timer = 0;
+	#visible = false;
 
 	connectedCallback() {
 		const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -24,19 +29,20 @@ export class NetworkDemo extends HTMLElement {
 
 		if (still) return;
 
-		const observer = new IntersectionObserver(
+		new IntersectionObserver(
 			([entry]) => {
-				if (!entry?.isIntersecting) return;
-				observer.disconnect();
-				this.#play("streamed");
+				this.#visible = Boolean(entry?.isIntersecting);
+				clearTimeout(this.#timer);
+				if (this.#visible && !this.hasAttribute("data-playing"))
+					this.#play(this.dataset.mode as network.Mode);
 			},
 			{ threshold: 0.5 },
-		);
-		observer.observe(this);
+		).observe(this);
 	}
 
 	#play(mode: network.Mode) {
 		cancelAnimationFrame(this.#frame);
+		clearTimeout(this.#timer);
 		this.toggleAttribute("data-playing", true);
 
 		const start = performance.now();
@@ -44,8 +50,14 @@ export class NetworkDemo extends HTMLElement {
 			const t = Math.min(network.duration, (now - start) / network.slowdown);
 			this.#draw(mode, t);
 
-			if (t < network.duration) this.#frame = requestAnimationFrame(tick);
-			else this.removeAttribute("data-playing");
+			if (t < network.duration) {
+				this.#frame = requestAnimationFrame(tick);
+				return;
+			}
+
+			this.removeAttribute("data-playing");
+			if (this.#visible)
+				this.#timer = window.setTimeout(() => this.#play(mode), rest);
 		};
 
 		this.#frame = requestAnimationFrame(tick);
