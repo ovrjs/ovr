@@ -202,6 +202,23 @@
 		@apply bg-muted border-secondary grid gap-4 rounded-md border p-4 **:data-issue:mt-1 **:data-issue:text-sm **:data-issue:italic sm:max-w-sm [&_label,&_legend]:capitalize;
 	}
 
+	stream-demo {
+		.line[data-waiting] {
+			@apply bg-base-700 -mx-4 inline-block w-[calc(100%+2rem)] px-4;
+		}
+
+		.caret {
+			@apply bg-base-200 ml-px inline-block h-4 w-2 translate-y-0.5;
+			animation: caret 1s steps(1) infinite;
+		}
+	}
+
+	@keyframes caret {
+		50% {
+			opacity: 0;
+		}
+	}
+
 	doc-search {
 		button {
 			@apply bg-background text-foreground border-secondary w-full border;

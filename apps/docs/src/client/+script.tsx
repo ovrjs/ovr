@@ -6,6 +6,13 @@ customElements.define(
 	(await import("@/client/doc-search")).DocSearch,
 );
 
+if (document.querySelector("stream-demo")) {
+	customElements.define(
+		"stream-demo",
+		(await import("@/client/stream-demo")).StreamDemo,
+	);
+}
+
 if (import.meta.env.DEV) {
 	const o = await import("ovr");
 

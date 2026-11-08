@@ -1,5 +1,6 @@
 import * as content from "@/lib/content";
 import * as result from "@/server/home/index.md";
+import { Stream } from "@/server/home/stream";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as o from "ovr";
@@ -31,6 +32,8 @@ export const page = o.Route.get("/")
 						Demo
 					</a>
 				</div>
+
+				<Stream />
 
 				<div class="mb-7 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
 					<Features />
