@@ -19,7 +19,12 @@ const Assets = () => {
 
 export const createLayout =
 	(c: o.Middleware.Context<any, any>) =>
-	(props: { head: o.JSX.Element; children: o.JSX.Element }) => {
+	(props: {
+		head: o.JSX.Element;
+		children: o.JSX.Element;
+		/** A wider page without the table of contents, such as the home page */
+		wide?: boolean;
+	}) => {
 		return (
 			<html lang="en">
 				<head>
@@ -66,12 +71,15 @@ export const createLayout =
 								</nav>
 							</div>
 							<div class="flex w-full min-w-0 flex-row-reverse justify-between">
-								<TOC c={c} />
+								{!props.wide && <TOC c={c} />}
 								<div class="flex w-full min-w-0 justify-center">
 									{/* the page's own content, which agents read as Markdown */}
 									<main
 										id="content"
-										class="prose mb-16 w-full max-w-3xl min-w-0 px-4 pt-3.5 pb-4"
+										class={clsx(
+											"prose mb-16 w-full min-w-0 px-4 pt-3.5 pb-4",
+											props.wide ? "max-w-5xl" : "max-w-3xl",
+										)}
 									>
 										{props.children}
 									</main>
@@ -129,7 +137,7 @@ const HomeLink = () => {
 	return (
 		<a
 			href="/"
-			class="font-headings flex items-center pl-2 text-xl font-bold no-underline"
+			class="flex items-center pl-2 font-mono text-xl font-bold no-underline"
 		>
 			ovr
 		</a>

@@ -6,6 +6,13 @@ customElements.define(
 	(await import("@/client/doc-search")).DocSearch,
 );
 
+if (document.querySelector("scroll-story")) {
+	customElements.define(
+		"scroll-story",
+		(await import("@/client/scroll-story")).ScrollStory,
+	);
+}
+
 if (document.querySelector("stream-demo")) {
 	customElements.define(
 		"stream-demo",

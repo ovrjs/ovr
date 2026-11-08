@@ -1,9 +1,12 @@
 import * as content from "@/lib/content";
 import * as result from "@/server/home/index.md";
+import { Story } from "@/server/home/story";
 import { Stream } from "@/server/home/stream";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
+import * as size from "@ovrjs/size";
 import * as o from "ovr";
+import { version } from "ovr/package.json";
 
 export const page = o.Route.get("/")
 	.describe("Overview of ovr, the streaming web framework, and its features")
@@ -13,37 +16,71 @@ export const page = o.Route.get("/")
 		if (c.md(content.md(result))) return;
 
 		const Layout = createLayout(c);
+		// the people and agents section is told by the story instead
+		const rest = result.html.slice(result.html.indexOf('<h2 id="streaming"'));
 
 		return (
-			<Layout head={<Meta {...result.frontmatter} />}>
-				<h1 class="mb-4">{result.frontmatter.title}</h1>
-
-				<p class="mb-7 text-lg">{result.frontmatter.description}</p>
-
-				<div class="mb-7 flex gap-3">
-					<a href="/01-get-started" class="button h-11 px-5 text-base">
-						Get Started
-					</a>
-					<a
-						href="/demo/memory"
-						data-no-prefetch
-						class="button ghost h-11 px-5 text-base"
-					>
-						Demo
-					</a>
-				</div>
+			<Layout wide head={<Meta {...result.frontmatter} />}>
+				<section class="relative isolate pt-10 pb-4 sm:pt-16">
+					<div
+						aria-hidden="true"
+						class="paper-grid pointer-events-none absolute -inset-x-4 -top-8 -z-10 h-[34rem]"
+					/>
+					<p class="caption mt-0 mb-6">
+						ovr@{version} · {size.kb}KB · zero dependencies
+					</p>
+					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
+					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
+					<div class="mb-14 flex gap-3">
+						<a href="/01-get-started" class="button accent h-11 px-5 text-base">
+							Get Started
+						</a>
+						<a
+							href="/demo/memory"
+							data-no-prefetch
+							class="button h-11 px-5 text-base outline"
+						>
+							Demo
+						</a>
+					</div>
+				</section>
 
 				<Stream />
 
-				<div class="mb-7 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-					<Features />
-				</div>
+				<section class="mt-28">
+					<p class="caption my-0">people and agents</p>
+					<h2 class="mt-2 mb-5">One app for people and agents</h2>
+					<p class="max-w-2xl text-lg">
+						Most apps are built twice: a website for people, then an API or MCP
+						server for agents. With ovr, the routes are the API. Describe a
+						route, and people get a page with a form while agents read the same
+						page as Markdown or call the route as an MCP tool. Your handlers do
+						not change.
+					</p>
 
-				<hr />
+					<Story />
 
-				{o.Markup.raw(result.html)}
+					<div class="mt-10 grid max-w-2xl gap-4">
+						<p class="my-0">
+							With <a href="/09-auth#agents">Auth</a>, the user approves the
+							agent with their passkey, and it acts as them through the same
+							handlers. These docs are an ovr app. Connect your agent to them:
+						</p>
+						<pre class="bg-base-900 text-base-100 -mx-4 my-0 rounded-none px-4 py-3 text-sm sm:mx-0 sm:rounded-md">
+							claude mcp add --transport http ovr https://ovrjs.com/mcp
+						</pre>
+					</div>
+				</section>
 
-				<hr />
+				<section class="mt-28">
+					<p class="caption my-0">built in</p>
+					<h2 class="mt-2 mb-6">Everything an app needs</h2>
+					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						<Features />
+					</div>
+				</section>
+
+				<div class="mx-auto mt-16 max-w-3xl">{o.Markup.raw(rest)}</div>
 			</Layout>
 		);
 	});
@@ -88,10 +125,12 @@ function* Features() {
 		yield (
 			<a
 				href={feature.href}
-				class="bg-muted/25 hover:bg-background border-secondary/50 hover:border-secondary rounded-md border p-4 no-underline transition-colors hover:shadow-xs"
+				class="bg-background border-secondary hover:border-accent group rounded-md border p-5 no-underline transition-colors"
 				data-no-prefetch={feature.noPrefetch}
 			>
-				<h2 class="my-0 text-base">{feature.title}</h2>
+				<h3 class="group-hover:text-accent my-0 text-lg transition-colors">
+					{feature.title}
+				</h3>
 				<p class="text-muted-foreground mt-1 mb-0 text-sm">{feature.content}</p>
 			</a>
 		);

@@ -122,20 +122,26 @@ const indent = (chunks: Chunk[]) => {
 };
 
 const Pane = (props: {
-	title: string;
-	type: string;
+	caption: string;
 	children: o.JSX.Element;
+	class?: string;
 }) => (
-	<figure class="bg-base-900 -mx-4 my-0 flex min-w-0 flex-col shadow-sm sm:mx-0 sm:rounded-md">
-		<figcaption class="bg-base-800 text-base-200 flex items-center justify-between gap-2 px-4 py-1.5 font-mono text-sm sm:rounded-t-md">
-			<span>{props.title}</span>
-			<span class="text-base-400">{props.type}</span>
-		</figcaption>
-		<pre class="grow overflow-x-auto py-3 text-sm leading-5 [tab-size:2]">
-			<code>{props.children}</code>
-		</pre>
+	<figure class={`my-0 flex min-w-0 flex-col ${props.class ?? ""}`}>
+		<figcaption class="caption mb-2">{props.caption}</figcaption>
+		<div class="bg-base-900 text-base-100 ring-base-800 -mx-4 flex grow flex-col overflow-hidden shadow-sm ring-1 sm:mx-0 sm:rounded-md">
+			{props.children}
+		</div>
 	</figure>
 );
+
+const Output = (props: { children: o.JSX.Element }) => (
+	<pre class="my-0 grow overflow-x-auto py-4 text-sm leading-5 [tab-size:2]">
+		<code>{props.children}</code>
+	</pre>
+);
+
+/** The highlighted source, without the Markdown processor's code controls */
+const code = source.html.match(/<pre[\s\S]*<\/pre>/)![0];
 
 /** The source with the HTML and Markdown it streams, replayed in the browser. */
 export const Stream = async () => {
@@ -143,33 +149,42 @@ export const Stream = async () => {
 	const pieces = indent(html);
 
 	return (
-		<stream-demo class="mb-7 block">
-			<div class="[&>div]:my-0 [&>div]:mb-3">{o.Markup.raw(source.html)}</div>
-
-			<div class="grid gap-3 md:grid-cols-2">
-				<Pane title="People" type="text/html">
-					{html.map((chunk, i) => (
-						<span data-phase={chunk.phase}>
-							{pieces[i]!.map((piece) =>
-								piece.tag ? (
-									<span class="text-base-400">{piece.value}</span>
-								) : (
-									piece.value
-								),
-							)}
-						</span>
-					))}
+		<stream-demo class="block">
+			<div class="grid gap-x-4 gap-y-6 lg:grid-cols-2">
+				<Pane caption="todos.tsx">
+					<div class="[&_pre]:my-0 [&_pre]:py-4 [&_pre]:text-sm [&_pre]:leading-5 [&_pre]:[tab-size:2]">
+						{o.Markup.raw(code)}
+					</div>
 				</Pane>
-				<Pane title="Agents" type="text/markdown">
-					{md.map((chunk) => (
-						<span data-phase={chunk.phase}>{chunk.value}</span>
-					))}
-				</Pane>
+				<div class="grid gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-1">
+					<Pane caption="person · text/html">
+						<Output>
+							{html.map((chunk, i) => (
+								<span data-phase={chunk.phase}>
+									{pieces[i]!.map((piece) =>
+										piece.tag ? (
+											<span class="text-base-400">{piece.value}</span>
+										) : (
+											piece.value
+										),
+									)}
+								</span>
+							))}
+						</Output>
+					</Pane>
+					<Pane caption="agent · text/markdown">
+						<Output>
+							{md.map((chunk) => (
+								<span data-phase={chunk.phase}>{chunk.value}</span>
+							))}
+						</Output>
+					</Pane>
+				</div>
 			</div>
 
-			<div class="mt-2 flex items-center justify-between gap-3">
+			<div class="mt-3 flex items-center justify-between gap-3">
 				<p class="text-muted-foreground my-0 text-sm">
-					Both stream from the same render: the heading goes out while{" "}
+					One render, streamed both ways: the heading goes out while{" "}
 					<code>db.todos()</code> runs, and the rest follows in order.
 				</p>
 				<button

@@ -24,12 +24,14 @@ export class StreamDemo extends HTMLElement {
 			{ threshold: 0.3 },
 		);
 		// start when the output comes into view, the demo may be taller than the screen
-		observer.observe(this.querySelector("figure")!);
+		observer.observe(this.querySelector("[data-phase]")!.closest("pre")!);
 	}
 
 	async #play() {
 		const run = ++this.#run;
-		const panes = [...this.querySelectorAll("figure pre")];
+		const panes = [...this.querySelectorAll("pre")].filter((pre) =>
+			pre.querySelector("[data-phase]"),
+		);
 		const line = [...this.querySelectorAll(".line")].find((line) =>
 			line.textContent?.includes("await"),
 		);
