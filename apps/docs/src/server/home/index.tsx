@@ -15,9 +15,6 @@ export const page = o.Route.get("/")
 		// agents read the page's source
 		if (c.md(content.md(result))) return;
 
-		// the people and agents section is told by the story instead
-		const rest = result.html.slice(result.html.indexOf('<h2 id="streaming"'));
-
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
 				<section class="relative isolate pt-6 pb-4 sm:pt-12">
@@ -72,6 +69,50 @@ export const page = o.Route.get("/")
 				</section>
 
 				<section class="mt-28">
+					<p class="caption my-0">streaming</p>
+					<h2 id="streaming" class="mt-2 mb-5">
+						Rendered how browsers read
+					</h2>
+					<div class="grid items-center gap-x-12 gap-y-6 lg:grid-cols-2">
+						<div class="grid max-w-2xl gap-4 [&>p]:my-0">
+							<p class="text-lg">
+								ovr evaluates components in parallel and streams HTML in order,
+								as an{" "}
+								<a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/AsyncGenerator">
+									<code>AsyncGenerator</code>
+								</a>{" "}
+								that feeds straight into the response. Nothing waits for the
+								slowest component: what is ready goes out first, like the
+								heading in the demo above, and the rest follows as it resolves.
+							</p>
+							<p>
+								Browsers are{" "}
+								<a href="https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/How_browsers_work#parsing">
+									built for streaming
+								</a>
+								. They parse and paint HTML as it arrives, and the head goes out
+								first, so CSS and JavaScript start downloading while the body
+								renders. The result is a fast{" "}
+								<a href="https://web.dev/articles/ttfb#what_is_ttfb">
+									Time-To-First-Byte
+								</a>{" "}
+								with no hydration bundle and no buffering.
+							</p>
+						</div>
+						<video
+							class="ring-secondary aspect-16/7.5 w-full rounded-md object-cover ring-1"
+							aria-label="A network waterfall of a website loading. The head is streamed immediately, so JavaScript and CSS download while the rest of the body streams in."
+							src="https://zsbsjhwuth2a2ck8.public.blob.vercel-storage.com/html-streaming-network-Owka5ZckQQIo791h0LQ771O5ZZV3Wb.mp4"
+							autoplay
+							loop
+							muted
+							loading="lazy"
+							playsinline
+						></video>
+					</div>
+				</section>
+
+				<section class="mt-28">
 					<p class="caption my-0">built in</p>
 					<h2 class="mt-2 mb-6">Everything an app needs</h2>
 					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -79,10 +120,57 @@ export const page = o.Route.get("/")
 					</div>
 				</section>
 
-				<div class="mx-auto mt-16 max-w-3xl">{o.Markup.raw(rest)}</div>
+				<section class="mt-28">
+					<p class="caption my-0">constraints</p>
+					<h2 class="mt-2 mb-6">Intentionally constrained</h2>
+					<ol class="m-0 grid list-none gap-x-6 gap-y-8 p-0 sm:grid-cols-3">
+						<Constraints />
+					</ol>
+				</section>
+
+				<section class="border-secondary mt-28 border-t pt-12">
+					<p class="caption my-0">get started</p>
+					<h2 class="mt-2 mb-6">Build your first route</h2>
+					<div class="flex flex-wrap items-center gap-3">
+						<pre class="bg-base-900 text-base-100 my-0 rounded-md px-4 py-0 text-sm leading-11">
+							npm i ovr
+						</pre>
+						<a href="/01-get-started" class="button h-11 px-5 text-base">
+							Get Started
+						</a>
+					</div>
+				</section>
 			</HomeLayout>
 		);
 	});
+
+function* Constraints() {
+	const constraints = [
+		{
+			title: "No client JS required",
+			content: "Everything works when no client-side JavaScript runs.",
+		},
+		{
+			title: "Streaming first",
+			content:
+				"Responses and request parsing start immediately, without buffering whole documents or uploads in memory.",
+		},
+		{
+			title: "Stateless by default",
+			content: "Core APIs work without server-side state.",
+		},
+	];
+
+	for (const [i, constraint] of constraints.entries()) {
+		yield (
+			<li class="border-foreground m-0 grid content-start gap-2 border-t p-0 pt-4">
+				<span class="caption">{String(i + 1).padStart(2, "0")}</span>
+				<h3 class="my-0 text-lg">{constraint.title}</h3>
+				<p class="text-muted-foreground my-0 text-sm">{constraint.content}</p>
+			</li>
+		);
+	}
+}
 
 function* Features() {
 	const features = [

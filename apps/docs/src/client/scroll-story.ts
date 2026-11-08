@@ -1,6 +1,7 @@
 /**
- * Lights up the lines of the source each step is about, and marks the step
- * in the middle of the screen as active so its figure plays.
+ * Lights up the lines of the source each step is about, and marks a step as
+ * played once it reaches the middle of the screen, so its figure plays once
+ * and stays finished as you scroll on.
  */
 export class ScrollStory extends HTMLElement {
 	connectedCallback() {
@@ -10,14 +11,10 @@ export class ScrollStory extends HTMLElement {
 		const observer = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
+					if (!entry.isIntersecting) continue;
+
 					const step = entry.target as HTMLElement;
-
-					if (!entry.isIntersecting) {
-						delete step.dataset.active;
-						continue;
-					}
-
-					step.dataset.active = "";
+					step.dataset.played = "";
 
 					const ranges = step.dataset
 						.lines!.split(",")
@@ -32,7 +29,7 @@ export class ScrollStory extends HTMLElement {
 					}
 				}
 			},
-			// a step is active while it crosses the middle of the screen
+			// a step is current while it crosses the middle of the screen
 			{ rootMargin: "-45% 0px -45% 0px" },
 		);
 

@@ -274,7 +274,7 @@
 					@apply no-underline opacity-100;
 				}
 
-				[data-active] {
+				[data-played] {
 					[data-cursor] {
 						animation: cursor 2.6s ease-in-out both;
 					}
