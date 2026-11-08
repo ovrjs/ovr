@@ -158,8 +158,8 @@ const Browser = (props: { click?: boolean }) => (
 					example.com/todos
 				</span>
 			</div>
-			<div class="p-5 font-sans text-sm">
-				<p class="text-heading-foreground mt-0 mb-3 text-lg font-semibold">
+			<div class="p-5 text-sm">
+				<p class="text-heading-foreground font-headings mt-0 mb-3 text-lg font-semibold">
 					Todos
 				</p>
 				<ul class="my-0 grid list-none gap-2 p-0">
@@ -170,7 +170,7 @@ const Browser = (props: { click?: boolean }) => (
 						>
 							<span>{text}</span>
 							<span
-								class="bg-primary text-primary-foreground rounded-sm px-2.5 py-1 text-xs font-medium"
+								class="bg-primary text-primary-foreground rounded-sm px-2.5 py-1 font-mono text-xs font-medium"
 								data-done={props.click && i === 0 ? "" : undefined}
 							>
 								Done
@@ -196,10 +196,10 @@ const Browser = (props: { click?: boolean }) => (
 				</ul>
 				<div class="border-secondary mt-4 flex items-end gap-2 border-t pt-4">
 					<span class="grid grow gap-1">
-						<span class="text-xs font-medium">Todo</span>
+						<span class="font-mono text-xs font-medium">Todo</span>
 						<span class="border-secondary h-7 rounded-sm border" />
 					</span>
-					<span class="bg-primary text-primary-foreground rounded-sm px-2.5 py-1.5 text-xs font-medium">
+					<span class="bg-primary text-primary-foreground rounded-sm px-2.5 py-1.5 font-mono text-xs font-medium">
 						Add
 					</span>
 				</div>

@@ -108,8 +108,10 @@
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
+		/* two faces only, so nothing falls back to a sans */
+		--font-family-sans: var(--font-family-serif);
 		--font-family-mono: "Inconsolata Variable", monospace;
-		--font-family-headings: "Inconsolata Variable", sans-serif;
+		--font-family-headings: var(--font-family-mono);
 
 		--shiki-foreground: var(--base-100);
 		--shiki-background: var(--base-900);
@@ -212,12 +214,12 @@
 
 	label,
 	legend {
-		@apply font-sans text-base;
+		@apply font-headings text-base;
 	}
 
 	button,
 	.button {
-		@apply font-sans font-medium transition-colors ease-out active:scale-99;
+		@apply font-headings font-medium transition-colors ease-out active:scale-99;
 	}
 
 	form {
