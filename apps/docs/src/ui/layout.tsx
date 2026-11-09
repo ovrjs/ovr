@@ -165,7 +165,7 @@ const HomeLink = () => {
 
 const NavHeading = (props: { children: o.JSX.Element }) => {
 	return (
-		<h2 class="text-muted-foreground my-0 pl-2 text-xs font-bold uppercase">
+		<h2 class="caption my-0 pl-2 text-xs font-normal lowercase">
 			{props.children}
 		</h2>
 	);
@@ -177,9 +177,9 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 			<hr />
 
 			{/* the pages in reading order, grouped by what they cover */}
-			<div class="grid gap-4">
+			<div class="grid gap-6">
 				{content.sections.map((section) => (
-					<section class="grid gap-1">
+					<section class="grid gap-1.5">
 						<NavHeading>{section.name}</NavHeading>
 						<NavList>
 							{section.slugs.map((slug) => (
@@ -243,7 +243,7 @@ const NavLink = (props: {
 		<li>
 			<a
 				class={clsx(
-					"button secondary h-7 justify-start px-2 text-sm",
+					"button secondary h-8 justify-start px-2 text-sm",
 					!current && "ghost",
 				)}
 				href={props.href}
