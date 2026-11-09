@@ -104,10 +104,10 @@ export const HomeLayout = (props: {
 }) => {
 	return (
 		<Document head={props.head}>
-			{/* the bands run to the page's edges, without scrolling it sideways */}
+			{/* the closing band runs to the page's edges, without scrolling it sideways */}
 			<div class="overflow-x-clip">
-				{/* the hero links to the docs, the demos, and GitHub; it sits on the hero's dark band */}
-				<header class="text-foreground relative z-10 mx-auto flex h-15 max-w-5xl items-center gap-3 px-2 [color-scheme:dark]">
+				{/* the hero links to the docs, the demos, and GitHub */}
+				<header class="mx-auto flex h-15 max-w-5xl items-center gap-3 px-2">
 					<HomeLink />
 					<p class="caption my-0 text-xs">
 						v{version} · {size.kb}KB

@@ -16,8 +16,7 @@ export const page = o.Route.get("/")
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
-				{/* a dark band, whatever the scheme */}
-				<section class="band hero text-foreground relative isolate pt-12 pb-12 [color-scheme:dark] sm:pt-16 sm:pb-20">
+				<section class="pt-8 sm:pt-12">
 					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
 					<div class="flex gap-3">

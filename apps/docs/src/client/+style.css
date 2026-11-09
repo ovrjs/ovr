@@ -342,16 +342,6 @@
 		}
 	}
 
-	/* the home page hero, behind the header too */
-	.hero {
-		--band-top: -3.75rem;
-		--band-fade: linear-gradient(
-			to bottom,
-			black calc(100% - 6rem),
-			transparent
-		);
-	}
-
 	/* the home page's end, which is the bottom of the page */
 	.band-end {
 		--band-fade: linear-gradient(to top, black calc(100% - 6rem), transparent);
