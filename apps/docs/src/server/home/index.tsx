@@ -41,8 +41,7 @@ export const page = o.Route.get("/")
 				</section>
 
 				<section>
-					<p class="caption my-0">people and agents</p>
-					<h2 class="mt-2 mb-5">One app for people and agents</h2>
+					<h2 class="mt-0 mb-5">One app for people and agents</h2>
 					<p class="mb-16 max-w-2xl text-lg">
 						Most apps are built twice: a website for people, then an API or MCP
 						server for agents. With ovr, the routes are the API. Describe a
@@ -55,8 +54,7 @@ export const page = o.Route.get("/")
 				</section>
 
 				<section class="mt-28">
-					<p class="caption my-0">streaming</p>
-					<h2 id="streaming" class="mt-2 mb-5">
+					<h2 id="streaming" class="mt-0 mb-5">
 						Rendered how browsers read
 					</h2>
 					<div class="grid gap-8">
@@ -90,16 +88,14 @@ export const page = o.Route.get("/")
 				</section>
 
 				<section class="mt-28">
-					<p class="caption my-0">built in</p>
-					<h2 class="mt-2 mb-6">Everything an app needs</h2>
+					<h2 class="mt-0 mb-6">Everything an app needs</h2>
 					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 						<Features />
 					</div>
 				</section>
 
 				<section class="border-secondary mt-28 border-t pt-12">
-					<p class="caption my-0">get started</p>
-					<h2 class="mt-2 mb-6">Build your first route</h2>
+					<h2 class="mt-0 mb-6">Build your first route</h2>
 					<div class="grid justify-items-start gap-2">
 						<p class="caption my-0">install</p>
 						<Command>npm i ovr</Command>
