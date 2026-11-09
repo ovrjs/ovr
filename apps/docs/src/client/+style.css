@@ -255,6 +255,38 @@
 		}
 	}
 
+	/* the logo's generator, faint behind the hero */
+	.hero-generator {
+		color: color-mix(
+			in oklab,
+			var(--color-foreground) 4%,
+			var(--color-background)
+		);
+
+		[data-current] {
+			stroke: color-mix(
+				in oklab,
+				var(--color-foreground) 10%,
+				var(--color-background)
+			);
+		}
+
+		[data-rotor] {
+			transform-box: view-box;
+			transform-origin: center;
+		}
+
+		@media (prefers-reduced-motion: no-preference) {
+			[data-rotor] {
+				animation: spin 40s linear infinite;
+			}
+
+			[data-current] {
+				animation: current 8s linear infinite;
+			}
+		}
+	}
+
 	feature-grid {
 		[data-cursor],
 		[data-error],
@@ -388,6 +420,18 @@
 					}
 				}
 			}
+		}
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(1turn);
+		}
+	}
+
+	@keyframes current {
+		to {
+			stroke-dashoffset: -100;
 		}
 	}
 

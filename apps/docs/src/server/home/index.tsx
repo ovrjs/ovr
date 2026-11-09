@@ -1,5 +1,6 @@
 import * as content from "@/lib/content";
 import { Features } from "@/server/home/features";
+import { Generator } from "@/server/home/generator";
 import * as result from "@/server/home/index.md";
 import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
@@ -16,7 +17,8 @@ export const page = o.Route.get("/")
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
-				<section class="pt-8 pb-4 sm:pt-12">
+				<section class="relative isolate pt-8 pb-4 sm:pt-12">
+					<Generator />
 					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
 					<div class="mb-14 flex gap-3">
