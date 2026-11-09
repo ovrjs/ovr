@@ -20,7 +20,7 @@ const Cursor = () => (
 /** A small window, for a page in a browser. */
 const Window = (props: { class?: string; children: o.JSX.Element }) => (
 	<div
-		class={`border-secondary bg-background relative overflow-hidden rounded-sm border shadow-xs ${props.class ?? ""}`}
+		class={`border-secondary bg-background relative [scrollbar-gutter:auto] overflow-hidden rounded-sm border shadow-xs ${props.class ?? ""}`}
 	>
 		<div class="border-secondary flex gap-1 border-b px-2 py-1.5">
 			<span class="bg-foreground/20 size-1.5 rounded-full" />
@@ -188,7 +188,7 @@ export const Features = () => (
 				href={feature.href}
 				data-feature
 				data-no-prefetch={feature.noPrefetch}
-				class={`bg-background border-secondary hover:border-foreground flex flex-col overflow-hidden rounded-md border no-underline transition-colors ${wide(feature) ? "sm:max-lg:col-span-2" : ""}`}
+				class={`bg-background border-secondary hover:border-foreground flex [scrollbar-gutter:auto] flex-col overflow-hidden rounded-md border no-underline transition-colors ${wide(feature) ? "sm:max-lg:col-span-2" : ""}`}
 			>
 				{feature.Illustration && (
 					<div
