@@ -209,9 +209,7 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 				</NavLink>
 			</NavList>
 
-			<hr class="mt-auto" />
-
-			<ul class="flex items-center justify-between">
+			<ul class="mt-auto flex items-center justify-between">
 				<li>
 					<GitHub />
 				</li>
