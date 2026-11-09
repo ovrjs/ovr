@@ -1,5 +1,12 @@
 @layer theme, base, components, utilities;
 
+/* the angle of the light on polished silver, registered so it can turn smoothly */
+@property --sheen-angle {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 135deg;
+}
+
 @import "uico";
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
@@ -107,22 +114,12 @@
 		--accent: var(--base-500);
 		/* the accent, a warm silver, for small touches only */
 		--silver: light-dark(oklch(0.68 0.012 90), oklch(0.86 0.014 90));
-		/* a glint of light that sweeps across polished silver */
-		--silver-glint: linear-gradient(
-			110deg,
-			transparent 42%,
-			color-mix(in oklab, white 90%, transparent) 50%,
-			transparent 58%
-		);
-		/* polished silver, light catching a machined edge, for borders */
-		--silver-sheen: linear-gradient(
-			135deg,
-			light-dark(oklch(0.62 0.01 90), oklch(0.97 0.008 90)) 0%,
-			light-dark(oklch(0.88 0.008 90), oklch(0.66 0.01 90)) 28%,
-			light-dark(oklch(0.55 0.01 90), oklch(0.93 0.008 90)) 52%,
-			light-dark(oklch(0.84 0.008 90), oklch(0.6 0.01 90)) 76%,
-			light-dark(oklch(0.64 0.01 90), oklch(0.95 0.008 90)) 100%
-		);
+		/* polished silver, the tones of light across a machined edge */
+		--steel-1: light-dark(oklch(0.62 0.01 90), oklch(0.84 0.008 90));
+		--steel-2: light-dark(oklch(0.88 0.008 90), oklch(0.5 0.01 90));
+		--steel-3: light-dark(oklch(0.55 0.01 90), oklch(0.78 0.008 90));
+		--steel-4: light-dark(oklch(0.84 0.008 90), oklch(0.46 0.01 90));
+		--steel-5: light-dark(oklch(0.64 0.01 90), oklch(0.82 0.008 90));
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -171,31 +168,54 @@
 		@apply font-normal;
 	}
 
-	/* outline buttons are rimmed in polished silver */
-	.button.outline {
+	/* outline buttons and feature cards are rimmed in polished silver */
+	.button.outline,
+	feature-grid [data-feature] {
 		border: 1px solid transparent;
 		background:
 			linear-gradient(var(--color-background) 0 0) padding-box,
-			var(--silver-glint) border-box,
-			var(--silver-sheen) border-box;
-		background-position:
-			0 0,
-			100% 0,
-			0 0;
-		/* the glint is wider than the element, and starts off its left edge */
-		background-size:
-			100% 100%,
-			250% 100%,
-			100% 100%;
-		background-repeat: no-repeat;
+			linear-gradient(
+					var(--sheen-angle),
+					var(--steel-1) 0%,
+					var(--steel-2) 28%,
+					var(--steel-3) 52%,
+					var(--steel-4) 76%,
+					var(--steel-5) 100%
+				)
+				border-box;
 	}
 
-	/* pointed at, polished silver shimmers once as a glint sweeps across it */
+	/* pointed at, the light on the silver turns a little, like tilting it */
 	@media (prefers-reduced-motion: no-preference) {
+		.button.outline,
+		feature-grid [data-feature] {
+			transition: --sheen-angle 0.7s ease;
+		}
+
 		.button.outline:is(:hover, :focus-visible),
 		feature-grid [data-feature]:is(:hover, :focus-visible) {
-			animation: shimmer 0.9s ease-in-out;
+			--sheen-angle: 170deg;
 		}
+	}
+
+	/* solid buttons are brushed metal, lit along the top edge */
+	:is(.button, button):not(
+		.secondary,
+		.ghost,
+		.outline,
+		.accent,
+		.destructive
+	) {
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklab, white 25%, transparent),
+			inset 0 -1px 0 color-mix(in oklab, black 25%, transparent),
+			0 1px 2px color-mix(in oklab, black 20%, transparent);
+		background-image: linear-gradient(
+			to bottom,
+			color-mix(in oklab, white 16%, transparent),
+			transparent 55%,
+			color-mix(in oklab, black 12%, transparent)
+		);
 	}
 
 	/* links keep the text color, with silver beneath */
@@ -364,7 +384,8 @@
 			z-index: -5;
 			mix-blend-mode: overlay;
 			mask-image: var(--band-fade);
-			background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+			/* brushed metal: noise stretched along the band */
+			background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 		}
 	}
 
@@ -374,29 +395,6 @@
 	}
 
 	feature-grid {
-		[data-feature] {
-			border-color: var(--color-secondary);
-		}
-
-		/* pointed at, a card is rimmed in polished silver */
-		[data-feature]:is(:hover, :focus-visible) {
-			border-color: transparent;
-			background:
-				linear-gradient(var(--color-background) 0 0) padding-box,
-				var(--silver-glint) border-box,
-				var(--silver-sheen) border-box;
-			background-position:
-				0 0,
-				100% 0,
-				0 0;
-			/* the glint is wider than the element, and starts off its left edge */
-			background-size:
-				100% 100%,
-				250% 100%,
-				100% 100%;
-			background-repeat: no-repeat;
-		}
-
 		[data-cursor],
 		[data-error],
 		[data-progress] {
@@ -533,22 +531,6 @@
 	}
 
 	/* one of the 14 blades' spacing, so the disc ends as it started */
-	/* the glint, from off the left edge to off the right */
-	@keyframes shimmer {
-		from {
-			background-position:
-				0 0,
-				100% 0,
-				0 0;
-		}
-		to {
-			background-position:
-				0 0,
-				0% 0,
-				0 0;
-		}
-	}
-
 	@keyframes mark-turn {
 		to {
 			transform: rotate(calc(1turn / 14));
