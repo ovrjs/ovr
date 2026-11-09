@@ -158,13 +158,13 @@ ovr is intentionally constrained. These rules keep the framework small and shape
 
 ## Get started
 
-```sh
+```bash
 npm i ovr
 ```
 
 These docs are an ovr app. Connect your agent to them:
 
-```sh
+```bash
 claude mcp add --transport http ovr https://ovrjs.com/mcp
 ```
 

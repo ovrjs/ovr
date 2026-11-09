@@ -9,7 +9,7 @@ An ovr app works for AI agents the same way it works for people. Pages render as
 
 A request with `Accept: text/markdown` gets the page as Markdown. Nothing changes in your routes: the same JSX renders as Markdown instead of HTML, writing each block as soon as it is complete.
 
-```sh
+```bash
 curl -H "Accept: text/markdown" https://example.com/posts
 ```
 
@@ -121,7 +121,7 @@ The endpoint also mounts Auth's OAuth endpoints, and serves the protected resour
 
 Point an MCP client at the endpoint:
 
-```sh
+```bash
 claude mcp add --transport http posts https://example.com/mcp
 ```
 
