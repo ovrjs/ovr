@@ -38,12 +38,12 @@ export const Popover = (props: PopoverProps) => {
 					{titleHref ? (
 						<a
 							href={titleHref}
-							class="font-mono text-xl font-semibold no-underline"
+							class="font-ui text-xl font-semibold tracking-tight no-underline"
 						>
 							{titleContent}
 						</a>
 					) : (
-						<div class="cursor-default font-mono text-xl font-semibold">
+						<div class="font-ui cursor-default text-xl font-semibold tracking-tight">
 							{titleContent}
 						</div>
 					)}
