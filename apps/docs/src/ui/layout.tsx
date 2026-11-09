@@ -5,6 +5,7 @@ import * as badge from "@/ui/badge";
 import { FavIcon } from "@/ui/favicon";
 import { FontPreload } from "@/ui/font-preload";
 import { GitHub } from "@/ui/github";
+import { Mark } from "@/ui/mark";
 import { Popover } from "@/ui/popover";
 import { SkipLink } from "@/ui/skip-link";
 import * as size from "@ovrjs/size";
@@ -96,19 +97,22 @@ export const HomeLayout = (props: {
 }) => {
 	return (
 		<Document head={props.head}>
-			{/* the hero links to the docs, the demos, and GitHub */}
-			<header class="mx-auto flex max-w-5xl items-baseline gap-3 px-2 py-4">
-				<HomeLink />
-				<p class="caption my-0 text-xs">
-					v{version} · {size.kb}KB
-				</p>
-			</header>
-			<main
-				id="content"
-				class="prose mx-auto mb-16 w-full max-w-5xl min-w-0 px-4 pb-4"
-			>
-				{props.children}
-			</main>
+			{/* the hero's generator runs off the page's edge, without scrolling it sideways */}
+			<div class="overflow-x-clip">
+				{/* the hero links to the docs, the demos, and GitHub */}
+				<header class="mx-auto flex max-w-5xl items-center gap-3 px-2 py-4">
+					<HomeLink />
+					<p class="caption my-0 text-xs">
+						v{version} · {size.kb}KB
+					</p>
+				</header>
+				<main
+					id="content"
+					class="prose mx-auto mb-16 w-full max-w-5xl min-w-0 px-4 pb-4"
+				>
+					{props.children}
+				</main>
+			</div>
 		</Document>
 	);
 };
@@ -151,8 +155,9 @@ const HomeLink = () => {
 	return (
 		<a
 			href="/"
-			class="flex items-center pl-2 font-mono text-xl font-bold no-underline"
+			class="home-link flex items-center gap-1.5 pl-2 font-mono text-xl font-bold no-underline"
 		>
+			<Mark class="size-5" />
 			ovr
 		</a>
 	);
