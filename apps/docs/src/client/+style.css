@@ -198,6 +198,18 @@
 		}
 	}
 
+	/* pointed at, a ghost button gets a thin plate of brushed silver under it */
+	:is(.button, button).ghost:is(:hover, :focus-visible) {
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
+			inset 0 0 0 1px color-mix(in oklab, var(--silver) 30%, transparent);
+		background-image: linear-gradient(
+			to bottom,
+			color-mix(in oklab, var(--silver) 24%, transparent),
+			color-mix(in oklab, var(--silver) 10%, transparent)
+		);
+	}
+
 	/* solid buttons are brushed metal, lit along the top edge */
 	:is(.button, button):not(
 		.secondary,
