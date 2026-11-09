@@ -103,7 +103,7 @@ export const HomeLayout = (props: {
 					class="flex items-baseline pl-2 font-mono text-xl no-underline"
 				>
 					<span class="font-bold">ovr</span>
-					<span class="text-muted-foreground">@{version}</span>
+					<span class="text-muted-foreground text-xs">@{version}</span>
 				</a>
 				<p class="caption my-0 text-xs">{size.kb}KB</p>
 			</header>
