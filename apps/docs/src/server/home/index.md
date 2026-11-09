@@ -110,7 +110,7 @@ The same "Done" button a person clicks is a tool call with an `id` for an agent.
 
 ## Define a field once
 
-Columns can be form fields, so the add route takes `text` straight from the todos table. That one definition is the form people fill in, the data the handler gets, the column the insert writes, the line agents read, and the input of the MCP tool.
+A `Table` describes a Postgres table with the same schemas forms use, so a column can be a form field. The add route takes `text` straight from the todos table, and that one definition is the form people fill in, the data the handler gets, the insert into Postgres, the line agents read, and the input of the MCP tool.
 
 ```tsx
 const todos = new Table(
@@ -158,11 +158,15 @@ The form, with its WebMCP tool:
 What the handler gets from `await c.data()`:
 
 ```ts
-// text = "Buy bread"
-result.data; // { text: "Buy bread" }
+.use(async (c) => {
+	const result = await c.data();
 
-// text = ""
-result.issues; // [{ path: ["text"], message: "Required field" }]
+	// text = "Buy bread"
+	result.data; // { text: "Buy bread" }
+
+	// text = ""
+	result.issues; // [{ path: ["text"], message: "Required field" }]
+});
 ```
 
 The insert it sends to Postgres:

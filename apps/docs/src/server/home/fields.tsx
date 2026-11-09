@@ -99,13 +99,15 @@ export const Fields = async () => {
 		<fields-demo class="block">
 			<div class="grid items-start gap-x-12 gap-y-6 lg:grid-cols-2">
 				<div class="grid max-w-2xl gap-4 [&>p]:my-0">
-					<p class="caption">forms</p>
+					<p class="caption">database</p>
 					<h2 class="my-0">Define a field once</h2>
 					<p class="text-lg">
-						Columns can be form fields, so the add route takes <code>text</code>{" "}
-						straight from the todos table. That one definition is the form
-						people fill in, the data the handler gets, the column the insert
-						writes, the line agents read, and the input of the MCP tool.
+						A <code>Table</code> describes a Postgres table with the same
+						schemas forms use, so a column can be a form field. The add route
+						takes <code>text</code> straight from the todos table, and that one
+						definition is the form people fill in, the data the handler gets,
+						the insert into Postgres, the line agents read, and the input of the
+						MCP tool.
 					</p>
 				</div>
 				<figure class="my-0">
@@ -145,13 +147,13 @@ export const Fields = async () => {
 				</Card>
 
 				<Card caption="server · the handler" class="sm:col-span-2">
-					{"const result = await c.data();\n\n"}
+					{".use(async (c) => {\n\tconst result = await c.data();\n\n\t"}
 					<Comment>{`// text = ${JSON.stringify(data!.text)}`}</Comment>
-					{"\nresult.data   → { "}
+					{"\n\tresult.data   → { "}
 					<mark>{`text: ${JSON.stringify(data!.text)}`}</mark>
-					{" }\n\n"}
+					{" }\n\n\t"}
 					<Comment>{'// text = ""'}</Comment>
-					{"\nresult.issues → ["}
+					{"\n\tresult.issues → ["}
 					{issues!.map((issue) => (
 						<>
 							{"{ "}
@@ -159,7 +161,7 @@ export const Fields = async () => {
 							{`, message: ${JSON.stringify(issue.message)} }`}
 						</>
 					))}
-					{"]"}
+					{"]\n});"}
 				</Card>
 
 				<Card caption="database · the insert it sends">
