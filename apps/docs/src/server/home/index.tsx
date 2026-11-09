@@ -4,9 +4,7 @@ import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
 import { HomeLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import * as size from "@ovrjs/size";
 import * as o from "ovr";
-import { version } from "ovr/package.json";
 
 export const page = o.Route.get("/")
 	.describe("Overview of ovr, the streaming web framework, and its features")
@@ -17,10 +15,7 @@ export const page = o.Route.get("/")
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
-				<section class="pt-4 pb-4 sm:pt-8">
-					<p class="caption mt-0 mb-6">
-						ovr@{version} · {size.kb}KB · zero dependencies
-					</p>
+				<section class="pt-8 pb-4 sm:pt-12">
 					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
 					<div class="mb-14 flex gap-3">

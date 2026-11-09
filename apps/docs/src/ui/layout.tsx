@@ -7,10 +7,12 @@ import { FontPreload } from "@/ui/font-preload";
 import { GitHub } from "@/ui/github";
 import { Popover } from "@/ui/popover";
 import { SkipLink } from "@/ui/skip-link";
+import * as size from "@ovrjs/size";
 import * as script from "client:script";
 import * as style from "client:style";
 import { clsx } from "clsx";
 import * as o from "ovr";
+import { version } from "ovr/package.json";
 
 const Assets = () => {
 	return o.Markup.raw(script.tags + style.tags);
@@ -95,8 +97,12 @@ export const HomeLayout = (props: {
 	return (
 		<Document head={props.head}>
 			{/* the hero links to the docs, the demos, and GitHub */}
-			<header class="mx-auto flex max-w-5xl items-center px-2 py-4">
+			<header class="mx-auto flex max-w-5xl items-baseline gap-3 px-2 py-4">
 				<HomeLink />
+				<p class="caption my-0 text-xs">
+					v{version} · {size.kb}KB
+					<span class="max-sm:hidden"> · zero dependencies</span>
+				</p>
 			</header>
 			<main
 				id="content"
