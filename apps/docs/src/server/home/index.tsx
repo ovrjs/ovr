@@ -194,7 +194,7 @@ function* Features() {
 		},
 		{
 			title: "Streaming JSX",
-			href: "/#streaming",
+			href: "/02-render#parallelization",
 			content: "Components render in parallel and stream in order.",
 		},
 		{
