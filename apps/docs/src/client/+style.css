@@ -198,8 +198,8 @@
 		}
 	}
 
-	/* pointed at, a ghost button gets a thin plate of brushed silver under it */
-	:is(.button, button).ghost:is(:hover, :focus-visible) {
+	/* pointed at or pressed, a ghost button gets a thin plate of brushed silver under it */
+	:is(.button, button).ghost:is(:hover, :focus-visible, [aria-pressed="true"]) {
 		box-shadow:
 			inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
 			inset 0 0 0 1px color-mix(in oklab, var(--silver) 30%, transparent);

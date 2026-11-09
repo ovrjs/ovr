@@ -150,7 +150,7 @@ export const Network = () => {
 								type="button"
 								data-mode-button={m}
 								aria-pressed={m === mode ? "true" : "false"}
-								class="button ghost aria-pressed:bg-secondary h-8 px-3 text-sm capitalize"
+								class="button ghost h-8 px-3 text-sm capitalize"
 							>
 								{m}
 							</button>
