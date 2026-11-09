@@ -58,6 +58,12 @@ export const createLayout =
 						<Popover
 							title="ovr"
 							titleHref="/"
+							titleContent={
+								<span class="home-link flex items-center gap-1.5">
+									<Mark class="relative top-0.5 size-5" />
+									ovr
+								</span>
+							}
 							trigger={{
 								children: <span class="icon-[lucide--align-justify]"></span>,
 							}}
