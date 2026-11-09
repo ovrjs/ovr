@@ -114,7 +114,11 @@ export const page = o.Route.get("/")
 								connect your agent to these docs, an ovr app
 							</p>
 							<Command>
-								claude mcp add --transport http ovr https://ovrjs.com/mcp
+								claude mcp add --transport http
+								{/* a shell line continuation, so a phone fits it without scrolling */}
+								<span class="sm:hidden">{" \\\n  "}</span>
+								<span class="max-sm:hidden"> </span>
+								ovr https://ovrjs.com/mcp
 							</Command>
 							<a href="/01-get-started" class="button mt-6 h-11 px-5 text-base">
 								Get Started
@@ -135,7 +139,7 @@ export const page = o.Route.get("/")
 
 /** A command to copy, in the dark of the code blocks. */
 const Command = (props: { children: o.JSX.Element }) => (
-	<pre class="bg-base-900 text-base-100 -mx-4 my-0 max-w-[calc(100%+2rem)] overflow-x-auto rounded-none px-4 py-2.5 text-sm sm:mx-0 sm:max-w-full sm:rounded-md">
+	<pre class="bg-base-900 text-base-100 my-0 max-w-full [scrollbar-width:none] overflow-x-auto rounded-md px-4 py-2.5 text-sm">
 		{props.children}
 	</pre>
 );
