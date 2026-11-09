@@ -7,7 +7,7 @@ description: ovr application routes.
 
 ovr's built-in router offers efficient matching, supporting static paths, [parameters](#parameters), and [wildcards](#wildcard). Utilizing a [radix trie](https://en.wikipedia.org/wiki/Radix_tree) structure ensures performance does not degrade as more routes are added.
 
-Create a route to a specific resource in your application with the `Route` class. Construct the route with an HTTP `method` and the route `pattern`, then add the [`middleware`](/05-middleware) that handles the request with `use`.
+Create a route to a specific resource in your application with the `Route` class. Construct the route with an HTTP `method` and the route `pattern`, then add the [`middleware`](/middleware) that handles the request with `use`.
 
 ```ts
 import { Route } from "ovr";
@@ -15,7 +15,7 @@ import { Route } from "ovr";
 const route = new Route("GET", "/").use(() => "html");
 ```
 
-Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/07-schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`, which throws otherwise. Once `app.use()` mounts a route, it is final: changing it throws, so its tool and middleware stay as they were mounted.
+Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`, which throws otherwise. Once `app.use()` mounts a route, it is final: changing it throws, so its tool and middleware stay as they were mounted.
 
 ```ts
 const update = Route.post("/posts/:id")
@@ -42,7 +42,7 @@ new Route("GET", "/api/:id").use((c) => {
 });
 ```
 
-Parameters are strings from the URL. Check them with a [schema](/07-schema) before using them, for example before a query. `params` parses each one before the route's middleware runs, and a parameter that fails its schema responds with a 404, since that resource does not exist.
+Parameters are strings from the URL. Check them with a [schema](/schema) before using them, for example before a query. `params` parses each one before the route's middleware runs, and a parameter that fails its schema responds with a 404, since that resource does not exist.
 
 ```ts
 import { Route, Schema } from "ovr";
@@ -113,7 +113,7 @@ const page = Route.get("/").use(() => {
 
 ## Post
 
-`Route.post` creates a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route with `Form` and `Button` components. Use `Form` whenever a page submits to the route. It sets `enctype="multipart/form-data"`, and renders the route's [`fields`](/07-schema#post-forms) and a submit button, labelled with `submit`:
+`Route.post` creates a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route with `Form` and `Button` components. Use `Form` whenever a page submits to the route. It sets `enctype="multipart/form-data"`, and renders the route's [`fields`](/schema#post-forms) and a submit button, labelled with `submit`:
 
 ```tsx
 const create = Route.post("/posts")
@@ -140,7 +140,7 @@ const remove = Route.post("/posts/:id/delete").use((c) => {
 <remove.Form params={{ id: post.id }} submit="Delete" />;
 ```
 
-Pass children to write the form's contents yourself, for example with [`Fields` or `Field`](/07-schema#post-forms) for a custom layout; they replace the generated fields and button.
+Pass children to write the form's contents yourself, for example with [`Fields` or `Field`](/schema#post-forms) for a custom layout; they replace the generated fields and button.
 
 `Button` is for a second action inside another form: a submit button whose `formaction` sends that form to this route instead. Like any `formaction` button, it does nothing outside a `<form>`, so use the route's `Form` for a standalone button.
 
@@ -161,7 +161,7 @@ The `Anchor`, `Button`, and `Form` components of `Route.get` and `Route.post` ta
 - `search` - [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/URLSearchParams) to append to the URL, passed into `URLSearchParams` constructor to create the query string.
 - `hash` - [fragment hash](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) appended with a `#` at the end of the URL.
 
-`Form` also takes `submit`, the label of its button, and for routes with [`fields`](/07-schema#post-forms), `state`, the current page's `c.url` so an invalid submission returns to it, and `values`, a record's current values to [edit](/07-schema#edit-a-record).
+`Form` also takes `submit`, the label of its button, and for routes with [`fields`](/schema#post-forms), `state`, the current page's `c.url` so an invalid submission returns to it, and `values`, a record's current values to [edit](/schema#edit-a-record).
 
 ```tsx
 const page = Route.get("/hello/:name").use(() => {
@@ -180,7 +180,7 @@ const page = Route.get("/hello/:name").use(() => {
 
 ## Describe
 
-`describe` explains what the route does for AI agents. Only described routes are served to agents that connect to the app's [MCP endpoint](/10-agents) or use the page's forms, as tools and, for GET routes, as pages to read; the description says when to use them. Write it for a reader who sees the route without your UI.
+`describe` explains what the route does for AI agents. Only described routes are served to agents that connect to the app's [MCP endpoint](/agents) or use the page's forms, as tools and, for GET routes, as pages to read; the description says when to use them. Write it for a reader who sees the route without your UI.
 
 ```ts
 const remove = Route.post("/posts/:id/delete")
@@ -192,7 +192,7 @@ const remove = Route.post("/posts/:id/delete")
 
 GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
 
-A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages by checking the session. See [Agents](/10-agents) for how tools and pages are served to agents.
+A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages by checking the session. See [Agents](/agents) for how tools and pages are served to agents.
 
 ## Properties
 

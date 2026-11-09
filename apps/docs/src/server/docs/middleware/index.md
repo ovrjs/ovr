@@ -57,7 +57,7 @@ For each request, ovr creates a `Context` object _(abbreviated as `c` in these d
 
 ## Properties
 
-`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/04-route#parameters), the matched `route`, the signed-in [session](/09-auth#sessions), and helpers for cookies and request parsing.
+`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/route#parameters), the matched `route`, the signed-in [session](/auth#sessions), and helpers for cookies and request parsing.
 
 ```ts
 Route.get("/api/:id").use((c) => {
@@ -73,7 +73,7 @@ Route.get("/api/:id").use((c) => {
 });
 ```
 
-> On [schema-enabled POST routes](/07-schema#post-forms), `Context.data` parses typed form data, and on [schema-enabled GET routes](/07-schema#get-forms) it parses typed search params. Routes without a schema return `null`.
+> On [schema-enabled POST routes](/schema#post-forms), `Context.data` parses typed form data, and on [schema-enabled GET routes](/schema#get-forms) it parses typed search params. Routes without a schema return `null`.
 
 ## Response
 
@@ -126,7 +126,7 @@ app.use(() => new Response("Hello world"));
 
 #### Stream
 
-Any value that is returned from middleware will be passed into [`Markup.stream`](/02-render#stream), or [`Markdown.stream`](/02-render#markdown) when the request asks for Markdown, and assigned to `Context.res.body`.
+Any value that is returned from middleware will be passed into [`Markup.stream`](/render#stream), or [`Markdown.stream`](/render#markdown) when the request asks for Markdown, and assigned to `Context.res.body`.
 
 Returning a value sets the `content-type` header to `html` unless it has already been set. Markup content types such as `html`, `xml`, and `svg` will be escaped during the render while other content types will not.
 
@@ -134,7 +134,7 @@ Returning a value sets the `content-type` header to `html` unless it has already
 
 ## Rate limiting
 
-[Auth](/09-auth#rate-limiting) limits sign-in and agent sign-in for you. Add a `Limiter` to your own routes that are expensive, such as ones that send email or call an AI model. It stores token buckets in your Postgres [database](/08-database), so every server counts together.
+[Auth](/auth#rate-limiting) limits sign-in and agent sign-in for you. Add a `Limiter` to your own routes that are expensive, such as ones that send email or call an AI model. It stores token buckets in your Postgres [database](/database), so every server counts together.
 
 ```ts
 import { Limiter, type Middleware, Route } from "ovr";
@@ -158,7 +158,7 @@ app.use(
 );
 ```
 
-Without `key`, a limiter counts each client IP, which your server passes with `app.fetch(request, { ip })`, see [client IP examples](/03-app#client-ip).
+Without `key`, a limiter counts each client IP, which your server passes with `app.fetch(request, { ip })`, see [client IP examples](/app#client-ip).
 
 The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. A `key` that returns nothing throws, so put a limiter keyed by user after a sign-in check, as above. Cookies and forwarded headers are never used as fallback identities. Exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`. A missing or invalid identity, or a storage failure, throws: the request is not admitted, and your app's error handling sees the error like one from your own handler.
 
@@ -166,7 +166,7 @@ The first argument names the limiter's buckets. Name each limiter: two with the 
 
 `database` is required. Optional settings are `limit` (default 60), `interval` (milliseconds, default a minute), and `key`. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
 
-Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/08-database#migrate) creates it before your own migrations; `new Limiter()` is a type error when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
+Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/database#migrate) creates it before your own migrations; `new Limiter()` is a type error when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
 
 ```ts
 const database = new Database(pool, [posts, Limiter.table]);

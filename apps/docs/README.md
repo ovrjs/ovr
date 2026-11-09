@@ -4,7 +4,7 @@ Run `npm run dev` from the repository root, or `npm run dev --workspace docs` to
 
 ## Auth demo
 
-The demo at `/demo/auth` and its navigation link are available only in Vite development mode when `AUTH_SECRET` is set. Production builds exclude the demo database and its routes. The public authentication guide is at `/09-auth`.
+The demo at `/demo/auth` and its navigation link are available only in Vite development mode when `AUTH_SECRET` is set. Production builds exclude the demo database and its routes. The public authentication guide is at `/auth`.
 
 Set these server-side values in `apps/docs/.env`:
 

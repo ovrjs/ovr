@@ -3,7 +3,7 @@ title: Database
 description: Postgres tables, queries, transactions, and migrations with ovr schemas.
 ---
 
-`Database` connects ovr to Postgres. Define tables with [schemas](/07-schema), write queries in SQL, and apply SQL migrations. ovr validates what goes in and comes out, and checks that the live database is compatible with your tables.
+`Database` connects ovr to Postgres. Define tables with [schemas](/schema), write queries in SQL, and apply SQL migrations. ovr validates what goes in and comes out, and checks that the live database is compatible with your tables.
 
 ## Define tables
 
@@ -55,7 +55,7 @@ type User = Schema.Infer<typeof database.users>;
 // { id: string; email: string; name: string | null; created: Date }
 ```
 
-Columns can be [form fields](/07-schema#post-forms), so routes reuse the table's rules instead of repeating them:
+Columns can be [form fields](/schema#post-forms), so routes reuse the table's rules instead of repeating them:
 
 ```ts
 const posts = new Table(
@@ -215,7 +215,7 @@ if (differences.length) throw new Error(differences.join("\n"));
 console.log({ applied });
 ```
 
-- Tables from ovr, such as [`Auth.tables`](/09-auth#storage) and [`Limiter.table`](/05-middleware#rate-limiting), bring their own migrations. They are applied first, each library's in the order it lists them, so yours can reference their tables.
+- Tables from ovr, such as [`Auth.tables`](/auth#storage) and [`Limiter.table`](/middleware#rate-limiting), bring their own migrations. They are applied first, each library's in the order it lists them, so yours can reference their tables.
 - Each migration and its history record commit in one transaction, so a failing migration leaves nothing behind.
 - Concurrent runs wait on an advisory lock, so each migration applies once.
 - Editing or deleting an applied migration, or adding one that sorts before an applied migration, is an error.
@@ -251,7 +251,7 @@ To change a table, edit its definition, run `check` to see what differs, and wri
 - Nullability that differs from the schema
 - Columns in `default` the database doesn't supply
 - Other `NOT NULL` columns without a default, which inserts can't omit
-- Foreign keys the tables of ovr need, such as [Auth's](/09-auth#storage) to your users table
+- Foreign keys the tables of ovr need, such as [Auth's](/auth#storage) to your users table
 
 Domains count their `NOT NULL` constraints and defaults. Keys, constraints, indexes, and other columns are left to your migrations.
 

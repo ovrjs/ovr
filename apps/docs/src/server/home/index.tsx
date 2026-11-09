@@ -28,7 +28,7 @@ export const page = o.Route.get("/")
 					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
 					<div class="mb-14 flex gap-3">
-						<a href="/01-get-started" class="button h-11 px-5 text-base">
+						<a href="/get-started" class="button h-11 px-5 text-base">
 							Get Started
 						</a>
 						<a
@@ -115,7 +115,7 @@ export const page = o.Route.get("/")
 								<span class="max-sm:hidden"> </span>
 								ovr https://ovrjs.com/mcp
 							</Command>
-							<a href="/01-get-started" class="button mt-6 h-11 px-5 text-base">
+							<a href="/get-started" class="button mt-6 h-11 px-5 text-base">
 								Get Started
 							</a>
 						</div>
@@ -172,7 +172,7 @@ function* Features() {
 	const features = [
 		{
 			title: "People and Agents",
-			href: "/10-agents",
+			href: "/agents",
 			content:
 				"Pages as Markdown, routes as MCP tools, and forms as WebMCP tools.",
 		},
@@ -184,22 +184,22 @@ function* Features() {
 		},
 		{
 			title: "Postgres",
-			href: "/08-database",
+			href: "/database",
 			content: "Tables, typed queries, and migrations.",
 		},
 		{
 			title: "Passkey Sign-In",
-			href: "/09-auth",
+			href: "/auth",
 			content: "For people, and for the agents they approve.",
 		},
 		{
 			title: "Streaming JSX",
-			href: "/02-render#parallelization",
+			href: "/render#parallelization",
 			content: "Components render in parallel and stream in order.",
 		},
 		{
 			title: "Zero Dependencies",
-			href: "/01-get-started#compatibility",
+			href: "/get-started#compatibility",
 			content: "Built on web standards, ovr runs anywhere fetch does.",
 		},
 	];

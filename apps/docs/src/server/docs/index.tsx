@@ -20,9 +20,7 @@ export const llms = ovr.Route.get("/llms.txt")
 	});
 
 export const page = ovr.Route.get("/:slug")
-	.describe(
-		"Read a page of the ovr documentation, starting with 01-get-started",
-	)
+	.describe("Read a page of the ovr documentation, starting with get-started")
 	// the pages, so agents see their names and other slugs are not found
 	.params({ slug: ovr.Schema.enum(content.slugs() as [string, ...string[]]) })
 	.use((c) => {
@@ -45,17 +43,10 @@ export const page = ovr.Route.get("/:slug")
 				<hr />
 
 				{() => {
-					const num = parseInt(c.params.slug);
-					const previous = content.slugs().find((slug) => {
-						if (!slug) return false;
-						const n = parseInt(slug);
-						return n === num - 1;
-					});
-					const next = content.slugs().find((slug) => {
-						if (!slug) return false;
-						const n = parseInt(slug);
-						return n === num + 1;
-					});
+					const slugs = content.slugs();
+					const i = slugs.indexOf(c.params.slug);
+					const previous = slugs[i - 1];
+					const next = slugs[i + 1];
 
 					const Link = (props: {
 						slug: string | undefined;
@@ -75,9 +66,7 @@ export const page = ovr.Route.get("/:slug")
 								<span class="text-muted-foreground text-xs uppercase">
 									{props.next ? "Next page" : "Previous page"}
 								</span>{" "}
-								<span class="underline">
-									{props.slug.split("-").slice(1).join(" ")}
-								</span>
+								<span class="underline">{content.name(props.slug)}</span>
 							</a>
 						);
 					};

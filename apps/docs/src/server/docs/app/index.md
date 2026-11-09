@@ -29,7 +29,7 @@ new App({ trailingSlash: "always" });
 
 ### CSRF
 
-ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF) protection. Requests other than `GET` and `HEAD` must come from the same origin, by their `Sec-Fetch-Site` or `Origin` header. Browsers send at least one of these, so a request with neither and without cookies is from another kind of client, such as an [agent](/10-agents), and is allowed.
+ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF) protection. Requests other than `GET` and `HEAD` must come from the same origin, by their `Sec-Fetch-Site` or `Origin` header. Browsers send at least one of these, so a request with neither and without cookies is from another kind of client, such as an [agent](/agents), and is allowed.
 
 ```ts
 new App({ csrf: false }); // disables the built-in protection
@@ -37,7 +37,7 @@ new App({ csrf: false }); // disables the built-in protection
 
 ### Form
 
-[Multipart form data options](/06-multipart#options).
+[Multipart form data options](/multipart#options).
 
 ```ts
 new App({
@@ -51,7 +51,7 @@ new App({
 
 ## Use
 
-_Use_ the `use` method to register [routes](/04-route) and [middleware](/05-middleware) to your application.
+_Use_ the `use` method to register [routes](/route) and [middleware](/middleware) to your application.
 
 ```tsx
 app.use(page); // single
@@ -85,7 +85,7 @@ import * as home from "./home";
 app.use(home); // uses all exports
 ```
 
-`use` also mounts services. An [Auth service](/09-auth) adds its registration, login, logout, and browser endpoints, and an [MCP endpoint](/10-agents) adds the route agents connect to.
+`use` also mounts services. An [Auth service](/auth) adds its registration, login, logout, and browser endpoints, and an [MCP endpoint](/agents) adds the route agents connect to.
 
 ```ts
 app.use(auth, mcp);
@@ -101,7 +101,7 @@ const response = await app.fetch("https://example.com");
 
 ### Client IP
 
-Server adapters can pass a trusted client IP with `app.fetch(request, { ip })`. It becomes `c.ip` for [rate limiting](/05-middleware#rate-limiting) and [authentication](/09-auth). A standard Fetch `Request` cannot identify its socket peer, so your server must supply this metadata. Passing only `ip` preserves the original `Request` object; normal `RequestInit` options such as `method` and `headers` remain available in the same argument.
+Server adapters can pass a trusted client IP with `app.fetch(request, { ip })`. It becomes `c.ip` for [rate limiting](/middleware#rate-limiting) and [authentication](/auth). A standard Fetch `Request` cannot identify its socket peer, so your server must supply this metadata. Passing only `ip` preserves the original `Request` object; normal `RequestInit` options such as `method` and `headers` remain available in the same argument.
 
 For a Node server with [srvx](https://srvx.h3.dev/guide/handler), use the connection's address:
 

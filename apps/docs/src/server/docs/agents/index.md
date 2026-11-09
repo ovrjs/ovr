@@ -3,7 +3,7 @@ title: Agents
 description: Pages as Markdown, routes as MCP tools, and forms as WebMCP tools, so AI agents can use your app.
 ---
 
-An ovr app works for AI agents the same way it works for people. Pages render as Markdown for agents that ask for it, an [MCP](https://modelcontextprotocol.io) endpoint turns your routes into tools, and forms are tools for agents in the browser. With [Auth](/09-auth#agents), the user approves the agent with their passkey and the agent acts as that user, through the same handlers.
+An ovr app works for AI agents the same way it works for people. Pages render as Markdown for agents that ask for it, an [MCP](https://modelcontextprotocol.io) endpoint turns your routes into tools, and forms are tools for agents in the browser. With [Auth](/auth#agents), the user approves the agent with their passkey and the agent acts as that user, through the same handlers.
 
 ## Markdown
 
@@ -31,7 +31,7 @@ Submit: Create post
 - Scripts, styles, and elements with `hidden` or `aria-hidden="true"` are left out. `<noscript>` content is kept, since agents do not run scripts.
 - Raw markup from `Markup.raw` is written as it is, since Markdown can contain HTML.
 
-To render Markdown yourself, such as part of a page, use [`Markdown`](/02-render#markdown).
+To render Markdown yourself, such as part of a page, use [`Markdown`](/render#markdown).
 
 Browsers get HTML: Markdown is only used when it is listed in `Accept` and preferred at least as much as HTML. These responses include `Vary: Accept` for caches. Responses with another content type, such as XML, are not converted. A page served from a static file, such as a prerendered one, never reaches the app, so it is always HTML.
 
@@ -75,7 +75,7 @@ app.use(mcp);
 
 ### Tools
 
-Only [described routes](/04-route#describe) are served to agents, so adding a route never lets agents call or read it. Write the description for an agent that sees the route without your UI:
+Only [described routes](/route#describe) are served to agents, so adding a route never lets agents call or read it. Write the description for an agent that sees the route without your UI:
 
 ```ts
 const create = Route.post("/posts")
@@ -115,7 +115,7 @@ Pass `auth` to require agents to sign in. The user approves the agent once in th
 const mcp = new Mcp({ instructions: "...", auth });
 ```
 
-The endpoint also mounts Auth's OAuth endpoints, and serves the protected resource metadata agents use to find them. Write the page where users approve agents at `/connect`, see [Auth agents](/09-auth#agents).
+The endpoint also mounts Auth's OAuth endpoints, and serves the protected resource metadata agents use to find them. Write the page where users approve agents at `/connect`, see [Auth agents](/auth#agents).
 
 ### Connect an agent
 
@@ -125,7 +125,13 @@ Point an MCP client at the endpoint:
 claude mcp add --transport http posts https://example.com/mcp
 ```
 
-The agent opens your sign-in page in the browser, then your consent page, and returns once the user allows it. To connect to an app running locally, use its HTTPS address, such as `https://localhost:5173/mcp`. A command-line agent built on Node.js may not trust your local certificate the way your browser does; set `NODE_EXTRA_CA_CERTS` to the certificate's file, or its certificate authority's, when you start it.
+With `auth`, the agent opens your sign-in page in the browser, then your consent page, and returns once the user allows it. To sign in to an app running locally, connect to its HTTPS address, such as `https://localhost:5173/mcp`. A command-line agent built on Node.js may not trust your local certificate the way your browser does; set `NODE_EXTRA_CA_CERTS` to the certificate's file, or its certificate authority's, when you start it.
+
+To see what an agent gets, connect one to these docs, which are an ovr app with an MCP endpoint:
+
+```bash
+claude mcp add --transport http ovr https://ovrjs.com/mcp
+```
 
 ### Protocol
 

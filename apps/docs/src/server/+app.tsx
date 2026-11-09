@@ -37,7 +37,7 @@ app.use(
 	new o.Mcp({
 		name: "ovr",
 		instructions:
-			"Documentation for ovr, a TypeScript web framework that streams HTML and serves the same routes to people and AI agents. Read 01-get-started first, or llms.txt for everything at once.",
+			"Documentation for ovr, a TypeScript web framework that streams HTML and serves the same routes to people and AI agents. Read get-started first, or llms.txt for everything at once.",
 	}),
 );
 

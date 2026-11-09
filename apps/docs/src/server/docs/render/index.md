@@ -211,7 +211,7 @@ Use it for markup you trust, such as HTML from a Markdown processor or an SVG fi
 
 ## Markdown
 
-`Markdown` renders the same elements to Markdown, with the same ways in: an async iterable, a stream, and a string. Pages already render as Markdown for [agents that ask for it](/10-agents#markdown), use `Markdown` to render it yourself, such as to write files or answer with part of a page.
+`Markdown` renders the same elements to Markdown, with the same ways in: an async iterable, a stream, and a string. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use `Markdown` to render it yourself, such as to write files or answer with part of a page.
 
 ```tsx
 import { Markdown } from "ovr";

@@ -99,7 +99,7 @@ export const HomeLayout = (props: {
 				<nav>
 					<ul class="flex items-center gap-1">
 						<li>
-							<a href="/01-get-started" class="button ghost">
+							<a href="/get-started" class="button ghost">
 								Docs
 							</a>
 						</li>
@@ -265,8 +265,7 @@ const NavLink = (props: {
 	if (!props.slug) return;
 	const href = `/${props.slug}`;
 	const current = href === props.c.url.pathname;
-	const text =
-		props.slug.split("-").slice(1).join(" ") || props.slug.split(".").at(0);
+	const text = content.name(props.slug.split(".")[0]!);
 
 	return (
 		<li>

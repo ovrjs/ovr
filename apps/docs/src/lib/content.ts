@@ -2,25 +2,55 @@ import type { FrontmatterSchema } from "@/lib/md";
 import type { Result } from "@robino/md";
 import type { Middleware } from "ovr";
 
-export const content = import.meta.glob<Result<typeof FrontmatterSchema>>(
-	`@/server/docs/*.md`,
+const pages = import.meta.glob<Result<typeof FrontmatterSchema>>(
+	`@/server/docs/*/index.md`,
 	{ eager: true },
 );
 
-export const slugs = (all?: boolean) => {
-	return Object.keys(all ? { ...content, ...demos } : content)
-		.map((path) =>
-			path
-				.split("/", 4)
-				.slice(path.startsWith("/server/demo") ? 2 : 3)
-				.join("/")
-				.split(".")
-				.at(0),
-		)
-		.filter(Boolean) as string[];
-};
+/**
+ * The docs pages in reading order, each served at its folder name. URLs don't
+ * hold the order, so moving a page keeps its links.
+ */
+const order = [
+	"get-started",
+	"app",
+	"route",
+	"middleware",
+	"render",
+	"schema",
+	"agents",
+	"database",
+	"auth",
+	"multipart",
+];
 
-export const get = (slug: string) => content[`/server/docs/${slug}.md`];
+/** The docs pages by slug, in reading order. */
+export const content = Object.fromEntries(
+	order.map((slug) => {
+		const page = pages[`/server/docs/${slug}/index.md`];
+		if (!page) throw new Error(`No docs page for "${slug}"`);
+		return [slug, page];
+	}),
+);
+
+if (Object.keys(pages).length !== order.length)
+	throw new Error("Every docs page must be listed in the reading order");
+
+/**
+ * @param all Include the demos
+ * @returns The docs pages' slugs in reading order, then the demos'
+ */
+export const slugs = (all?: boolean) => [
+	...order,
+	...(all
+		? Object.keys(demos).map((path) => path.split("/").slice(2, 4).join("/"))
+		: []),
+];
+
+export const get = (slug: string) => content[slug];
+
+/** A slug as a page name, such as "get started". */
+export const name = (slug: string) => slug.replaceAll("-", " ");
 
 export const demos = {
 	...import.meta.glob<Result<typeof FrontmatterSchema>>(

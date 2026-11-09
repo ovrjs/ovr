@@ -5,7 +5,7 @@ description: Write each route once. People get pages and forms, agents get Markd
 
 ## One app for people and agents
 
-Most apps are built twice: a website for people, then an API or MCP server for agents. With ovr, the routes are the API. Describe a route, and people get a page with a form while agents read the same page as Markdown or call the route as an [MCP](/10-agents#mcp) tool. Your handlers do not change.
+Most apps are built twice: a website for people, then an API or MCP server for agents. With ovr, the routes are the API. Describe a route, and people get a page with a form while agents read the same page as Markdown or call the route as an [MCP](/agents#mcp) tool. Your handlers do not change.
 
 ```tsx
 const list = Route.get("/todos")
@@ -79,7 +79,7 @@ const add = Route.post("/todos")
 </form>
 ```
 
-The form also names its tool for [WebMCP](/10-agents#webmcp), so an agent in the browser can fill it in.
+The form also names its tool for [WebMCP](/agents#webmcp), so an agent in the browser can fill it in.
 
 ### Agents read it as Markdown
 
@@ -106,7 +106,7 @@ post_todos           Add a todo            { text: string }
 post_todos_id_done   Mark a todo as done   { id: string }
 ```
 
-The same "Done" button a person clicks is a tool call with an `id` for an agent. With [Auth](/09-auth#agents), the user approves the agent with their passkey, and it acts as them through the same handlers.
+The same "Done" button a person clicks is a tool call with an `id` for an agent. With [Auth](/auth#agents), the user approves the agent with their passkey, and it acts as them through the same handlers.
 
 ## Streaming
 
@@ -168,4 +168,4 @@ These docs are an ovr app. Connect your agent to them:
 claude mcp add --transport http ovr https://ovrjs.com/mcp
 ```
 
-Continue with [Get Started](/01-get-started).
+Continue with [Get Started](/get-started).

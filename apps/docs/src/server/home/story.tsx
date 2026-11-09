@@ -397,7 +397,7 @@ export const Story = async () => {
 						<p>
 							The same handler streams the page as Markdown, with each form and
 							where it posts. A route with <code>.describe()</code> is also an{" "}
-							<a href="/10-agents#mcp">MCP</a> tool, so the agent calls “Done”
+							<a href="/agents#mcp">MCP</a> tool, so the agent calls “Done”
 							as <code>post_todos_id_done</code>: the handler runs as it did for
 							the click, follows its redirect, and returns the page as Markdown.
 						</p>

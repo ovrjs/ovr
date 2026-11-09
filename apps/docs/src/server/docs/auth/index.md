@@ -3,7 +3,7 @@ title: Auth
 description: Passkey authentication with customizable forms, stored in your Postgres database.
 ---
 
-`Auth` handles passkey registration, login, logout, and sessions. It stores its data in your Postgres [database](/08-database), and creates accounts in your users table. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
+`Auth` handles passkey registration, login, logout, and sessions. It stores its data in your Postgres [database](/database), and creates accounts in your users table. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
 
 ## Create
 
@@ -43,9 +43,9 @@ Keep it stable across deployments and the same on every instance: a new secret s
 
 For secret rotation, pass `secret: [current, previous]`: new tokens use the first secret and existing tokens accept either. Remove the old secret after the session `lifetime`; keep the overlap at least one hour so open forms can finish. All instances must use the same list.
 
-`database` is your application's [Database](/08-database). Include `Auth.tables` in its tables, and `database.migrate()` [creates them](#storage).
+`database` is your application's [Database](/database). Include `Auth.tables` in its tables, and `database.migrate()` [creates them](#storage).
 
-Auth limits sign-in per client IP, so your server must pass the trusted client IP when it calls the app, from its connection or a verified edge header, never an arbitrary forwarded header. See [client IP examples](/03-app#client-ip):
+Auth limits sign-in per client IP, so your server must pass the trusted client IP when it calls the app, from its connection or a verified edge header, never an arbitrary forwarded header. See [client IP examples](/app#client-ip):
 
 ```ts
 app.fetch(request, { ip });
@@ -152,7 +152,7 @@ Supply children to control the markup and styling:
 </Register>
 ```
 
-`Register.Field` renders one typed field; `Register.Fields` renders them all. `Login.Error` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/07-schema#post-forms) as ordinary forms.
+`Register.Field` renders one typed field; `Register.Fields` renders them all. `Login.Error` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/schema#post-forms) as ordinary forms.
 
 `<Register.Error class="error" />` generates the following element. `Login.Error` uses the same markup:
 
@@ -219,7 +219,7 @@ Resolve sessions and prepare forms before returning JSX. Doing this inside an as
 
 ## Storage
 
-`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/08-database#migrate) applies them, as `auth:1` and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/08-database#check) checks them with your tables. `new Auth()` is a type error when they or the users table are missing from its database.
+`Auth.tables` are the tables Auth stores its data in. List them in your `Database`, and Auth's migrations come with them: [`database.migrate()`](/database#migrate) applies them, as `auth:1` and `rate_limits:1`, before your own, so your migrations can add foreign keys to them. [`database.check()`](/database#check) checks them with your tables. `new Auth()` is a type error when they or the users table are missing from its database.
 
 Auth doesn't add its tables to the database itself, because a migration script may never create Auth, and its tables still need to be migrated.
 
@@ -236,7 +236,7 @@ A version's SQL never changes, so its checksum stays valid. Changes ship as a ne
 | `auth_credentials` | Passkeys, with their owner, public key, counter, backup flags |
 | `auth_sessions`    | Revocable sessions                                            |
 | `auth_challenges`  | Outstanding ceremonies, each used once                        |
-| `rate_limits`      | [Rate limit](/05-middleware#rate-limiting) buckets            |
+| `rate_limits`      | [Rate limit](/middleware#rate-limiting) buckets               |
 | `auth_tokens`      | Agents' authorization codes and tokens, stored as hashes      |
 
 Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. Give your `users` table a `text` ID and reference it from all three of Auth's tables that belong to a user, in your own migration:
@@ -250,7 +250,7 @@ ALTER TABLE auth_tokens ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASC
 
 Then deleting the account deletes everything that signs in as it, whichever code deletes it: its passkeys, browser sessions, and agents' codes, access tokens, and refresh tokens. An agent refreshing its token at that moment cannot keep it.
 
-[`database.check()`](/08-database#check) verifies these keys: each from the table's `user` column to your users table's `id`, cascading deletes, validated and enforced. It needs to know which table is your users table, so create `Auth` with the database before checking, for example by importing your auth module in the migration script; until then, `check` reports that it needs `Auth`.
+[`database.check()`](/database#check) verifies these keys: each from the table's `user` column to your users table's `id`, cascading deletes, validated and enforced. It needs to know which table is your users table, so create `Auth` with the database before checking, for example by importing your auth module in the migration script; until then, `check` reports that it needs `Auth`.
 
 ```ts
 await database.sql`
@@ -281,7 +281,7 @@ Auth limits sign-in for you, per client, in the `rate_limits` table. The limits 
 
 A client is its trusted IP, with IPv6 grouped by `/64`, from `app.fetch(request, { ip })`, see [Create](#create). A ceremony makes two requests: options and verification have separate budgets. Registration options validate application fields, within a bounded 128 KB body, before the limit, so field errors do not spend signup attempts. Other admission checks run before parsing; all run before challenge writes. Logout is never limited. Every worker shares the database, so a fresh instance does not receive a fresh budget. Missing identity or unavailable storage throws to your app; it never skips the limit.
 
-Each browser can have 10 sign-in ceremonies outstanding; when they are used up, its new ceremonies are refused until some expire, two minutes after they start. There is no cap across browsers, which anyone with enough addresses could fill to lock everyone out; the per-IP limits bound each network instead. Floods from many addresses belong at your hosting edge. To limit your own routes, see [Limiter](/05-middleware#rate-limiting).
+Each browser can have 10 sign-in ceremonies outstanding; when they are used up, its new ceremonies are refused until some expire, two minutes after they start. There is no cap across browsers, which anyone with enough addresses could fill to lock everyone out; the per-IP limits bound each network instead. Floods from many addresses belong at your hosting edge. To limit your own routes, see [Limiter](/middleware#rate-limiting).
 
 ## Options
 
@@ -301,9 +301,9 @@ Validation failures mark the affected fields. Expired or browser-mismatched form
 
 ## Agents
 
-Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/10-agents) and act as a user. The user signs in with their passkey in the browser and approves the agent with it; the agent receives OAuth tokens, never the passkey or a session cookie. Connecting agents requires Node.js or Bun, see below.
+Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/agents) and act as a user. The user signs in with their passkey in the browser and approves the agent with it; the agent receives OAuth tokens, never the passkey or a session cookie. Connecting agents requires Node.js or Bun, see below.
 
-Pass `auth` to the [MCP endpoint](/10-agents#sign-in), which mounts the OAuth endpoints agents sign in with, and create the page where users approve them, `/connect` unless you set `consent`:
+Pass `auth` to the [MCP endpoint](/agents#sign-in), which mounts the OAuth endpoints agents sign in with, and create the page where users approve them, `/connect` unless you set `consent`:
 
 ```tsx
 const connect = Route.get("/connect").use(async (c) => {
