@@ -40,6 +40,7 @@
 }
 
 @theme {
+	--color-spark: var(--spark);
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
 	--color-heading-foreground: var(--heading-foreground);
@@ -104,6 +105,8 @@
 @layer base {
 	:root {
 		--accent: var(--base-500);
+		/* electricity, for small touches only: a gold that shows on white, a bright yellow on black */
+		--spark: light-dark(oklch(0.8 0.16 88), oklch(0.87 0.17 96));
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -150,6 +153,16 @@
 	a:not(h1 a, h2 a, h3 a, h4 a),
 	button {
 		@apply font-normal;
+	}
+
+	/* links keep the text color, with a spark of yellow beneath */
+	a:not(.button) {
+		text-decoration-color: var(--spark);
+		text-decoration-thickness: 2px;
+	}
+
+	::selection {
+		background-color: color-mix(in oklab, var(--spark) 40%, transparent);
 	}
 
 	p,
@@ -237,7 +250,7 @@
 		}
 
 		.caret {
-			@apply bg-base-200 mt-0.5 ml-px inline-block h-4 w-2 align-top;
+			@apply bg-spark mt-0.5 ml-px inline-block h-4 w-2 align-top;
 			animation: caret 1s steps(1) infinite;
 		}
 	}
@@ -251,7 +264,7 @@
 		}
 
 		&[data-playing] [data-playhead] {
-			opacity: 0.4;
+			opacity: 1;
 		}
 	}
 
@@ -263,7 +276,7 @@
 		}
 
 		[data-coil] {
-			stroke: var(--color-background);
+			stroke: var(--spark);
 			opacity: 0;
 		}
 
@@ -289,8 +302,8 @@
 			color-mix(in oklab, var(--color-foreground) 7%, var(--color-background))
 		);
 		--generator-charge: light-dark(
-			color-mix(in oklab, var(--color-foreground) 9%, var(--color-background)),
-			color-mix(in oklab, var(--color-foreground) 18%, var(--color-background))
+			color-mix(in oklab, var(--spark) 45%, var(--color-background)),
+			color-mix(in oklab, var(--spark) 45%, var(--color-background))
 		);
 		color: var(--generator-line);
 
@@ -493,11 +506,7 @@
 			background-color: transparent;
 		}
 		25% {
-			background-color: color-mix(
-				in oklab,
-				var(--color-foreground) 12%,
-				transparent
-			);
+			background-color: color-mix(in oklab, var(--spark) 35%, transparent);
 		}
 		100% {
 			background-color: transparent;
