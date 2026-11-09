@@ -36,6 +36,52 @@ const coil = (i: number) =>
 		})
 		.join("");
 
+/** Half the width of a rotor spoke. */
+const spoke = 0.45;
+
+/** Radius of the rounding where a spoke meets the hub or the rotor ring. */
+const fillet = 0.3;
+
+/**
+ * The rounded inside corners where each spoke meets the hub and the rotor
+ * ring, as small shapes filling each corner up to a concave arc.
+ */
+const fillets = Array.from({ length: 6 }, (_, i) => {
+	const angle = (i * Math.PI) / 3;
+	// a point across (u) and along (v) the spoke, from the center
+	const at = (u: number, v: number) =>
+		[
+			c + u * Math.cos(angle) + v * Math.sin(angle),
+			c + u * Math.sin(angle) - v * Math.cos(angle),
+		] as const;
+	const xy = ([x, y]: readonly [number, number]) =>
+		`${x.toFixed(3)} ${y.toFixed(3)}`;
+
+	return [-1, 1]
+		.flatMap((side) =>
+			// the hub's edge, which the spoke leaves, and the ring's inner edge, which it meets
+			[
+				{ r: 2, out: 1 },
+				{ r: 6.3, out: -1 },
+			].map(({ r, out }) => {
+				const u = spoke + fillet;
+				const v = Math.sqrt((r + out * fillet) ** 2 - u ** 2);
+				const center = at(side * u, v);
+				const onSpoke = at(side * spoke, v);
+				const scale = r / (r + out * fillet);
+				const onCircle = at(side * u * scale, v * scale);
+				const corner = at(side * spoke, Math.sqrt(r ** 2 - spoke ** 2));
+				// the short way around the fillet's circle, from the spoke to the circle
+				const turn =
+					Math.atan2(onCircle[1] - center[1], onCircle[0] - center[0]) -
+					Math.atan2(onSpoke[1] - center[1], onSpoke[0] - center[0]);
+				const sweep = Math.sin(turn) > 0 ? 1 : 0;
+				return `M${xy(corner)}L${xy(onSpoke)}A${fillet} ${fillet} 0 0 ${sweep} ${xy(onCircle)}Z`;
+			}),
+		)
+		.join("");
+}).join("");
+
 /**
  * The logo's generator in more detail, large and faint behind the hero:
  * coils wound between the still stator's teeth light in turn as the rotor
@@ -89,13 +135,14 @@ export const Generator = () => (
 			/>
 			{Array.from({ length: 6 }, (_, i) => (
 				<rect
-					x={c - 0.45}
+					x={c - spoke}
 					y={c - 6.4}
-					width="0.9"
+					width={spoke * 2}
 					height="4.8"
 					transform={`rotate(${i * 60} ${c} ${c})`}
 				/>
 			))}
+			<path d={fillets} />
 			<path
 				fill-rule="evenodd"
 				d={`M${point(2, 0)}A2 2 0 1 1 ${point(2, 180)}A2 2 0 1 1 ${point(2, 0)}ZM${point(0.7, 0)}A0.7 0.7 0 1 1 ${point(0.7, 180)}A0.7 0.7 0 1 1 ${point(0.7, 0)}Z`}
