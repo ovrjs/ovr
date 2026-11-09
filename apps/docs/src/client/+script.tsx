@@ -15,13 +15,6 @@ if (document.querySelector("network-demo")) {
 	);
 }
 
-if (document.querySelector("stream-grid")) {
-	customElements.define(
-		"stream-grid",
-		(await import("@/client/stream-grid")).StreamGrid,
-	);
-}
-
 if (document.querySelector("stream-demo")) {
 	customElements.define(
 		"stream-demo",

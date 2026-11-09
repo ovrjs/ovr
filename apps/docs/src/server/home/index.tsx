@@ -17,11 +17,7 @@ export const page = o.Route.get("/")
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
-				<section class="relative isolate pt-6 pb-4 sm:pt-12">
-					<stream-grid
-						aria-hidden="true"
-						class="paper-grid pointer-events-none absolute -inset-x-4 -top-8 -z-10 block h-[34rem]"
-					/>
+				<section class="pt-6 pb-4 sm:pt-12">
 					<p class="caption mt-0 mb-6">
 						ovr@{version} · {size.kb}KB · zero dependencies
 					</p>

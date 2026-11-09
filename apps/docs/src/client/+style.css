@@ -104,10 +104,6 @@
 @layer base {
 	:root {
 		--accent: var(--base-500);
-		--grid-line: light-dark(
-			oklch(from var(--base-500) l 0 h / 0.13),
-			oklch(from var(--base-300) l 0 h / 0.07)
-		);
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -196,18 +192,6 @@
 	/* a caption above a figure, like a file name or a request */
 	.caption {
 		@apply text-muted-foreground font-mono text-sm tracking-wide;
-	}
-
-	/* graph paper, fading out at every edge */
-	.paper-grid {
-		mask-image:
-			linear-gradient(to bottom, transparent, black 25%),
-			radial-gradient(ellipse 70% 90% at 50% 0%, black 35%, transparent 80%);
-		mask-composite: intersect;
-		background-image:
-			linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
-			linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
-		background-size: 28px 28px;
 	}
 
 	strong {
