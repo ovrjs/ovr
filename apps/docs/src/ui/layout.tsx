@@ -51,7 +51,8 @@ export const createLayout =
 	(props: { head: o.JSX.Element; children: o.JSX.Element }) => {
 		return (
 			<Document head={props.head}>
-				<header class="flex justify-between gap-4 p-4 md:hidden">
+				{/* the logo sits where the home page puts it, so it holds still between them */}
+				<header class="flex items-center justify-between gap-4 px-2 py-2.5 md:hidden">
 					<HomeLink />
 					<nav>
 						<Popover
