@@ -1,5 +1,4 @@
 import * as content from "@/lib/content";
-import { Fields } from "@/server/home/fields";
 import * as result from "@/server/home/index.md";
 import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
@@ -54,10 +53,6 @@ export const page = o.Route.get("/")
 					</p>
 
 					<Story />
-				</section>
-
-				<section class="mt-28">
-					<Fields />
 				</section>
 
 				<section class="mt-28">

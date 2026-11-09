@@ -3,7 +3,7 @@ import { type Chunk, Stream } from "@/server/home/stream";
 import * as o from "ovr";
 
 /** Lines of the highlighted source, numbered from 1 for the steps to point at. */
-export const lines = source.html
+const lines = source.html
 	.match(/<code[^>]*>([\s\S]*?)<\/code>/)![1]!
 	.split("\n")
 	.map((line, i) =>
@@ -23,7 +23,7 @@ const waits =
  * Run the todo routes from the source in an app of their own, so the story
  * replays what ovr sends for them.
  */
-export const outputs = (async () => {
+const outputs = (async () => {
 	const todos = [
 		{ id: "1", text: "Buy milk", done: false },
 		{ id: "2", text: "Walk the dog", done: false },
@@ -72,57 +72,14 @@ export const outputs = (async () => {
 		);
 	}
 
-	/** What the add route's handler got from each submission. */
-	const submitted: (
-		| { issues: { path: readonly unknown[]; message: string }[] }
-		| { data: { text: string } }
-	)[] = [];
-
-	// the fields section's table, with a pool that keeps what it is sent
-	const table = new o.Table(
-		"todos",
-		{
-			id: o.Schema.string().uuid(),
-			text: o.Field.text({ label: "Todo" }),
-			done: o.Schema.boolean(),
-		},
-		{ default: ["id", "done"] },
-	);
-	const inserted: { text: string; values: unknown[] }[] = [];
-	const database = new o.Database(
-		{
-			async query(text, values = []) {
-				inserted.push({ text, values });
-				return { rows: [] };
-			},
-			async connect() {
-				throw new Error("The home page runs no transactions");
-			},
-		},
-		[table],
-	);
-
 	const add = o.Route.post("/todos")
 		.describe("Add a todo")
-		.fields({ text: table.shape.text })
+		.fields({ text: o.Field.text({ label: "Todo" }) })
 		.use(async (c) => {
 			const result = await c.data();
-			submitted.push(
-				result.issues
-					? {
-							issues: result.issues.map(({ path, message }) => ({
-								path,
-								message,
-							})),
-						}
-					: { data: result.data },
-			);
 			if (result.issues) return c.redirect(result.url, 303);
 
 			await db.add(result.data.text);
-			await database.sql`
-				INSERT INTO ${table} ${database.sql.values(table, result.data)}
-			`;
 			c.redirect(list, 303);
 		});
 
@@ -163,62 +120,12 @@ export const outputs = (async () => {
 		stream("text/markdown"),
 	]);
 
-	const origin = "https://example.com";
-
-	// the add form submitted empty, then filled in
-	for (const text of ["", "Buy bread"]) {
-		const body = new FormData();
-		body.set("text", text);
-		await app.fetch(
-			new Request(`${origin}/todos`, {
-				method: "POST",
-				body,
-				headers: { origin, "sec-fetch-site": "same-origin" },
-			}),
-		);
-	}
-
-	const version = "2026-07-28";
-	const tools = await (
-		await app.fetch(
-			new Request(`${origin}/mcp`, {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					accept: "application/json, text/event-stream",
-					"mcp-protocol-version": version,
-					"mcp-method": "tools/list",
-				},
-				body: JSON.stringify({
-					jsonrpc: "2.0",
-					id: 1,
-					method: "tools/list",
-					params: {
-						_meta: {
-							"io.modelcontextprotocol/protocolVersion": version,
-							"io.modelcontextprotocol/clientInfo": {
-								name: "agent",
-								version: "1",
-							},
-							"io.modelcontextprotocol/clientCapabilities": {},
-						},
-					},
-				}),
-			}),
-		)
-	).json();
-
 	const call = {
 		method: "tools/call",
 		params: { name: "post_todos_id_done", arguments: { id: "1" } },
 	};
 
 	return {
-		submitted,
-		inserted: inserted[0]!,
-		schema: (
-			tools.result.tools as { name: string; inputSchema: unknown }[]
-		).find((tool) => tool.name === "post_todos")!.inputSchema,
 		html,
 		md,
 		markdown: md
@@ -230,9 +137,9 @@ export const outputs = (async () => {
 })();
 
 /** Line ranges of the source each step is about. */
-export type Lines = [from: number, to: number][];
+type Lines = [from: number, to: number][];
 
-export const Code = (props: {
+const Code = (props: {
 	lines: Lines;
 	class?: string;
 	"data-code"?: boolean;
@@ -253,7 +160,7 @@ export const Code = (props: {
 	</pre>
 );
 
-export const Dark = (props: { children: o.JSX.Element; class?: string }) => (
+const Dark = (props: { children: o.JSX.Element; class?: string }) => (
 	<div
 		class={`bg-base-900 text-base-100 ring-base-800 -mx-4 [scrollbar-gutter:auto] overflow-x-auto font-mono shadow-sm ring-1 sm:mx-0 sm:rounded-md ${props.class ?? ""}`}
 	>

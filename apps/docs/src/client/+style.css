@@ -271,18 +271,6 @@
 		}
 	}
 
-	fields-demo {
-		/* the lines that define the field and take it */
-		[data-field] {
-			@apply bg-base-700 -mx-4 inline-block w-[calc(100%+2rem)] px-4;
-		}
-
-		/* where the field comes through */
-		mark {
-			@apply bg-base-700 text-base-50 rounded-xs box-decoration-clone;
-		}
-	}
-
 	scroll-story {
 		[data-code] [data-line] {
 			transition: opacity 0.3s ease-out;
