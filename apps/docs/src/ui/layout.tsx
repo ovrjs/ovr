@@ -58,9 +58,8 @@ export const createLayout =
 							title="ovr"
 							titleHref="/"
 							titleContent={
-								<span class="home-link flex items-center gap-1.5">
-									<Mark class="relative top-0.5 size-5" />
-									ovr
+								<span class="home-link flex items-center">
+									<Mark class="size-6" />
 								</span>
 							}
 							trigger={{
@@ -108,9 +107,8 @@ export const HomeLayout = (props: {
 				{/* the hero links to the docs, the demos, and GitHub */}
 				<header class="mx-auto flex h-15 max-w-5xl items-center gap-3 px-2">
 					<HomeLink />
-					{/* down to the baseline of "ovr", since the row centers the boxes */}
-					<p class="caption relative top-[3px] my-0 text-xs">
-						v{version} · {size.kb}KB
+					<p class="caption my-0 text-xs">
+						ovr@{version} · {size.kb}KB
 					</p>
 				</header>
 				{/* the page ends on its closing band, so nothing comes after it */}
@@ -160,11 +158,10 @@ const HomeLink = () => {
 	return (
 		<a
 			href="/"
-			class="home-link flex items-center gap-1.5 pl-2 font-mono text-xl font-bold no-underline"
+			aria-label="ovr home"
+			class="home-link flex items-center pl-2 no-underline"
 		>
-			{/* centered on the lowercase letters, which sit below the line's middle */}
-			<Mark class="relative top-0.5 size-5" />
-			ovr
+			<Mark class="size-6" />
 		</a>
 	);
 };
