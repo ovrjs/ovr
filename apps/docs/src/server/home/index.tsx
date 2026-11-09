@@ -31,11 +31,7 @@ export const page = o.Route.get("/")
 						<a href="/get-started" class="button h-11 px-5 text-base">
 							Get Started
 						</a>
-						<a
-							href="/demo/memory"
-							data-no-prefetch
-							class="button h-11 px-5 text-base outline"
-						>
+						<a href="/demo" class="button h-11 px-5 text-base outline">
 							Demo
 						</a>
 					</div>
