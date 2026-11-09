@@ -129,7 +129,7 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 		// starts level with the text under the page's title, then sticks near the top
 		<div class="pt-22">
 			<aside class="sticky top-0 hidden min-w-52 flex-col gap-3 p-4 lg:flex">
-				<h2 class="pl-3 text-base uppercase">
+				<h2 class="font-ui pl-3 text-xs tracking-wide uppercase">
 					<a href="#" class="text-muted-foreground font-bold">
 						On this page
 					</a>
@@ -170,7 +170,7 @@ const HomeLink = () => {
 
 const NavHeading = (props: { children: o.JSX.Element }) => {
 	return (
-		<h2 class="caption my-0 pl-2 text-xs font-normal lowercase">
+		<h2 class="text-muted-foreground font-ui my-0 pl-2 text-xs font-normal tracking-wide lowercase">
 			{props.children}
 		</h2>
 	);
