@@ -1,4 +1,5 @@
 import * as content from "@/lib/content";
+import { Features } from "@/server/home/features";
 import * as result from "@/server/home/index.md";
 import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
@@ -84,9 +85,7 @@ export const page = o.Route.get("/")
 
 				<section class="mt-28">
 					<h2 class="mt-0 mb-6">Everything an app needs</h2>
-					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-						<Features />
-					</div>
+					<Features />
 				</section>
 
 				<section class="border-secondary mt-28 border-t pt-12">
@@ -119,56 +118,3 @@ const Command = (props: { children: o.JSX.Element }) => (
 		{props.children}
 	</pre>
 );
-
-function* Features() {
-	const features = [
-		{
-			title: "People and Agents",
-			href: "/agents",
-			content:
-				"Pages as Markdown, routes as MCP tools, and forms as WebMCP tools.",
-		},
-		{
-			title: "Forms Without JavaScript",
-			href: "/demo/form",
-			noPrefetch: true,
-			content:
-				"Generated from schemas, checked on the server, with each error shown beside its field.",
-		},
-		{
-			title: "Streaming First",
-			href: "/render#parallelization",
-			content:
-				"Components render in parallel and stream in order, and uploads are parsed as they arrive.",
-		},
-		{
-			title: "Postgres",
-			href: "/database",
-			content: "Tables, typed queries, and migrations.",
-		},
-		{
-			title: "Passkey Sign-In",
-			href: "/auth",
-			content: "For people, and for the agents they approve.",
-		},
-		{
-			title: "Runs Anywhere",
-			href: "/get-started#compatibility",
-			content:
-				"No dependencies and no state in memory, so any fetch runtime, and any instance, can answer a request.",
-		},
-	];
-
-	for (const feature of features) {
-		yield (
-			<a
-				href={feature.href}
-				class="bg-background border-secondary hover:border-foreground group rounded-md border p-5 no-underline transition-colors"
-				data-no-prefetch={feature.noPrefetch}
-			>
-				<h3 class="my-0 text-lg transition-colors">{feature.title}</h3>
-				<p class="text-muted-foreground mt-1 mb-0 text-sm">{feature.content}</p>
-			</a>
-		);
-	}
-}

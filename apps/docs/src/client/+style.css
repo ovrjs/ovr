@@ -255,6 +255,57 @@
 		}
 	}
 
+	feature-grid {
+		[data-cursor],
+		[data-error],
+		[data-progress] {
+			opacity: 0;
+		}
+
+		[data-cursor] {
+			margin: -2px 0 0 -2px;
+		}
+
+		/* each illustration plays its idea while the card is hovered or focused */
+		@media (prefers-reduced-motion: no-preference) {
+			[data-feature]:is(:hover, :focus-visible, [data-played]) {
+				[data-pair] {
+					animation: pair 1.2s ease-out both;
+					animation-delay: calc(var(--i) * 350ms + 150ms);
+				}
+
+				[data-cursor] {
+					animation: feature-cursor 2.2s ease-in-out both;
+				}
+
+				[data-press] {
+					animation: press 2.2s ease-out both;
+				}
+
+				[data-reload] {
+					animation: reload 2.2s ease-out both;
+				}
+
+				[data-input] {
+					animation: invalid 2.2s ease-out both;
+				}
+
+				[data-error] {
+					animation: appear 2.2s ease-out both;
+				}
+
+				[data-chunk] {
+					animation: arrive 0.35s ease-out backwards;
+					animation-delay: calc(var(--i) * 300ms + 250ms);
+				}
+
+				[data-progress] {
+					animation: load 1.9s ease-out both;
+				}
+			}
+		}
+	}
+
 	scroll-story {
 		[data-code] [data-line] {
 			transition: opacity 0.3s ease-out;
@@ -337,6 +388,95 @@
 					}
 				}
 			}
+		}
+	}
+
+	@keyframes pair {
+		0% {
+			background-color: transparent;
+		}
+		25% {
+			background-color: color-mix(
+				in oklab,
+				var(--color-foreground) 12%,
+				transparent
+			);
+		}
+		100% {
+			background-color: transparent;
+		}
+	}
+
+	@keyframes feature-cursor {
+		0% {
+			transform: translate(-70px, 40px);
+			opacity: 0;
+		}
+		15% {
+			opacity: 1;
+		}
+		50%,
+		56% {
+			transform: translate(0, 0);
+		}
+		60% {
+			transform: translate(0, 0) scale(0.85);
+		}
+		66% {
+			transform: translate(0, 0);
+			opacity: 1;
+		}
+		80%,
+		100% {
+			transform: translate(0, 0);
+			opacity: 0;
+		}
+	}
+
+	@keyframes reload {
+		0%,
+		62% {
+			opacity: 1;
+		}
+		66% {
+			opacity: 0.35;
+		}
+		74%,
+		100% {
+			opacity: 1;
+		}
+	}
+
+	@keyframes invalid {
+		0%,
+		66% {
+			border-color: var(--color-secondary);
+		}
+		74%,
+		100% {
+			border-color: var(--color-foreground);
+		}
+	}
+
+	@keyframes arrive {
+		from {
+			transform: translateY(3px);
+			opacity: 0;
+		}
+	}
+
+	@keyframes load {
+		0% {
+			transform: scaleX(0);
+			opacity: 1;
+		}
+		85% {
+			transform: scaleX(1);
+			opacity: 1;
+		}
+		100% {
+			transform: scaleX(1);
+			opacity: 0;
 		}
 	}
 

@@ -15,6 +15,13 @@ if (document.querySelector("network-demo")) {
 	);
 }
 
+if (document.querySelector("feature-grid")) {
+	customElements.define(
+		"feature-grid",
+		(await import("@/client/feature-grid")).FeatureGrid,
+	);
+}
+
 if (document.querySelector("stream-demo")) {
 	customElements.define(
 		"stream-demo",
