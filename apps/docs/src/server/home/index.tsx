@@ -1,6 +1,5 @@
 import * as content from "@/lib/content";
 import { Features } from "@/server/home/features";
-import { Generator } from "@/server/home/generator";
 import * as result from "@/server/home/index.md";
 import { Network } from "@/server/home/network";
 import { Story } from "@/server/home/story";
@@ -17,24 +16,15 @@ export const page = o.Route.get("/")
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
-				{/* a dark band, whatever the scheme, lit by the generator */}
-				<section class="band hero text-foreground relative isolate pt-12 pb-12 [color-scheme:dark] sm:pt-16 sm:pb-20 lg:min-h-[30rem]">
-					<Generator />
-					{/* the glow fades out before the band ends, instead of cutting off */}
-					<span
-						aria-hidden="true"
-						class="to-background pointer-events-none absolute bottom-0 left-1/2 -z-[6] block h-24 w-screen -translate-x-1/2 bg-linear-to-b from-transparent"
-					/>
+				{/* a dark band, whatever the scheme */}
+				<section class="band hero text-foreground relative isolate pt-12 pb-12 [color-scheme:dark] sm:pt-16 sm:pb-20">
 					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
 					<div class="flex gap-3">
 						<a href="/get-started" class="button h-11 px-5 text-base">
 							Get Started
 						</a>
-						<a
-							href="/demo"
-							class="button border-spark h-11 px-5 text-base outline"
-						>
+						<a href="/demo" class="button h-11 px-5 text-base outline">
 							Demo
 						</a>
 						<a

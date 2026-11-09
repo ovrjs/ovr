@@ -40,7 +40,6 @@
 }
 
 @theme {
-	--color-spark: var(--spark);
 	--color-silver: var(--silver);
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
@@ -106,10 +105,17 @@
 @layer base {
 	:root {
 		--accent: var(--base-500);
-		/* electricity, for small touches only: a gold that shows on white, a bright yellow on black */
-		--spark: light-dark(oklch(0.84 0.175 92), oklch(0.9 0.185 98));
-		/* the accent: the warm silver of the generator's lit metal, for small touches only */
-		--silver: light-dark(oklch(0.7 0.02 95), oklch(0.86 0.025 95));
+		/* the accent, a warm silver, for small touches only */
+		--silver: light-dark(oklch(0.68 0.012 90), oklch(0.86 0.014 90));
+		/* polished silver, light catching a machined edge, for borders */
+		--silver-sheen: linear-gradient(
+			135deg,
+			light-dark(oklch(0.62 0.01 90), oklch(0.97 0.008 90)) 0%,
+			light-dark(oklch(0.88 0.008 90), oklch(0.66 0.01 90)) 28%,
+			light-dark(oklch(0.55 0.01 90), oklch(0.93 0.008 90)) 52%,
+			light-dark(oklch(0.84 0.008 90), oklch(0.6 0.01 90)) 76%,
+			light-dark(oklch(0.64 0.01 90), oklch(0.95 0.008 90)) 100%
+		);
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -156,6 +162,14 @@
 	a:not(h1 a, h2 a, h3 a, h4 a),
 	button {
 		@apply font-normal;
+	}
+
+	/* outline buttons are rimmed in polished silver */
+	.button.outline {
+		border: 1px solid transparent;
+		background:
+			linear-gradient(var(--color-background) 0 0) padding-box,
+			var(--silver-sheen) border-box;
 	}
 
 	/* links keep the text color, with silver beneath */
@@ -328,7 +342,7 @@
 		}
 	}
 
-	/* the home page hero, behind the header too, and nothing, not even the generator's glow, spills below it */
+	/* the home page hero, behind the header too */
 	.hero {
 		--band-top: -3.75rem;
 		--band-fade: linear-gradient(
@@ -336,7 +350,6 @@
 			black calc(100% - 6rem),
 			transparent
 		);
-		clip-path: inset(-3.75rem -100vw 0 -100vw);
 	}
 
 	/* the home page's end, which is the bottom of the page */
@@ -344,117 +357,19 @@
 		--band-fade: linear-gradient(to top, black calc(100% - 6rem), transparent);
 	}
 
-	.hero-generator {
-		/* it sits on the dark band, where fine lines need a bigger step to show */
-		--generator-line: color-mix(
-			in oklab,
-			var(--color-foreground) 16%,
-			var(--color-background)
-		);
-		--generator-slot: color-mix(
-			in oklab,
-			var(--color-foreground) 5%,
-			var(--color-background)
-		);
-		--generator-charge: color-mix(
-			in oklab,
-			var(--spark) 55%,
-			var(--color-background)
-		);
-		--generator-lit: color-mix(
-			in oklab,
-			var(--spark) 45%,
-			var(--color-foreground)
-		);
-		/* the rotor's metal, polished, so the middle reads apart from the dim stator */
-		--generator-rotor: color-mix(
-			in oklab,
-			var(--generator-lit) 38%,
-			var(--color-background)
-		);
-		color: var(--generator-line);
-
-		[data-rotor] {
-			color: var(--generator-rotor);
-		}
-
-		[data-slots] {
-			fill: var(--generator-slot);
-		}
-
-		/* the rotor's rim, always catching some light, so the middle isn't dark */
-		[data-rim] {
-			stroke: color-mix(
-				in oklab,
-				var(--generator-lit) 55%,
-				var(--color-background)
-			);
-		}
-
-		/* holes through the casing band */
-		[data-bolts] {
-			fill: var(--color-background);
-		}
-
-		[data-coil] {
-			fill: var(--generator-charge);
-			opacity: 0;
-		}
-
-		/* the linework as the spark lights it */
-		.lit {
-			color: var(--generator-lit);
-		}
-
-		[data-rotor],
-		[data-orbit] {
-			transform-box: view-box;
-			transform-origin: center;
-		}
-
-		/*
-		 * warm light around the stator, brighter as it takes on load, with none
-		 * in the middle: the glow is half again the drawing's size, so the slots
-		 * are at 39-55% of its radius and the casing at 64%
-		 */
-		[data-glow] {
-			opacity: calc(0.6 + var(--load, 0) * 0.4);
-			background: radial-gradient(
-				closest-side,
-				transparent 36%,
-				color-mix(in oklab, var(--spark) 20%, transparent) 48%,
-				color-mix(in oklab, var(--spark) 8%, transparent) 62%,
-				transparent 85%
-			);
-		}
-
-		[data-spark] {
-			display: none;
-		}
-
-		@media (prefers-reduced-motion: no-preference) {
-			[data-rotor] {
-				animation: spin 24s linear infinite;
-			}
-
-			/* the spark and its light, at the middle of each section as it peaks */
-			[data-orbit] {
-				animation: orbit 4s linear infinite;
-			}
-
-			[data-spark] {
-				display: inline;
-			}
-
-			/* each section charges as the current comes around */
-			[data-coil] {
-				animation: charge 4s ease-out infinite;
-				animation-delay: calc(var(--i) * 0.5s);
-			}
-		}
-	}
-
 	feature-grid {
+		[data-feature] {
+			border-color: var(--color-secondary);
+		}
+
+		/* pointed at, a card is rimmed in polished silver */
+		[data-feature]:is(:hover, :focus-visible) {
+			border-color: transparent;
+			background:
+				linear-gradient(var(--color-background) 0 0) padding-box,
+				var(--silver-sheen) border-box;
+		}
+
 		[data-cursor],
 		[data-error],
 		[data-progress] {
@@ -590,21 +505,6 @@
 		}
 	}
 
-	@keyframes orbit {
-		from {
-			rotate: 0.9deg;
-		}
-		to {
-			rotate: 360.9deg;
-		}
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(1turn);
-		}
-	}
-
 	/* one of the 14 blades' spacing, so the disc ends as it started */
 	@keyframes mark-turn {
 		to {
@@ -618,18 +518,6 @@
 			opacity: 0;
 		}
 		30% {
-			opacity: 1;
-		}
-	}
-
-	/* opacity only, so the colors follow a change of scheme mid-animation */
-	@keyframes charge {
-		0%,
-		30%,
-		100% {
-			opacity: 0;
-		}
-		6% {
 			opacity: 1;
 		}
 	}

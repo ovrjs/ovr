@@ -104,7 +104,7 @@ export const HomeLayout = (props: {
 }) => {
 	return (
 		<Document head={props.head}>
-			{/* the hero's generator runs off the page's edge, without scrolling it sideways */}
+			{/* the bands run to the page's edges, without scrolling it sideways */}
 			<div class="overflow-x-clip">
 				{/* the hero links to the docs, the demos, and GitHub; it sits on the hero's dark band */}
 				<header class="text-foreground relative z-10 mx-auto flex h-15 max-w-5xl items-center gap-3 px-2 [color-scheme:dark]">

@@ -188,7 +188,7 @@ export const Features = () => (
 				href={feature.href}
 				data-feature
 				data-no-prefetch={feature.noPrefetch}
-				class={`bg-background border-secondary hover:border-foreground flex [scrollbar-gutter:auto] flex-col overflow-hidden rounded-md border no-underline transition-colors ${wide(feature) ? "sm:max-lg:col-span-2" : ""}`}
+				class={`bg-background flex [scrollbar-gutter:auto] flex-col overflow-hidden rounded-md border no-underline transition-colors ${wide(feature) ? "sm:max-lg:col-span-2" : ""}`}
 			>
 				{feature.Illustration && (
 					<div
