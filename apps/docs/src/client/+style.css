@@ -106,7 +106,7 @@
 	:root {
 		--accent: var(--base-500);
 		/* electricity, for small touches only: a gold that shows on white, a bright yellow on black */
-		--spark: light-dark(oklch(0.8 0.16 88), oklch(0.87 0.17 96));
+		--spark: light-dark(oklch(0.84 0.175 92), oklch(0.9 0.185 98));
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -294,7 +294,42 @@
 		}
 	}
 
-	/* the logo's generator, faint behind the hero */
+	/* the home page hero: a dark band to the page's edges, behind the header too, with film grain */
+	.hero {
+		/* nothing, not even the generator's glow, spills below the band */
+		clip-path: inset(-3.75rem -100vw 0 -100vw);
+
+		&::before,
+		&::after {
+			position: absolute;
+			top: -3.75rem;
+			bottom: 0;
+			left: 50%;
+			translate: -50%;
+			width: 100vw;
+			pointer-events: none;
+			content: "";
+		}
+
+		&::before {
+			z-index: -20;
+			background-color: var(--color-background);
+		}
+
+		&::after {
+			opacity: 0.12;
+			z-index: -5;
+			mix-blend-mode: overlay;
+			/* fading out with the glow, so in dark mode there is no line where it ends */
+			mask-image: linear-gradient(
+				to bottom,
+				black calc(100% - 6rem),
+				transparent
+			);
+			background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+		}
+	}
+
 	.hero-generator {
 		/* a dark background needs a bigger step to show as much */
 		--generator-line: light-dark(
@@ -312,14 +347,36 @@
 			opacity: 0;
 		}
 
-		[data-rotor] {
+		[data-rotor],
+		[data-spark] {
 			transform-box: view-box;
 			transform-origin: center;
+		}
+
+		/* warm light from the generator, brighter as it takes on load */
+		[data-glow] {
+			opacity: calc(0.6 + var(--load, 0) * 0.4);
+			background: radial-gradient(
+				closest-side,
+				color-mix(in oklab, var(--spark) 22%, transparent),
+				color-mix(in oklab, var(--spark) 6%, transparent) 55%,
+				transparent
+			);
+		}
+
+		[data-spark] {
+			display: none;
 		}
 
 		@media (prefers-reduced-motion: no-preference) {
 			[data-rotor] {
 				animation: spin 24s linear infinite;
+			}
+
+			/* in step with the coils, at the middle of each as it peaks */
+			[data-spark] {
+				display: inline;
+				animation: orbit 4s linear infinite;
 			}
 
 			/* each coil charges as the current comes around */
@@ -463,6 +520,15 @@
 					}
 				}
 			}
+		}
+	}
+
+	@keyframes orbit {
+		from {
+			rotate: 0.9deg;
+		}
+		to {
+			rotate: 360.9deg;
 		}
 	}
 

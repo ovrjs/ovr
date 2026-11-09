@@ -17,15 +17,24 @@ export const page = o.Route.get("/")
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
-				<section class="relative isolate pt-8 pb-4 sm:pt-12">
+				{/* a dark band, whatever the scheme, lit by the generator */}
+				<section class="hero text-foreground relative isolate pt-12 pb-12 [color-scheme:dark] sm:pt-16 sm:pb-20 lg:min-h-[30rem]">
 					<Generator />
+					{/* the glow fades out before the band ends, instead of cutting off */}
+					<span
+						aria-hidden="true"
+						class="to-background pointer-events-none absolute bottom-0 left-1/2 -z-[6] block h-24 w-screen -translate-x-1/2 bg-linear-to-b from-transparent"
+					/>
 					<h1 class="mb-6 max-w-3xl">{result.frontmatter.title}</h1>
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
-					<div class="mb-14 flex gap-3">
+					<div class="flex gap-3">
 						<a href="/get-started" class="button h-11 px-5 text-base">
 							Get Started
 						</a>
-						<a href="/demo" class="button h-11 px-5 text-base outline">
+						<a
+							href="/demo"
+							class="button border-spark h-11 px-5 text-base outline"
+						>
 							Demo
 						</a>
 						<a
@@ -38,7 +47,7 @@ export const page = o.Route.get("/")
 					</div>
 				</section>
 
-				<section>
+				<section class="mt-20">
 					<h2 class="mt-0 mb-5">One app for people and agents</h2>
 					<p class="mb-16 max-w-2xl text-lg">
 						Most apps are built twice: a website for people, then an API or MCP

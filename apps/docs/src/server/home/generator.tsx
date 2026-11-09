@@ -60,12 +60,25 @@ const disc = (r: number, hole: number) =>
  */
 export const Generator = () => (
 	// runs faster as the pointer comes near it
-	<hero-generator>
-		<svg
-			viewBox="0 0 32 32"
-			aria-hidden="true"
-			class="hero-generator pointer-events-none absolute -top-24 -right-44 -z-10 size-[26rem] lg:-top-44 lg:-right-40 lg:size-[42rem]"
-		>
+	<hero-generator
+		aria-hidden="true"
+		class="hero-generator pointer-events-none absolute -top-24 -right-44 -z-10 block size-[26rem] lg:-top-44 lg:-right-40 lg:size-[42rem]"
+	>
+		{/* the light it gives off, spreading past the drawing */}
+		<span data-glow class="absolute -inset-1/4 block rounded-full" />
+		<svg viewBox="0 0 32 32" class="relative block size-full overflow-visible">
+			<defs>
+				<radialGradient id="spark">
+					{/* styles, since presentation attributes can't read variables */}
+					<stop offset="0" style="stop-color: white" />
+					<stop offset="0.15" style="stop-color: var(--spark)" />
+					<stop
+						offset="0.45"
+						style="stop-color: var(--spark); stop-opacity: 0.25"
+					/>
+					<stop offset="1" style="stop-color: var(--spark); stop-opacity: 0" />
+				</radialGradient>
+			</defs>
 			{/* stator: the casing, its teeth, and the coils between them */}
 			<circle
 				cx={c}
@@ -116,6 +129,11 @@ export const Generator = () => (
 				/>
 				<path d={blades} fill="none" stroke="currentColor" stroke-width="0.6" />
 				<path fill-rule="evenodd" d={disc(8.2 * scale, 2.2 * scale)} />
+			</g>
+
+			{/* the current, a spark going around the coils as they charge */}
+			<g data-spark>
+				<circle cx={c} cy={c - 11.2} r="3.2" fill="url(#spark)" />
 			</g>
 		</svg>
 	</hero-generator>

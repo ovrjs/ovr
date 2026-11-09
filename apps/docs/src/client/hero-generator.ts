@@ -52,7 +52,7 @@ export class HeroGenerator extends HTMLElement {
 
 	/** Measure how close the pointer is to the center. */
 	#near(event: PointerEvent) {
-		const box = this.firstElementChild!.getBoundingClientRect();
+		const box = this.getBoundingClientRect();
 		const radius = box.width / 2;
 		const distance = Math.hypot(
 			event.clientX - (box.left + radius),
@@ -87,10 +87,18 @@ export class HeroGenerator extends HTMLElement {
 
 		for (const animation of this.getAnimations({ subtree: true }))
 			animation.playbackRate =
+				// the spark rides the wave of charge, so it keeps the same pace
 				animation instanceof CSSAnimation &&
-				animation.animationName === "charge"
+				(animation.animationName === "charge" ||
+					animation.animationName === "orbit")
 					? Math.min(this.#rate, charge)
 					: this.#rate;
+
+		// the glow brightens with the load, from 0 at rest to 1 fully spooled
+		this.style.setProperty(
+			"--load",
+			((this.#rate - 1) / (spooled - 1)).toFixed(3),
+		);
 
 		// settled once at its speed, fully spooled up or down
 		this.#frame =
