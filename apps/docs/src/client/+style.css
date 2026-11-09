@@ -257,19 +257,17 @@
 
 	/* the logo's generator, faint behind the hero */
 	.hero-generator {
-		color: color-mix(
+		--generator-line: color-mix(
 			in oklab,
-			var(--color-foreground) 4%,
+			var(--color-foreground) 5%,
 			var(--color-background)
 		);
-
-		[data-current] {
-			stroke: color-mix(
-				in oklab,
-				var(--color-foreground) 10%,
-				var(--color-background)
-			);
-		}
+		--generator-charge: color-mix(
+			in oklab,
+			var(--color-foreground) 16%,
+			var(--color-background)
+		);
+		color: var(--generator-line);
 
 		[data-rotor] {
 			transform-box: view-box;
@@ -278,11 +276,13 @@
 
 		@media (prefers-reduced-motion: no-preference) {
 			[data-rotor] {
-				animation: spin 40s linear infinite;
+				animation: spin 24s linear infinite;
 			}
 
-			[data-current] {
-				animation: current 8s linear infinite;
+			/* each coil charges as the current comes around */
+			[data-coil] {
+				animation: charge 4s ease-out infinite;
+				animation-delay: calc(var(--i) * 0.5s);
 			}
 		}
 	}
@@ -429,9 +429,16 @@
 		}
 	}
 
-	@keyframes current {
-		to {
-			stroke-dashoffset: -100;
+	@keyframes charge {
+		0%,
+		100% {
+			stroke: var(--generator-line);
+		}
+		6% {
+			stroke: var(--generator-charge);
+		}
+		30% {
+			stroke: var(--generator-line);
 		}
 	}
 
