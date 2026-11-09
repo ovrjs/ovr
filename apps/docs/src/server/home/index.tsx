@@ -90,9 +90,15 @@ export const page = o.Route.get("/")
 					<Features />
 				</section>
 
-				<section class="border-secondary mt-28 border-t pt-12">
-					<h2 class="mt-0 mb-6">Build your first route</h2>
-					<div class="grid justify-items-start gap-2">
+				{/* inverted, so the page ends on a block in the opposite scheme */}
+				<section class="bg-background text-foreground mt-28 grid gap-x-12 gap-y-8 rounded-lg px-6 py-10 [color-scheme:dark] sm:px-10 sm:py-12 lg:grid-cols-[auto_1fr] lg:items-end dark:[color-scheme:light]">
+					<div>
+						<h2 class="mt-0 mb-6">Build your first route</h2>
+						<a href="/get-started" class="button h-11 w-fit px-5 text-base">
+							Get Started
+						</a>
+					</div>
+					<div class="grid min-w-0 justify-items-start gap-2 lg:justify-self-end">
 						<p class="caption my-0">install</p>
 						<Command>npm i ovr</Command>
 						<p class="caption mt-4 mb-0">
@@ -105,9 +111,6 @@ export const page = o.Route.get("/")
 							<span class="max-sm:hidden"> </span>
 							ovr https://ovrjs.com/mcp
 						</Command>
-						<a href="/get-started" class="button mt-6 h-11 px-5 text-base">
-							Get Started
-						</a>
 					</div>
 				</section>
 			</HomeLayout>
