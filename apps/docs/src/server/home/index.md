@@ -1,5 +1,5 @@
 ---
-title: Your app is the API
+title: Web apps anyone can use
 description: Write each route once. People get pages and forms, agents get Markdown and MCP tools, through the same handler.
 ---
 

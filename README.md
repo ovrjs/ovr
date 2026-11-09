@@ -1,6 +1,6 @@
 # ovr
 
-Your app is the API. Write each route once: people get pages and forms, agents get Markdown and MCP tools, through the same handler. Forms, validation, Postgres, and passkey sign-in are built in, with zero dependencies.
+Web apps anyone can use. Write each route once: people get pages and forms, agents get Markdown and MCP tools, through the same handler. Forms, validation, Postgres, and passkey sign-in are built in, with zero dependencies.
 
 ovr supports only the latest Node.js LTS release and current browsers.
 
@@ -8,6 +8,6 @@ ovr supports only the latest Node.js LTS release and current browsers.
 npm i ovr
 ```
 
-Check out the [demos](https://ovrjs.com/demo/memory) or the [documentation](https://ovrjs.com) to get started.
+Check out the [demos](https://ovrjs.com/demo) or the [documentation](https://ovrjs.com) to get started.
 
 See the [docs development guide](apps/docs/README.md) to run the local passkey demo.
