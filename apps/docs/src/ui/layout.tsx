@@ -157,7 +157,8 @@ const HomeLink = () => {
 			href="/"
 			class="home-link flex items-center gap-1.5 pl-2 font-mono text-xl font-bold no-underline"
 		>
-			<Mark class="size-5" />
+			{/* centered on the lowercase letters, which sit below the line's middle */}
+			<Mark class="relative top-0.5 size-5" />
 			ovr
 		</a>
 	);

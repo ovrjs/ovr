@@ -255,10 +255,15 @@
 		}
 	}
 
-	/* the logo turns once when pointed at */
+	/* the logo's coils charge in turn when it is pointed at */
+	.home-link [data-coil] {
+		fill: transparent;
+	}
+
 	@media (prefers-reduced-motion: no-preference) {
-		.home-link:hover svg {
-			animation: spin 0.8s ease-in-out;
+		.home-link:is(:hover, :focus-visible) [data-coil] {
+			animation: mark-charge 0.9s ease-out both;
+			animation-delay: calc(var(--i) * 70ms);
 		}
 	}
 
@@ -433,6 +438,16 @@
 	@keyframes spin {
 		to {
 			transform: rotate(1turn);
+		}
+	}
+
+	@keyframes mark-charge {
+		0%,
+		100% {
+			fill: transparent;
+		}
+		30% {
+			fill: color-mix(in oklab, currentColor 40%, transparent);
 		}
 	}
 

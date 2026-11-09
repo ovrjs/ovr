@@ -45,7 +45,7 @@ export const Generator = () => (
 	<svg
 		viewBox="0 0 32 32"
 		aria-hidden="true"
-		class="hero-generator pointer-events-none absolute -top-24 -right-44 -z-10 size-[26rem] lg:-top-44 lg:-right-64 lg:size-[42rem]"
+		class="hero-generator pointer-events-none absolute -top-24 -right-44 -z-10 size-[26rem] lg:-top-44 lg:-right-40 lg:size-[42rem]"
 	>
 		{/* stator: the casing, its teeth, and the coils between them */}
 		<circle
