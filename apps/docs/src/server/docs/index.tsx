@@ -58,7 +58,7 @@ export const page = ovr.Route.get("/:slug")
 						return (
 							<a
 								class={clsx(
-									"border-secondary flex flex-col gap-2 rounded-md border p-4 capitalize no-underline",
+									"border-secondary flex flex-col gap-2 rounded-md border p-4 no-underline",
 									props.class,
 								)}
 								href={`/${props.slug}`}
@@ -66,7 +66,9 @@ export const page = ovr.Route.get("/:slug")
 								<span class="text-muted-foreground text-xs uppercase">
 									{props.next ? "Next page" : "Previous page"}
 								</span>{" "}
-								<span class="underline">{content.name(props.slug)}</span>
+								<span class="underline">
+									{content.get(props.slug)!.frontmatter.title}
+								</span>
 							</a>
 						);
 					};

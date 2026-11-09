@@ -1,5 +1,5 @@
 import * as content from "@/lib/content";
-import * as demos from "@/server/demo";
+import { demoList } from "@/server/demo/list";
 import * as docs from "@/server/docs";
 import * as badge from "@/ui/badge";
 import { FavIcon } from "@/ui/favicon";
@@ -66,7 +66,7 @@ export const createLayout =
 				</header>
 				<div class="flex">
 					<div>
-						<nav class="sticky top-0 z-10 hidden max-h-dvh min-w-52 flex-col gap-4 overflow-y-auto p-4 md:flex">
+						<nav class="sticky top-0 z-10 hidden h-dvh min-w-52 flex-col gap-4 overflow-y-auto p-4 md:flex">
 							<HomeLink />
 							<Nav c={c} />
 						</nav>
@@ -165,7 +165,7 @@ const HomeLink = () => {
 
 const NavHeading = (props: { children: o.JSX.Element }) => {
 	return (
-		<h2 class="text-muted-foreground mt-1 pl-2 text-sm font-bold uppercase">
+		<h2 class="text-muted-foreground my-0 pl-2 text-xs font-bold uppercase">
 			{props.children}
 		</h2>
 	);
@@ -176,69 +176,42 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 		<>
 			<hr />
 
-			<NavHeading>Docs</NavHeading>
-			<NavList>
-				{content.slugs().map((slug) => (
-					<NavLink slug={slug} c={c} />
-				))}
-			</NavList>
-
-			<hr />
-
-			<NavHeading>Demo</NavHeading>
-			<NavList>
-				{import.meta.env.DEV && process.env.AUTH_SECRET && (
-					<li>
-						<a
-							href="/demo/auth"
-							data-no-prefetch
-							class={clsx(
-								"button secondary justify-start",
-								c.url.pathname !== "/demo/auth" && "ghost",
+			{/* the pages in reading order, grouped by what they cover */}
+			<div class="grid gap-4">
+				{content.sections.map((section) => (
+					<section class="grid gap-1">
+						<NavHeading>{section.name}</NavHeading>
+						<NavList>
+							{section.slugs.map((slug) => (
+								<NavLink href={`/${slug}`} c={c}>
+									{content.get(slug)!.frontmatter.title}
+								</NavLink>
+							))}
+							{section.name === "Reference" && (
+								<NavLink href={docs.llms.url()} c={c}>
+									llms.txt
+								</NavLink>
 							)}
-						>
-							Auth
-						</a>
-					</li>
-				)}
-				{Object.values(demos)
-					.sort((a, b) => a.pattern.localeCompare(b.pattern))
-					.map((demo) => {
-						if (!("Anchor" in demo)) return;
-
-						const pathname = demo.url();
-
-						if (!pathname.startsWith("/demo")) return;
-
-						const text = pathname.split("/").at(2);
-
-						return (
-							<li>
-								<demo.Anchor
-									data-no-prefetch
-									class={clsx(
-										"button secondary justify-start capitalize",
-										(text === "seo" || text === "sse") && "uppercase",
-										pathname !== c.url.pathname && "ghost",
-									)}
-								>
-									{text}
-								</demo.Anchor>
-							</li>
-						);
-					})}
-			</NavList>
+						</NavList>
+					</section>
+				))}
+			</div>
 
 			<hr />
 
-			<NavHeading>Resources</NavHeading>
 			<NavList>
-				<NavLink slug={docs.llms.url().slice(1)} c={c} />
+				<NavLink
+					href={demoList.url()}
+					c={c}
+					current={c.url.pathname.startsWith(demoList.url())}
+				>
+					Demos
+				</NavLink>
 			</NavList>
 
-			<hr />
+			<hr class="mt-auto" />
 
-			<ul class="flex justify-between">
+			<ul class="flex items-center justify-between">
 				<li>
 					<GitHub />
 				</li>
@@ -254,30 +227,28 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 };
 
 const NavList = (props: { children: o.JSX.Element }) => {
-	return <ul class="grid gap-1">{props.children}</ul>;
+	return <ul class="grid gap-0.5">{props.children}</ul>;
 };
 
 const NavLink = (props: {
-	slug?: string;
-	anchor?: o.JSX.Element;
+	href: string;
 	c: o.Middleware.Context;
+	/** Defaults to the link being the current page. */
+	current?: boolean;
+	children: o.JSX.Element;
 }) => {
-	if (!props.slug) return;
-	const href = `/${props.slug}`;
-	const current = href === props.c.url.pathname;
-	const text = content.name(props.slug.split(".")[0]!);
+	const current = props.current ?? props.href === props.c.url.pathname;
 
 	return (
 		<li>
 			<a
 				class={clsx(
-					"button secondary justify-start",
-					text !== "llms" && "capitalize",
+					"button secondary h-7 justify-start px-2 text-sm",
 					!current && "ghost",
 				)}
-				href={href}
+				href={props.href}
 			>
-				{text === "llms" ? "LLMs" : text}
+				{props.children}
 			</a>
 		</li>
 	);

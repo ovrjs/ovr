@@ -67,6 +67,8 @@ async function* Generator() {
 }
 ```
 
+The [chat demo](/demo/chat) streams a model's reply this way, without client-side JavaScript.
+
 ## Parallelization
 
 These three components await in [parallel](/demo/parallel) when this component is evaluated. Then they will stream in order as soon as they are ready.

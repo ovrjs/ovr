@@ -8,21 +8,17 @@ const pages = import.meta.glob<Result<typeof FrontmatterSchema>>(
 );
 
 /**
- * The docs pages in reading order, each served at its folder name. URLs don't
- * hold the order, so moving a page keeps its links.
+ * The docs pages in reading order, grouped for the nav, each served at its
+ * folder name. URLs don't hold the order, so moving a page keeps its links.
  */
-const order = [
-	"get-started",
-	"app",
-	"route",
-	"middleware",
-	"render",
-	"schema",
-	"agents",
-	"database",
-	"auth",
-	"multipart",
+export const sections = [
+	{ name: "Start", slugs: ["get-started"] },
+	{ name: "Basics", slugs: ["app", "route", "middleware", "render"] },
+	{ name: "Features", slugs: ["schema", "agents", "database", "auth"] },
+	{ name: "Reference", slugs: ["multipart"] },
 ];
+
+const order = sections.flatMap((section) => section.slugs);
 
 /** The docs pages by slug, in reading order. */
 export const content = Object.fromEntries(
@@ -48,9 +44,6 @@ export const slugs = (all?: boolean) => [
 ];
 
 export const get = (slug: string) => content[slug];
-
-/** A slug as a page name, such as "get started". */
-export const name = (slug: string) => slug.replaceAll("-", " ");
 
 export const demos = {
 	...import.meta.glob<Result<typeof FrontmatterSchema>>(

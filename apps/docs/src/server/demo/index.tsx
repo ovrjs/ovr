@@ -4,3 +4,4 @@ export * from "@/server/demo/parallel";
 export * from "@/server/demo/form";
 export * from "@/server/demo/seo";
 export * from "@/server/demo/sse";
+export * from "@/server/demo/list";
