@@ -32,7 +32,7 @@ export const Popover = (props: PopoverProps) => {
 				id={id}
 				{...rest}
 				popover
-				class="bg-background border-secondary backdrop:bg-muted/60 mx-auto my-auto max-h-[90dvh] min-w-xs overflow-y-auto rounded-md border p-7 opacity-0 shadow-2xl transition-[display,opacity] transition-discrete backdrop:opacity-0 backdrop:backdrop-blur-lg backdrop:transition-[display,opacity] backdrop:transition-discrete open:opacity-100 open:backdrop:opacity-100 motion-reduce:duration-0 sm:mx-auto sm:max-w-[60ch] starting:open:opacity-0 starting:open:backdrop:opacity-0"
+				class="bg-background border-secondary backdrop:bg-muted/60 mx-auto my-auto max-h-[90dvh] min-w-xs [scrollbar-gutter:auto] overflow-y-auto rounded-md border p-7 opacity-0 shadow-2xl transition-[display,opacity] transition-discrete backdrop:opacity-0 backdrop:backdrop-blur-lg backdrop:transition-[display,opacity] backdrop:transition-discrete open:opacity-100 open:backdrop:opacity-100 motion-reduce:duration-0 sm:mx-auto sm:max-w-[60ch] starting:open:opacity-0 starting:open:backdrop:opacity-0"
 			>
 				<div class="flex items-center justify-between">
 					{titleHref ? (
