@@ -12,23 +12,21 @@ const point = (r: number, deg: number) => {
 };
 
 /**
- * The gaps between the logo's spokes, from its rotor ring to its outer ring,
- * which charge in turn like the hero's coils.
+ * The shroud ring in seven segments, one for every two blades, each a
+ * filament down the middle of the ring that lights as the current comes
+ * around.
  */
-const coils = Array.from({ length: 8 }, (_, i) => {
-	const inner = 7.75;
-	const outer = 12;
-	// the spokes are 2.5 wide, so each gap stops at a spoke's edge
-	const edge = (r: number) => (Math.asin(1.25 / r) * 180) / Math.PI;
-	const from = (r: number) => i * 45 + edge(r);
-	const to = (r: number) => (i + 1) * 45 - edge(r);
+const coils = Array.from({ length: 7 }, (_, i) => {
+	const from = (i * 360) / 7 + 3;
+	const to = ((i + 1) * 360) / 7 - 3;
 
-	return `<path data-coil style="--i: ${i}" d="M${point(inner, from(inner))}L${point(outer, from(outer))}A${outer} ${outer} 0 0 1 ${point(outer, to(outer))}L${point(inner, to(inner))}A${inner} ${inner} 0 0 0 ${point(inner, from(inner))}Z" />`;
+	return `<path data-coil style="--i: ${i}" d="M${point(13.5, from)}A13.5 13.5 0 0 1 ${point(13.5, to)}" fill="none" stroke-width="1" stroke-linecap="round" />`;
 }).join("");
 
 /**
- * The logo's generator, drawn in the text color from the same source as the
- * favicon, with coils that charge when the link is pointed at.
+ * The logo's turbine disc, drawn in the text color from the same source as
+ * the favicon. Pointed at, the disc turns a blade's width while current runs
+ * around the shroud ring.
  */
 export const Mark = (props: { class?: string }) =>
 	o.Markup.raw(
