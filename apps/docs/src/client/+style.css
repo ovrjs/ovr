@@ -120,7 +120,7 @@
 		--steel-3: light-dark(oklch(0.55 0.01 90), oklch(0.78 0.008 90));
 		--steel-4: light-dark(oklch(0.84 0.008 90), oklch(0.46 0.01 90));
 		--steel-5: light-dark(oklch(0.64 0.01 90), oklch(0.82 0.008 90));
-		--border-radius: 5px;
+		--border-radius: 2px;
 
 		--font-family-serif: "Literata Variable", serif;
 		/* two faces only, so nothing falls back to a sans */
