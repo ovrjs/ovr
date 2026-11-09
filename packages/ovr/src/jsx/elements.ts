@@ -893,32 +893,26 @@ type SvgImageAttributes = SvgAttributes<{
 	preserveAspectRatio: SvgRootAttributes["preserveAspectRatio"];
 }>;
 
-type SvgLinearGradientAttributes = SvgAttributes<
-	{
-		x1: string | number;
-		y1: string | number;
-		x2: string | number;
-		y2: string | number;
-		gradientUnits: "userSpaceOnUse" | "objectBoundingBox";
-		gradientTransform: string;
-		spreadMethod: "pad" | "reflect" | "repeat";
-	},
-	undefined
->;
+type SvgLinearGradientAttributes = SvgAttributes<{
+	x1: string | number;
+	y1: string | number;
+	x2: string | number;
+	y2: string | number;
+	gradientUnits: "userSpaceOnUse" | "objectBoundingBox";
+	gradientTransform: string;
+	spreadMethod: "pad" | "reflect" | "repeat";
+}>;
 
-type SvgRadialGradientAttributes = SvgAttributes<
-	{
-		cx: string | number;
-		cy: string | number;
-		r: string | number;
-		fx: string | number;
-		fy: string | number;
-		gradientUnits: "userSpaceOnUse" | "objectBoundingBox";
-		gradientTransform: string;
-		spreadMethod: "pad" | "reflect" | "repeat";
-	},
-	undefined
->;
+type SvgRadialGradientAttributes = SvgAttributes<{
+	cx: string | number;
+	cy: string | number;
+	r: string | number;
+	fx: string | number;
+	fy: string | number;
+	gradientUnits: "userSpaceOnUse" | "objectBoundingBox";
+	gradientTransform: string;
+	spreadMethod: "pad" | "reflect" | "repeat";
+}>;
 
 type SvgStopAttributes = SvgAttributes<
 	{
