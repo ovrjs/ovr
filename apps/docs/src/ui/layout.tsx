@@ -98,10 +98,14 @@ export const HomeLayout = (props: {
 		<Document head={props.head}>
 			{/* the hero links to the docs, the demos, and GitHub */}
 			<header class="mx-auto flex max-w-5xl items-baseline gap-3 px-2 py-4">
-				<HomeLink />
-				<p class="caption my-0 text-xs">
-					v{version} · {size.kb}KB
-				</p>
+				<a
+					href="/"
+					class="flex items-baseline pl-2 font-mono text-xl no-underline"
+				>
+					<span class="font-bold">ovr</span>
+					<span class="text-muted-foreground">@{version}</span>
+				</a>
+				<p class="caption my-0 text-xs">{size.kb}KB</p>
 			</header>
 			<main
 				id="content"
