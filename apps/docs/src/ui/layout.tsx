@@ -105,11 +105,6 @@ export const HomeLayout = (props: {
 							</a>
 						</li>
 						<li>
-							<a href="/demo/memory" data-no-prefetch class="button ghost">
-								Demo
-							</a>
-						</li>
-						<li>
 							<GitHub />
 						</li>
 					</ul>
