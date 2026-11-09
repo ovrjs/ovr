@@ -272,6 +272,15 @@
 		);
 	}
 
+	/* the nav and contents are plain serif links, underlined in silver when pointed at or current */
+	.nav-link {
+		@apply text-foreground font-serif no-underline;
+
+		&:is(:hover, :focus-visible, [aria-current="page"]) {
+			@apply underline;
+		}
+	}
+
 	/* links keep the text color, with silver beneath */
 	a:not(.button) {
 		text-decoration-color: var(--silver);

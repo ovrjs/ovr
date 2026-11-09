@@ -140,7 +140,7 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 						return (
 							<li>
 								<a
-									class="button ghost text-muted-foreground h-8 justify-start truncate px-3 capitalize"
+									class="nav-link text-muted-foreground hover:text-foreground block truncate px-3 py-1.5 text-sm capitalize"
 									href={`#${heading.id}`}
 								>
 									{heading.name}
@@ -243,7 +243,7 @@ const NavLink = (props: {
 	return (
 		<li>
 			<a
-				class="button ghost h-8 justify-start px-2 text-sm"
+				class="nav-link block px-2 py-1.5 text-[0.9375rem]"
 				href={props.href}
 				{...(current && { "aria-current": "page" as const })}
 			>

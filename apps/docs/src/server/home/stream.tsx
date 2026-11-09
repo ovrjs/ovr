@@ -72,7 +72,7 @@ const Pane = (props: {
 }) => (
 	<figure class="bg-base-900 text-base-100 steel-rim -mx-4 my-0 flex min-w-0 [scrollbar-gutter:auto] flex-col overflow-hidden shadow-sm sm:mx-0 sm:rounded-md">
 		{/* the same route, asking for a different type */}
-		<figcaption class="border-base-800 text-base-400 flex justify-between gap-4 border-b px-4 py-2 font-mono text-sm leading-5">
+		<figcaption class="border-base-800 text-base-400 flex justify-between gap-4 border-b px-4 py-2 font-mono text-xs leading-4">
 			<span>
 				GET /todos
 				<br />
