@@ -124,7 +124,8 @@ const TOC = ({ c }: { c: o.Middleware.Context }) => {
 	if (!result) return;
 
 	return (
-		<div>
+		// starts level with the text under the page's title, then sticks near the top
+		<div class="pt-22">
 			<aside class="sticky top-0 hidden min-w-52 flex-col gap-3 p-4 lg:flex">
 				<h2 class="pl-3 text-base uppercase">
 					<a href="#" class="text-muted-foreground font-bold">
