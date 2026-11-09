@@ -14,27 +14,23 @@
 /* `outline` is uico's button variant, not Tailwind's outline utility */
 @source not inline("outline");
 
-/* literata-latin-wght-normal */
+/* Geist Serif, from Vercel's geist package, which needs Next.js to install, so it's kept here with its license */
 @font-face {
 	font-style: normal;
-	font-weight: 200 900;
-	src: url(@fontsource-variable/literata/files/literata-latin-wght-normal.woff2)
-		format("woff2-variations");
-	font-family: "Literata Variable";
+	/* one weight so far, so the browser draws bold for strong text */
+	font-weight: 400;
+	src: url(@/assets/fonts/geist-serif.woff2) format("woff2");
+	font-family: "Geist Serif";
 	font-display: swap;
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-		U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
-		U+2215, U+FEFF, U+FFFD;
 }
 
-/* inconsolata-latin-wght-normal */
+/* geist-mono-latin-wght-normal */
 @font-face {
 	font-style: normal;
-	font-weight: 200 900;
-	src: url(@fontsource-variable/inconsolata/files/inconsolata-latin-wght-normal.woff2)
+	font-weight: 100 900;
+	src: url(@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2)
 		format("woff2-variations");
-	font-family: "Inconsolata Variable";
+	font-family: "Geist Mono Variable";
 	font-display: swap;
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
@@ -126,10 +122,10 @@
 			var(--steel-4) 76%, var(--steel-5) 100%;
 		--border-radius: 2px;
 
-		--font-family-serif: "Literata Variable", serif;
+		--font-family-serif: "Geist Serif", serif;
 		/* two faces only, so nothing falls back to a sans */
 		--font-family-sans: var(--font-family-serif);
-		--font-family-mono: "Inconsolata Variable", monospace;
+		--font-family-mono: "Geist Mono Variable", monospace;
 		--font-family-headings: var(--font-family-mono);
 
 		--shiki-foreground: var(--base-100);
