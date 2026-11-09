@@ -113,12 +113,15 @@ export const Generator = () => (
 			/>
 		))}
 		{Array.from({ length: teeth }, (_, i) => (
+			<path d={coil(i)} fill="none" stroke="currentColor" stroke-width="0.35" />
+		))}
+		{/* the charge, over each coil, fading in and out */}
+		{Array.from({ length: teeth }, (_, i) => (
 			<path
 				data-coil
 				style={`--i: ${i}`}
 				d={coil(i)}
 				fill="none"
-				stroke="currentColor"
 				stroke-width="0.35"
 			/>
 		))}

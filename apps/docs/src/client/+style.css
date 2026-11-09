@@ -257,7 +257,8 @@
 
 	/* the logo's coils charge in turn when it is pointed at */
 	.home-link [data-coil] {
-		fill: transparent;
+		fill: currentColor;
+		fill-opacity: 0;
 	}
 
 	@media (prefers-reduced-motion: no-preference) {
@@ -279,6 +280,11 @@
 			color-mix(in oklab, var(--color-foreground) 18%, var(--color-background))
 		);
 		color: var(--generator-line);
+
+		[data-coil] {
+			stroke: var(--generator-charge);
+			opacity: 0;
+		}
 
 		[data-rotor] {
 			transform-box: view-box;
@@ -443,23 +449,22 @@
 	@keyframes mark-charge {
 		0%,
 		100% {
-			fill: transparent;
+			fill-opacity: 0;
 		}
 		30% {
-			fill: color-mix(in oklab, currentColor 40%, transparent);
+			fill-opacity: 0.4;
 		}
 	}
 
+	/* opacity only, so the colors follow a change of scheme mid-animation */
 	@keyframes charge {
 		0%,
+		30%,
 		100% {
-			stroke: var(--generator-line);
+			opacity: 0;
 		}
 		6% {
-			stroke: var(--generator-charge);
-		}
-		30% {
-			stroke: var(--generator-line);
+			opacity: 1;
 		}
 	}
 
