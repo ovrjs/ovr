@@ -126,7 +126,8 @@
 		/* two faces only, so nothing falls back to a sans */
 		--font-family-sans: var(--font-family-serif);
 		--font-family-mono: "Geist Mono Variable", monospace;
-		--font-family-headings: var(--font-family-mono);
+		/* serif for reading, headings and body; mono for the interface and code */
+		--font-family-headings: var(--font-family-serif);
 
 		--shiki-foreground: var(--base-100);
 		--shiki-background: var(--base-900);
@@ -292,7 +293,8 @@
 	h4,
 	h5,
 	h6 {
-		@apply font-headings;
+		/* the serif's one weight, set close, instead of a drawn bold */
+		@apply font-headings font-normal tracking-tight;
 	}
 
 	/* a caption above a figure, like a file name or a request */
@@ -306,12 +308,12 @@
 
 	label,
 	legend {
-		@apply font-headings text-base;
+		@apply font-mono text-base;
 	}
 
 	button,
 	.button {
-		@apply font-headings font-medium transition-colors ease-out active:scale-99;
+		@apply font-mono font-medium transition-colors ease-out active:scale-99;
 	}
 
 	form {

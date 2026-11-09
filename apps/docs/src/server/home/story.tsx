@@ -183,7 +183,7 @@ const Browser = (props: { click?: boolean }) => (
 				</span>
 			</div>
 			<div class="p-5 text-sm">
-				<p class="text-heading-foreground font-headings mt-0 mb-3 text-lg font-semibold">
+				<p class="text-heading-foreground font-headings mt-0 mb-3 text-lg">
 					Todos
 				</p>
 				<ul class="my-0 grid list-none gap-2 p-0">

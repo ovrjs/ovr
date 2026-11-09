@@ -34,7 +34,7 @@ export const demoList = Route.get("/demo").use((c) => {
 							data-no-prefetch
 							class="border-secondary hover:bg-muted flex h-full flex-col gap-1 rounded-md border p-4 no-underline"
 						>
-							<span class="font-headings font-bold">{demo.title}</span>
+							<span class="font-headings text-lg">{demo.title}</span>
 							<span class="text-muted-foreground text-sm">
 								{demo.description}
 							</span>
