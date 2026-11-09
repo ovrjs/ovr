@@ -90,34 +90,25 @@ export const page = o.Route.get("/")
 					</div>
 				</section>
 
-				<section class="border-secondary mt-28 grid gap-x-12 gap-y-14 border-t pt-12 lg:grid-cols-2">
-					<div>
-						<p class="caption my-0">get started</p>
-						<h2 class="mt-2 mb-6">Build your first route</h2>
-						<div class="grid justify-items-start gap-2">
-							<p class="caption my-0">install</p>
-							<Command>npm i ovr</Command>
-							<p class="caption mt-4 mb-0">
-								connect your agent to these docs, an ovr app
-							</p>
-							<Command>
-								claude mcp add --transport http
-								{/* a shell line continuation, so a phone fits it without scrolling */}
-								<span class="sm:hidden">{" \\\n  "}</span>
-								<span class="max-sm:hidden"> </span>
-								ovr https://ovrjs.com/mcp
-							</Command>
-							<a href="/get-started" class="button mt-6 h-11 px-5 text-base">
-								Get Started
-							</a>
-						</div>
-					</div>
-					<div>
-						<p class="caption my-0">constraints</p>
-						<h2 class="mt-2 mb-6">Intentionally constrained</h2>
-						<ol class="m-0 grid list-none gap-6 p-0">
-							<Constraints />
-						</ol>
+				<section class="border-secondary mt-28 border-t pt-12">
+					<p class="caption my-0">get started</p>
+					<h2 class="mt-2 mb-6">Build your first route</h2>
+					<div class="grid justify-items-start gap-2">
+						<p class="caption my-0">install</p>
+						<Command>npm i ovr</Command>
+						<p class="caption mt-4 mb-0">
+							connect your agent to these docs, an ovr app
+						</p>
+						<Command>
+							claude mcp add --transport http
+							{/* a shell line continuation, so a phone fits it without scrolling */}
+							<span class="sm:hidden">{" \\\n  "}</span>
+							<span class="max-sm:hidden"> </span>
+							ovr https://ovrjs.com/mcp
+						</Command>
+						<a href="/get-started" class="button mt-6 h-11 px-5 text-base">
+							Get Started
+						</a>
 					</div>
 				</section>
 			</HomeLayout>
@@ -131,35 +122,6 @@ const Command = (props: { children: o.JSX.Element }) => (
 	</pre>
 );
 
-function* Constraints() {
-	const constraints = [
-		{
-			title: "No client JS required",
-			content: "Everything works when no client-side JavaScript runs.",
-		},
-		{
-			title: "Streaming first",
-			content:
-				"Responses and request parsing start immediately, without buffering whole documents or uploads in memory.",
-		},
-		{
-			title: "Stateless servers",
-			content:
-				"Nothing is kept in memory between requests: forms carry their issues in the URL, MCP needs no sessions, and auth keeps its sessions in your database, so any instance can answer any request.",
-		},
-	];
-
-	for (const [i, constraint] of constraints.entries()) {
-		yield (
-			<li class="border-foreground m-0 grid content-start gap-2 border-t p-0 pt-4">
-				<span class="caption">{String(i + 1).padStart(2, "0")}</span>
-				<h3 class="my-0 text-lg">{constraint.title}</h3>
-				<p class="text-muted-foreground my-0 text-sm">{constraint.content}</p>
-			</li>
-		);
-	}
-}
-
 function* Features() {
 	const features = [
 		{
@@ -169,10 +131,17 @@ function* Features() {
 				"Pages as Markdown, routes as MCP tools, and forms as WebMCP tools.",
 		},
 		{
-			title: "Generated Forms",
+			title: "Forms Without JavaScript",
 			href: "/demo/form",
 			noPrefetch: true,
-			content: "Forms from schemas, with validation and values kept on errors.",
+			content:
+				"Generated from schemas, checked on the server, with each error shown beside its field.",
+		},
+		{
+			title: "Streaming First",
+			href: "/render#parallelization",
+			content:
+				"Components render in parallel and stream in order, and uploads are parsed as they arrive.",
 		},
 		{
 			title: "Postgres",
@@ -185,14 +154,10 @@ function* Features() {
 			content: "For people, and for the agents they approve.",
 		},
 		{
-			title: "Streaming JSX",
-			href: "/render#parallelization",
-			content: "Components render in parallel and stream in order.",
-		},
-		{
-			title: "Zero Dependencies",
+			title: "Runs Anywhere",
 			href: "/get-started#compatibility",
-			content: "Built on web standards, ovr runs anywhere fetch does.",
+			content:
+				"No dependencies and no state in memory, so any fetch runtime, and any instance, can answer a request.",
 		},
 	];
 

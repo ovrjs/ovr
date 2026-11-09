@@ -148,13 +148,14 @@ async function Username() {
 
 Browsers are [built for streaming](https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/How_browsers_work#parsing). They parse and paint HTML as it arrives, and the head goes out first, so CSS and JavaScript start downloading while the body renders. The result is a fast [Time-To-First-Byte](https://web.dev/articles/ttfb#what_is_ttfb) with no hydration bundle and no buffering.
 
-## Constraints
+## Built in
 
-ovr is intentionally constrained. These rules keep the framework small and shape the API.
-
-- **No client JS required.** Everything works when no client-side JavaScript runs.
-- **Streaming first.** Responses and request parsing start immediately, without buffering whole documents or uploads in memory.
-- **Stateless servers.** Nothing is kept in memory between requests: forms carry their issues in the URL, MCP needs no sessions, and auth keeps its sessions in your database, so any instance can answer any request.
+- [People and agents](/agents): pages as Markdown, routes as MCP tools, and forms as WebMCP tools.
+- [Forms without JavaScript](/demo/form): generated from schemas, checked on the server, with each error shown beside its field.
+- [Streaming first](/render#parallelization): components render in parallel and stream in order, and uploads are parsed as they arrive.
+- [Postgres](/database): tables, typed queries, and migrations.
+- [Passkey sign-in](/auth): for people, and for the agents they approve.
+- [Runs anywhere](/get-started#compatibility): no dependencies and no state in memory, so any fetch runtime, and any instance, can answer a request.
 
 ## Get started
 
