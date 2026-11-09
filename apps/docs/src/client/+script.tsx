@@ -15,6 +15,13 @@ if (document.querySelector("network-demo")) {
 	);
 }
 
+if (document.querySelector("hero-generator")) {
+	customElements.define(
+		"hero-generator",
+		(await import("@/client/hero-generator")).HeroGenerator,
+	);
+}
+
 if (document.querySelector("feature-grid")) {
 	customElements.define(
 		"feature-grid",

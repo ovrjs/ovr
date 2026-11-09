@@ -59,56 +59,64 @@ const disc = (r: number, hole: number) =>
  * spins inside them, across an air gap.
  */
 export const Generator = () => (
-	<svg
-		viewBox="0 0 32 32"
-		aria-hidden="true"
-		class="hero-generator pointer-events-none absolute -top-24 -right-44 -z-10 size-[26rem] lg:-top-44 lg:-right-40 lg:size-[42rem]"
-	>
-		{/* stator: the casing, its teeth, and the coils between them */}
-		<circle
-			cx={c}
-			cy={c}
-			r="14.25"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.5"
-		/>
-		{Array.from({ length: teeth }, (_, i) => (
-			<rect
-				x={c - tooth}
-				y="2.4"
-				width={tooth * 2}
-				height="5"
-				fill="currentColor"
-				transform={`rotate(${(i * 360) / teeth} ${c} ${c})`}
-			/>
-		))}
-		{Array.from({ length: teeth }, (_, i) => (
-			<path d={coil(i)} fill="none" stroke="currentColor" stroke-width="0.35" />
-		))}
-		{/* the charge, over each coil, fading in and out */}
-		{Array.from({ length: teeth }, (_, i) => (
-			<path
-				data-coil
-				style={`--i: ${i}`}
-				d={coil(i)}
-				fill="none"
-				stroke-width="0.35"
-			/>
-		))}
-
-		{/* rotor, the logo's turbine disc, across the air gap from the teeth */}
-		<g data-rotor fill="currentColor">
+	// runs faster as the pointer comes near it
+	<hero-generator>
+		<svg
+			viewBox="0 0 32 32"
+			aria-hidden="true"
+			class="hero-generator pointer-events-none absolute -top-24 -right-44 -z-10 size-[26rem] lg:-top-44 lg:-right-40 lg:size-[42rem]"
+		>
+			{/* stator: the casing, its teeth, and the coils between them */}
 			<circle
 				cx={c}
 				cy={c}
-				r="6.9"
+				r="14.25"
 				fill="none"
 				stroke="currentColor"
-				stroke-width="1.2"
+				stroke-width="1.5"
 			/>
-			<path d={blades} fill="none" stroke="currentColor" stroke-width="0.6" />
-			<path fill-rule="evenodd" d={disc(8.2 * scale, 2.2 * scale)} />
-		</g>
-	</svg>
+			{Array.from({ length: teeth }, (_, i) => (
+				<rect
+					x={c - tooth}
+					y="2.4"
+					width={tooth * 2}
+					height="5"
+					fill="currentColor"
+					transform={`rotate(${(i * 360) / teeth} ${c} ${c})`}
+				/>
+			))}
+			{Array.from({ length: teeth }, (_, i) => (
+				<path
+					d={coil(i)}
+					fill="none"
+					stroke="currentColor"
+					stroke-width="0.35"
+				/>
+			))}
+			{/* the charge, over each coil, fading in and out */}
+			{Array.from({ length: teeth }, (_, i) => (
+				<path
+					data-coil
+					style={`--i: ${i}`}
+					d={coil(i)}
+					fill="none"
+					stroke-width="0.35"
+				/>
+			))}
+
+			{/* rotor, the logo's turbine disc, across the air gap from the teeth */}
+			<g data-rotor fill="currentColor">
+				<circle
+					cx={c}
+					cy={c}
+					r="6.9"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.2"
+				/>
+				<path d={blades} fill="none" stroke="currentColor" stroke-width="0.6" />
+				<path fill-rule="evenodd" d={disc(8.2 * scale, 2.2 * scale)} />
+			</g>
+		</svg>
+	</hero-generator>
 );
