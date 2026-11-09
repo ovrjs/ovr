@@ -71,17 +71,16 @@ export const createLayout =
 							<Nav c={c} />
 						</nav>
 					</div>
-					<div class="flex w-full min-w-0 flex-row-reverse justify-between">
+					{/* the contents sit beside the page, centered together */}
+					<div class="flex w-full min-w-0 justify-center xl:gap-8">
+						{/* the page's own content, which agents read as Markdown */}
+						<main
+							id="content"
+							class="prose mb-16 w-full max-w-3xl min-w-0 px-4 pt-3.5 pb-4"
+						>
+							{props.children}
+						</main>
 						<TOC c={c} />
-						<div class="flex w-full min-w-0 justify-center">
-							{/* the page's own content, which agents read as Markdown */}
-							<main
-								id="content"
-								class="prose mb-16 w-full max-w-3xl min-w-0 px-4 pt-3.5 pb-4"
-							>
-								{props.children}
-							</main>
-						</div>
 					</div>
 				</div>
 			</Document>
