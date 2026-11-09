@@ -18,7 +18,7 @@ export const codeControls: PluginSimple = (md: MarkdownIt) => {
 		const escaped = Markup.escape(token.content, true);
 
 		return `
-<div class="bg-base-900 ring-1 ring-base-800 rounded-none sm:rounded-md my-6 -mx-4 sm:mx-0 shadow-sm selection:bg-base-50 selection:text-base-900 *:rounded-t-md">
+<div class="bg-base-900 steel-rim rounded-none sm:rounded-md my-6 -mx-4 sm:mx-0 shadow-sm selection:bg-base-50 selection:text-base-900 *:rounded-t-md">
 	${
 		!lang.endsWith("hide")
 			? `<div class="flex justify-between items-center bg-base-800 pt-px px-4 sm:px-2 gap-2 rounded-t-md">

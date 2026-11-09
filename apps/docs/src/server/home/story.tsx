@@ -162,7 +162,7 @@ const Code = (props: {
 
 const Dark = (props: { children: o.JSX.Element; class?: string }) => (
 	<div
-		class={`bg-base-900 text-base-100 ring-base-800 -mx-4 [scrollbar-gutter:auto] overflow-x-auto font-mono shadow-sm ring-1 sm:mx-0 sm:rounded-md ${props.class ?? ""}`}
+		class={`bg-base-900 text-base-100 steel-rim -mx-4 [scrollbar-gutter:auto] overflow-x-auto font-mono shadow-sm sm:mx-0 sm:rounded-md ${props.class ?? ""}`}
 	>
 		{props.children}
 	</div>
@@ -397,8 +397,8 @@ export const Story = async () => {
 						<p>
 							The same handler streams the page as Markdown, with each form and
 							where it posts. A route with <code>.describe()</code> is also an{" "}
-							<a href="/agents#mcp">MCP</a> tool, so the agent calls “Done”
-							as <code>post_todos_id_done</code>: the handler runs as it did for
+							<a href="/agents#mcp">MCP</a> tool, so the agent calls “Done” as{" "}
+							<code>post_todos_id_done</code>: the handler runs as it did for
 							the click, follows its redirect, and returns the page as Markdown.
 						</p>
 					</Step>

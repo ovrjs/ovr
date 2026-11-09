@@ -120,6 +120,10 @@
 		--steel-3: light-dark(oklch(0.55 0.01 90), oklch(0.78 0.008 90));
 		--steel-4: light-dark(oklch(0.84 0.008 90), oklch(0.46 0.01 90));
 		--steel-5: light-dark(oklch(0.64 0.01 90), oklch(0.82 0.008 90));
+		/* the tones as gradient stops, to lay along any angle */
+		--steel:
+			var(--steel-1) 0%, var(--steel-2) 28%, var(--steel-3) 52%,
+			var(--steel-4) 76%, var(--steel-5) 100%;
 		--border-radius: 2px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -174,15 +178,28 @@
 		border: 1px solid transparent;
 		background:
 			linear-gradient(var(--color-background) 0 0) padding-box,
-			linear-gradient(
-					var(--sheen-angle),
-					var(--steel-1) 0%,
-					var(--steel-2) 28%,
-					var(--steel-3) 52%,
-					var(--steel-4) 76%,
-					var(--steel-5) 100%
-				)
-				border-box;
+			linear-gradient(var(--sheen-angle), var(--steel)) border-box;
+	}
+
+	/* dark code panels, rimmed in polished steel like a machined bezel */
+	.steel-rim {
+		border: 1px solid transparent;
+		background:
+			linear-gradient(var(--color-base-900) 0 0) padding-box,
+			linear-gradient(var(--sheen-angle), var(--steel)) border-box;
+	}
+
+	/* inline code sits on a small plate of brushed silver */
+	:not(pre) > code {
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
+			inset 0 0 0 1px color-mix(in oklab, var(--silver) 32%, transparent);
+		background-image: linear-gradient(
+			to bottom,
+			color-mix(in oklab, var(--silver) 22%, transparent),
+			color-mix(in oklab, var(--silver) 10%, transparent)
+		);
+		background-color: transparent;
 	}
 
 	/* pointed at, the light on the silver turns a little, like tilting it */
@@ -198,8 +215,13 @@
 		}
 	}
 
-	/* pointed at or pressed, a ghost button gets a thin plate of brushed silver under it */
-	:is(.button, button).ghost:is(:hover, :focus-visible, [aria-pressed="true"]) {
+	/* pointed at, pressed, or the current page, a ghost button gets a thin plate of brushed silver under it */
+	:is(.button, button).ghost:is(
+			:hover,
+			:focus-visible,
+			[aria-pressed="true"],
+			[aria-current="page"]
+		) {
 		box-shadow:
 			inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
 			inset 0 0 0 1px color-mix(in oklab, var(--silver) 30%, transparent);

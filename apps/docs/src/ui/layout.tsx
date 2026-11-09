@@ -11,7 +11,6 @@ import { SkipLink } from "@/ui/skip-link";
 import * as size from "@ovrjs/size";
 import * as script from "client:script";
 import * as style from "client:style";
-import { clsx } from "clsx";
 import * as o from "ovr";
 import { version } from "ovr/package.json";
 
@@ -246,11 +245,9 @@ const NavLink = (props: {
 	return (
 		<li>
 			<a
-				class={clsx(
-					"button secondary h-8 justify-start px-2 text-sm",
-					!current && "ghost",
-				)}
+				class="button ghost h-8 justify-start px-2 text-sm"
 				href={props.href}
+				{...(current && { "aria-current": "page" as const })}
 			>
 				{props.children}
 			</a>
