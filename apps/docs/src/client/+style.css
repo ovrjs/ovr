@@ -269,15 +269,14 @@
 
 	/* the logo's generator, faint behind the hero */
 	.hero-generator {
-		--generator-line: color-mix(
-			in oklab,
-			var(--color-foreground) 3%,
-			var(--color-background)
+		/* a dark background needs a bigger step to show as much */
+		--generator-line: light-dark(
+			color-mix(in oklab, var(--color-foreground) 3%, var(--color-background)),
+			color-mix(in oklab, var(--color-foreground) 7%, var(--color-background))
 		);
-		--generator-charge: color-mix(
-			in oklab,
-			var(--color-foreground) 9%,
-			var(--color-background)
+		--generator-charge: light-dark(
+			color-mix(in oklab, var(--color-foreground) 9%, var(--color-background)),
+			color-mix(in oklab, var(--color-foreground) 18%, var(--color-background))
 		);
 		color: var(--generator-line);
 
