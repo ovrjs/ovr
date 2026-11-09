@@ -1,3 +1,5 @@
+import type * as o from "ovr";
+
 /** Center of the drawing. */
 const c = 16;
 
@@ -11,52 +13,118 @@ const point = (r: number, deg: number) => {
 	return `${(c + r * Math.sin(rad)).toFixed(3)} ${(c - r * Math.cos(rad)).toFixed(3)}`;
 };
 
-/** Half the width of a stator tooth. */
-const tooth = 1.1;
-
-/** The stator's teeth, which the coils are wound between. */
-const teeth = 8;
-
-/** Radii of the coil windings between each pair of teeth. */
-const windings = [9.4, 10.3, 11.2, 12.1, 13];
+/**
+ * @param r Radius
+ * @returns A full circle as a path, to join with others
+ */
+const ring = (r: number) =>
+	`M${point(r, 0)}A${r} ${r} 0 1 1 ${point(r, 180)}A${r} ${r} 0 1 1 ${point(r, 0)}Z`;
 
 /**
- * The windings between two teeth, as arcs that stop at each tooth.
+ * @param r Radius of the hole
+ * @param at Radius of the circle the hole sits on
+ * @param deg Degrees clockwise from the top
+ * @returns A small round hole as a path
+ */
+const hole = (r: number, at: number, deg: number) => {
+	const [x, y] = point(at, deg).split(" ").map(Number) as [number, number];
+	return `M${x - r} ${y}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0Z`;
+};
+
+/** The sections of the stator that charge in turn, 45° each. */
+const sections = 8;
+
+/** Winding slots in each section. */
+const slotsPer = 6;
+
+/** Radius the spark and its light travel around, the middle of the slots. */
+const orbit = 11.3;
+
+/**
+ * One winding slot through the stator's laminations, with rounded ends.
  *
- * @param i Which gap between the teeth, clockwise from the top
+ * @param at Degrees clockwise from the top of the slot's center line
  */
-const coil = (i: number) =>
-	windings
-		.map((r) => {
-			// the tooth's half width as an angle at this radius
-			const edge = (Math.asin(tooth / r) * 180) / Math.PI;
-			const from = (i * 360) / teeth + edge;
-			const to = ((i + 1) * 360) / teeth - edge;
-			return `M${point(r, from)}A${r} ${r} 0 0 1 ${point(r, to)}`;
-		})
-		.join("");
-
-/** How much smaller the rotor is than the logo's turbine disc. */
-const scale = 6.9 / 13.5;
+const slot = (at: number) => {
+	const [inner, outer, half] = [9.3, 13.3, 0.3];
+	const angle = (r: number) => (Math.asin(half / r) * 180) / Math.PI;
+	return (
+		`M${point(inner, at - angle(inner))}L${point(outer, at - angle(outer))}` +
+		`A${half} ${half} 0 0 1 ${point(outer, at + angle(outer))}` +
+		`L${point(inner, at + angle(inner))}` +
+		`A${half} ${half} 0 0 1 ${point(inner, at - angle(inner))}Z`
+	);
+};
 
 /**
- * The rotor's blades, the logo's 14 at the rotor's size: short curves from
- * the disc's edge to its shroud ring.
+ * The slots of one section, which fill with charge together.
+ *
+ * @param i Which section, clockwise from the top
  */
-const blades = Array.from({ length: 14 }, (_, i) => {
-	const at = (i * 360) / 14;
-	return `M${point(7.6 * scale, at)}Q${point(10.3 * scale, at + 3)} ${point(13 * scale, at + 16)}`;
+const section = (i: number) =>
+	Array.from({ length: slotsPer }, (_, j) =>
+		slot(((i * slotsPer + j + 0.5) * 360) / (sections * slotsPer)),
+	).join("");
+
+const slots = Array.from({ length: sections }, (_, i) => section(i)).join("");
+
+/** The casing's bolt holes, between its two edges. */
+const bolts = Array.from({ length: 16 }, (_, i) =>
+	hole(0.22, 15.25, i * 22.5 + 11.25),
+).join("");
+
+/** The rotor's 40 fine turbine blades, curving from its web to its rim. */
+const blades = Array.from({ length: 40 }, (_, i) => {
+	const at = i * 9;
+	return `M${point(5.35, at)}Q${point(6.7, at + 3)} ${point(7.9, at + 13)}`;
 }).join("");
 
-/** A disc with a shaft hole, as one even-odd path. */
-const disc = (r: number, hole: number) =>
-	`M${point(r, 0)}A${r} ${r} 0 1 1 ${point(r, 180)}A${r} ${r} 0 1 1 ${point(r, 0)}Z` +
-	`M${point(hole, 0)}A${hole} ${hole} 0 1 1 ${point(hole, 180)}A${hole} ${hole} 0 1 1 ${point(hole, 0)}Z`;
+/** The hub's bolt circle. */
+const hubBolts = Array.from({ length: 8 }, (_, i) =>
+	hole(0.17, 1.55, i * 45 + 22.5),
+).join("");
 
 /**
- * The logo's generator in more detail, large and faint behind the hero:
- * coils wound between the still stator's teeth light in turn as the rotor
- * spins inside them, across an air gap.
+ * The machine's linework: the still casing and stator, and the turbine rotor
+ * spinning inside them across the air gap.
+ */
+const Machine = (props: { class?: string; mask?: string }) => (
+	<g {...props} fill="none" stroke="currentColor">
+		{/* casing, with its bolt holes */}
+		<path d={ring(15.25)} stroke-width="0.9" />
+		<path d={bolts} stroke="none" data-bolts />
+		<path d={ring(14.55)} stroke-width="0.08" />
+
+		{/* stator: the laminated ring and its winding slots */}
+		<path d={ring(14.15) + ring(8.75)} stroke-width="0.12" />
+		<path d={slots} stroke-width="0.08" />
+
+		{/* rotor, across the air gap */}
+		<g data-rotor>
+			<path d={ring(8.05)} stroke-width="0.16" />
+			<path d={blades} stroke-width="0.1" />
+			<path d={ring(5.25) + ring(3.4)} stroke-width="0.12" />
+			<path d={ring(2.15)} stroke-width="0.16" />
+			<path d={hubBolts} stroke-width="0.07" />
+			<path d={ring(0.75)} stroke-width="0.14" />
+			{/* the keyway in the shaft bore */}
+			<path
+				d={`M${point(0.75, -8)}L${point(1.05, -6)}L${point(1.05, 6)}L${point(0.75, 8)}`}
+				stroke-width="0.1"
+			/>
+		</g>
+	</g>
+);
+
+/** Goes around the stator in step with the charge. */
+const Orbiting = (props: { children: o.JSX.Element }) => (
+	<g data-orbit>{props.children}</g>
+);
+
+/**
+ * The logo's generator as a lit technical drawing, large behind the hero:
+ * winding slots through the still stator charge in turn as a spark goes
+ * around, lighting the metal near it, while the turbine rotor spins inside.
  */
 export const Generator = () => (
 	// runs faster as the pointer comes near it
@@ -68,8 +136,8 @@ export const Generator = () => (
 		<span data-glow class="absolute -inset-1/4 block rounded-full" />
 		<svg viewBox="0 0 32 32" class="relative block size-full overflow-visible">
 			<defs>
+				{/* styles, since presentation attributes can't read variables */}
 				<radialGradient id="spark">
-					{/* styles, since presentation attributes can't read variables */}
 					<stop offset="0" style="stop-color: white" />
 					<stop offset="0.15" style="stop-color: var(--spark)" />
 					<stop
@@ -78,63 +146,42 @@ export const Generator = () => (
 					/>
 					<stop offset="1" style="stop-color: var(--spark); stop-opacity: 0" />
 				</radialGradient>
+				<radialGradient id="falloff">
+					<stop offset="0" style="stop-color: white" />
+					<stop offset="0.35" style="stop-color: white; stop-opacity: 0.5" />
+					<stop offset="1" style="stop-color: white; stop-opacity: 0" />
+				</radialGradient>
+				{/* where the spark's light reaches */}
+				<mask
+					id="light"
+					maskUnits="userSpaceOnUse"
+					x="-8"
+					y="-8"
+					width="48"
+					height="48"
+				>
+					<Orbiting>
+						<circle cx={c} cy={c - orbit} r="9" fill="url(#falloff)" />
+					</Orbiting>
+				</mask>
 			</defs>
-			{/* stator: the casing, its teeth, and the coils between them */}
-			<circle
-				cx={c}
-				cy={c}
-				r="14.25"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.5"
-			/>
-			{Array.from({ length: teeth }, (_, i) => (
-				<rect
-					x={c - tooth}
-					y="2.4"
-					width={tooth * 2}
-					height="5"
-					fill="currentColor"
-					transform={`rotate(${(i * 360) / teeth} ${c} ${c})`}
-				/>
-			))}
-			{Array.from({ length: teeth }, (_, i) => (
-				<path
-					d={coil(i)}
-					fill="none"
-					stroke="currentColor"
-					stroke-width="0.35"
-				/>
-			))}
-			{/* the charge, over each coil, fading in and out */}
-			{Array.from({ length: teeth }, (_, i) => (
-				<path
-					data-coil
-					style={`--i: ${i}`}
-					d={coil(i)}
-					fill="none"
-					stroke-width="0.35"
-				/>
+
+			{/* the slots, faintly filled, and charged in turn */}
+			<path d={slots} data-slots />
+			{Array.from({ length: sections }, (_, i) => (
+				<path data-coil style={`--i: ${i}`} d={section(i)} />
 			))}
 
-			{/* rotor, the logo's turbine disc, across the air gap from the teeth */}
-			<g data-rotor fill="currentColor">
-				<circle
-					cx={c}
-					cy={c}
-					r="6.9"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.2"
-				/>
-				<path d={blades} fill="none" stroke="currentColor" stroke-width="0.6" />
-				<path fill-rule="evenodd" d={disc(8.2 * scale, 2.2 * scale)} />
-			</g>
+			<Machine />
+			{/* the same lines, bright where the spark lights them */}
+			<Machine class="lit" mask="url(#light)" />
 
-			{/* the current, a spark going around the coils as they charge */}
-			<g data-spark>
-				<circle cx={c} cy={c - 11.2} r="3.2" fill="url(#spark)" />
-			</g>
+			{/* the current itself */}
+			<Orbiting>
+				<g data-spark>
+					<circle cx={c} cy={c - orbit} r="3.2" fill="url(#spark)" />
+				</g>
+			</Orbiting>
 		</svg>
 	</hero-generator>
 );

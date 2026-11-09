@@ -331,24 +331,50 @@
 	}
 
 	.hero-generator {
-		/* a dark background needs a bigger step to show as much */
-		--generator-line: light-dark(
-			color-mix(in oklab, var(--color-foreground) 3%, var(--color-background)),
-			color-mix(in oklab, var(--color-foreground) 7%, var(--color-background))
+		/* it sits on the dark band, where fine lines need a bigger step to show */
+		--generator-line: color-mix(
+			in oklab,
+			var(--color-foreground) 16%,
+			var(--color-background)
 		);
-		--generator-charge: light-dark(
-			color-mix(in oklab, var(--spark) 45%, var(--color-background)),
-			color-mix(in oklab, var(--spark) 45%, var(--color-background))
+		--generator-slot: color-mix(
+			in oklab,
+			var(--color-foreground) 5%,
+			var(--color-background)
+		);
+		--generator-charge: color-mix(
+			in oklab,
+			var(--spark) 55%,
+			var(--color-background)
+		);
+		--generator-lit: color-mix(
+			in oklab,
+			var(--spark) 45%,
+			var(--color-foreground)
 		);
 		color: var(--generator-line);
 
+		[data-slots] {
+			fill: var(--generator-slot);
+		}
+
+		/* holes through the casing band */
+		[data-bolts] {
+			fill: var(--color-background);
+		}
+
 		[data-coil] {
-			stroke: var(--generator-charge);
+			fill: var(--generator-charge);
 			opacity: 0;
 		}
 
+		/* the linework as the spark lights it */
+		.lit {
+			color: var(--generator-lit);
+		}
+
 		[data-rotor],
-		[data-spark] {
+		[data-orbit] {
 			transform-box: view-box;
 			transform-origin: center;
 		}
@@ -373,13 +399,16 @@
 				animation: spin 24s linear infinite;
 			}
 
-			/* in step with the coils, at the middle of each as it peaks */
-			[data-spark] {
-				display: inline;
+			/* the spark and its light, at the middle of each section as it peaks */
+			[data-orbit] {
 				animation: orbit 4s linear infinite;
 			}
 
-			/* each coil charges as the current comes around */
+			[data-spark] {
+				display: inline;
+			}
+
+			/* each section charges as the current comes around */
 			[data-coil] {
 				animation: charge 4s ease-out infinite;
 				animation-delay: calc(var(--i) * 0.5s);
