@@ -107,6 +107,13 @@
 		--accent: var(--base-500);
 		/* the accent, a warm silver, for small touches only */
 		--silver: light-dark(oklch(0.68 0.012 90), oklch(0.86 0.014 90));
+		/* a glint of light that sweeps across polished silver */
+		--silver-glint: linear-gradient(
+			110deg,
+			transparent 42%,
+			color-mix(in oklab, white 90%, transparent) 50%,
+			transparent 58%
+		);
 		/* polished silver, light catching a machined edge, for borders */
 		--silver-sheen: linear-gradient(
 			135deg,
@@ -169,7 +176,26 @@
 		border: 1px solid transparent;
 		background:
 			linear-gradient(var(--color-background) 0 0) padding-box,
+			var(--silver-glint) border-box,
 			var(--silver-sheen) border-box;
+		background-position:
+			0 0,
+			100% 0,
+			0 0;
+		/* the glint is wider than the element, and starts off its left edge */
+		background-size:
+			100% 100%,
+			250% 100%,
+			100% 100%;
+		background-repeat: no-repeat;
+	}
+
+	/* pointed at, polished silver shimmers once as a glint sweeps across it */
+	@media (prefers-reduced-motion: no-preference) {
+		.button.outline:is(:hover, :focus-visible),
+		feature-grid [data-feature]:is(:hover, :focus-visible) {
+			animation: shimmer 0.9s ease-in-out;
+		}
 	}
 
 	/* links keep the text color, with silver beneath */
@@ -357,7 +383,18 @@
 			border-color: transparent;
 			background:
 				linear-gradient(var(--color-background) 0 0) padding-box,
+				var(--silver-glint) border-box,
 				var(--silver-sheen) border-box;
+			background-position:
+				0 0,
+				100% 0,
+				0 0;
+			/* the glint is wider than the element, and starts off its left edge */
+			background-size:
+				100% 100%,
+				250% 100%,
+				100% 100%;
+			background-repeat: no-repeat;
 		}
 
 		[data-cursor],
@@ -496,6 +533,22 @@
 	}
 
 	/* one of the 14 blades' spacing, so the disc ends as it started */
+	/* the glint, from off the left edge to off the right */
+	@keyframes shimmer {
+		from {
+			background-position:
+				0 0,
+				100% 0,
+				0 0;
+		}
+		to {
+			background-position:
+				0 0,
+				0% 0,
+				0 0;
+		}
+	}
+
 	@keyframes mark-turn {
 		to {
 			transform: rotate(calc(1turn / 14));
