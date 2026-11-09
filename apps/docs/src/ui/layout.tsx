@@ -113,10 +113,8 @@ export const HomeLayout = (props: {
 						v{version} · {size.kb}KB
 					</p>
 				</header>
-				<main
-					id="content"
-					class="prose mx-auto mb-16 w-full max-w-5xl min-w-0 px-4 pb-4"
-				>
+				{/* the page ends on its closing band, so nothing comes after it */}
+				<main id="content" class="prose mx-auto w-full max-w-5xl min-w-0 px-4">
 					{props.children}
 				</main>
 			</div>

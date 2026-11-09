@@ -97,7 +97,7 @@ export const Network = () => {
 								</span>
 								<span
 									data-playhead
-									class="bg-spark absolute inset-y-0 w-px opacity-0"
+									class="bg-silver absolute inset-y-0 w-px opacity-0"
 									style={frame.playhead}
 								/>
 							</div>

@@ -101,7 +101,7 @@ const Machine = (props: { class?: string; mask?: string }) => (
 
 		{/* rotor, across the air gap */}
 		<g data-rotor>
-			<path d={ring(8.05)} stroke-width="0.16" />
+			<path d={ring(8.05)} stroke-width="0.18" data-rim />
 			<path d={blades} stroke-width="0.1" />
 			<path d={ring(5.25) + ring(3.4)} stroke-width="0.12" />
 			<path d={ring(2.15)} stroke-width="0.16" />

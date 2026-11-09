@@ -41,6 +41,7 @@
 
 @theme {
 	--color-spark: var(--spark);
+	--color-silver: var(--silver);
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
 	--color-heading-foreground: var(--heading-foreground);
@@ -107,6 +108,8 @@
 		--accent: var(--base-500);
 		/* electricity, for small touches only: a gold that shows on white, a bright yellow on black */
 		--spark: light-dark(oklch(0.84 0.175 92), oklch(0.9 0.185 98));
+		/* the accent: the warm silver of the generator's lit metal, for small touches only */
+		--silver: light-dark(oklch(0.7 0.02 95), oklch(0.86 0.025 95));
 		--border-radius: 5px;
 
 		--font-family-serif: "Literata Variable", serif;
@@ -155,14 +158,14 @@
 		@apply font-normal;
 	}
 
-	/* links keep the text color, with a spark of yellow beneath */
+	/* links keep the text color, with silver beneath */
 	a:not(.button) {
-		text-decoration-color: var(--spark);
+		text-decoration-color: var(--silver);
 		text-decoration-thickness: 2px;
 	}
 
 	::selection {
-		background-color: color-mix(in oklab, var(--spark) 40%, transparent);
+		background-color: color-mix(in oklab, var(--silver) 45%, transparent);
 	}
 
 	p,
@@ -250,7 +253,7 @@
 		}
 
 		.caret {
-			@apply bg-spark mt-0.5 ml-px inline-block h-4 w-2 align-top;
+			@apply bg-silver mt-0.5 ml-px inline-block h-4 w-2 align-top;
 			animation: caret 1s steps(1) infinite;
 		}
 	}
@@ -276,7 +279,7 @@
 		}
 
 		[data-coil] {
-			stroke: var(--spark);
+			stroke: var(--silver);
 			opacity: 0;
 		}
 
@@ -294,16 +297,16 @@
 		}
 	}
 
-	/* the home page hero: a dark band to the page's edges, behind the header too, with film grain */
-	.hero {
-		/* nothing, not even the generator's glow, spills below the band */
-		clip-path: inset(-3.75rem -100vw 0 -100vw);
-
+	/*
+	 * a dark band to the page's edges, whatever the scheme, with film grain that
+	 * fades out where the band meets the page, so in dark mode there is no seam
+	 */
+	.band {
 		&::before,
 		&::after {
 			position: absolute;
-			top: -3.75rem;
-			bottom: 0;
+			top: var(--band-top, 0);
+			bottom: var(--band-bottom, 0);
 			left: 50%;
 			translate: -50%;
 			width: 100vw;
@@ -320,14 +323,25 @@
 			opacity: 0.12;
 			z-index: -5;
 			mix-blend-mode: overlay;
-			/* fading out with the glow, so in dark mode there is no line where it ends */
-			mask-image: linear-gradient(
-				to bottom,
-				black calc(100% - 6rem),
-				transparent
-			);
+			mask-image: var(--band-fade);
 			background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 		}
+	}
+
+	/* the home page hero, behind the header too, and nothing, not even the generator's glow, spills below it */
+	.hero {
+		--band-top: -3.75rem;
+		--band-fade: linear-gradient(
+			to bottom,
+			black calc(100% - 6rem),
+			transparent
+		);
+		clip-path: inset(-3.75rem -100vw 0 -100vw);
+	}
+
+	/* the home page's end, which is the bottom of the page */
+	.band-end {
+		--band-fade: linear-gradient(to top, black calc(100% - 6rem), transparent);
 	}
 
 	.hero-generator {
@@ -356,6 +370,15 @@
 
 		[data-slots] {
 			fill: var(--generator-slot);
+		}
+
+		/* the rotor's rim, always catching some light, so the middle isn't dark */
+		[data-rim] {
+			stroke: color-mix(
+				in oklab,
+				var(--generator-lit) 55%,
+				var(--color-background)
+			);
 		}
 
 		/* holes through the casing band */
@@ -601,7 +624,7 @@
 			background-color: transparent;
 		}
 		25% {
-			background-color: color-mix(in oklab, var(--spark) 35%, transparent);
+			background-color: color-mix(in oklab, var(--silver) 40%, transparent);
 		}
 		100% {
 			background-color: transparent;

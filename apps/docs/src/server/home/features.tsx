@@ -103,7 +103,7 @@ const Streaming = () => {
 			<Window class="w-full max-w-56">
 				<span
 					data-progress
-					class="bg-spark absolute top-[1.375rem] left-0 h-0.5 w-full origin-left"
+					class="bg-silver absolute top-[1.375rem] left-0 h-0.5 w-full origin-left"
 				/>
 				<div class="grid gap-2 p-3">
 					{chunk(0, "bg-foreground/70 h-2 w-16")}

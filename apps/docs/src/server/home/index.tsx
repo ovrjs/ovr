@@ -18,7 +18,7 @@ export const page = o.Route.get("/")
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
 				{/* a dark band, whatever the scheme, lit by the generator */}
-				<section class="hero text-foreground relative isolate pt-12 pb-12 [color-scheme:dark] sm:pt-16 sm:pb-20 lg:min-h-[30rem]">
+				<section class="band hero text-foreground relative isolate pt-12 pb-12 [color-scheme:dark] sm:pt-16 sm:pb-20 lg:min-h-[30rem]">
 					<Generator />
 					{/* the glow fades out before the band ends, instead of cutting off */}
 					<span
@@ -99,8 +99,8 @@ export const page = o.Route.get("/")
 					<Features />
 				</section>
 
-				{/* inverted, so the page ends on a block in the opposite scheme */}
-				<section class="bg-background text-foreground mt-28 grid gap-x-12 gap-y-8 rounded-lg px-6 py-10 [color-scheme:dark] sm:px-10 sm:py-12 lg:grid-cols-[auto_1fr] lg:items-end dark:[color-scheme:light]">
+				{/* the dark band again, so the page ends as it began */}
+				<section class="band band-end text-foreground relative isolate mt-28 mb-0 grid gap-x-12 gap-y-8 py-16 [color-scheme:dark] sm:py-20 lg:grid-cols-[auto_1fr] lg:items-end">
 					<div>
 						<h2 class="mt-0 mb-6">Build your first route</h2>
 						<a href="/get-started" class="button h-11 w-fit px-5 text-base">
