@@ -366,7 +366,17 @@
 			var(--spark) 45%,
 			var(--color-foreground)
 		);
+		/* the rotor's metal, polished, so the middle reads apart from the dim stator */
+		--generator-rotor: color-mix(
+			in oklab,
+			var(--generator-lit) 38%,
+			var(--color-background)
+		);
 		color: var(--generator-line);
+
+		[data-rotor] {
+			color: var(--generator-rotor);
+		}
 
 		[data-slots] {
 			fill: var(--generator-slot);
@@ -402,14 +412,19 @@
 			transform-origin: center;
 		}
 
-		/* warm light from the generator, brighter as it takes on load */
+		/*
+		 * warm light around the stator, brighter as it takes on load, with none
+		 * in the middle: the glow is half again the drawing's size, so the slots
+		 * are at 39-55% of its radius and the casing at 64%
+		 */
 		[data-glow] {
 			opacity: calc(0.6 + var(--load, 0) * 0.4);
 			background: radial-gradient(
 				closest-side,
-				color-mix(in oklab, var(--spark) 22%, transparent),
-				color-mix(in oklab, var(--spark) 6%, transparent) 55%,
-				transparent
+				transparent 36%,
+				color-mix(in oklab, var(--spark) 20%, transparent) 48%,
+				color-mix(in oklab, var(--spark) 8%, transparent) 62%,
+				transparent 85%
 			);
 		}
 

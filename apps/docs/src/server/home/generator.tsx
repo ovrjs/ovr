@@ -151,6 +151,25 @@ export const Generator = () => (
 					<stop offset="0.35" style="stop-color: white; stop-opacity: 0.5" />
 					<stop offset="1" style="stop-color: white; stop-opacity: 0" />
 				</radialGradient>
+				{/* the rotor's face, a sheen of metal brightest toward the hub */}
+				<radialGradient id="sheen">
+					<stop
+						offset="0"
+						style="stop-color: var(--generator-lit); stop-opacity: 0.14"
+					/>
+					<stop
+						offset="0.7"
+						style="stop-color: var(--generator-lit); stop-opacity: 0.06"
+					/>
+					<stop
+						offset="1"
+						style="stop-color: var(--generator-lit); stop-opacity: 0.1"
+					/>
+				</radialGradient>
+				{/* the stator, from the bore to past the casing, which the light stays in */}
+				<clipPath id="stator">
+					<path clip-rule="evenodd" d={ring(16.5) + ring(8.6)} />
+				</clipPath>
 				{/* where the spark's light reaches */}
 				<mask
 					id="light"
@@ -172,9 +191,12 @@ export const Generator = () => (
 				<path data-coil style={`--i: ${i}`} d={section(i)} />
 			))}
 
+			<circle cx={c} cy={c} r="8.05" fill="url(#sheen)" />
 			<Machine />
-			{/* the same lines, bright where the spark lights them */}
-			<Machine class="lit" mask="url(#light)" />
+			{/* the same lines, bright where the spark lights them, in the stator only */}
+			<g clip-path="url(#stator)">
+				<Machine class="lit" mask="url(#light)" />
+			</g>
 
 			{/* the current itself */}
 			<Orbiting>
