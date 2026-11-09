@@ -205,6 +205,9 @@
 		border: 1px solid transparent;
 		background:
 			linear-gradient(var(--color-base-900) 0 0) padding-box,
+			/* in dark mode the rim sits beside a dark page too, so it's dimmed by half */
+				linear-gradient(light-dark(transparent, oklch(0 0 0 / 0.5)) 0 0)
+				border-box,
 			linear-gradient(var(--sheen-angle), var(--steel)) border-box;
 	}
 
