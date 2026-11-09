@@ -17,7 +17,7 @@ export const page = o.Route.get("/")
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>
-				<section class="pt-6 pb-4 sm:pt-12">
+				<section class="pt-4 pb-4 sm:pt-8">
 					<p class="caption mt-0 mb-6">
 						ovr@{version} · {size.kb}KB · zero dependencies
 					</p>
@@ -29,6 +29,13 @@ export const page = o.Route.get("/")
 						</a>
 						<a href="/demo" class="button h-11 px-5 text-base outline">
 							Demo
+						</a>
+						<a
+							href="https://github.com/ovrjs/ovr"
+							class="button ghost h-11 gap-2 px-4 text-base"
+						>
+							<span class="icon-[lucide--github]"></span>
+							GitHub
 						</a>
 					</div>
 				</section>

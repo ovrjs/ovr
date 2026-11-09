@@ -87,27 +87,16 @@ export const createLayout =
 		);
 	};
 
-/** The home page, full width with links across the top instead of the nav. */
+/** The home page, full width without the docs nav. */
 export const HomeLayout = (props: {
 	head: o.JSX.Element;
 	children: o.JSX.Element;
 }) => {
 	return (
 		<Document head={props.head}>
-			<header class="mx-auto flex max-w-5xl items-center justify-between gap-4 p-4">
+			{/* the hero links to the docs, the demos, and GitHub */}
+			<header class="mx-auto flex max-w-5xl items-center px-2 py-4">
 				<HomeLink />
-				<nav>
-					<ul class="flex items-center gap-1">
-						<li>
-							<a href="/get-started" class="button ghost">
-								Docs
-							</a>
-						</li>
-						<li>
-							<GitHub />
-						</li>
-					</ul>
-				</nav>
 			</header>
 			<main
 				id="content"
