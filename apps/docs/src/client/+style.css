@@ -164,7 +164,12 @@
 @layer components {
 	pre {
 		/* Geist Mono is wide, so code sits a size below the text to match it */
-		@apply m-0 rounded-none px-4 text-sm leading-relaxed font-light sm:rounded-b-md;
+		@apply m-0 rounded-none px-4 text-sm leading-relaxed sm:rounded-b-md;
+	}
+
+	/* the mono a little lighter than the serif's one weight, so code doesn't look heavy beside it */
+	:where(pre, code, kbd, samp) {
+		font-weight: 250;
 	}
 
 	a:not(h1 a, h2 a, h3 a, h4 a),
