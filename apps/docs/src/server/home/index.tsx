@@ -152,8 +152,9 @@ function* Constraints() {
 				"Responses and request parsing start immediately, without buffering whole documents or uploads in memory.",
 		},
 		{
-			title: "Stateless by default",
-			content: "Core APIs work without server-side state.",
+			title: "Stateless servers",
+			content:
+				"Nothing is kept in memory between requests: forms carry their issues in the URL, MCP needs no sessions, and auth keeps its sessions in your database, so any instance can answer any request.",
 		},
 	];
 

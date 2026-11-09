@@ -233,7 +233,7 @@ ovr is intentionally constrained. These rules keep the framework small and shape
 
 - **No client JS required.** Everything works when no client-side JavaScript runs.
 - **Streaming first.** Responses and request parsing start immediately, without buffering whole documents or uploads in memory.
-- **Stateless by default.** Core APIs work without server-side state.
+- **Stateless servers.** Nothing is kept in memory between requests: forms carry their issues in the URL, MCP needs no sessions, and auth keeps its sessions in your database, so any instance can answer any request.
 
 ## Get started
 
