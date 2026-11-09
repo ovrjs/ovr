@@ -1,19 +1,37 @@
 /** How many times faster the generator runs with the pointer at its center. */
-const fastest = 8;
+const fast = 10;
+
+/** How much faster again it spools up while the pointer stays near the center. */
+const spooled = 24;
 
 /** How far out, in radii from the center, the pointer starts to speed it up. */
 const reach = 1.6;
+
+/** How close, from 0 at the reach to 1 at the center, the pointer spools it up. */
+const middle = 0.75;
+
+/**
+ * The coils charge no faster than this, so the current stays a quick wave
+ * instead of flickering.
+ */
+const charge = 8;
 
 /** How much of the way to its new speed the generator moves each frame. */
 const ease = 0.06;
 
 /**
- * Runs the generator faster as the pointer comes near it, spinning up and
- * winding down smoothly, like a machine taking on load.
+ * Runs the generator faster as the pointer comes near it, and faster still
+ * while it stays near the middle, spinning up and winding down smoothly, like
+ * a machine taking on load.
  */
 export class HeroGenerator extends HTMLElement {
+	/** How close the pointer is, from 0 at the reach to 1 at the center. */
+	#closeness = 0;
+
+	/** How far it has spooled up with the pointer near the middle, from 0 to 1. */
+	#spool = 0;
+
 	#rate = 1;
-	#target = 1;
 	#frame = 0;
 
 	connectedCallback() {
@@ -26,12 +44,13 @@ export class HeroGenerator extends HTMLElement {
 		addEventListener("pointermove", (event) => this.#near(event), {
 			passive: true,
 		});
-		document.documentElement.addEventListener("pointerleave", () =>
-			this.#speed(1),
-		);
+		document.documentElement.addEventListener("pointerleave", () => {
+			this.#closeness = 0;
+			this.#run();
+		});
 	}
 
-	/** Set the target speed from how close the pointer is to the center. */
+	/** Measure how close the pointer is to the center. */
 	#near(event: PointerEvent) {
 		const box = this.firstElementChild!.getBoundingClientRect();
 		const radius = box.width / 2;
@@ -39,27 +58,43 @@ export class HeroGenerator extends HTMLElement {
 			event.clientX - (box.left + radius),
 			event.clientY - (box.top + radius),
 		);
-		const closeness = Math.max(0, 1 - distance / (radius * reach));
 
-		this.#speed(1 + closeness ** 2 * (fastest - 1));
+		this.#closeness = Math.max(0, 1 - distance / (radius * reach));
+		this.#run();
 	}
 
-	#speed(target: number) {
-		this.#target = target;
+	#run() {
 		if (!this.#frame) this.#frame = requestAnimationFrame(() => this.#step());
 	}
 
-	/** Move the speed toward the target, a frame at a time, until it arrives. */
+	/**
+	 * Spool up or down, move the speed a step toward its target, and keep
+	 * going until both settle.
+	 */
 	#step() {
-		this.#rate += (this.#target - this.#rate) * ease;
-		if (Math.abs(this.#target - this.#rate) < 0.01) this.#rate = this.#target;
+		// about four seconds to spool up, and quicker to spool down
+		this.#spool =
+			this.#closeness >= middle
+				? this.#spool + (1 - this.#spool) * 0.012
+				: this.#spool * 0.95;
+		if (this.#spool < 0.001) this.#spool = 0;
+		if (this.#spool > 0.999) this.#spool = 1;
 
-		// the rotor's spin and the coils' charge, which keep their phase
+		const target =
+			1 + this.#closeness ** 2 * (fast - 1) + this.#spool * (spooled - fast);
+		this.#rate += (target - this.#rate) * ease;
+		if (Math.abs(target - this.#rate) < 0.01) this.#rate = target;
+
 		for (const animation of this.getAnimations({ subtree: true }))
-			animation.playbackRate = this.#rate;
+			animation.playbackRate =
+				animation instanceof CSSAnimation &&
+				animation.animationName === "charge"
+					? Math.min(this.#rate, charge)
+					: this.#rate;
 
+		// settled once at its speed, fully spooled up or down
 		this.#frame =
-			this.#rate === this.#target
+			this.#rate === target && (this.#spool === 0 || this.#spool === 1)
 				? 0
 				: requestAnimationFrame(() => this.#step());
 	}
