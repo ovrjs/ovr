@@ -101,7 +101,6 @@ export const HomeLayout = (props: {
 				<HomeLink />
 				<p class="caption my-0 text-xs">
 					v{version} · {size.kb}KB
-					<span class="max-sm:hidden"> · zero dependencies</span>
 				</p>
 			</header>
 			<main
