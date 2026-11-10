@@ -1,0 +1,39 @@
+# The checks of the official MCP conformance suite that ovr does not pass for
+# the 2025-11-25 revision, which the endpoint serves for clients that have not
+# moved on. The reasons are the same as in `conformance.2026-07-28.yml`.
+
+server:
+  # tools called by a fixed name
+  - tools-call-simple-text
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-with-logging
+  - tools-call-error
+  - tools-call-with-progress
+  - tools-call-sampling
+  - tools-call-elicitation
+  - elicitation-sep1034-defaults
+  - elicitation-sep1330-enums
+
+  # resources read by a fixed URI
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+
+  # optional features that ovr does not have: prompts, completion, log
+  # levels, and subscribing to a resource's changes
+  - prompts-list
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  - completion-complete
+  - logging-set-level
+  - resources-subscribe
+  - resources-unsubscribe
+
+  # tested through a session ID, which this revision makes optional and the
+  # endpoint never issues: it keeps no state between requests
+  - server-sse-multiple-streams

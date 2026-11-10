@@ -20,7 +20,7 @@ ovr is open source with the MIT license. Feel free to create an issue on GitHub 
 - `npm run test` - Run all tests
 - `npm run test:dev` - Run tests in watch mode
 - Run a single test: `npm test -- <test-file>` (e.g., `npm test -- packages/ovr/src/app/index.test.ts`)
-- The tests include the official [MCP conformance suite](https://github.com/modelcontextprotocol/conformance), run against a small app in `packages/ovr/src/mcp/conformance.test.ts`. The checks ovr does not pass are listed with their reasons in `conformance.yml` beside it; a new failure, or a listed check that starts to pass, fails the test.
+- The tests include the official [MCP conformance suite](https://github.com/modelcontextprotocol/conformance), run against a small app in `packages/ovr/src/mcp/conformance.test.ts`. The checks ovr does not pass are listed with their reasons in `conformance.<revision>.yml` beside it; a new failure, or a listed check that starts to pass, fails the test. The same file connects the official client libraries, for the current and the earlier protocol, and has them list, call, and read through the endpoint.
 
 ## Conventions
 

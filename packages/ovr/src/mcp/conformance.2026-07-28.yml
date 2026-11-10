@@ -1,5 +1,5 @@
 # Checks of the official MCP conformance suite that ovr does not pass, each
-# with its reason. `conformance.test.ts` runs what the 2026-07-28 revision
+# with its reason. `conformance.test.ts` runs what each revision
 # requires and fails on any failure that is not listed here, and on any entry
 # here that starts to pass.
 #
