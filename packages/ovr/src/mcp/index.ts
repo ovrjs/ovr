@@ -418,15 +418,19 @@ export class Mcp {
 		// a tool's file arguments are in it
 		const limit = this.#app!.memory;
 		const length = Number(c.req.headers.get("content-length"));
-		const bytes =
-			length > limit ? undefined : await Codec.read(c.req.body, limit);
-		if (!bytes) throw new RpcError(-32600, "Request too large", 413);
+		const text =
+			length > limit ? undefined : await Mcp.#text(c.req.body, limit);
+		if (text === undefined)
+			throw new RpcError(-32600, "Request too large", 413);
+
+		const invalid = () => new RpcError(-32700, "Parse error", 400);
+		if (text === null) throw invalid();
 
 		let message: unknown;
 		try {
-			message = JSON.parse(Codec.decode(bytes));
+			message = JSON.parse(text);
 		} catch {
-			throw new RpcError(-32700, "Parse error", 400);
+			throw invalid();
 		}
 
 		if (
@@ -444,6 +448,25 @@ export class Mcp {
 		}
 
 		return message as Json;
+	}
+
+	/**
+	 * Its own function, so the body's bytes are let go once decoded: a
+	 * variable that held them would keep them while the text is parsed.
+	 *
+	 * @param body Request body
+	 * @param limit Largest size in bytes
+	 * @returns The body's text, `undefined` when it is too large, or `null`
+	 * when it is not UTF-8
+	 */
+	static async #text(body: ReadableStream<Uint8Array> | null, limit: number) {
+		const bytes = await Codec.read(body, limit);
+		if (!bytes) return;
+		try {
+			return Codec.decode(bytes);
+		} catch {
+			return null;
+		}
 	}
 
 	/**
@@ -647,11 +670,7 @@ export class Mcp {
 			const form = route as Route.Post;
 			// names are unique, app.use() throws for two routes sharing one
 
-			const params = new Map(
-				Array.from(route.pattern.matchAll(parameters), ([, name]) =>
-					name ? [name, name] : ["wildcard", "*"],
-				),
-			);
+			const params = Mcp.#params(route);
 
 			const properties: Json = {};
 			const required = new Set<string>();
@@ -702,6 +721,19 @@ export class Mcp {
 		return tools;
 	}
 
+	/**
+	 * @param route Route a tool calls
+	 * @returns Pattern parameters by the argument that fills them, `wildcard`
+	 * fills `*`
+	 */
+	static #params(route: Route) {
+		return new Map(
+			Array.from(route.pattern.matchAll(parameters), ([, name]) =>
+				name ? [name, name] : ["wildcard", "*"],
+			),
+		);
+	}
+
 	/** A file as a tool argument, for a file field */
 	static readonly #file = {
 		type: "object",
@@ -723,19 +755,29 @@ export class Mcp {
 	static #upload(value: unknown) {
 		if (typeof value !== "object" || !value) return;
 
-		const { name, type, text, base64 } = value as Json;
+		const argument = value as Json;
+		const { name, type, text, base64 } = argument;
 		if (typeof name !== "string" || !name) return;
 
 		const options = typeof type === "string" ? { type } : undefined;
 
-		if (typeof text === "string") return new File([text], name, options);
-		if (typeof base64 !== "string") return;
-
-		try {
-			return new File([Codec.Base64.decode(base64)], name, options);
-		} catch {
-			// not base64
+		let file: File;
+		if (typeof text === "string") file = new File([text], name, options);
+		else if (typeof base64 !== "string") return;
+		else {
+			try {
+				file = new File([Codec.Base64.decode(base64)], name, options);
+			} catch {
+				// not base64
+				return;
+			}
 		}
+
+		// the request's message stays reachable until the route answers, so
+		// its contents would be held twice: as the file, and as its text
+		delete argument.text;
+		delete argument.base64;
+		return file;
 	}
 
 	/**
@@ -759,11 +801,14 @@ export class Mcp {
 	 * @returns Tool result
 	 */
 	async #call(c: Context, params: Json, session: unknown) {
-		const tool =
+		// only the tool called: the list builds every tool's JSON Schema, which
+		// for an app with many tools is megabytes for each call
+		const route =
 			typeof params.name === "string"
-				? this.#list().get(params.name)
+				? this.#app!.routes.find((route) => route.tool?.name === params.name)
 				: undefined;
-		if (!tool) throw new RpcError(-32602, `Unknown tool: ${params.name}`);
+		if (!route) throw new RpcError(-32602, `Unknown tool: ${params.name}`);
+		const tool = { route, params: Mcp.#params(route) };
 
 		const args = (params.arguments ?? {}) as Json;
 		if (typeof args !== "object" || Array.isArray(args))
@@ -781,7 +826,6 @@ export class Mcp {
 		}
 		if (issues.length) return Mcp.#result(Mcp.#issues(issues), true);
 
-		const { route } = tool;
 		let pathname: string;
 		try {
 			pathname = route.url({

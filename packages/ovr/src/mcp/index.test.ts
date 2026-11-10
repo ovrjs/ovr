@@ -166,6 +166,41 @@ describe("Mcp", () => {
 			2,
 		);
 	});
+	test("a call finds its tool among many, by name only", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Array.from({ length: 50 }, (_, i) =>
+				Route.post(`/many/${i}/:id`)
+					.describe(`Many ${i}`)
+					.fields({ note: Field.text() })
+					.use(async (c) => {
+						const result = await c.data();
+						return c.text(
+							`${i} ${c.params.id} ${result.issues ? "" : result.data.note}`,
+						);
+					}),
+			),
+			// not a tool, so never called as one
+			Route.post("/many/hidden").use(() => "hidden"),
+		);
+
+		const { body } = await rpc("tools/call", {
+			name: "post_many_37_id",
+			arguments: { id: "x", note: "hi" },
+		});
+		expect(body.result).toMatchObject({
+			content: [{ type: "text", text: "37 x hi" }],
+			isError: false,
+		});
+
+		for (const name of ["post_many_hidden", "post_many_50_id"]) {
+			const { body } = await rpc("tools/call", { name, arguments: {} });
+			expect(body.error).toMatchObject({
+				code: -32602,
+				message: `Unknown tool: ${name}`,
+			});
+		}
+	});
 	test("a wildcard argument cannot change the request's origin", async () => {
 		const { app, rpc } = setup();
 		const origins: string[] = [];

@@ -141,6 +141,9 @@ class Writer {
 		"menu",
 	]);
 
+	/** Attributes of an element without any, never changed */
+	static readonly #none: Record<string, string> = Object.freeze({});
+
 	readonly #options: Markdown.Options;
 
 	/** Open elements below the top level */
@@ -193,14 +196,17 @@ class Writer {
 		} else if (chunk instanceof Tag) {
 			if (!chunk.props) return this.#close(chunk.name);
 
-			const attrs: Record<string, string> = {};
+			let attrs: Record<string, string> | undefined;
 			for (const name in chunk.props) {
 				const value = chunk.props[name];
 				// as `jsx` writes them, `true` is an attribute without a value
 				if (name !== "children" && value != null && value !== false)
-					attrs[name.toLowerCase()] = value === true ? "" : String(value);
+					(attrs ??= {})[name.toLowerCase()] =
+						value === true ? "" : String(value);
 			}
-			this.#open(chunk.name, attrs);
+			// most elements have none, and a block's elements are all held until
+			// it ends, so they share one empty set, which is never changed
+			this.#open(chunk.name, attrs ?? Writer.#none);
 			if (chunk.closed) this.#close(chunk.name);
 		} else if (chunk.raw) this.#raw(chunk.value);
 		else this.#text(chunk.value);
@@ -307,14 +313,21 @@ class Writer {
 			return;
 		}
 
-		const [node] = this.#stack.splice(index);
+		const closed = this.#stack.splice(index);
+		const node = closed[0]!;
 
-		if (!index && (Writer.#blockTags.has(node!.tag) || Writer.#holds(node!))) {
+		if (!index && (Writer.#blockTags.has(node.tag) || Writer.#holds(node))) {
 			// a complete top level block
 			this.#pending.children.pop();
 			this.#flush();
-			this.#write(this.#block(node!));
+			this.#write(this.#block(node));
+			return;
 		}
+
+		// held until its block ends, such as each row of a long table, so its
+		// children, final now, are kept at their size instead of the room an
+		// array grows to as it is added to
+		for (const done of closed) done.children = done.children.slice();
 	}
 
 	/** Writes inline content at the top level as a paragraph */

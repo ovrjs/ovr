@@ -1,4 +1,8 @@
 {
 	"extends": "@robino/tsconfig/check.json",
-	"compilerOptions": { "types": ["node"] }
+	"compilerOptions": {
+		"types": ["node"],
+		// the memory scripts run in Node directly, which needs the extension
+		"allowImportingTsExtensions": true
+	}
 }

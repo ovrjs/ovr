@@ -287,27 +287,43 @@ export class Codec {
 		if (!body) return new Uint8Array();
 
 		const reader = body.getReader();
-		const chunks: Uint8Array[] = [];
+		/** The first chunk, the whole body when it is the only one, as most are */
+		let first: Uint8Array | undefined;
+		/**
+		 * A body of more chunks is copied in as they arrive, into memory that
+		 * grows with what was sent and never past the limit, so it is not held
+		 * twice at the end, as its chunks and as the bytes they are joined into
+		 */
+		let buffer: ArrayBuffer | undefined;
 		let size = 0;
 
 		for (;;) {
 			const { done, value } = await reader.read();
 			if (done) break;
-			if ((size += value.length) > limit) {
+			const end = size + value.length;
+			if (end > limit) {
 				await reader.cancel();
 				return;
 			}
-			chunks.push(value);
+			if (!first) first = value;
+			else {
+				// reserved once a second chunk arrives: it costs more than a small
+				// body takes to read, and a body of one chunk needs none
+				if (!buffer) {
+					buffer = new ArrayBuffer(0, { maxByteLength: limit });
+					buffer.resize(Math.min(limit, Math.max(end, size * 2)));
+					new Uint8Array(buffer).set(first);
+				} else if (end > buffer.byteLength)
+					buffer.resize(Math.min(limit, Math.max(end, buffer.byteLength * 2)));
+				new Uint8Array(buffer, size).set(value);
+			}
+			size = end;
 		}
 
-		const bytes = new Uint8Array(size);
-		let offset = 0;
-		for (const chunk of chunks) {
-			bytes.set(chunk, offset);
-			offset += chunk.length;
-		}
-
-		return bytes;
+		// a chunk read is the reader's own, so a body of one is not copied
+		return buffer
+			? new Uint8Array(buffer, 0, size)
+			: (first ?? new Uint8Array());
 	}
 
 	static readonly Base64 = class Base64 {
