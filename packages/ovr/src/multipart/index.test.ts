@@ -1631,3 +1631,28 @@ describe("quoted header parameters", () => {
 		}
 	});
 });
+
+it("reads a server's own request object, which the platform cannot copy", async () => {
+	const body = new FormData();
+	body.set("text", "Buy milk");
+	const native = new Request("http://localhost/todos", {
+		method: "POST",
+		body,
+	});
+
+	// like srvx's request: the same fields, but not a platform Request
+	const foreign = {
+		url: native.url,
+		method: native.method,
+		headers: native.headers,
+		body: native.body,
+		signal: native.signal,
+	} as Request;
+	expect(() => new Request(foreign)).toThrow();
+
+	const parts: [string | null, string][] = [];
+	for await (const part of new Multipart(foreign))
+		parts.push([part.name, await part.text()]);
+
+	expect(parts).toEqual([["text", "Buy milk"]]);
+});

@@ -38,6 +38,33 @@ Or you can use a comment if you are using ovr in conjunction with another framew
 
 A todo list with a page and a form to add to it. Each route is [described](/route#describe), and the app has an [MCP endpoint](/agents#mcp), so agents can use it too.
 
+In a new folder, install ovr, [srvx](https://srvx.h3.dev/) to serve it on Node, and TypeScript to compile it:
+
+```bash
+npm i ovr srvx && npm i -D typescript @types/node
+```
+
+```json
+// package.json, beside the dependencies npm added
+{ "type": "module" }
+```
+
+```json
+// tsconfig.json
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "NodeNext",
+		"strict": true,
+		"skipLibCheck": true,
+		"rootDir": "src",
+		"outDir": "dist",
+		"jsx": "react-jsx",
+		"jsxImportSource": "ovr"
+	}
+}
+```
+
 ```tsx
 // src/index.tsx
 import { App, Field, Mcp, Route } from "ovr";
@@ -47,7 +74,7 @@ const todos: string[] = [];
 
 const list = Route.get("/")
 	.describe("List the todos")
-	.use(() => (
+	.use((c) => (
 		<main>
 			<h1>Todos</h1>
 			<ul>
@@ -55,7 +82,8 @@ const list = Route.get("/")
 					<li>{todo}</li>
 				))}
 			</ul>
-			<add.Form submit="Add" />
+			{/* state returns a failed submission here, with its message */}
+			<add.Form state={c.url} submit="Add" />
 		</main>
 	));
 
@@ -76,17 +104,17 @@ const app = new App().use(list, add, new Mcp({ name: "todos" }));
 serve({ fetch: (req) => app.fetch(req, { ip: req.ip }) });
 ```
 
-This runs on Node with [srvx](https://srvx.h3.dev/), see [Compatibility](#compatibility) for other runtimes. Compile it with TypeScript and start the server:
+See [Compatibility](#compatibility) for other runtimes. Compile it and start the server:
 
 ```bash
-tsc && node dist/index.js
+npx tsc && node dist/index.js
 ```
 
 The todos are kept in memory, so they reset when the server restarts. Store them with [Database](/database) in a real app.
 
 ### People
 
-Open `http://localhost:3000`. The page has a form that adds a todo, and works without client-side JavaScript. The field is required, so an empty submission returns to the page instead of adding one.
+Open `http://localhost:3000`. The page has a form that adds a todo, and works without client-side JavaScript. The field is required, so a submission without it returns to the page with "Required field" beside the input, instead of adding a todo. Browsers stop an empty submission themselves; the server checks too, for anything that reaches it.
 
 ### Agents
 
@@ -101,7 +129,7 @@ curl -H "Accept: text/markdown" http://localhost:3000
 
 - Buy milk
 
-**Form:** `POST http://localhost:3000/todos`
+**Form:** `POST http://localhost:3000/todos?_return=%2F`
 
 - Todo `text` (text, required)
 

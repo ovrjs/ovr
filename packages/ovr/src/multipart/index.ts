@@ -265,7 +265,16 @@ export class Multipart extends Request {
 	 * ```
 	 */
 	constructor(req: Request, options?: Multipart.Options) {
-		super(req);
+		// from its parts, since a server's own request object, such as srvx's,
+		// is not one the platform's constructor can copy
+		super(req.url, {
+			method: req.method,
+			headers: req.headers,
+			body: req.body,
+			signal: req.signal,
+			// a streamed body needs this in Node
+			duplex: "half",
+		} as RequestInit);
 
 		const [mime, params] = Header.shift(this.headers.get(Header.name.type));
 
