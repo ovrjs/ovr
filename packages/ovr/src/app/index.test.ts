@@ -406,25 +406,55 @@ describe("a body the client got wrong, which the app does not catch", () => {
 		expect(await res.text()).toBe("saved");
 	});
 
-	test("the app's own error handling still sees the error first", async () => {
-		let caught: unknown;
-		const res = await new App()
-			.use(async (c, next) => {
-				try {
-					await next();
-				} catch (error) {
-					caught = error;
-					c.text("handled", 422);
-				}
-			}, add)
-			.fetch(`${origin}/todos`, {
+	test("middleware that catches errors gets the app's, not a client's body mistake", async () => {
+		const caught: unknown[] = [];
+		const errors: Middleware = async (c, next) => {
+			try {
+				await next();
+			} catch (error) {
+				caught.push(error);
+				c.text("Something went wrong", 500);
+			}
+		};
+		const send = (app: App, path: string) =>
+			app.fetch(`${origin}${path}`, {
 				method: "POST",
 				headers: { ...headers, "content-type": "application/json" },
 				body: "{}",
 			});
 
-		expect(caught).toBeInstanceOf(TypeError);
-		expect(res.status).toBe(422);
+		// answered where the route read the body, before global middleware
+		const res = await send(new App().use(errors, add), "/todos");
+		expect(res.status).toBe(415);
+		expect(caught).toHaveLength(0);
+
+		// the route's own middleware can still catch it, to answer differently
+		const custom = Route.post("/custom")
+			.fields({ text: Field.text() })
+			.use(
+				async (c, next) => {
+					try {
+						await next();
+					} catch (error) {
+						caught.push(error);
+						c.text("Send a form", 422);
+					}
+				},
+				async (c) => void (await c.data()),
+			);
+		expect((await send(new App().use(errors, custom), "/custom")).status).toBe(
+			422,
+		);
+		expect(caught).toEqual([expect.any(TypeError)]);
+
+		// and an error of the app's reaches the middleware
+		const broken = Route.post("/broken").use(() => {
+			throw new Error("bug");
+		});
+		expect((await send(new App().use(errors, broken), "/broken")).status).toBe(
+			500,
+		);
+		expect(caught).toHaveLength(2);
 	});
 
 	test("other errors still throw", async () => {

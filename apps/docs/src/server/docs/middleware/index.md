@@ -132,6 +132,55 @@ Returning a value sets the `content-type` header to `html` unless it has already
 
 > Middleware's flexible return type makes it easy to stream other types of content than HTML. Simply set the `content-type` header before returning. Check out the demos for [SSE](/demo/sse) or [XML](/demo/seo) for examples.
 
+## Not found and errors
+
+Two global middleware cover the requests no route answers and the ones a route fails. Pass them to `app.use` first, so they run around everything after them.
+
+```tsx
+import { App, type Middleware } from "ovr";
+
+const errors: Middleware = async (c, next) => {
+	try {
+		await next();
+	} catch (error) {
+		console.error(error); // or your error tracker
+
+		c.res.status = 500;
+		// a type the route set before it failed, such as JSON
+		c.res.headers.delete("content-type");
+
+		return (
+			<main>
+				<h1>Something went wrong</h1>
+			</main>
+		);
+	}
+};
+
+const notFound: Middleware = async (c, next) => {
+	await next();
+
+	// no route matched, or one set a status without a body
+	if (c.res.body === undefined) {
+		c.res.status = 404;
+
+		return (
+			<main>
+				<h1>Not found</h1>
+			</main>
+		);
+	}
+};
+
+const app = new App().use(errors, notFound, home, posts);
+```
+
+ovr does not catch what your code throws, and it never logs. Without the first middleware an error leaves `app.fetch`, where your server logs it and answers 500, so reporting the error is yours to do in the `catch`.
+
+- A request body the client got wrong is not an error of your app's: the route's [413, 415, or 400](/schema#protections) is answered before this middleware, which sees only the response.
+- An error thrown while a page streams, such as in an async component, comes after the response has started, so it ends the stream instead of reaching the middleware.
+- Both pages are written as Markdown for a request that asks for it, and through [MCP](/agents#tools) an agent receives the protocol's internal error in place of your error page.
+
 ## Rate limiting
 
 [Auth](/auth#rate-limiting) limits sign-in and agent sign-in for you. Add a `Limiter` to your own routes that are expensive, such as ones that send email or call an AI model. It stores token buckets in your Postgres [database](/database), so every server counts together.

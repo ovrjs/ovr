@@ -1,6 +1,7 @@
 import * as demo from "@/server/demo";
 import * as docs from "@/server/docs";
 import * as home from "@/server/home";
+import * as error from "@/server/mw/error";
 import * as notFound from "@/server/mw/not-found";
 import * as redirect from "@/server/mw/redirect";
 import * as seo from "@/server/seo";
@@ -27,6 +28,8 @@ if (import.meta.env.DEV && process.env.AUTH_SECRET) {
 } else app = new o.App();
 
 app.use(
+	// first, so it is around everything after it
+	error,
 	redirect,
 	notFound,
 	home,

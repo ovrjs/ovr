@@ -152,7 +152,7 @@ claude mcp add --transport http ovr https://ovrjs.com/mcp
 
 ### Next
 
-[App](/app), [Route](/route), and [Middleware](/middleware) cover handling requests. [Render](/render) covers components, and [Schema](/schema) the fields and forms. [Agents](/agents) explains what agents get from each route.
+[App](/app), [Route](/route), and [Middleware](/middleware) cover handling requests, and [Not found and errors](/middleware#not-found-and-errors) the two middleware most apps start with. [Render](/render) covers components, and [Schema](/schema) the fields and forms. [Agents](/agents) explains what agents get from each route.
 
 ## Compatibility
 

@@ -209,28 +209,48 @@ export class App {
 		try {
 			return await Context.compose(
 				Object.assign(c, match),
-				this.#global.concat(c.route?.middleware ?? []),
+				// a route's body errors are answered before global middleware
+				// sees them, so middleware that catches errors gets only the app's
+				c.route
+					? [...this.#global, App.#body, ...c.route.middleware]
+					: this.#global,
 			);
 		} catch (error) {
-			// a body the client got wrong, which nothing in the app answered
-			const [status, message] =
-				error instanceof Limit
-					? [413, error.message]
-					: error instanceof Unsupported
-						? [415, "Unsupported Media Type: send multipart/form-data"]
-						: error instanceof Malformed
-							? [400, `Bad Request: ${error.message}`]
-							: [];
-
-			if (!status) throw error;
+			// from global middleware that read the body itself
+			const answer = App.#mistake(error);
+			if (!answer) throw error;
 
 			// with the headers middleware set before it, such as for CORS
 			const headers = new Headers(c.res.headers);
 			headers.set(Header.name.type, Header.utf8(Mime.type.text));
 
-			return new Response(message, { status, headers });
+			return new Response(answer[1], { status: answer[0], headers });
 		}
 	};
+
+	/**
+	 * @param error Error from reading a request body
+	 * @returns The status and message for a body the client got wrong,
+	 * `undefined` for any other error, which is the app's
+	 */
+	static #mistake(error: unknown): [number, string] | undefined {
+		if (error instanceof Limit) return [413, error.message];
+		if (error instanceof Unsupported)
+			return [415, "Unsupported Media Type: send multipart/form-data"];
+		if (error instanceof Malformed)
+			return [400, `Bad Request: ${error.message}`];
+	}
+
+	/** Answers a body the client got wrong, where the route read it */
+	static async #body(c: Middleware.Context, next: Middleware.Next) {
+		try {
+			await next();
+		} catch (error) {
+			const answer = App.#mistake(error);
+			if (!answer) throw error;
+			c.text(answer[1], answer[0]);
+		}
+	}
 
 	/**
 	 * @param value Matched parameter, as the URL encodes it
