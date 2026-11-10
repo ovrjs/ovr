@@ -3391,6 +3391,59 @@ describe("agents", () => {
 		expect(await res.text()).toContain("(invalid_scope)");
 	});
 
+	test("on the MCP endpoint an agent's token is its session, for middleware before the endpoint", async () => {
+		const { app, client_id, redirect } = await connect();
+		const { access_token } = await (
+			await token(app, {
+				grant_type: "authorization_code",
+				code: redirect.searchParams.get("code")!,
+				client_id,
+				redirect_uri: redirect.origin + redirect.pathname,
+				code_verifier: verifier,
+			})
+		).json();
+
+		// global middleware, such as a limiter that counts each signed-in user
+		const seen: [string, string | undefined][] = [];
+		const each = new Limiter("each-user", {
+			database: db,
+			limit: 2,
+			key: async (c) => (await c.session())?.user,
+		});
+		app.use(async (c, next) => {
+			seen.push([c.url.pathname, (await c.session())?.user]);
+			return next();
+		}, each.middleware);
+
+		const said = async (text: string) => {
+			const res = await call(app, access_token, text);
+			return res.status === 200
+				? (await res.json()).result.content[0].text
+				: res.status;
+		};
+
+		// the user on the endpoint's request, and on its request to the route
+		expect(await said("one")).toBe(`${user} wrote one`);
+		expect(seen).toEqual([
+			["/mcp", user],
+			["/notes", user],
+		]);
+		// each tool call counted once for the user
+		expect(await said("two")).toBe(`${user} wrote two`);
+		expect(await said("three")).toBe(429);
+
+		// a token is a session only on the endpoint it was issued for, so
+		// elsewhere nobody is signed in, and the limiter has no user to count
+		seen.length = 0;
+		await expect(
+			app.fetch(`${origin}/sign-in`, {
+				headers: { authorization: `Bearer ${access_token}` },
+				ip: "192.0.2.77",
+			}),
+		).rejects.toThrow("Rate limiting requires");
+		expect(seen[0]).toEqual(["/sign-in", undefined]);
+	});
+
 	test("the user approves, and the agent acts as the user", async () => {
 		const { app, client_id, redirect } = await connect();
 		const code = redirect.searchParams.get("code")!;

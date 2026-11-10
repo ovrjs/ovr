@@ -113,7 +113,7 @@ A resource is named by its address, which an agent may also fetch itself. With [
 
 ### Sign in
 
-Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `c.session()` returns their session.
+Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `c.session()` returns their session. Global middleware sees the same session on the agent's request to the endpoint, so a [limiter](/middleware#rate-limiting) that counts each user counts an agent's calls for its user. Check for a session on your routes and not in global middleware, which would answer an agent's first request before the endpoint can ask it to sign in.
 
 ```ts
 const mcp = new Mcp({ instructions: "...", auth });

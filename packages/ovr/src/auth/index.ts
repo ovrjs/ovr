@@ -199,6 +199,22 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 
 	readonly #options: State.Options;
 	readonly #states = new WeakMap<object, State>();
+
+	/** Resources tokens can be issued for, the MCP endpoints mounted with this auth */
+	readonly #resources = new Set<string>();
+
+	/** The session of each agent's request, read from its token once */
+	readonly #tokens = new WeakMap<Request, Promise<Auth.Session | null>>();
+
+	/**
+	 * @param c Request context
+	 * @param resource MCP endpoint URL the token must be issued for
+	 * @returns The token's session, or `null` without a valid token
+	 */
+	readonly #bearer: (
+		c: Pick<ContextType, "req">,
+		resource: string,
+	) => Promise<Auth.Session | null>;
 	/** Auth's tables in its database */
 	readonly #storage: Storage;
 	/** The OAuth endpoints are mounted */
@@ -256,15 +272,17 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 			sessions: storage.sessions,
 		};
 		const service = configure(options, storage, (c) => this.#state(c));
-		// resources tokens can be issued for, the MCP endpoints mounted with this auth
-		const resources = new Set<string>();
+		const resources = this.#resources;
 		const signin = oauth(options, storage, (c) => this.#state(c), resources);
+		// once for a request, whether middleware or the endpoint asks first
+		this.#bearer = (c, resource) =>
+			this.#tokens.getOrInsertComputed(c.req, () => signin.bearer(c, resource));
 		this.#routes = service.routes;
 		this.forms = service.forms;
 		this.consent = signin.consent;
 		this[agents] = {
 			origin: options.origin,
-			bearer: signin.bearer,
+			bearer: this.#bearer,
 			// the OAuth endpoints, once per app when several endpoints share them
 			mount: (app, resource) => {
 				resources.add(resource);
@@ -287,7 +305,15 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	[mount](): ReturnType<App.Service[typeof mount]> {
 		return [
 			(c: ContextType, next: () => Promise<void>) => {
-				c[sessions] = () => this.#state(c).session();
+				c[sessions] = () => {
+					// on an MCP endpoint the agent's token is its session, as in the
+					// tool calls the endpoint makes, so middleware before the endpoint
+					// sees the user too, such as a limiter that counts each one
+					const resource = c.url.origin + c.url.pathname;
+					return this.#resources.has(resource)
+						? this.#bearer(c, resource)
+						: this.#state(c).session();
+				};
 				return next();
 			},
 			this.#host(this.#routes),
