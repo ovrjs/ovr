@@ -185,19 +185,25 @@ export class Mcp {
 
 		if (auth) {
 			// protected resource metadata, RFC 9728
+			// by the configured origin, the one tokens are issued for, and not the
+			// request's host, which anyone can choose
+			const { origin } = auth[agents];
 			const metadata: Middleware = (c) => {
 				c.res.headers.set("access-control-allow-origin", "*");
 				c.json({
-					resource: new URL(path, c.url).href,
-					authorization_servers: [auth[agents].origin],
+					resource: new URL(path, origin).href,
+					authorization_servers: [origin],
 					bearer_methods_supported: ["header"],
-					resource_name: this.#options.name ?? c.url.host,
+					resource_name: this.#options.name ?? new URL(origin).host,
 				});
 			};
 
-			routes.push(
-				Route.get(`/.well-known/oauth-protected-resource${path}`).use(metadata),
-			);
+			// part of the way in too, an agent reads it before it has a token
+			const discovery = Route.get(
+				`/.well-known/oauth-protected-resource${path}`,
+			).use(metadata);
+			direct.add(discovery);
+			routes.push(discovery);
 
 			return [
 				...routes,

@@ -25,7 +25,7 @@ There are two levels of middleware in an ovr application:
 1. **Global** - any middleware passed directly to `App.use`
 2. **Route** - middleware added to a specific `Route`
 
-For each request, ovr creates an array containing the **global** middleware, then the **matched route**'s middleware (if there is a match). An [MCP endpoint](/agents#mcp) is the exception: it is the way in for agents and not a page of your app, so it runs without global middleware, and the request it makes to a route for an agent passes through them.
+For each request, ovr creates an array containing the **global** middleware, then the **matched route**'s middleware (if there is a match). An [MCP endpoint](/agents#mcp) is the exception, with the endpoints agents [sign in](/agents#sign-in) through: they are the way in for agents and not pages of your app, so they run without global middleware, and the request the MCP endpoint makes to a route for an agent passes through them. What must cover every request, such as an IP blocklist or a maintenance page, belongs in front of the app, at your server or proxy.
 
 The first middleware in the array will be called, then you can dispatch the `next` middleware within the first by calling `await next()` or returning `next()`.
 
@@ -179,7 +179,7 @@ ovr does not catch what your code throws, and it never logs. Without the first m
 
 - A request body the client got wrong is not an error of your app's: the route's [413, 415, or 400](/schema#protections) is answered before this middleware, which sees only the response.
 - An error thrown while a page streams, such as in an async component, comes after the response has started, so it ends the stream instead of reaching the middleware.
-- An error in the [MCP endpoint](/agents#mcp) itself, such as the database failing while it checks a token, is outside global middleware, so it leaves `app.fetch` for your server to report.
+- An error in the [MCP endpoint](/agents#mcp) itself or in an agent's sign-in, such as the database failing while it checks a token, is outside global middleware, so it leaves `app.fetch` for your server to report.
 - Both pages are written as Markdown for a request that asks for it, and through [MCP](/agents#tools) an agent receives the protocol's internal error in place of your error page.
 
 ## Rate limiting

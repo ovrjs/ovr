@@ -113,6 +113,19 @@ serve({ fetch: (request) => app.fetch(request, { ip: request.ip }) });
 
 Behind a reverse proxy, the socket peer identifies the proxy. Accept connections only from your proxy and use a client header that it overwrites. Passing the proxy's address makes all users share one rate-limit bucket.
 
+A proxy that ends TLS also hands your server an `http` URL. Give `app.fetch` the request with its public URL, here too from a header your proxy overwrites, and not in middleware: [Auth](/auth#deployment) compares each request's origin with its own, and the endpoints [agents](/agents#mcp) use run before your middleware does.
+
+```ts
+serve({
+	fetch: (request) => {
+		const url = new URL(request.url);
+		url.protocol = "https:";
+
+		return app.fetch(new Request(url, request), { ip: request.ip });
+	},
+});
+```
+
 For a Cloudflare Worker reached through its Internet-facing edge, with Worker subrequests blocked by your edge policy:
 
 ```ts

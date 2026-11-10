@@ -113,7 +113,7 @@ A resource is named by its address, which an agent may also fetch itself. With [
 
 ### Sign in
 
-Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `c.session()` returns their session. Global middleware sees that session too, on the request the endpoint makes to your route, so a [limiter](/middleware#rate-limiting) that counts each user counts an agent's calls for its user. Check for a session on your routes and not in global middleware: the endpoints an agent signs in with are routes of your app, and a global check would redirect the agent away from them.
+Pass `auth` to require agents to sign in. The user approves the agent once in the browser, and its tool calls then act as that user: `c.session()` returns their session. Global middleware sees that session too, on the request the endpoint makes to your route, so a [limiter](/middleware#rate-limiting) that counts each user counts an agent's calls for its user. The endpoints an agent signs in through are outside global middleware too, like the MCP endpoint, so a check for a session there does not turn an agent away before it has signed in. Your login page is the one page such a check has to leave open, as it does for people.
 
 ```ts
 const mcp = new Mcp({ instructions: "...", auth });

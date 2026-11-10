@@ -1,4 +1,4 @@
-import { crossOrigin } from "../app/index.js";
+import { crossOrigin, direct } from "../app/index.js";
 import type { Context } from "../context/index.js";
 import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
@@ -273,11 +273,35 @@ export function oauth(
 
 	const routes: Route[] = [];
 
+	/**
+	 * The endpoints an agent signs in through are, like the MCP endpoint, the
+	 * way in and not pages of the app: they run without the app's global
+	 * middleware, so a check for a session there cannot turn an agent away
+	 * before it has signed in. Auth's own check of the host is global
+	 * middleware too, so these routes make it themselves, first.
+	 */
+	const host: Middleware = (c, next) => {
+		if (c.url.origin === origin) return next();
+		c.res.headers.set(Header.name.cache, "no-store");
+		return c.text("Misdirected Request", 421);
+	};
+
+	/**
+	 * @param route Endpoint an agent or its user's browser requests to sign in
+	 * @returns The route, outside the app's global middleware
+	 */
+	const outside = (route: Route) => {
+		direct.add(route);
+		routes.push(route);
+		return route;
+	};
+
 	const cross = (route: Route) => {
 		// browsers send the preflight cross-site too, without credentials
-		const preflight = new Route("OPTIONS", route.pattern).use(cors);
+		const preflight = new Route("OPTIONS", route.pattern).use(host, cors);
 		crossOrigin.add(route).add(preflight);
-		routes.push(route, preflight);
+		outside(route);
+		outside(preflight);
 		return route;
 	};
 
@@ -438,7 +462,7 @@ export function oauth(
 
 	// authorization server metadata, RFC 8414
 	cross(
-		Route.get(paths.metadata).use(cors, (c) =>
+		Route.get(paths.metadata).use(host, cors, (c) =>
 			c.json({
 				issuer: origin,
 				authorization_endpoint: origin + paths.authorize,
@@ -453,8 +477,10 @@ export function oauth(
 		),
 	);
 
-	routes.push(
-		Route.get(paths.authorize).use(async (c) => {
+	// the user's browser, which may be signed out: this remembers the request,
+	// sends them to sign in, and resumes
+	outside(
+		Route.get(paths.authorize).use(host, async (c) => {
 			c.res.headers.set(Header.name.cache, "no-store");
 			const query = c.url.searchParams;
 
@@ -531,13 +557,13 @@ export function oauth(
 
 			return c.redirect(url, 303);
 		}),
-		prompt,
-		approve,
-		deny,
 	);
 
+	// the signed-in user's own form posts, which stay the app's requests
+	routes.push(prompt, approve, deny);
+
 	cross(
-		Route.post(paths.token).use(cors, async (c) => {
+		Route.post(paths.token).use(host, cors, async (c) => {
 			if (!(await admit(c, limiter))) return;
 
 			const text = await body(c);

@@ -2725,8 +2725,10 @@ describe("agents", () => {
 	};
 
 	/** Registers a client, signs in, approves it, and exchanges the code */
-	async function connect(decision = "allow") {
+	async function connect(decision = "allow", prepare?: (app: App) => void) {
 		const state = agents();
+		// such as global middleware, in place before anyone signs in
+		prepare?.(state.app);
 		const { browser } = state;
 		const client_id = agent;
 
@@ -3431,33 +3433,6 @@ describe("agents", () => {
 		expect(await said("two")).toBe(`${user} wrote two`);
 		expect(await said("three")).toContain("429");
 
-		// the endpoint answers an agent without a token itself, with how to
-		// sign in, where a check for a session in global middleware would
-		// redirect it
-		const walled = (await connect()).app;
-		walled.use(async (c, next) =>
-			(await c.session()) ? next() : c.redirect("/login", 303),
-		);
-		const unsigned = await call(walled, undefined, "x");
-		expect(unsigned.status).toBe(401);
-		expect(unsigned.headers.get("www-authenticate")).toContain(
-			"resource_metadata=",
-		);
-		// and with one, the agent's call passes the check as its user. The
-		// endpoints it signs in with are the app's routes, still behind the check
-		expect(
-			(
-				await walled.fetch(
-					`${origin}/.well-known/oauth-protected-resource/mcp`,
-					{ ip },
-				)
-			).status,
-		).toBe(303);
-		expect(
-			(await (await call(walled, access_token, "walled")).json()).result
-				.content[0].text,
-		).toBe(`${user} wrote walled`);
-
 		// a token is a session only on the endpoint it was issued for, so
 		// elsewhere nobody is signed in, and the limiter has no user to count
 		seen.length = 0;
@@ -3468,6 +3443,110 @@ describe("agents", () => {
 			}),
 		).rejects.toThrow("Rate limiting requires");
 		expect(seen[0]).toEqual(["/sign-in", undefined]);
+	});
+
+	test("an agent signs in and calls a tool with a check for a session in global middleware", async () => {
+		// in place from the start: everything but the sign-in pages needs a session
+		const wall: Middleware = async (c, next) =>
+			["/login", "/sign-in"].includes(c.url.pathname) || (await c.session())
+				? next()
+				: c.redirect("/login", 303);
+		const { app, browser, client_id, redirect } = await connect(
+			"allow",
+			(app) => app.use(wall),
+		);
+		const anyone = (path: string, init?: RequestInit) =>
+			app.fetch(origin + path, { ...init, ip });
+
+		// the check is real for the app's pages and for the user's own form posts
+		expect((await anyone("/notes", { method: "POST" })).status).toBe(303);
+		expect(
+			(
+				await anyone("/oauth/deny", { method: "POST", body: new FormData() })
+			).headers.get("location"),
+		).toBe("/login");
+
+		// an agent without a token is told how to sign in
+		const unsigned = await call(app, undefined, "x");
+		expect(unsigned.status).toBe(401);
+		const metadata = /resource_metadata="([^"]+)"/.exec(
+			unsigned.headers.get("www-authenticate")!,
+		)![1]!;
+
+		// and can find where: both documents, without a session
+		const resource = await (await app.fetch(metadata, { ip })).json();
+		expect(resource).toMatchObject({
+			resource: mcp,
+			authorization_servers: [origin],
+		});
+		const server = await (
+			await anyone("/.well-known/oauth-authorization-server")
+		).json();
+		expect(server.token_endpoint).toBe(`${origin}/oauth/token`);
+
+		// `connect` sent the signed-out user through the login page and back to
+		// the request, then the agent exchanges its code, without a session
+		const exchanged = await token(app, {
+			grant_type: "authorization_code",
+			code: redirect.searchParams.get("code")!,
+			client_id,
+			redirect_uri: redirect.origin + redirect.pathname,
+			code_verifier: verifier,
+		});
+		expect(exchanged.status).toBe(200);
+		const { access_token } = await exchanged.json();
+
+		// its tool call passes the check as the user
+		expect(
+			(await (await call(app, access_token, "walled")).json()).result.content[0]
+				.text,
+		).toBe(`${user} wrote walled`);
+
+		// the user's form posts are still the app's: a signed-in browser's
+		// cross-site post is refused
+		const forged = await browser("/oauth/deny", {
+			method: "POST",
+			body: new FormData(),
+			headers: {
+				origin: "https://evil.example",
+				"sec-fetch-site": "cross-site",
+			},
+		});
+		expect(forged.status).toBe(403);
+	});
+
+	test("the endpoints an agent signs in through refuse another host", async () => {
+		const { app } = agents();
+		const wrong = "https://wrong.example";
+
+		for (const [method, path] of [
+			["GET", "/.well-known/oauth-authorization-server"],
+			["OPTIONS", "/.well-known/oauth-authorization-server"],
+			["GET", "/oauth/authorize?client_id=x"],
+			["POST", "/oauth/token"],
+			["OPTIONS", "/oauth/token"],
+			["POST", "/oauth/approve"],
+			["POST", "/oauth/deny"],
+		] as const) {
+			const res = await app.fetch(wrong + path, {
+				method,
+				...(method === "POST" && { body: new FormData() }),
+				ip,
+			});
+
+			expect(res.status, `${method} ${path}`).toBe(421);
+			expect(res.headers.get("cache-control")).toBe("no-store");
+		}
+
+		// the endpoint's own document names the configured origin's endpoint,
+		// whatever host asks
+		expect(
+			await (
+				await app.fetch(`${wrong}/.well-known/oauth-protected-resource/mcp`, {
+					ip,
+				})
+			).json(),
+		).toMatchObject({ resource: mcp, authorization_servers: [origin] });
 	});
 
 	test("the user approves, and the agent acts as the user", async () => {
