@@ -3,7 +3,7 @@ import { type Context, agent } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec, Header, Method, Mime, Size } from "../util/index.js";
+import { Codec, Header, Method, Mime, Size, noStore } from "../util/index.js";
 
 /** JSON-RPC request id */
 type Id = string | number | null;
@@ -216,7 +216,7 @@ export class Mcp {
 
 	/** @param c Request context */
 	async #handle(c: Context) {
-		c.res.headers.set(Header.name.cache, "no-store");
+		noStore(c.res.headers);
 
 		let id: Id = null;
 

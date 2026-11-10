@@ -5,7 +5,7 @@ import { jsx } from "../jsx/index.js";
 import { Limiter, network } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
-import { Codec, Header, Size, Time } from "../util/index.js";
+import { Codec, Header, Size, Time, noStore } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import { Metadata } from "./metadata.js";
@@ -228,7 +228,7 @@ export function oauth(
 
 	/** Public endpoints that browser-based agents call from their own origin */
 	const cors: Middleware = async (c, next) => {
-		c.res.headers.set(Header.name.cache, "no-store");
+		noStore(c.res.headers);
 		c.res.headers.set("access-control-allow-origin", "*");
 		c.res.headers.set(
 			"access-control-allow-headers",
@@ -282,7 +282,7 @@ export function oauth(
 	 */
 	const host: Middleware = (c, next) => {
 		if (c.url.origin === origin) return next();
-		c.res.headers.set(Header.name.cache, "no-store");
+		noStore(c.res.headers);
 		return c.text("Misdirected Request", 421);
 	};
 
@@ -358,7 +358,7 @@ export function oauth(
 		// the consent form's fields, the request is the one the passkey confirms
 		.fields({ request: Field.hidden(), bootstrap: Field.hidden() })
 		.use(async (c) => {
-			c.res.headers.set(Header.name.cache, "no-store");
+			noStore(c.res.headers);
 			if (!same(c)) return c.text("Forbidden", 403);
 
 			if ((await authorizations.check(c, "approve")) !== true)
@@ -393,7 +393,7 @@ export function oauth(
 		Route.post(paths.approve)
 			.fields({ request: Field.hidden() })
 			.use(async (c) => {
-				c.res.headers.set(Header.name.cache, "no-store");
+				noStore(c.res.headers);
 				if (!same(c)) return c.text("Forbidden", 403);
 
 				const result = await c
@@ -447,7 +447,7 @@ export function oauth(
 			ceremony: Field.hidden().optional(),
 		})
 		.use(async (c) => {
-			c.res.headers.set(Header.name.cache, "no-store");
+			noStore(c.res.headers);
 			if (!same(c)) return c.text("Forbidden", 403);
 
 			const result = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
@@ -481,7 +481,7 @@ export function oauth(
 	// sends them to sign in, and resumes
 	outside(
 		Route.get(paths.authorize).use(host, async (c) => {
-			c.res.headers.set(Header.name.cache, "no-store");
+			noStore(c.res.headers);
 			const query = c.url.searchParams;
 
 			if ((await authorizations.check(c)) !== true)

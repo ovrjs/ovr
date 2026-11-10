@@ -3,7 +3,7 @@ import { type Database, owned } from "../database/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
-import { Codec, Time } from "../util/index.js";
+import { Codec, Time, noStore } from "../util/index.js";
 
 /**
  * Internal to ovr, which counts each client this way.
@@ -160,7 +160,7 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 	readonly middleware: Middleware = async (c, next) => {
 		const result = await this.check(c);
 		if (result === true) return next();
-		c.res.headers.set("cache-control", "no-store");
+		noStore(c.res.headers);
 		c.res.headers.set(
 			"retry-after",
 			String(Math.max(1, Math.ceil((result.getTime() - Date.now()) / 1000))),

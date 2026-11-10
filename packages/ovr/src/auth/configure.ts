@@ -5,7 +5,7 @@ import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
-import { Header, Size, Time } from "../util/index.js";
+import { Header, Size, Time, noStore } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import { Passkey } from "./passkey.js";
@@ -133,7 +133,7 @@ export function configure<U extends Auth.Users>(
 			c: Limiter.Context & Pick<Context, "text" | "redirect">,
 			next: Middleware.Next,
 		) => {
-			c.res.headers.set("cache-control", "no-store");
+			noStore(c.res.headers);
 			try {
 				if (c.url.origin !== options.origin)
 					return c.text("Authentication failed.", 400);

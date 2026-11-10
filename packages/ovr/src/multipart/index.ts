@@ -214,11 +214,15 @@ export namespace Multipart {
 /** Default most memory a request body takes while it is read, 4MB */
 export const memory = 4 * Size.mb;
 
+/**
+ * New line needle to share across requests and parts. Outside the class, since
+ * a static made as the class loads is a side effect, which keeps `Multipart`
+ * in bundles that only use its errors.
+ */
+const newLine = new Needle("\r\n\r\n");
+
 /** Multipart request */
 export class Multipart extends Request {
-	/** New line needle to share across requests and parts */
-	static readonly #newLine = new Needle("\r\n\r\n");
-
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
 		memory,
@@ -604,7 +608,7 @@ export class Multipart extends Request {
 
 			// a form without fields sends only the closing delimiter
 			for (let i = 0; !(await this.#closed()); i++) {
-				const headers = await this.#findConcat(Multipart.#newLine);
+				const headers = await this.#findConcat(newLine);
 				// a body ends with the closing delimiter, after the last part
 				if (!headers) throw new Malformed("Unexpected End of Body");
 				if (i === this.#options.parts) throw new Limit("Too Many Parts");

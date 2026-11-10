@@ -8,7 +8,7 @@ import type { Mcp } from "../mcp/index.js";
 import type { Route } from "../route/index.js";
 import type { Schema } from "../schema/index.js";
 import type { Table } from "../table/index.js";
-import { Codec } from "../util/index.js";
+import { Codec, noStore } from "../util/index.js";
 import { configure } from "./configure.js";
 import { Metadata } from "./metadata.js";
 import { oauth } from "./oauth.js";
@@ -308,7 +308,7 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 					routes.has(c.route) &&
 					c.url.origin !== this.#options.origin
 				) {
-					c.res.headers.set("cache-control", "no-store");
+					noStore(c.res.headers);
 					return c.text("Misdirected Request", 421);
 				}
 				return next();

@@ -1,5 +1,5 @@
 import { Fragment, type JSX, jsx } from "../jsx/index.js";
-import { Multipart } from "../multipart/index.js";
+import type { Multipart } from "../multipart/index.js";
 import {
 	Schema,
 	ShapeUtil,
@@ -139,6 +139,16 @@ export namespace Form {
 	}
 }
 
+/** Internal protocol for a GET route, to make the form its fields render. */
+export const query = Symbol("query");
+
+/**
+ * Maximum encoded state size in bytes. Outside the class, since a static that
+ * reads another module is a side effect, which keeps `Form` in bundles that
+ * only use `Field`.
+ */
+const maxStateBytes = 4 * Size.kb;
+
 /**
  * Form schema with JSX rendering capabilities.
  *
@@ -147,26 +157,15 @@ export namespace Form {
  *
  * @template Shape Form field shape type
  */
-/** Internal protocol for a GET route, to make the form its fields render. */
-export const query = Symbol("query");
-
 export class Form<Shape extends Form.Shape = Form.Shape> {
 	/** Query param keys ordered as `[return, form]`. */
 	static readonly params = ["_return", "_form"] as const;
 
-	/** Maximum encoded state size in bytes. */
-	static readonly #maxStateBytes = 4 * Size.kb;
-
 	/** Maximum serialized size for a single persisted value. */
 	static readonly #maxValueChars = 512;
 
-	/** Schema used to validate persisted form values. */
-	static readonly #valueSchema = Schema.union([
-		Schema.string(),
-		Schema.number(),
-		Schema.boolean(),
-		Schema.array(Schema.string()),
-	]);
+	/** Schema used to validate persisted form values, see `#value`. */
+	static #valueSchema?: Schema<Form.Value>;
 
 	/** Form id. */
 	readonly #id: string;
@@ -199,6 +198,21 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			(sum, field) => sum + field.parts,
 			0,
 		);
+	}
+
+	/**
+	 * Built on first use: a schema built as the class loads is a side effect,
+	 * which would keep `Form` in bundles that only use `Field`.
+	 *
+	 * @returns Schema used to validate persisted form values
+	 */
+	static #value() {
+		return (Form.#valueSchema ??= Schema.union([
+			Schema.string(),
+			Schema.number(),
+			Schema.boolean(),
+			Schema.array(Schema.string()),
+		]));
 	}
 
 	/** @returns The form for a GET route, whose submission is the page's URL */
@@ -280,7 +294,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					(!persist || FieldSchema.persisted(field)) &&
 					value != null
 				) {
-					const result = Form.#valueSchema.parse(value);
+					const result = Form.#value().parse(value);
 
 					if (
 						!result.issues &&
@@ -343,7 +357,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			);
 			const encoded = stateInput.searchParams.get(Form.params[1]);
 
-			if (encoded && encoded.length <= Form.#maxStateBytes * 2) {
+			if (encoded && encoded.length <= maxStateBytes * 2) {
 				try {
 					const result = Schema.string()
 						.json(
@@ -367,7 +381,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 								).optional(),
 								values: Schema.object(
 									this.names.reduce<Schema.Object.Shape>((shape, name) => {
-										own(shape, name, Form.#valueSchema.optional());
+										own(shape, name, Form.#value().optional());
 
 										return shape;
 									}, {}),
@@ -419,7 +433,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					} satisfies Form.State),
 				);
 
-				if (state.byteLength <= Form.#maxStateBytes) {
+				if (state.byteLength <= maxStateBytes) {
 					search = [[Form.params[1], Codec.Base64Url.encode(state)]];
 					break;
 				}
@@ -433,7 +447,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				} satisfies Form.State),
 			);
 
-			if (state.byteLength <= Form.#maxStateBytes) {
+			if (state.byteLength <= maxStateBytes) {
 				search = [[Form.params[1], Codec.Base64Url.encode(state)]];
 			}
 		}
@@ -458,7 +472,17 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		let form: FormData | URLSearchParams;
 		let stream: AsyncGenerator<Multipart.Part> | undefined;
 
-		if (source instanceof Multipart) {
+		if (source instanceof FormData) {
+			form = source;
+
+			for (const name of new Set(source.keys())) {
+				if (!Object.hasOwn(this.shape, name))
+					issues.push(this.#unexpected(name, path));
+			}
+		} else if (source instanceof URLSearchParams) {
+			form = source;
+		} else {
+			// the only other source is a Multipart, read one part at a time
 			form = new FormData();
 			const iter = source[Symbol.asyncIterator]();
 
@@ -507,16 +531,6 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				await iter.return?.().catch(() => {});
 				throw error;
 			}
-		} else if (source instanceof FormData) {
-			form = source;
-
-			for (const name of new Set(source.keys())) {
-				if (!Object.hasOwn(this.shape, name))
-					issues.push(this.#unexpected(name, path));
-			}
-		} else {
-			// allow passthrough for URLSearchParams
-			form = source;
 		}
 
 		for (const [name, field] of Object.entries(this.shape)) {
@@ -1630,6 +1644,10 @@ export class Field {
 	static #number<T extends "number" | "range">(
 		props: Field.Props.Input & { type: T },
 	): Field.Instance<number, "input", T> {
+		// registered here rather than as the class loads, which is a side effect
+		// that would keep `Field` in bundles that only use `Form`
+		normalizers.add(Field.#toNumber);
+
 		return new FieldSchema(
 			{ props },
 			Schema.number(Field.#required).preprocess(Field.#toNumber),
@@ -1650,10 +1668,6 @@ export class Field {
 		return Number.isInteger(number) && !Number.isSafeInteger(number)
 			? String(value)
 			: number;
-	}
-
-	static {
-		normalizers.add(Field.#toNumber);
 	}
 
 	/**

@@ -1,5 +1,5 @@
 import { type Context as ContextType, agent } from "../context/index.js";
-import { Codec, Time } from "../util/index.js";
+import { Codec, Time, noStore } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import type { Storage } from "./storage.js";
@@ -69,7 +69,7 @@ export class State {
 	}
 
 	#clear() {
-		this.#c.res.headers.set("cache-control", "no-store");
+		noStore(this.#c.res.headers);
 		this.#c.cookie.set(State.#cookie, "", {
 			secure: true,
 			httpOnly: true,
@@ -79,7 +79,7 @@ export class State {
 	}
 
 	async #read() {
-		this.#c.res.headers.set("cache-control", "no-store");
+		noStore(this.#c.res.headers);
 		const cookie = this.#c.cookie.get(State.#cookie);
 		if (!cookie) return null;
 		let id: string;

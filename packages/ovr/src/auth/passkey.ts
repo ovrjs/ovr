@@ -3,7 +3,7 @@ import { Field, Form } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec, Size, Time } from "../util/index.js";
+import { Codec, Size, Time, noStore } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
 import { etag, source } from "./client-source.js";
@@ -127,7 +127,7 @@ export class Passkey {
 		this.#origin();
 		const browser = this.#auth.browser(true);
 		const user = method === "register" ? crypto.randomUUID() : undefined;
-		this.#c.res.headers.set("cache-control", "no-store");
+		noStore(this.#c.res.headers);
 		const Form: Passkey.Component<Pattern> = Object.assign(
 			(props: Parameters<Route.Form<Pattern>>[0]) =>
 				route.Form({
@@ -280,7 +280,7 @@ export class Passkey {
 			c.text("Too many authentication requests. Try again later.", 429);
 			return;
 		}
-		c.res.headers.set("cache-control", "no-store");
+		noStore(c.res.headers);
 		if (bootstrap.method === "register") {
 			c.json({
 				ceremony,

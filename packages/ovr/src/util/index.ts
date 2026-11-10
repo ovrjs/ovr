@@ -29,38 +29,24 @@ export namespace Util {
 
 /** Media type utils */
 export class Mime {
-	/** Mime type constants */
+	/**
+	 * Mime type constants. Written out, since a static computed by calling
+	 * other members is a side effect, which keeps the class in every bundle
+	 * that imports this module.
+	 */
 	static type = {
-		html: Mime.#text("html"),
-		md: Mime.#text("markdown"),
-		text: Mime.#text("plain"),
-		json: Mime.#application("json"),
-		stream: Mime.#application("octet-stream"),
+		html: "text/html",
+		md: "text/markdown",
+		text: "text/plain",
+		json: "application/json",
+		stream: "application/octet-stream",
 		mp: "multipart/form-data",
 	} as const;
 
-	/**
-	 * @template T Subtype
-	 * @param type Subtype, such as `html`
-	 * @returns The `text/` media type
-	 */
-	static #text<T extends string>(type: T) {
-		return `text/${type}` as const;
-	}
-
-	/**
-	 * @template T Subtype
-	 * @param type Subtype, such as `json`
-	 * @returns The `application/` media type
-	 */
-	static #application<T extends string>(type: T) {
-		return `application/${type}` as const;
-	}
-
 	static readonly #markup = new Set<string>([
-		Mime.type.html,
-		Mime.#text("xml"),
-		Mime.#application("xml"),
+		"text/html",
+		"text/xml",
+		"application/xml",
 	]);
 
 	/**
@@ -236,6 +222,15 @@ export class Header {
 	}
 }
 
+/**
+ * Keeps a response out of shared and browser caches, for one that is
+ * personal or used once.
+ *
+ * @param headers Response headers
+ */
+export const noStore = (headers: Headers) =>
+	headers.set("cache-control", "no-store");
+
 /** Checksum util */
 export class Checksum {
 	/**
@@ -367,17 +362,20 @@ export class Method {
 	static readonly head = "HEAD";
 }
 
+// Each constant is written out: a static that reads another one is a side
+// effect, which keeps the class in every bundle that imports this module.
+
 /** Byte size constants */
 export class Size {
 	static readonly kb = 1024;
-	static readonly mb = 1024 * Size.kb;
+	static readonly mb = 1024 * 1024;
 }
 
 /** Times in milliseconds */
 export class Time {
 	static readonly second = 1000;
-	static readonly minute = 60 * Time.second;
-	static readonly hour = 60 * Time.minute;
-	static readonly day = 24 * Time.hour;
-	static readonly week = 7 * Time.day;
+	static readonly minute = 60 * 1000;
+	static readonly hour = 60 * 60 * 1000;
+	static readonly day = 24 * 60 * 60 * 1000;
+	static readonly week = 7 * 24 * 60 * 60 * 1000;
 }
