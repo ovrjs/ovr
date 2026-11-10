@@ -847,6 +847,70 @@ describe("Mcp", () => {
 		]);
 	});
 
+	test("a route receives the user's language, and the language it answers in is reported", async () => {
+		const app = new App().use(
+			Route.get("/hello")
+				.describe("Greet")
+				.use((c) => {
+					const french = c.req.headers.get("accept-language")?.startsWith("fr");
+					c.res.headers.set("content-language", french ? "fr" : "en");
+					return jsx("main", { children: french ? "Bonjour" : "Hello" });
+				}),
+			Route.get("/plain")
+				.describe("Plain")
+				.use((c) => c.text(c.req.headers.get("accept-language") ?? "none")),
+			new Mcp({ name: "greeter" }),
+		);
+		const call = async (
+			name: string,
+			language?: string,
+			headers: Record<string, string> = {},
+		) => {
+			const init = request("tools/call", { name, arguments: {} }, headers);
+			const body = JSON.parse(init.body as string);
+			if (language)
+				body.params._meta["io.modelcontextprotocol/acceptLanguage"] = language;
+			const res = await app.fetch("http://localhost/mcp", {
+				...init,
+				body: JSON.stringify(body),
+			});
+
+			return { res, body: (await res.json()) as any };
+		};
+		const key = "io.modelcontextprotocol/contentLanguage";
+
+		const french = await call("get_hello", "fr-CA, fr;q=0.8", {
+			"accept-language": "fr-CA, fr;q=0.8",
+		});
+		expect(french.body.result.content[0].text).toBe("Bonjour\n");
+		expect(french.body.result._meta[key]).toBe("fr");
+		expect(french.res.headers.get("content-language")).toBe("fr");
+		expect(french.res.headers.get("vary")).toContain("accept-language");
+
+		// a proxy may remove the header, and the header alone is a preference
+		expect((await call("get_plain", "de")).body.result.content[0].text).toBe(
+			"de",
+		);
+		expect(
+			(await call("get_plain", undefined, { "accept-language": "es" })).body
+				.result.content[0].text,
+		).toBe("es");
+
+		// no preference, and a route that names no language
+		const none = await call("get_plain");
+		expect(none.body.result.content[0].text).toBe("none");
+		expect(none.body.result._meta).not.toHaveProperty(key);
+		expect(none.res.headers.has("content-language")).toBe(false);
+
+		// a header that is sent must match
+		const mismatch = await call("get_hello", "fr", { "accept-language": "en" });
+		expect(mismatch.res.status).toBe(400);
+		expect(mismatch.body.error.code).toBe(-32020);
+		expect((await call("get_hello", "fr\r\nx: y")).body.error.code).toBe(
+			-32602,
+		);
+	});
+
 	test("tools call the route and follow its redirect", async () => {
 		const { rpc, posts } = setup();
 		const { body } = await rpc("tools/call", {

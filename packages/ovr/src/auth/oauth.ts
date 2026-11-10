@@ -543,6 +543,25 @@ export function oauth(
 			const text = await body(c);
 			if (text === undefined) return fail(c, "invalid_request");
 			const params = new URLSearchParams(text);
+
+			// agents are public clients, one that authenticates expects a check
+			// that is not made
+			const scheme = c.req.headers.get("authorization")?.split(" ")[0];
+			if (
+				scheme ||
+				["client_secret", "client_assertion", "client_assertion_type"].some(
+					(name) => params.has(name),
+				)
+			) {
+				if (scheme) c.res.headers.set("www-authenticate", scheme);
+				return fail(
+					c,
+					"invalid_client",
+					"Client authentication is not supported",
+					scheme ? 401 : 400,
+				);
+			}
+
 			const grant = params.get("grant_type");
 			const client = params.get("client_id");
 			const resource = params.get("resource");
@@ -792,6 +811,24 @@ async function find(id: string, url: URL): Promise<Client | null | undefined> {
 		!Array.isArray(redirects) ||
 		!redirects.length ||
 		!redirects.every(redirectable)
+	)
+		return;
+
+	// agents are public clients here: one that declares only other ways to
+	// authenticate, or other grants, is not treated as one that asked for less
+	const methods = [
+		metadata.token_endpoint_auth_method,
+		metadata.token_endpoint_auth_methods_supported,
+	]
+		.flat()
+		.filter((method) => method !== undefined);
+	const offers = (declared: unknown, ours: string) =>
+		declared === undefined ||
+		(Array.isArray(declared) && declared.includes(ours));
+	if (
+		(methods.length && !methods.includes("none")) ||
+		!offers(metadata.grant_types, "authorization_code") ||
+		!offers(metadata.response_types, "code")
 	)
 		return;
 

@@ -142,6 +142,15 @@ export class Mcp {
 	/** App the endpoint is mounted on */
 	#app?: App.Mount;
 
+	/**
+	 * The user's language for each request: what the client prefers, passed to
+	 * the routes it calls, and what a route answered in
+	 */
+	readonly #languages = new WeakMap<
+		Request,
+		{ accept?: string; content?: string }
+	>();
+
 	/** @param options MCP server options */
 	constructor(options: Mcp.Options = {}) {
 		this.#options = { ...options, path: options.path ?? "/mcp" };
@@ -258,6 +267,8 @@ export class Mcp {
 				Mcp.#mirror(c, method, params, true);
 			} else this.#validate(c, method, params, version, header);
 
+			const language = this.#language(c, meta, legacy);
+
 			const { ttlMs, cacheScope, ...result } = await this.#dispatch(
 				c,
 				method,
@@ -276,9 +287,20 @@ export class Mcp {
 							ttlMs,
 							cacheScope,
 							...result,
-							_meta: { [`${Mcp.#meta}serverInfo`]: this.#info(c) },
+							_meta: {
+								[`${Mcp.#meta}serverInfo`]: this.#info(c),
+								...(language.content && {
+									[`${Mcp.#meta}contentLanguage`]: language.content,
+								}),
+							},
 						},
 			});
+
+			if (language.content) {
+				// the language a route answered in, which varies by the preference
+				c.res.headers.set("content-language", language.content);
+				c.res.headers.append("vary", "accept-language");
+			}
 		} catch (error) {
 			if (!(error instanceof RpcError)) throw error;
 
@@ -291,6 +313,42 @@ export class Mcp {
 				error.status,
 			);
 		}
+	}
+
+	/**
+	 * Reads the user's language preference, which the routes a request calls
+	 * receive as `Accept-Language`, as a person's browser sends it.
+	 *
+	 * @param c Request context
+	 * @param meta Request `_meta`
+	 * @param legacy An earlier protocol version, where it is only a header
+	 * @returns The request's languages, the route's is set once it answers
+	 */
+	#language(c: Context, meta: Json, legacy: boolean) {
+		const valid = (value: unknown): value is string =>
+			typeof value === "string" && /^[\w*,;=. -]{1,256}$/.test(value);
+		const header = c.req.headers.get("accept-language");
+		const stated = legacy ? undefined : meta[`${Mcp.#meta}acceptLanguage`];
+
+		if (stated !== undefined) {
+			if (!valid(stated))
+				throw new RpcError(-32602, "Invalid acceptLanguage", 400);
+			// a proxy may remove the header, but one that is sent must be the same
+			if (header !== null && header !== stated)
+				throw new RpcError(
+					-32020,
+					"Header mismatch: Accept-Language does not match the request",
+					400,
+				);
+		}
+
+		const accept = stated ?? (valid(header) ? header : undefined);
+		const language: { accept?: string; content?: string } = accept
+			? { accept }
+			: {};
+		this.#languages.set(c.req, language);
+
+		return language;
 	}
 
 	/**
@@ -908,12 +966,14 @@ export class Mcp {
 	 * @returns The response, or the form's issues instead of the redirect back to it
 	 */
 	async #run(c: Context, session: unknown, url: URL, init?: RequestInit) {
+		const language = this.#languages.get(c.req);
 		const req = new Request(url, {
 			...init,
 			headers: {
 				accept: Mime.type.md,
 				origin: c.url.origin,
 				"sec-fetch-site": "same-origin",
+				...(language?.accept && { "accept-language": language.accept }),
 			},
 			signal: c.req.signal,
 		});
@@ -923,6 +983,9 @@ export class Mcp {
 		};
 		agent.set(req, call);
 		const res = await this.#app!.fetch(req, { ip: c.ip });
+		// the last page read, after any redirects
+		const content = res.headers.get("content-language");
+		if (language && content) language.content = content;
 		if (!call.issues) return res;
 
 		await res.body?.cancel();

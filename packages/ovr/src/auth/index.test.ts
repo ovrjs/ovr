@@ -2516,6 +2516,35 @@ describe("agents", () => {
 			client_id: agent,
 			redirect_uris: [callback],
 		},
+		// declares what this server offers, among others
+		"https://agent.example/declared.json": {
+			client_id: "https://agent.example/declared.json",
+			redirect_uris: [callback],
+			token_endpoint_auth_methods_supported: ["private_key_jwt", "none"],
+			grant_types: ["authorization_code", "refresh_token"],
+			response_types: ["code"],
+		},
+		// each declares only what it does not
+		"https://agent.example/key.json": {
+			client_id: "https://agent.example/key.json",
+			redirect_uris: [callback],
+			token_endpoint_auth_method: "private_key_jwt",
+		},
+		"https://agent.example/secret.json": {
+			client_id: "https://agent.example/secret.json",
+			redirect_uris: [callback],
+			token_endpoint_auth_methods_supported: ["client_secret_basic"],
+		},
+		"https://agent.example/device.json": {
+			client_id: "https://agent.example/device.json",
+			redirect_uris: [callback],
+			grant_types: ["urn:ietf:params:oauth:grant-type:device_code"],
+		},
+		"https://agent.example/implicit.json": {
+			client_id: "https://agent.example/implicit.json",
+			redirect_uris: [callback],
+			response_types: ["token"],
+		},
 	};
 
 	function agents() {
@@ -3768,8 +3797,21 @@ describe("agents", () => {
 			"https://agent.example/missing.json",
 			"https://agent.example/unsafe.json",
 			"https://agent.example/other.json",
+			// a document that declares only another way to authenticate, or
+			// another grant or response type
+			"https://agent.example/key.json",
+			"https://agent.example/secret.json",
+			"https://agent.example/device.json",
+			"https://agent.example/implicit.json",
 		])
 			expect((await authorize({ client_id })).status).toBe(400);
+
+		// one that declares this server's among others is known
+		expect(
+			await (
+				await authorize({ client_id: "https://agent.example/declared.json" })
+			).text(),
+		).not.toBe("Unknown client.");
 
 		const web = "https://agent.example/web.json";
 		expect(
@@ -3814,6 +3856,42 @@ describe("agents", () => {
 					resource: other,
 				}),
 			).toContain("(invalid_target)");
+	});
+
+	test("a token request that authenticates the client is refused, agents are public clients", async () => {
+		const { app } = agents();
+		const request = { grant_type: "authorization_code", client_id: agent };
+
+		for (const extra of [
+			{ client_secret: "s" },
+			{
+				client_assertion: "jwt",
+				client_assertion_type:
+					"urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+			},
+		]) {
+			const res = await token(app, { ...request, ...extra });
+			expect(res.status).toBe(400);
+			expect(await res.json()).toMatchObject({ error: "invalid_client" });
+		}
+
+		const basic = await app.fetch(`${origin}/oauth/token`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/x-www-form-urlencoded",
+				authorization: `Basic ${btoa("id:secret")}`,
+			},
+			body: new URLSearchParams(request),
+			ip,
+		});
+		expect(basic.status).toBe(401);
+		expect(basic.headers.get("www-authenticate")).toBe("Basic");
+		expect(await basic.json()).toMatchObject({ error: "invalid_client" });
+
+		// without authentication it is the grant that is wrong
+		expect(await (await token(app, request)).json()).toMatchObject({
+			error: "invalid_grant",
+		});
 	});
 
 	test("client ID metadata documents", async () => {
