@@ -1,6 +1,6 @@
 import { Markup } from "../markup/index.js";
 import { Multipart } from "../multipart/index.js";
-import type { Schema } from "../schema/index.js";
+import { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
 import { Field, Form, query } from "./index.js";
 import { describe, expect, test } from "vitest";
@@ -643,6 +643,62 @@ describe("Form schema", () => {
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(0);
+	});
+
+	test("a hint is shown under its control, described to agents, and read with an issue", async () => {
+		const form = new Form({
+			url: Field.url({ label: "URL", hint: "An http or https address." }),
+			due: Field.date({ hint: "When it is due" }),
+			id: Field.hidden({ hint: "The bookmark to change" }),
+			size: Field.radio(["s", "m"], { hint: "Pick one" }),
+			plain: Field.text(),
+		});
+
+		// people: a paragraph after the control, which the control points to
+		expect(await Markup.string(form.Field({ name: "url" }))).toBe(
+			'<div><label for="url">URL</label><input id="url" required aria-describedby="url-hint" type="url" name="url"><p id="url-hint" data-hint>An http or https address.</p></div>',
+		);
+		// a group's after its options, and nothing for a hidden field or without one
+		expect(await Markup.string(form.Field({ name: "size" }))).toMatch(
+			/<\/div><p id="size-hint" data-hint>Pick one<\/p><\/fieldset>$/,
+		);
+		expect(await Markup.string(form.Field({ name: "id" }))).toBe(
+			'<input type="hidden" name="id">',
+		);
+		expect(await Markup.string(form.Field({ name: "plain" }))).not.toContain(
+			"hint",
+		);
+
+		// with an issue, the control is described by both, the hint first
+		const result = formInvalid(await form.parse(new FormData()));
+		const url = new URL("https://example.com/form");
+		url.searchParams.set("_form", result.search![0][1]);
+		const invalid = await Markup.string(
+			form.Field({ name: "url", state: url }),
+		);
+		expect(invalid).toContain('aria-describedby="url-hint url-issue"');
+		expect(invalid.indexOf('id="url-hint"')).toBeLessThan(
+			invalid.indexOf('id="url-issue"'),
+		);
+
+		// a part of its own, for a custom layout
+		const part = form.component({ name: "url" });
+		expect(await Markup.string(part.Hint({ class: "muted" }))).toBe(
+			'<p id="url-hint" data-hint class="muted">An http or https address.</p>',
+		);
+
+		// agents: the field's description, before a picker's format, and for a
+		// hidden field too
+		expect(
+			Schema.object(form.shape).toJsonSchema({
+				io: "input",
+				unrepresentable: "any",
+			}).properties,
+		).toMatchObject({
+			url: { title: "URL", description: "An http or https address" },
+			due: { description: "When it is due. Date as YYYY-MM-DD" },
+			id: { description: "The bookmark to change" },
+		});
 	});
 
 	test("field label metadata renders text without leaking to controls", async () => {

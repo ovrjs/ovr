@@ -426,6 +426,70 @@ describe("Mcp", () => {
 		expect(direct).not.toContain("tool");
 	});
 
+	test("a field's hint is in the tool's schema, and once on a page", async () => {
+		const save = Route.post("/bookmarks/:id")
+			.describe("Change a bookmark")
+			.fields({
+				url: Field.url({ label: "URL", hint: "An http or https address" }),
+			})
+			.use(() => {});
+		const app = new App().use(
+			save,
+			Route.get("/bookmarks/:id")
+				.describe("A bookmark")
+				.use((c) =>
+					jsx("main", {
+						children: save.Form({
+							params: { id: c.params.id },
+							values: { url: "https://ovrjs.com" },
+						}),
+					}),
+				),
+			new Mcp({ name: "bookmarks" }),
+		);
+		const rpc = async (method: string, params?: Record<string, unknown>) =>
+			(
+				(await (
+					await app.fetch("http://localhost/mcp", request(method, params))
+				).json()) as any
+			).result;
+
+		// what an agent reads before it calls the tool
+		expect(
+			(await rpc("tools/list")).tools.find(
+				(tool: { name: string }) => tool.name === "post_bookmarks_id",
+			).inputSchema.properties.url,
+		).toEqual({
+			type: "string",
+			format: "uri",
+			title: "URL",
+			description: "An http or https address",
+		});
+
+		// so the page read through the endpoint does not repeat it
+		expect(
+			(
+				await rpc("tools/call", {
+					name: "get_bookmarks_id",
+					arguments: { id: "1" },
+				})
+			).content[0].text,
+		).toBe(
+			"**Tool:** `post_bookmarks_id`\n\n- `id`: `1`\n- `url`: `https://ovrjs.com`\n\nSubmit: Submit\n",
+		);
+
+		// read as Markdown over HTTP there is no schema, so the hint is with its field
+		expect(
+			await (
+				await app.fetch("http://localhost/bookmarks/1", {
+					headers: { accept: "text/markdown" },
+				})
+			).text(),
+		).toContain(
+			"- URL `url` (url, required), value: `https://ovrjs.com`\n  - An http or https address",
+		);
+	});
+
 	test("a page preserves the value of a checkbox group with one option", async () => {
 		const { app, rpc } = setup();
 		const route = Route.post("/preferences")

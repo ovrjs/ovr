@@ -774,6 +774,8 @@ class Writer {
 					case "strong":
 					case "em": {
 						if (quiet) break;
+						// the tool's input schema already describes the field with it
+						if (tool && "data-hint" in child.attrs) break;
 						if (
 							child.tag !== "a" &&
 							child.children.some(

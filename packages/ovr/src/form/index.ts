@@ -737,13 +737,16 @@ class FieldSchema<
 	 * @returns Keywords added to the property's JSON Schema
 	 */
 	override [annotate](io: "input" | "output") {
-		const label = this.#options.props?.label;
+		const { label, hint } = this.#options.props ?? {};
+		// what a browser's picker sends, which a string alone does not say
 		const format = FieldSchema.#formats[this.type as string];
+		const description = [hint?.replace(/\.$/, ""), format]
+			.filter(Boolean)
+			.join(". ");
 
 		return {
 			...(label && { title: label }),
-			// what a browser's picker sends, which a string alone does not say
-			...(format && { description: format }),
+			...(description && { description }),
 			...(this.type === "date" && { format: "date" }),
 			// a browser leaves an unchecked box out and it reads as false, so
 			// input, such as an agent's, may leave it out too
@@ -844,15 +847,27 @@ class FieldSchema<
 		const issue = state?.issues?.find((i) => i.path[0] === props.name);
 		const issueId = issue && `${props.name}-issue`;
 		const hidden = this.type === "hidden";
-		const { label = props.name, ...control } = {
+		const help = props.hint ?? this.#options.props?.hint;
+		const hintId = help && !hidden ? `${props.name}-hint` : undefined;
+		const {
+			label = props.name,
+			hint,
+			...control
+		} = {
 			id: hidden ? undefined : props.name,
 			required: this.#required(),
 			autofocus: issue && state?.issues?.[0] === issue,
 			"aria-invalid": issue && "true",
-			"aria-describedby": issueId,
+			// read with the control: its hint, then what is wrong with it
+			"aria-describedby":
+				[hintId, issueId].filter(Boolean).join(" ") || undefined,
 			...this.#options.props,
 			...props,
 		};
+
+		const Hint = (data: Field.Component.Hint = {}) =>
+			hintId && // render nothing without a hint
+			jsx("p", { id: hintId, children: hint, "data-hint": true, ...data });
 
 		const Issue = (data: Field.Component.Issue = {}) =>
 			issue && // render nothing if no issue
@@ -891,6 +906,7 @@ class FieldSchema<
 				jsx("label", { for: groupId(value), children: value, ...rest });
 
 			return {
+				Hint,
 				Issue,
 				Label,
 				Control,
@@ -910,6 +926,7 @@ class FieldSchema<
 		}
 
 		return {
+			Hint,
 			Issue,
 			Root: (data: Field.Component.Root = {}) =>
 				hidden ? Fragment(data) : jsx("div", data),
@@ -967,6 +984,7 @@ class FieldSchema<
 						children: [c.Control({ value }), c.Label({ value })],
 					});
 				}),
+				c.Hint(),
 				c.Issue(),
 			],
 		});
@@ -989,6 +1007,7 @@ class FieldSchema<
 				c.Control({
 					children: this.values.map((value: string) => c.Option({ value })),
 				}),
+				c.Hint(),
 				c.Issue(),
 			],
 		});
@@ -1002,7 +1021,7 @@ class FieldSchema<
 	#Input<S extends Form.Shape>(props: Field.Component.Props<S, false>) {
 		const c = this.component(props);
 
-		return c.Root({ children: [c.Label(), c.Control(), c.Issue()] });
+		return c.Root({ children: [c.Label(), c.Control(), c.Hint(), c.Issue()] });
 	}
 
 	/**
@@ -1149,6 +1168,9 @@ export namespace Field {
 		/** `<Field.Legend />` component props */
 		export type Legend = JSX.IntrinsicElements["legend"];
 
+		/** `<Field.Hint />` component props */
+		export type Hint = JSX.IntrinsicElements["p"];
+
 		/** `<Field.Issue />` component props */
 		export type Issue = JSX.IntrinsicElements["p"];
 
@@ -1222,6 +1244,12 @@ export namespace Field {
 	 */
 	export type Component<F extends Any> = Readonly<
 		{
+			/**
+			 * @param props Hint props
+			 * @returns Hint paragraph, nothing when the field has no hint
+			 */
+			Hint: (props?: Component.Hint) => JSX.Element;
+
 			/**
 			 * @param props Issue props
 			 * @returns Issue container paragraph
@@ -1348,6 +1376,12 @@ export namespace Field {
 		interface Meta {
 			/** Field label */
 			readonly label?: string;
+
+			/**
+			 * Help for filling the field in, shown to people under the control
+			 * and to agents as the field's description.
+			 */
+			readonly hint?: string;
 		}
 
 		/** Props for `<input>` fields */
