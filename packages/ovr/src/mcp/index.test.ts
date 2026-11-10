@@ -4,7 +4,7 @@ import { jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Mcp } from "./index.js";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 const version = "2026-07-28";
 
@@ -705,53 +705,57 @@ describe("Mcp", () => {
 		});
 	});
 
-	test("a tool reads an event stream's first events, and does not wait for one that stays open", async () => {
+	test("a tool answers an event stream with its address, and stops the route", async () => {
 		let stopped = false;
-		const events = (count: number) =>
-			((c) => {
-				c.res.headers.set("content-type", "text/event-stream");
-				return async function* () {
-					try {
-						for (let i = 0; i < count; i++) {
-							yield `data: ${i}\n\n`;
-							await new Promise((resolve) => setTimeout(resolve, 1000));
-						}
-					} finally {
-						stopped = true;
-					}
-				};
-			}) satisfies Parameters<Route["use"]>[0];
 		const app = new App().use(
-			Route.get("/live").describe("Live").use(events(Infinity)),
-			Route.get("/short").describe("Short").use(events(2)),
+			Route.get("/live/:room")
+				.describe("Live events")
+				.use((c) => {
+					c.res.headers.set("content-type", "text/event-stream");
+					return async function* () {
+						try {
+							for (;;) {
+								yield "data: tick\n\n";
+								await new Promise((resolve) => setTimeout(resolve, 10));
+							}
+						} finally {
+							stopped = true;
+						}
+					};
+				}),
 			new Mcp({ name: "events" }),
 		);
-		const call = async (name: string) => {
-			const res = app.fetch(
-				"http://localhost/mcp",
-				request("tools/call", { name, arguments: {} }),
-			);
-			await vi.advanceTimersByTimeAsync(6000);
-			return ((await (await res).json()) as any).result.content[0].text;
-		};
+		const rpc = async (method: string, params: Record<string, unknown>) =>
+			(
+				await app.fetch("http://localhost/mcp", request(method, params))
+			).json() as Promise<any>;
+		const uri = "http://localhost/live/a";
+		const note =
+			"This is a live event stream. Request the address yourself to read its events as they arrive, and close the connection to stop: " +
+			uri;
 
-		vi.useFakeTimers();
-		try {
-			expect(await call("get_short")).toBe("data: 0\n\ndata: 1\n\n");
+		const { result } = await rpc("tools/call", {
+			name: "get_live_room",
+			arguments: { room: "a" },
+		});
 
-			stopped = false;
-			const live = await call("get_live");
+		expect(result.isError).toBe(false);
+		expect(result.content).toEqual([
+			{ type: "text", text: note },
+			{
+				type: "resource_link",
+				uri,
+				name: "/live/a",
+				mimeType: "text/event-stream",
+			},
+		]);
+		// the route stops, instead of writing to nobody
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		expect(stopped).toBe(true);
 
-			expect(live).toMatch(
-				/^The stream is still open\. These are the events from its first 5 seconds:\n\ndata: 0\n\ndata: 1\n\n/,
-			);
-			expect(live).toContain("data: 4");
-			expect(live).not.toContain("data: 6");
-			// the route stops with the read, instead of writing to nobody
-			expect(stopped).toBe(true);
-		} finally {
-			vi.useRealTimers();
-		}
+		expect((await rpc("resources/read", { uri })).result.contents).toEqual([
+			{ uri, mimeType: "text/plain", text: note },
+		]);
 	});
 
 	test("tools call the route and follow its redirect", async () => {

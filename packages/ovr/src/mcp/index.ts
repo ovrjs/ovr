@@ -3,7 +3,7 @@ import { type Context, agent } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec, Header, Method, Mime, Size, Time } from "../util/index.js";
+import { Codec, Header, Method, Mime, Size } from "../util/index.js";
 
 /** JSON-RPC request id */
 type Id = string | number | null;
@@ -127,11 +127,12 @@ export class Mcp {
 	/** Largest response an agent reads from a route */
 	static readonly #output = 4 * Size.mb;
 
-	/** How long an agent reads an event stream that stays open */
-	static readonly #live = 5 * Time.second;
-
-	/** Tells an agent an event stream did not end */
-	static readonly #opened = `The stream is still open. These are the events from its first ${Mcp.#live / Time.second} seconds:`;
+	/**
+	 * Tells an agent a route answers with an event stream, which may never end,
+	 * so it is the agent's to open and close
+	 */
+	static readonly #live =
+		"This is a live event stream. Request the address yourself to read its events as they arrive, and close the connection to stop:";
 
 	/** Redirects followed after a tool call */
 	static readonly #redirects = 5;
@@ -758,7 +759,17 @@ export class Mcp {
 		// the page's form has issues, such as a search with invalid parameters
 		if (typeof res === "string") throw new RpcError(-32602, res);
 
-		const { type, open: _, ...body } = await Mcp.#body(res);
+		const { type, live, ...body } = await Mcp.#body(res);
+		if (live)
+			return {
+				contents: [
+					{
+						uri: url.href,
+						mimeType: Mime.type.text,
+						text: `${Mcp.#live} ${url.href}`,
+					},
+				],
+			};
 
 		if (res.status === 404) throw new RpcError(-32002, "Resource not found");
 		if (!res.ok)
@@ -797,39 +808,6 @@ export class Mcp {
 		return Boolean(route?.description);
 	}
 
-	/**
-	 * An event stream may stay open for as long as its reader does, so an
-	 * agent gets what arrives in this time.
-	 *
-	 * @param body Event stream
-	 * @returns The events read, and if the stream was still open
-	 */
-	static async #events(body: ReadableStream<Uint8Array>) {
-		const reader = body.getReader();
-		const decoder = new TextDecoder();
-		let timer: Parameters<typeof clearTimeout>[0];
-		const late = new Promise<undefined>((resolve) => {
-			timer = setTimeout(resolve, Mcp.#live);
-		});
-		let text = "";
-
-		try {
-			for (;;) {
-				const result = await Promise.race([reader.read(), late]);
-				if (!result) return { text, open: true };
-				if (result.done) return { text };
-
-				text += decoder.decode(result.value, { stream: true });
-				if (text.length > Mcp.#output)
-					throw new RpcError(-32603, "Response too large");
-			}
-		} finally {
-			clearTimeout(timer);
-			// stops the route, which would write to a stream nobody reads
-			await reader.cancel();
-		}
-	}
-
 	/** Media types read as text, any other is a file */
 	static readonly #texts =
 		/^text\/|[/+](?:json|xml)$|^application\/(?:javascript|x-www-form-urlencoded)$/i;
@@ -845,12 +823,15 @@ export class Mcp {
 		type?: string | null;
 		text?: string;
 		blob?: string;
-		open?: boolean;
+		live?: boolean;
 	}> {
 		const [type] = Header.shift(res.headers.get(Header.name.type));
 
-		if (type?.toLowerCase() === "text/event-stream" && res.body)
-			return { type, ...(await Mcp.#events(res.body)) };
+		if (res.ok && type?.toLowerCase() === "text/event-stream") {
+			// not read, it may never end: the route stops here
+			await res.body?.cancel();
+			return { type, live: true };
+		}
 
 		const bytes = await Codec.read(res.body, Mcp.#output);
 		if (!bytes) throw new RpcError(-32603, "Response too large");
@@ -941,7 +922,16 @@ export class Mcp {
 				);
 			}
 
-			const { type, text, blob, open } = await Mcp.#body(res);
+			const { type, text, blob, live } = await Mcp.#body(res);
+
+			if (live)
+				return Mcp.#result(`${Mcp.#live} ${url.href}`, false, {
+					type: "resource_link",
+					uri: url.href,
+					name: url.pathname,
+					mimeType: type,
+				});
+
 			const [kind] = type?.split("/") ?? [];
 
 			return Mcp.#result(
@@ -949,7 +939,6 @@ export class Mcp {
 					redirected &&
 						`Redirected to ${redirected.pathname}${redirected.search}`,
 					!res.ok && `${res.status} ${res.statusText}`.trim(),
-					open && Mcp.#opened,
 					text,
 				]
 					.filter(Boolean)

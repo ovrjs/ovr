@@ -6,4 +6,4 @@ An MCP tool returns a file a route answers with: an image or audio as its own co
 
 A date, time, month, week, or color field describes the format its picker sends, such as `YYYY-MM-DD`, in its JSON Schema, so an agent knows what to send.
 
-A tool call to a route that answers with an event stream returns the events from its first 5 seconds, and says when the stream was still open. The call waited for the stream to end, which one that stays open never does.
+A tool call to a route that answers with an event stream returns the stream's address as a resource link, for the agent to open and close itself. The call waited for the stream to end, which one that stays open never does.
