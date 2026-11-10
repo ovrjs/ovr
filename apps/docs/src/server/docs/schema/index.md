@@ -104,7 +104,7 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 > Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, a `label` prop can be passed into the field during creation for a custom label: `Field.text({ label: "Full Name" })`.
 
-A `hint` says how to fill a field in, for people and for [agents](/agents#tools) alike: `Field.url({ label: "URL", hint: "An http or https address" })`. It renders in a paragraph under the control, `<p id="url-hint" data-hint>`, which the control names in `aria-describedby`, and it is the field's `description` in its [JSON Schema](#json-schema), so an agent reads it before it calls the tool. Use the `Hint` part from `signup.component` to place it yourself.
+A `description` says how to fill a field in, for people and for [agents](/agents#tools) alike: `Field.url({ label: "URL", description: "An http or https address" })`. It renders in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`, and it is the field's `description` in its [JSON Schema](#json-schema), so an agent reads it before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
 
 - `signup.Fields` renders all the fields _without_ the outer `<form>` shell
 - `signup.Field` renders one field by `name` (each key in the shape)

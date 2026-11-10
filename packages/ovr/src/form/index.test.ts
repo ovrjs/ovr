@@ -645,46 +645,49 @@ describe("Form schema", () => {
 		expect(autofocus).toHaveLength(0);
 	});
 
-	test("a hint is shown under its control, described to agents, and read with an issue", async () => {
+	test("a description is shown under its control, described to agents, and read with an issue", async () => {
 		const form = new Form({
-			url: Field.url({ label: "URL", hint: "An http or https address." }),
-			due: Field.date({ hint: "When it is due" }),
-			id: Field.hidden({ hint: "The bookmark to change" }),
-			size: Field.radio(["s", "m"], { hint: "Pick one" }),
+			url: Field.url({
+				label: "URL",
+				description: "An http or https address.",
+			}),
+			due: Field.date({ description: "When it is due" }),
+			id: Field.hidden({ description: "The bookmark to change" }),
+			size: Field.radio(["s", "m"], { description: "Pick one" }),
 			plain: Field.text(),
 		});
 
 		// people: a paragraph after the control, which the control points to
 		expect(await Markup.string(form.Field({ name: "url" }))).toBe(
-			'<div><label for="url">URL</label><input id="url" required aria-describedby="url-hint" type="url" name="url"><p id="url-hint" data-hint>An http or https address.</p></div>',
+			'<div><label for="url">URL</label><input id="url" required aria-describedby="url-description" type="url" name="url"><p id="url-description" data-description>An http or https address.</p></div>',
 		);
 		// a group's after its options, and nothing for a hidden field or without one
 		expect(await Markup.string(form.Field({ name: "size" }))).toMatch(
-			/<\/div><p id="size-hint" data-hint>Pick one<\/p><\/fieldset>$/,
+			/<\/div><p id="size-description" data-description>Pick one<\/p><\/fieldset>$/,
 		);
 		expect(await Markup.string(form.Field({ name: "id" }))).toBe(
 			'<input type="hidden" name="id">',
 		);
 		expect(await Markup.string(form.Field({ name: "plain" }))).not.toContain(
-			"hint",
+			"description",
 		);
 
-		// with an issue, the control is described by both, the hint first
+		// with an issue, the control is described by both, the description first
 		const result = formInvalid(await form.parse(new FormData()));
 		const url = new URL("https://example.com/form");
 		url.searchParams.set("_form", result.search![0][1]);
 		const invalid = await Markup.string(
 			form.Field({ name: "url", state: url }),
 		);
-		expect(invalid).toContain('aria-describedby="url-hint url-issue"');
-		expect(invalid.indexOf('id="url-hint"')).toBeLessThan(
+		expect(invalid).toContain('aria-describedby="url-description url-issue"');
+		expect(invalid.indexOf('id="url-description"')).toBeLessThan(
 			invalid.indexOf('id="url-issue"'),
 		);
 
 		// a part of its own, for a custom layout
 		const part = form.component({ name: "url" });
-		expect(await Markup.string(part.Hint({ class: "muted" }))).toBe(
-			'<p id="url-hint" data-hint class="muted">An http or https address.</p>',
+		expect(await Markup.string(part.Description({ class: "muted" }))).toBe(
+			'<p id="url-description" data-description class="muted">An http or https address.</p>',
 		);
 
 		// agents: the field's description, before a picker's format, and for a

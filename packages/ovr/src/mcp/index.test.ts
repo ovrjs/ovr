@@ -426,11 +426,14 @@ describe("Mcp", () => {
 		expect(direct).not.toContain("tool");
 	});
 
-	test("a field's hint is in the tool's schema, and once on a page", async () => {
+	test("a field's description is in the tool's schema, and once on a page", async () => {
 		const save = Route.post("/bookmarks/:id")
 			.describe("Change a bookmark")
 			.fields({
-				url: Field.url({ label: "URL", hint: "An http or https address" }),
+				url: Field.url({
+					label: "URL",
+					description: "An http or https address",
+				}),
 			})
 			.use(() => {});
 		const app = new App().use(
@@ -478,7 +481,7 @@ describe("Mcp", () => {
 			"**Tool:** `post_bookmarks_id`\n\n- `id`: `1`\n- `url`: `https://ovrjs.com`\n\nSubmit: Submit\n",
 		);
 
-		// read as Markdown over HTTP there is no schema, so the hint is with its field
+		// read as Markdown over HTTP there is no schema, so the description is with its field
 		expect(
 			await (
 				await app.fetch("http://localhost/bookmarks/1", {
