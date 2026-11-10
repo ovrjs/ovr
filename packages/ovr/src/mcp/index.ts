@@ -1,9 +1,9 @@
-import { type App, agents, mount } from "../app/index.js";
+import { type App, agents, direct, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec, Header, Method, Mime, Size, nested } from "../util/index.js";
+import { Codec, Header, Method, Mime, Size } from "../util/index.js";
 
 /** JSON-RPC request id */
 type Id = string | number | null;
@@ -178,6 +178,10 @@ export class Mcp {
 				}),
 			),
 		];
+		// the endpoint is the way in for agents, not a page of the app: its
+		// request is not the app's to handle. The request it makes to a route
+		// for the agent is, once, as the agent's user
+		for (const route of routes) direct.add(route);
 
 		if (auth) {
 			// protected resource metadata, RFC 9728
@@ -220,8 +224,7 @@ export class Mcp {
 
 			const message = await this.#read(c);
 			if (!("id" in message)) {
-				// notification, answered with an empty body, which is a response,
-				// so middleware treating no body as not found leaves it alone
+				// notification, answered with no content
 				c.res.status = 202;
 				c.res.body = null;
 				return;
@@ -921,7 +924,13 @@ export class Mcp {
 				-32602,
 				`${res.status} ${body.text || res.statusText}`.trim(),
 				200,
-				{ uri: String(params.uri), status: res.status },
+				{
+					uri: String(params.uri),
+					status: res.status,
+					...(res.headers.has("retry-after") && {
+						retryAfter: res.headers.get("retry-after"),
+					}),
+				},
 			);
 
 		return {
@@ -1046,7 +1055,6 @@ export class Mcp {
 			tool: this.#tool(c),
 		};
 		agent.set(req, call);
-		nested.set(req, c.req);
 		const res = await this.#app!.fetch(req, { ip: c.ip });
 		// the last page read, after any redirects
 		const content = res.headers.get("content-language");
@@ -1068,6 +1076,8 @@ export class Mcp {
 	 */
 	async #fetch(c: Context, session: unknown, url: URL, init?: RequestInit) {
 		let redirected: URL | undefined;
+		/** The call writes, so a redirect from it means it was done */
+		const wrote = init !== undefined;
 
 		for (let i = 0; ; i++) {
 			const res = await this.#run(c, session, url, init);
@@ -1098,6 +1108,16 @@ export class Mcp {
 				);
 			}
 
+			// the route answered a write by redirecting, so the write is done. A
+			// page it sends to that then fails, such as on a rate limit, must not
+			// read as the write failing, or an agent would make it again
+			if (redirected && wrote && !res.ok) {
+				await res.body?.cancel();
+				return Mcp.#result(
+					`Redirected to ${redirected.pathname}${redirected.search}, which could not be read: ${Mcp.#status(res)}`,
+				);
+			}
+
 			if (res.status >= 500) throw await Mcp.#failed(res);
 
 			const { type, text, blob, live } = await Mcp.#body(res);
@@ -1123,7 +1143,7 @@ export class Mcp {
 				[
 					redirected &&
 						`Redirected to ${redirected.pathname}${redirected.search}`,
-					!res.ok && `${res.status} ${res.statusText}`.trim(),
+					!res.ok && Mcp.#status(res),
 					text,
 				]
 					.filter(Boolean)
@@ -1140,6 +1160,22 @@ export class Mcp {
 							},
 			);
 		}
+	}
+
+	/**
+	 * @param res Response that is not a success
+	 * @returns Its status, and when to try again if it says, such as a rate limit's
+	 */
+	static #status(res: Response) {
+		const retry = res.headers.get("retry-after");
+		return [
+			`${res.status} ${res.statusText}`.trim(),
+			// seconds, or a date
+			retry &&
+				`Retry after ${/^\d+$/.test(retry) ? `${retry} seconds` : retry}`,
+		]
+			.filter(Boolean)
+			.join("\n\n");
 	}
 
 	/**

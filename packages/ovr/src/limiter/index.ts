@@ -3,7 +3,7 @@ import { type Database, owned } from "../database/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
-import { Codec, Time, nested } from "../util/index.js";
+import { Codec, Time } from "../util/index.js";
 
 /**
  * Internal to ovr, which counts each client this way.
@@ -106,9 +106,6 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 		]);
 	}
 
-	/** Buckets each request has been counted in */
-	static readonly #counted = new WeakMap<Request, Set<string>>();
-
 	readonly #name;
 	readonly #options;
 	#pruned = 0;
@@ -136,29 +133,19 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 		// Different policies cannot interpret the same stored token balance
 		// differently. Hashed, so a long name, scope, or identity always fits
 		// in the primary key's index.
-		const key = Codec.Base64Url.encode(
-			new Uint8Array(
-				await crypto.subtle.digest(
-					"SHA-256",
-					Codec.encode(
-						JSON.stringify([this.#name, limit, interval, scope, identity]),
+		const retry = await this.#consume(
+			Codec.Base64Url.encode(
+				new Uint8Array(
+					await crypto.subtle.digest(
+						"SHA-256",
+						Codec.encode(
+							JSON.stringify([this.#name, limit, interval, scope, identity]),
+						),
 					),
 				),
 			),
 		);
-
-		// an agent's tool call is one request, and the endpoint's request to the
-		// route is part of it: a limiter over both, such as a global one, counted
-		// it when the agent's request arrived
-		const outer = nested.get(c.req);
-		if (outer && Limiter.#counted.get(outer)?.has(key)) return true;
-
-		const retry = await this.#consume(key);
-		if (retry === true) {
-			if (!outer)
-				Limiter.#counted.getOrInsertComputed(c.req, () => new Set()).add(key);
-			return true;
-		}
+		if (retry === true) return true;
 		const now = Date.now();
 		return new Date(
 			Math.min(now + 3600000, Math.max(now + 1000, Math.ceil(retry))),

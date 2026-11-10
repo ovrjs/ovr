@@ -25,7 +25,7 @@ There are two levels of middleware in an ovr application:
 1. **Global** - any middleware passed directly to `App.use`
 2. **Route** - middleware added to a specific `Route`
 
-For each request, ovr creates an array containing the **global** middleware, then the **matched route**'s middleware (if there is a match).
+For each request, ovr creates an array containing the **global** middleware, then the **matched route**'s middleware (if there is a match). An [MCP endpoint](/agents#mcp) is the exception: it is the way in for agents and not a page of your app, so it runs without global middleware, and the request it makes to a route for an agent passes through them.
 
 The first middleware in the array will be called, then you can dispatch the `next` middleware within the first by calling `await next()` or returning `next()`.
 
@@ -179,6 +179,7 @@ ovr does not catch what your code throws, and it never logs. Without the first m
 
 - A request body the client got wrong is not an error of your app's: the route's [413, 415, or 400](/schema#protections) is answered before this middleware, which sees only the response.
 - An error thrown while a page streams, such as in an async component, comes after the response has started, so it ends the stream instead of reaching the middleware.
+- An error in the [MCP endpoint](/agents#mcp) itself, such as the database failing while it checks a token, is outside global middleware, so it leaves `app.fetch` for your server to report.
 - Both pages are written as Markdown for a request that asks for it, and through [MCP](/agents#tools) an agent receives the protocol's internal error in place of your error page.
 
 ## Rate limiting
@@ -209,7 +210,7 @@ app.use(
 
 Without `key`, a limiter counts each client IP, which your server passes with `app.fetch(request, { ip })`, see [client IP examples](/app#client-ip).
 
-A limiter counts agents too. One on a route counts each [tool call](/agents#tools) to it, and one passed to `app.use` counts each request to the MCP endpoint. A tool call is counted once by each limiter, although the endpoint makes its own request to the route.
+A limiter counts agents too, as it counts people: by the requests that reach your routes. The [MCP endpoint](/agents#mcp) makes a request to the route for each [tool call](/agents#tools), and follows a redirect as a browser does, so a form that redirects is two requests for either. A limiter passed to `app.use` does not see the endpoint's own requests, such as listing tools; limit those at your server or proxy if you need to.
 
 The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. A `key` that returns nothing throws, so put a limiter keyed by user after a sign-in check, as above. Cookies and forwarded headers are never used as fallback identities. Exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`. A missing or invalid identity, or a storage failure, throws: the request is not admitted, and your app's error handling sees the error like one from your own handler.
 

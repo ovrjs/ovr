@@ -286,7 +286,7 @@ test("separate workers share buckets through the database", async () => {
 	expect(await buckets()).toHaveLength(1);
 });
 
-test("an agent's tool call is counted once, by a global limiter and by the route's own", async () => {
+test("an agent's tool call is one request to the app, counted once by each limiter", async () => {
 	const everywhere = new Limiter("everywhere", { database: db, limit: 2 });
 	const expensive = new Limiter("expensive", { database: db, limit: 1 });
 	const app = new App().use(
@@ -330,15 +330,22 @@ test("an agent's tool call is counted once, by a global limiter and by the route
 			: res.status;
 	};
 
-	// the global limit of 2 allows two calls, where counting the endpoint's
-	// own request to the route would allow one
+	// the global limit of 2 allows two calls: the endpoint is outside the
+	// app's middleware, and its request to the route is the one counted. The
+	// third is refused as the route would refuse a person, which the agent reads
 	expect(await call("get_cheap", "192.0.2.10")).toBe("cheap");
 	expect(await call("get_cheap", "192.0.2.10")).toBe("cheap");
-	expect(await call("get_cheap", "192.0.2.10")).toBe(429);
+	expect(await call("get_cheap", "192.0.2.10")).toContain("429");
 
-	// a route's own limiter still counts the call, once
+	// a route's own limiter still counts the call, once, and says when to retry
 	expect(await call("get_expensive", "192.0.2.20")).toBe("expensive");
-	expect(await call("get_expensive", "192.0.2.20")).toContain("429");
+	expect(await call("get_expensive", "192.0.2.20")).toMatch(
+		/^429\n\nRetry after \d+ seconds\n\nToo many requests/,
+	);
+
+	// neither the endpoint's own requests nor its refusals are the app's to count
+	const list = await app.fetch("https://example.com/mcp", { method: "GET" });
+	expect(list.status).toBe(405);
 
 	// and a person's request is counted as before
 	const page = () =>
@@ -346,4 +353,66 @@ test("an agent's tool call is counted once, by a global limiter and by the route
 	expect((await page()).status).toBe(200);
 	expect((await page()).status).toBe(200);
 	expect((await page()).status).toBe(429);
+});
+
+test("a write that redirects is done, though the page it sends to is refused", async () => {
+	const todos: string[] = [];
+	// as for a person's browser, the form's request and the page's are two
+	const everywhere = new Limiter("redirects", { database: db, limit: 3 });
+	const app = new App().use(
+		everywhere.middleware,
+		Route.get("/list")
+			.describe("List")
+			.use((c) => c.text(todos.join())),
+		Route.post("/add")
+			.describe("Add")
+			.use((c) => {
+				todos.push(`t${todos.length}`);
+				c.redirect("/list", 303);
+			}),
+		new Mcp({ name: "todos" }),
+	);
+	const version = "2026-07-28";
+	const add = async () =>
+		(
+			(await (
+				await app.fetch("https://example.com/mcp", {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"mcp-protocol-version": version,
+						"mcp-method": "tools/call",
+						"mcp-name": "post_add",
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id: 1,
+						method: "tools/call",
+						params: {
+							name: "post_add",
+							arguments: {},
+							_meta: {
+								"io.modelcontextprotocol/protocolVersion": version,
+								"io.modelcontextprotocol/clientCapabilities": {},
+							},
+						},
+					}),
+					ip: "192.0.2.40",
+				})
+			).json()) as any
+		).result;
+
+	expect(await add()).toMatchObject({
+		isError: false,
+		content: [{ type: "text", text: "Redirected to /list\n\nt0" }],
+	});
+
+	// the third request is the second write, the fourth is its page: the
+	// write happened, so the call is not an error an agent would retry
+	const second = await add();
+	expect(todos).toEqual(["t0", "t1"]);
+	expect(second.isError).toBe(false);
+	expect(second.content[0].text).toMatch(
+		/^Redirected to \/list, which could not be read: 429\n\nRetry after \d+ seconds$/,
+	);
 });

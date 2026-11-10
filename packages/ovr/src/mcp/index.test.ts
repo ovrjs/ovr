@@ -1530,19 +1530,20 @@ describe("Mcp", () => {
 			expect(body.result.protocolVersion).toBe("2025-11-25");
 		});
 
-		test("the initialized notification is a response middleware sees as one", async () => {
+		test("the initialized notification is the endpoint's to answer, not the app's middleware", async () => {
 			const { app } = setup();
 			// like an app's not-found page, which renders when nothing responded
-			let body: unknown;
+			const seen: string[] = [];
 			app.use(async (c, next) => {
+				seen.push(c.url.pathname);
 				await next();
-				body = c.res.body;
+				if (c.res.body === undefined) c.text("Not found", 404);
 			});
 			const { status } = await legacy(app, {
 				method: "notifications/initialized",
 			});
 			expect(status).toBe(202);
-			expect(body).toBeNull();
+			expect(seen).toEqual([]);
 		});
 
 		test("the initialized notification is accepted", async () => {

@@ -20,6 +20,12 @@ export const agents = Symbol("agents");
 /** Routes that accept cross-origin requests without cookies, such as OAuth endpoints. */
 export const crossOrigin = new WeakSet<Route>();
 
+/**
+ * Routes that run without the app's global middleware, such as an MCP
+ * endpoint, which makes its own request to the app for each call.
+ */
+export const direct = new WeakSet<Route>();
+
 export namespace App {
 	/** What a service can use from the app it is mounted on. */
 	export interface Mount {
@@ -212,7 +218,9 @@ export class App {
 				// a route's body errors are answered before global middleware
 				// sees them, so middleware that catches errors gets only the app's
 				c.route
-					? [...this.#global, App.#body, ...c.route.middleware]
+					? direct.has(c.route)
+						? c.route.middleware
+						: [...this.#global, App.#body, ...c.route.middleware]
 					: this.#global,
 			);
 		} catch (error) {
@@ -297,7 +305,7 @@ export class App {
 			origin === c.url.origin ||
 			(c.route && crossOrigin.has(c.route)) ||
 			// browsers send at least one, so without cookies this is not a browser,
-			// for example an MCP client
+			// for example an agent submitting a form
 			(site === null &&
 				origin === null &&
 				!c.req.headers.has(Header.name.cookie))

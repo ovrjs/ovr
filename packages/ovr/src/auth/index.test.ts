@@ -3391,7 +3391,7 @@ describe("agents", () => {
 		expect(await res.text()).toContain("(invalid_scope)");
 	});
 
-	test("on the MCP endpoint an agent's token is its session, for middleware before the endpoint", async () => {
+	test("global middleware sees an agent's call once, as the route's request by its user", async () => {
 		const { app, client_id, redirect } = await connect();
 		const { access_token } = await (
 			await token(app, {
@@ -3422,15 +3422,41 @@ describe("agents", () => {
 				: res.status;
 		};
 
-		// the user on the endpoint's request, and on its request to the route
+		// the endpoint is outside the app's middleware, which sees the request
+		// it makes to the route, with the user
 		expect(await said("one")).toBe(`${user} wrote one`);
-		expect(seen).toEqual([
-			["/mcp", user],
-			["/notes", user],
-		]);
-		// each tool call counted once for the user
+		expect(seen).toEqual([["/notes", user]]);
+		// each tool call counted once for the user, and refused as the route
+		// would refuse a person
 		expect(await said("two")).toBe(`${user} wrote two`);
-		expect(await said("three")).toBe(429);
+		expect(await said("three")).toContain("429");
+
+		// the endpoint answers an agent without a token itself, with how to
+		// sign in, where a check for a session in global middleware would
+		// redirect it
+		const walled = (await connect()).app;
+		walled.use(async (c, next) =>
+			(await c.session()) ? next() : c.redirect("/login", 303),
+		);
+		const unsigned = await call(walled, undefined, "x");
+		expect(unsigned.status).toBe(401);
+		expect(unsigned.headers.get("www-authenticate")).toContain(
+			"resource_metadata=",
+		);
+		// and with one, the agent's call passes the check as its user. The
+		// endpoints it signs in with are the app's routes, still behind the check
+		expect(
+			(
+				await walled.fetch(
+					`${origin}/.well-known/oauth-protected-resource/mcp`,
+					{ ip },
+				)
+			).status,
+		).toBe(303);
+		expect(
+			(await (await call(walled, access_token, "walled")).json()).result
+				.content[0].text,
+		).toBe(`${user} wrote walled`);
 
 		// a token is a session only on the endpoint it was issued for, so
 		// elsewhere nobody is signed in, and the limiter has no user to count
