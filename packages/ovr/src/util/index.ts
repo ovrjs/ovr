@@ -373,6 +373,12 @@ export class Size {
 	static readonly mb = 1024 * Size.kb;
 }
 
+/**
+ * Requests an MCP endpoint makes to the app for an agent, by the agent's own
+ * request, so what was counted for one is not counted again for the other.
+ */
+export const nested = new WeakMap<Request, Request>();
+
 /** Times in milliseconds */
 export class Time {
 	static readonly second = 1000;

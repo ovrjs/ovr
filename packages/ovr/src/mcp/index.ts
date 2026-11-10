@@ -3,7 +3,7 @@ import { type Context, agent } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec, Header, Method, Mime, Size } from "../util/index.js";
+import { Codec, Header, Method, Mime, Size, nested } from "../util/index.js";
 
 /** JSON-RPC request id */
 type Id = string | number | null;
@@ -1046,6 +1046,7 @@ export class Mcp {
 			tool: this.#tool(c),
 		};
 		agent.set(req, call);
+		nested.set(req, c.req);
 		const res = await this.#app!.fetch(req, { ip: c.ip });
 		// the last page read, after any redirects
 		const content = res.headers.get("content-language");

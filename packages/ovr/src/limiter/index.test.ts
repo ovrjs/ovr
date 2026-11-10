@@ -1,5 +1,6 @@
 import { App } from "../app/index.js";
 import { Database, owned } from "../database/index.js";
+import { Mcp } from "../mcp/index.js";
 import { Route } from "../route/index.js";
 import { Codec } from "../util/index.js";
 import { LimitIssue, Limiter } from "./index.js";
@@ -283,4 +284,66 @@ test("separate workers share buckets through the database", async () => {
 	expect((await first.fetch()).status).toBe(200);
 	expect((await second.fetch()).status).toBe(429);
 	expect(await buckets()).toHaveLength(1);
+});
+
+test("an agent's tool call is counted once, by a global limiter and by the route's own", async () => {
+	const everywhere = new Limiter("everywhere", { database: db, limit: 2 });
+	const expensive = new Limiter("expensive", { database: db, limit: 1 });
+	const app = new App().use(
+		everywhere.middleware,
+		Route.get("/cheap")
+			.describe("Cheap")
+			.use((c) => c.text("cheap")),
+		Route.get("/expensive")
+			.describe("Expensive")
+			.use(expensive.middleware, (c) => c.text("expensive")),
+		new Mcp({ name: "limits" }),
+	);
+	const version = "2026-07-28";
+	const call = async (name: string, ip: string) => {
+		const res = await app.fetch("https://example.com/mcp", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"mcp-protocol-version": version,
+				"mcp-method": "tools/call",
+				"mcp-name": name,
+			},
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "tools/call",
+				params: {
+					name,
+					arguments: {},
+					_meta: {
+						"io.modelcontextprotocol/protocolVersion": version,
+						"io.modelcontextprotocol/clientCapabilities": {},
+					},
+				},
+			}),
+			ip,
+		});
+
+		return res.status === 200
+			? ((await res.json()) as any).result.content[0].text
+			: res.status;
+	};
+
+	// the global limit of 2 allows two calls, where counting the endpoint's
+	// own request to the route would allow one
+	expect(await call("get_cheap", "192.0.2.10")).toBe("cheap");
+	expect(await call("get_cheap", "192.0.2.10")).toBe("cheap");
+	expect(await call("get_cheap", "192.0.2.10")).toBe(429);
+
+	// a route's own limiter still counts the call, once
+	expect(await call("get_expensive", "192.0.2.20")).toBe("expensive");
+	expect(await call("get_expensive", "192.0.2.20")).toContain("429");
+
+	// and a person's request is counted as before
+	const page = () =>
+		app.fetch("https://example.com/cheap", { ip: "192.0.2.30" });
+	expect((await page()).status).toBe(200);
+	expect((await page()).status).toBe(200);
+	expect((await page()).status).toBe(429);
 });
