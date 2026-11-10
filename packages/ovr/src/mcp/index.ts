@@ -545,6 +545,15 @@ export class Mcp {
 				Object.assign(properties, schema.properties);
 				for (const field of (schema.required ?? []) as string[])
 					required.add(field);
+				// a tool's arguments are JSON, so a file is sent as its contents
+				for (const name in form.shape) {
+					const field = form.shape[name]!;
+					if (field.type === "file")
+						properties[name] =
+							field.parts > 1
+								? { ...(properties[name] as Json), items: Mcp.#file }
+								: { ...(properties[name] as Json), ...Mcp.#file };
+				}
 			}
 
 			for (const [param, key] of params) {
@@ -572,6 +581,42 @@ export class Mcp {
 		}
 
 		return tools;
+	}
+
+	/** A file as a tool argument, for a file field */
+	static readonly #file = {
+		type: "object",
+		description:
+			"A file. Send its contents as `text`, or as `base64` when it is not text.",
+		properties: {
+			name: { type: "string", description: "File name, such as notes.txt" },
+			type: { type: "string", description: "Media type, such as text/plain" },
+			text: { type: "string" },
+			base64: { type: "string", contentEncoding: "base64" },
+		},
+		required: ["name"],
+	};
+
+	/**
+	 * @param value Tool argument for a file field
+	 * @returns The file, `undefined` when the argument does not describe one
+	 */
+	static #upload(value: unknown) {
+		if (typeof value !== "object" || !value) return;
+
+		const { name, type, text, base64 } = value as Json;
+		if (typeof name !== "string" || !name) return;
+
+		const options = typeof type === "string" ? { type } : undefined;
+
+		if (typeof text === "string") return new File([text], name, options);
+		if (typeof base64 !== "string") return;
+
+		try {
+			return new File([Codec.Base64.decode(base64)], name, options);
+		} catch {
+			// not base64
+		}
 	}
 
 	/**
@@ -646,8 +691,28 @@ export class Mcp {
 			// a parameter is in the path, and also sent when a field has its name
 			if (tool.params.has(name) && !(shape && Object.hasOwn(shape, name)))
 				continue;
+			const upload =
+				!read && shape && Object.hasOwn(shape, name)
+					? shape[name]!.type === "file"
+					: false;
 			for (const item of Array.isArray(value) ? value : [value]) {
 				if (item == null || item === false) continue;
+				if (upload) {
+					const file = Mcp.#upload(item);
+					if (!file)
+						return Mcp.#result(
+							Mcp.#issues([
+								{
+									path: name,
+									message:
+										"Expected a file: its name, and its contents as text or base64",
+								},
+							]),
+							true,
+						);
+					body.append(name, file);
+					continue;
+				}
 				const text =
 					item === true
 						? "on"

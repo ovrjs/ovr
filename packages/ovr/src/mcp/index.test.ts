@@ -567,6 +567,69 @@ describe("Mcp", () => {
 		expect(bought).toBe(3);
 	});
 
+	test("a tool sends a file field as its name and its contents", async () => {
+		const saved: Record<string, string | string[]> = {};
+		const upload = Route.post("/upload")
+			.describe("Upload a photo")
+			.fields({
+				photo: Field.file({ label: "Photo" }),
+				extras: Field.files().optional(),
+			})
+			.use(async (c) => {
+				const result = await c.data();
+				if (result.issues) return c.json(result.issues, 422);
+				const { photo, extras = [] } = result.data;
+				saved.photo = `${photo.name} ${photo.type} ${await photo.text()}`;
+				saved.extras = await Promise.all(extras.map((file) => file.text()));
+				c.text("ok");
+			});
+		const app = new App().use(upload, new Mcp({ name: "photos" }));
+		const rpc = async (method: string, params?: Record<string, unknown>) =>
+			(
+				await app.fetch("http://localhost/mcp", request(method, params))
+			).json() as Promise<any>;
+		const call = (args: Record<string, unknown>) =>
+			rpc("tools/call", { name: "post_upload", arguments: args });
+
+		const { inputSchema } = (await rpc("tools/list")).result.tools[0];
+
+		expect(inputSchema.required).toEqual(["photo"]);
+		expect(inputSchema.properties.photo).toMatchObject({
+			title: "Photo",
+			type: "object",
+			properties: { name: { type: "string" }, text: { type: "string" } },
+			required: ["name"],
+		});
+		expect(inputSchema.properties.extras).toMatchObject({
+			type: "array",
+			items: { type: "object", required: ["name"] },
+		});
+
+		const sent = await call({
+			photo: { name: "a.txt", type: "text/plain", text: "hello" },
+			extras: [
+				{ name: "b.bin", base64: btoa("one") },
+				{ name: "c.txt", text: "two" },
+			],
+		});
+
+		expect(sent.result.isError).toBe(false);
+		expect(saved.photo).toMatch(/^a\.txt text\/plain(;charset=utf-8)? hello$/);
+		expect(saved.extras).toEqual(["one", "two"]);
+
+		// not a file, or not base64
+		for (const photo of [
+			"text",
+			{ name: "a.txt" },
+			{ name: "a", base64: "%" },
+		]) {
+			const { result } = await call({ photo });
+
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain("Expected a file");
+		}
+	});
+
 	test("tools call the route and follow its redirect", async () => {
 		const { rpc, posts } = setup();
 		const { body } = await rpc("tools/call", {
