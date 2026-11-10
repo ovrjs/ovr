@@ -94,7 +94,7 @@ describe("Route schema helpers", () => {
 	});
 
 	test("Route.get parses query params with Form.from instance", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
 		});
@@ -700,7 +700,7 @@ describe("editing records", () => {
 	});
 
 	test("Field and component accept initial values too", async () => {
-		const form = Form.from(fields);
+		const form = new Form(fields);
 		const html = await Markup.string([
 			form.Field({ name: "title", values: { title: "One" } }),
 			form.component({ name: "body", values: { body: "Two" } }).Control(),
@@ -725,7 +725,7 @@ describe("editing records", () => {
 	test.each(["parse", "database"])(
 		"cleared persisted fields override initial values after a %s error",
 		async (failure) => {
-			const form = Form.from({
+			const form = new Form({
 				title: Field.text().optional().persist(),
 				tags: Field.multiselect(["a", "b"]).optional().persist(),
 				email: Field.email().persist(),

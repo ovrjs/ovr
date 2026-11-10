@@ -204,7 +204,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		<E extends Form.Shape>(extra: Form<E>): Form<ShapeUtil.Extend<Shape, E>>;
 		(extra: Form<any>): Form<ShapeUtil.Extend<Shape, Form.Shape>>;
 	} = (extra: Form.Shape | Form<any>) =>
-		Form.from(
+		new Form(
 			ShapeUtil.extend(this.shape, extra instanceof Form ? extra.shape : extra),
 		);
 
@@ -216,7 +216,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * @returns New form schema with only selected fields
 	 */
 	pick = <N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) =>
-		Form.from(ShapeUtil.pick(this.shape, names));
+		new Form(ShapeUtil.pick(this.shape, names));
 
 	/**
 	 * Remove selected field names.
@@ -226,7 +226,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * @returns New form schema without selected fields
 	 */
 	omit = <N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) =>
-		Form.from(ShapeUtil.omit(this.shape, names));
+		new Form(ShapeUtil.omit(this.shape, names));
 
 	/**
 	 * @param name Unexpected form field name
@@ -611,16 +611,6 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			...props,
 			state: this.#decode(props.state, values),
 		});
-
-	/**
-	 * Create a Form from a shape or use another Form.
-	 *
-	 * @template S Form field shape type
-	 * @param shape Form fields
-	 */
-	static from<S extends Form.Shape>(shape: S | Form<S>): Form<S> {
-		return shape instanceof Form ? shape : new Form(shape);
-	}
 }
 
 /**

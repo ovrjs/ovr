@@ -213,7 +213,7 @@ describe("Table", () => {
 		const data = new FormData();
 		data.set("title", "");
 		data.set("views", "4");
-		const result = await Form.from({ title, views }).parse(data);
+		const result = await new Form({ title, views }).parse(data);
 
 		expect(result.issues?.map((issue) => issue.path)).toEqual([["title"]]);
 	});

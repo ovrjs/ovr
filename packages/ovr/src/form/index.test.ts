@@ -42,7 +42,7 @@ const decodeState = <S extends Form.Shape>(
 
 describe("Form schema", () => {
 	test("parses mixed field types and leaves date strings unvalidated", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			age: Field.number(),
 			active: Field.checkbox(),
@@ -78,7 +78,7 @@ describe("Form schema", () => {
 	});
 
 	test("parses mixed field types from URLSearchParams", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			age: Field.number(),
 			active: Field.checkbox(),
@@ -108,12 +108,12 @@ describe("Form schema", () => {
 	});
 
 	test("checkbox is false when omitted", async () => {
-		const form = Form.from({ active: Field.checkbox() });
+		const form = new Form({ active: Field.checkbox() });
 		expect(valid(await form.parse(new FormData()))).toEqual({ active: false });
 	});
 
 	test("blank number fields are treated as missing during form parsing", async () => {
-		const form = Form.from({
+		const form = new Form({
 			age: Field.number().optional(),
 			count: Field.number().default(5),
 		});
@@ -131,7 +131,7 @@ describe("Form schema", () => {
 	});
 
 	test("empty file inputs are treated as missing during form parsing", async () => {
-		const form = Form.from({
+		const form = new Form({
 			license: Field.file().optional(),
 			uploads: Field.files().optional(),
 		});
@@ -150,7 +150,7 @@ describe("Form schema", () => {
 	});
 
 	test("zero-byte named files are preserved during form parsing", async () => {
-		const form = Form.from({ license: Field.file() });
+		const form = new Form({ license: Field.file() });
 		const data = new FormData();
 		const file = new File([""], "license.pdf", { type: "application/pdf" });
 
@@ -160,7 +160,7 @@ describe("Form schema", () => {
 	});
 
 	test("missing multi-value fields are invalid by default", async () => {
-		const form = Form.from({
+		const form = new Form({
 			roles: Field.checkboxes(["reader", "admin"]),
 			tags: Field.multiselect(["a", "b", "c"]),
 			uploads: Field.files(),
@@ -185,7 +185,7 @@ describe("Form schema", () => {
 	});
 
 	test("missing multi-value fields respect optional and default", async () => {
-		const form = Form.from({
+		const form = new Form({
 			roles: Field.checkboxes(["reader", "admin"]).optional(),
 			tags: Field.multiselect(["a", "b", "c"]).default(["a"]),
 			uploads: Field.files().optional(),
@@ -195,7 +195,7 @@ describe("Form schema", () => {
 	});
 
 	test("blank date-like fields are treated as missing during form parsing", async () => {
-		const form = Form.from({
+		const form = new Form({
 			date: Field.date().optional(),
 			time: Field.time().default("09:00"),
 			datetime: Field.datetime().default("2026-09-01T09:00"),
@@ -219,7 +219,7 @@ describe("Form schema", () => {
 	});
 
 	test("blank date-like search params are treated as missing", async () => {
-		const form = Form.from({
+		const form = new Form({
 			date: Field.date().optional(),
 			time: Field.time().default("09:00"),
 		});
@@ -232,7 +232,7 @@ describe("Form schema", () => {
 	});
 
 	test("blank single-value text fields are treated as missing", async () => {
-		const form = Form.from({
+		const form = new Form({
 			text: Field.text().optional(),
 			password: Field.password().optional(),
 			search: Field.search().default("fallback"),
@@ -265,7 +265,7 @@ describe("Form schema", () => {
 	});
 
 	test("blank single-value text search params are treated as missing", async () => {
-		const form = Form.from({
+		const form = new Form({
 			text: Field.text().optional(),
 			email: Field.email().optional(),
 			url: Field.url().default("https://example.com"),
@@ -284,7 +284,7 @@ describe("Form schema", () => {
 	});
 
 	test("default empty strings still resolve after blank submissions", async () => {
-		const form = Form.from({
+		const form = new Form({
 			text: Field.text().default(""),
 			password: Field.password().default(""),
 			bio: Field.textarea().default(""),
@@ -303,7 +303,7 @@ describe("Form schema", () => {
 	});
 
 	test("required text fields are invalid when omitted", async () => {
-		const form = Form.from({ name: Field.text(), bio: Field.textarea() });
+		const form = new Form({ name: Field.text(), bio: Field.textarea() });
 		const result = formInvalid(await form.parse(new FormData()));
 
 		expect(result.issues.map((issue) => issue.path[0])).toEqual([
@@ -313,7 +313,7 @@ describe("Form schema", () => {
 	});
 
 	test("required single-value non-text fields use the required message, choices ask to select", async () => {
-		const form = Form.from({
+		const form = new Form({
 			age: Field.number(),
 			role: Field.radio(["reader", "admin"]),
 			sort: Field.select(["relevance", "newest"]),
@@ -336,7 +336,7 @@ describe("Form schema", () => {
 	});
 
 	test("a choice that is not offered asks to select an option, not for a value", async () => {
-		const form = Form.from({
+		const form = new Form({
 			role: Field.radio(["reader", "admin"]),
 			sort: Field.select(["relevance", "newest"]),
 			roles: Field.checkboxes(["reader", "admin"]),
@@ -363,7 +363,7 @@ describe("Form schema", () => {
 	});
 
 	test("blank single-value select and radio fields are treated as missing", async () => {
-		const form = Form.from({
+		const form = new Form({
 			role: Field.radio(["reader", "admin"]),
 			sort: Field.select(["relevance", "newest"]),
 		});
@@ -385,7 +385,7 @@ describe("Form schema", () => {
 	});
 
 	test("required blank single-value text fields fail at the base layer", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			email: Field.email(),
 			bio: Field.textarea(),
@@ -416,7 +416,7 @@ describe("Form schema", () => {
 	});
 
 	test("invalid FormData parse encodes issues-only _form by default", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
 			password: Field.password(),
@@ -440,7 +440,7 @@ describe("Form schema", () => {
 	});
 
 	test("invalid parse persists only opted-in values", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text().persist().min(2),
 			role: Field.radio(["reader", "admin"]).persist(),
 			password: Field.password(),
@@ -463,7 +463,7 @@ describe("Form schema", () => {
 	});
 
 	test("blank opted-in text values are kept empty in invalid state, overriding initial values", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text().persist().min(2),
 			role: Field.radio(["reader", "admin"]).persist(),
 		});
@@ -480,7 +480,7 @@ describe("Form schema", () => {
 	});
 
 	test("invalid URLSearchParams parse encodes issues-only _form by default", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
 		});
@@ -499,7 +499,7 @@ describe("Form schema", () => {
 
 	test("oversize persisted values fall back to issues-only _form state", async () => {
 		const notes = `notes-${"a".repeat(5000)}`;
-		const form = Form.from({
+		const form = new Form({
 			[notes]: Field.text().persist(),
 			role: Field.radio(["reader", "admin"]),
 		});
@@ -517,7 +517,7 @@ describe("Form schema", () => {
 	});
 
 	test("invalid URL _form state is ignored when rendering fields", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text().persist(),
 			email: Field.email(),
 			role: Field.radio(["reader", "admin"]),
@@ -549,7 +549,7 @@ describe("Form schema", () => {
 	});
 
 	test("render state restores only opted-in values", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text().persist(),
 			email: Field.email(),
 			role: Field.radio(["reader", "admin"]),
@@ -575,7 +575,7 @@ describe("Form schema", () => {
 	});
 
 	test("render state autofocuses only the first invalid field", async () => {
-		const form = Form.from({
+		const form = new Form({
 			first: Field.text().min(2),
 			second: Field.text().min(2),
 		});
@@ -598,7 +598,7 @@ describe("Form schema", () => {
 	});
 
 	test("render marks controls that can't be left empty as required", async () => {
-		const form = Form.from({
+		const form = new Form({
 			text: Field.text(),
 			optional: Field.text().optional(),
 			fallback: Field.text().default("x"),
@@ -634,7 +634,7 @@ describe("Form schema", () => {
 	});
 
 	test("render state without issues does not autofocus the first field", async () => {
-		const form = Form.from({ first: Field.text(), second: Field.text() });
+		const form = new Form({ first: Field.text(), second: Field.text() });
 		const url = new URL("https://example.com/form");
 
 		url.searchParams.set("first", "ross");
@@ -646,7 +646,7 @@ describe("Form schema", () => {
 	});
 
 	test("field label metadata renders text without leaking to controls", async () => {
-		const form = Form.from({
+		const form = new Form({
 			email: Field.email({ label: "Email Address" }),
 			role: Field.radio(["reader", "admin"], { label: "Role" }),
 		});
@@ -661,7 +661,7 @@ describe("Form schema", () => {
 	});
 
 	test("render state reads matching query params from the URL", async () => {
-		const form = Form.from({
+		const form = new Form({
 			q: Field.search(),
 			sort: Field.select(["relevance", "newest"]),
 			inStock: Field.checkbox(),
@@ -682,7 +682,7 @@ describe("Form schema", () => {
 	});
 
 	test("query params fill GET form state alongside _form issues", async () => {
-		const form = Form.from({
+		const form = new Form({
 			q: Field.search().min(2),
 			sort: Field.select(["relevance", "newest"]),
 		});
@@ -706,7 +706,7 @@ describe("Form schema", () => {
 	});
 
 	test("tampered _form state does not restore non-persisted fields", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text().persist(),
 			email: Field.email(),
 			password: Field.password(),
@@ -755,7 +755,7 @@ describe("Form schema", () => {
 		const avatar = (
 			Field.file() as Field.Any & { persist(): Field.Any }
 		).persist();
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text().persist(),
 			role: Field.radio(["reader", "admin"]),
 			avatar,
@@ -777,7 +777,7 @@ describe("Form schema", () => {
 	});
 
 	test("malformed URL _form issues are ignored when rendering fields", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
 		});
@@ -804,15 +804,15 @@ describe("Form schema", () => {
 	});
 
 	test("form shape methods extend, pick, and omit preserve parse behavior", async () => {
-		const extended = Form.from({ a: Field.text() }).extend({
+		const extended = new Form({ a: Field.text() }).extend({
 			b: Field.checkbox(),
 		});
-		const picked = Form.from({
+		const picked = new Form({
 			a: Field.text(),
 			b: Field.number(),
 			c: Field.checkbox(),
 		}).pick(["a", "c"]);
-		const omitted = Form.from({
+		const omitted = new Form({
 			a: Field.text(),
 			b: Field.number(),
 			c: Field.checkbox(),
@@ -842,8 +842,8 @@ describe("Form schema", () => {
 	});
 
 	test("form extend accepts another form schema", async () => {
-		const base = Form.from({ a: Field.text() });
-		const extra = Form.from({ b: Field.checkbox() });
+		const base = new Form({ a: Field.text() });
+		const extra = new Form({ b: Field.checkbox() });
 		const extended = base.extend(extra);
 		const data = new FormData();
 
@@ -856,15 +856,15 @@ describe("Form schema", () => {
 	});
 
 	test("form field helper APIs stay available after pick", () => {
-		const form = Form.from({ a: Field.text(), b: Field.number() }).pick(["a"]);
+		const form = new Form({ a: Field.text(), b: Field.number() }).pick(["a"]);
 
 		expect(typeof form.Field).toBe("function");
 		expect(typeof form.component({ name: "a" }).Control).toBe("function");
 	});
 
 	test("file and files fields parse file values", async () => {
-		const single = Form.from({ upload: Field.file() });
-		const many = Form.from({ uploads: Field.files() });
+		const single = new Form({ upload: Field.file() });
+		const many = new Form({ uploads: Field.files() });
 		const one = new File(["one"], "one.txt", { type: "text/plain" });
 		const two = new File(["two"], "two.txt", { type: "text/plain" });
 		const oneData = new FormData();
@@ -895,20 +895,20 @@ describe("Form schema", () => {
 
 	test("form parts sums field cardinality and preserves infinity", () => {
 		expect(
-			Form.from({
+			new Form({
 				name: Field.text(),
 				roles: Field.checkboxes(["reader", "admin"]),
 				tags: Field.multiselect(["a", "b", "c"]),
 				license: Field.file().stream(),
 			}).parts,
 		).toBe(7);
-		expect(
-			Form.from({ name: Field.text(), uploads: Field.files() }).parts,
-		).toBe(Infinity);
+		expect(new Form({ name: Field.text(), uploads: Field.files() }).parts).toBe(
+			Infinity,
+		);
 	});
 
 	test("multipart parse returns validated data and streamed parts together", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text(),
 			rules: Field.checkbox(),
 			license: Field.file().stream(),
@@ -936,7 +936,7 @@ describe("Form schema", () => {
 	});
 
 	test("multipart parse does not expose parts when non-part fields are invalid", async () => {
-		const form = Form.from({
+		const form = new Form({
 			name: Field.text().min(2),
 			license: Field.file().stream(),
 		});
@@ -953,7 +953,7 @@ describe("Form schema", () => {
 	});
 
 	test("multipart parse adds issues for unexpected field names", async () => {
-		const form = Form.from({ name: Field.text() });
+		const form = new Form({ name: Field.text() });
 		const body = new FormData();
 
 		body.set("name", "ross");
@@ -969,7 +969,7 @@ describe("Form schema", () => {
 	});
 
 	test("FormData parse adds issues for unexpected field names", async () => {
-		const form = Form.from({ name: Field.text() });
+		const form = new Form({ name: Field.text() });
 		const data = new FormData();
 
 		data.set("name", "ross");
@@ -981,7 +981,7 @@ describe("Form schema", () => {
 	});
 
 	test("names of inherited properties are unexpected fields too", async () => {
-		const form = Form.from({ name: Field.text() });
+		const form = new Form({ name: Field.text() });
 		const data = new FormData();
 
 		data.set("name", "ross");
@@ -995,7 +995,7 @@ describe("Form schema", () => {
 	});
 
 	test("FormData parse aggregates all unexpected field names", async () => {
-		const form = Form.from({ name: Field.text() });
+		const form = new Form({ name: Field.text() });
 		const data = new FormData();
 
 		data.set("name", "ross");
@@ -1010,7 +1010,7 @@ describe("Form schema", () => {
 	});
 
 	test("URLSearchParams parse ignores unexpected field names", async () => {
-		const form = Form.from({ name: Field.text() });
+		const form = new Form({ name: Field.text() });
 		const params = new URLSearchParams();
 
 		params.set("name", "ross");

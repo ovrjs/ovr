@@ -577,7 +577,10 @@ export class Route<
 	): Route.Of<Kind, Pattern, Params, S> {
 		this.#configure("fields");
 		this.#before("fields");
-		return Object.assign(this, FormSchema.from(fields)) as any;
+		return Object.assign(
+			this,
+			fields instanceof FormSchema ? fields : new FormSchema(fields),
+		) as any;
 	}
 
 	/**
