@@ -359,7 +359,7 @@ describe("Markdown", () => {
 			),
 		).toBe(
 			[
-				"**Form:** `POST /bookmarks`",
+				"**Form:** `POST /bookmarks` as `multipart/form-data`",
 				"",
 				"- Title `title` (text, required), value: `Hello`",
 				"- kind `kind` (select, required), options: `a`, `b`, value: `b`",

@@ -1,3 +1,4 @@
+import { Field } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Method } from "../util/index.js";
@@ -316,4 +317,84 @@ test("etag", async () => {
 	);
 	expect(etag.status).toBe(304);
 	expect(await etag.text()).toBe("");
+});
+
+describe("a body the client got wrong, which the app does not catch", () => {
+	const origin = "http://localhost";
+	const headers = { origin, "sec-fetch-site": "same-origin" };
+	const add = Route.post("/todos")
+		.fields({ text: Field.text() })
+		.use(async (c) => {
+			await c.data();
+			c.text("saved");
+		});
+
+	test("another content type is answered 415, naming the type to send", async () => {
+		const res = await new App()
+			.use(add)
+			.fetch(`${origin}/todos`, {
+				method: "POST",
+				headers: { ...headers, "content-type": "application/json" },
+				body: JSON.stringify({ text: "Buy milk" }),
+			});
+
+		expect(res.status).toBe(415);
+		expect(await res.text()).toContain("multipart/form-data");
+	});
+
+	test("malformed form data is answered 400", async () => {
+		const res = await new App()
+			.use(add)
+			.fetch(`${origin}/todos`, {
+				method: "POST",
+				headers: {
+					...headers,
+					"content-type": "multipart/form-data; boundary=x",
+				},
+				body: "not multipart",
+			});
+
+		expect(res.status).toBe(400);
+	});
+
+	test("a body over the limit is answered 413", async () => {
+		const body = new FormData();
+		body.set("text", "x".repeat(2048));
+		const res = await new App({ form: { payload: 1024 } })
+			.use(add)
+			.fetch(`${origin}/todos`, { method: "POST", headers, body });
+
+		expect(res.status).toBe(413);
+	});
+
+	test("the app's own error handling still sees the error first", async () => {
+		let caught: unknown;
+		const res = await new App()
+			.use(async (c, next) => {
+				try {
+					await next();
+				} catch (error) {
+					caught = error;
+					c.text("handled", 422);
+				}
+			}, add)
+			.fetch(`${origin}/todos`, {
+				method: "POST",
+				headers: { ...headers, "content-type": "application/json" },
+				body: "{}",
+			});
+
+		expect(caught).toBeInstanceOf(TypeError);
+		expect(res.status).toBe(422);
+	});
+
+	test("other errors still throw", async () => {
+		const broken = Route.get("/broken").use(() => {
+			throw new Error("bug");
+		});
+
+		await expect(
+			new App().use(broken).fetch(`${origin}/broken`),
+		).rejects.toThrow("bug");
+	});
 });

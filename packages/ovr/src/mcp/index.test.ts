@@ -351,7 +351,7 @@ describe("Mcp", () => {
 				"Submit: Save",
 				"",
 				// not a tool, so described in full
-				"**Form:** `POST http://localhost/notes/7/archive`",
+				"**Form:** `POST http://localhost/notes/7/archive` as `multipart/form-data`",
 				"",
 				"- reason `reason` (text, required)",
 				"",

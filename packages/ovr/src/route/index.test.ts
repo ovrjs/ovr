@@ -33,16 +33,16 @@ describe("Route schema helpers", () => {
 				await c.data({ payload: 128 });
 				c.text("accepted");
 			});
-		await expect(
-			new App()
-				.use(route)
-				.fetch("https://example.com/upload", {
-					method: "POST",
-					headers: { "content-type": "multipart/form-data; boundary=audit" },
-					body,
-					...{ duplex: "half" },
-				}),
-		).rejects.toThrow("Payload Too Large");
+		const res = await new App()
+			.use(route)
+			.fetch("https://example.com/upload", {
+				method: "POST",
+				headers: { "content-type": "multipart/form-data; boundary=audit" },
+				body,
+				...{ duplex: "half" },
+			});
+		expect(res.status).toBe(413);
+		expect(await res.text()).toBe("Payload Too Large");
 		expect(canceled).toBe(true);
 	});
 
@@ -93,7 +93,7 @@ describe("Route schema helpers", () => {
 		});
 	});
 
-	test("Route.get parses query params with Form.from instance", async () => {
+	test("Route.get parses query params with a Form instance", async () => {
 		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
@@ -465,15 +465,15 @@ describe("Route schema helpers", () => {
 		data.set("a", "x");
 		data.set("b", "y");
 
-		await expect(
-			app.fetch(
-				new Request("http://localhost:5173/limit", {
-					method: "POST",
-					body: data,
-					headers: { origin: "http://localhost:5173" },
-				}),
-			),
-		).rejects.toThrow("Too Many Parts");
+		const res = await app.fetch(
+			new Request("http://localhost:5173/limit", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+		expect(res.status).toBe(413);
+		expect(await res.text()).toBe("Too Many Parts");
 	});
 
 	test.each([
@@ -541,15 +541,15 @@ describe("Route schema helpers", () => {
 		data.set("b", "y");
 		data.set("c", "z");
 
-		await expect(
-			app.fetch(
-				new Request("http://localhost:5173/auto-limit", {
-					method: "POST",
-					body: data,
-					headers: { origin: "http://localhost:5173" },
-				}),
-			),
-		).rejects.toThrow("Too Many Parts");
+		const res = await app.fetch(
+			new Request("http://localhost:5173/auto-limit", {
+				method: "POST",
+				body: data,
+				headers: { origin: "http://localhost:5173" },
+			}),
+		);
+		expect(res.status).toBe(413);
+		expect(await res.text()).toBe("Too Many Parts");
 	});
 
 	test("schema auto parts overrides app multipart parts option", async () => {

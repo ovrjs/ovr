@@ -1,6 +1,11 @@
 import { Context } from "../context/index.js";
 import type { Middleware } from "../middleware/index.js";
-import type { Multipart } from "../multipart/index.js";
+import {
+	Limit,
+	Malformed,
+	type Multipart,
+	Unsupported,
+} from "../multipart/index.js";
 import { Route, freeze } from "../route/index.js";
 import { Trie } from "../trie/index.js";
 import { Header, Method, type Util } from "../util/index.js";
@@ -196,10 +201,25 @@ export class App {
 			for (const name in match.params)
 				match.params[name] = App.#decode(match.params[name]!, name === "*");
 
-		return Context.compose(
-			Object.assign(c, match),
-			this.#global.concat(c.route?.middleware ?? []),
-		);
+		try {
+			return await Context.compose(
+				Object.assign(c, match),
+				this.#global.concat(c.route?.middleware ?? []),
+			);
+		} catch (error) {
+			// a body the client got wrong, which nothing in the app answered
+			if (error instanceof Limit)
+				return new Response(error.message, { status: 413 });
+			if (error instanceof Unsupported)
+				return new Response(
+					"Unsupported Media Type: send multipart/form-data",
+					{ status: 415 },
+				);
+			if (error instanceof Malformed)
+				return new Response(`Bad Request: ${error.message}`, { status: 400 });
+
+			throw error;
+		}
 	};
 
 	/**

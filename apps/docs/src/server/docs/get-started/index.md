@@ -129,7 +129,7 @@ curl -H "Accept: text/markdown" http://localhost:3000
 
 - Buy milk
 
-**Form:** `POST http://localhost:3000/todos?_return=%2F`
+**Form:** `POST http://localhost:3000/todos?_return=%2F` as `multipart/form-data`
 
 - Todo `text` (text, required)
 

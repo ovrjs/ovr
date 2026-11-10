@@ -690,8 +690,14 @@ class Writer {
 		};
 		visit(node);
 
+		// how to encode the body, for an agent that submits it itself
+		const encoding =
+			!tool && method !== "GET" && node.attrs.enctype
+				? ` as \`${node.attrs.enctype}\``
+				: "";
+
 		const lines = [
-			`**Form:** \`${method} ${this.#href(action)}\`${tool ? ` (tool \`${tool}\`)` : ""}`,
+			`**Form:** \`${method} ${this.#href(action)}\`${encoding}${tool ? ` (tool \`${tool}\`)` : ""}`,
 		];
 
 		if (tool) {

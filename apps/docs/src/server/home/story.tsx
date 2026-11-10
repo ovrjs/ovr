@@ -245,6 +245,8 @@ const Agent = (props: { markdown: string[]; call: string }) => (
 				{props.markdown.map((line) => {
 					// the form the agent calls, marked from its method to its URL
 					const at = line.includes("/todos/1/done") ? line.indexOf("POST") : -1;
+					// the closing backtick of the method and URL
+					const end = line.indexOf("`", at);
 
 					return (
 						<span class="block min-h-5">
@@ -253,8 +255,8 @@ const Agent = (props: { markdown: string[]; call: string }) => (
 							) : (
 								<>
 									{line.slice(0, at)}
-									<span data-target>{line.slice(at, -1)}</span>
-									{line.slice(-1)}
+									<span data-target>{line.slice(at, end)}</span>
+									{line.slice(end)}
 								</>
 							)}
 						</span>

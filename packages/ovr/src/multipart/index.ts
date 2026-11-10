@@ -7,6 +7,9 @@ export class Limit extends RangeError {}
 /** A request that is not valid multipart form data, the client's error. */
 export class Malformed extends TypeError {}
 
+/** A request body of another type than multipart form data. */
+export class Unsupported extends Malformed {}
+
 class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
@@ -278,7 +281,7 @@ export class Multipart extends Request {
 
 		const [mime, params] = Header.shift(this.headers.get(Header.name.type));
 
-		if (!Mime.multipart(mime)) throw new Malformed("Unsupported Media Type");
+		if (!Mime.multipart(mime)) throw new Unsupported("Unsupported Media Type");
 
 		const { boundary } = Header.params(params);
 
