@@ -3,7 +3,7 @@ import { stripTypeScriptTypes } from "node:module";
 
 /** Load the pre-optimization source, sharing the unchanged built utilities. */
 export function baseline(
-	name: "render" | "jsx" | "multipart" | "schema",
+	name: "render" | "jsx" | "markup" | "markdown" | "multipart" | "schema",
 	imports: Record<string, string> = {},
 	commit = "068d6608db7a02283e4be64f5bcfb313305db1bb",
 ) {

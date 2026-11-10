@@ -1,4 +1,4 @@
-import { Markup, Tag } from "../markup/index.js";
+import { Element, type Markup } from "../markup/index.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 
 export namespace JSX {
@@ -41,63 +41,23 @@ export namespace JSX {
 /** ovr JSX */
 export class JSX {
 	/**
-	 * These are the HTML tags that do not require a closing tag.
-	 *
-	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Glossary/Void_element#self-closing_tags)
-	 */
-	static readonly #void = new Set([
-		"area",
-		"base",
-		"br",
-		"col",
-		"embed",
-		"hr",
-		"img",
-		"input",
-		"link",
-		"meta",
-		"source",
-		"track",
-		"wbr",
-		"xml",
-	]);
-
-	/**
 	 * The main function of the JSX transform cycle, each time JSX is encountered
 	 * it is passed into `jsx` to be resolved.
 	 *
 	 * @template P Props of the element or component
 	 * @param tag tag name or function component
 	 * @param props object containing all the properties and attributes passed to the element or component
-	 * @yields `Chunk`s of HTML
+	 * @returns Generator of the element's `Chunk`s of HTML
 	 */
-	static async *jsx<P extends JSX.Props = JSX.Props>(
+	static jsx<P extends JSX.Props = JSX.Props>(
 		tag: ((props: P) => JSX.Element) | string,
 		props: P,
 	): AsyncGenerator<Markup.Chunk, void, unknown> {
 		// this function doesn't need to be called recursively
 		// JSX will be transformed into `jsx()` function calls automatically
 
-		if (typeof tag === "function") {
-			// component or fragment
-			yield* new Markup(tag(props));
-			return;
-		}
-
-		// intrinsic element, its HTML is only built if it is written as HTML
-
-		// if children and a void element, render it like normal
-		// to account for cases like XML <link>content</link>
-		// assumes the user knows what they are doing
-		const closed = props.children == null && JSX.#void.has(tag);
-
-		yield new Tag(tag, props, closed);
-
-		if (closed) return;
-
-		yield* new Markup(props.children);
-
-		yield new Tag(tag);
+		// a component is called, and an element's markup built, when it is rendered
+		return new Element(tag, props);
 	}
 
 	/**

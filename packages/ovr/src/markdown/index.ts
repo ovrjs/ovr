@@ -1,5 +1,5 @@
 import type { JSX } from "../jsx/index.js";
-import { Group, Markup, Tag } from "../markup/index.js";
+import { Group, type Markup, Render, Tag, readable } from "../markup/index.js";
 
 /** Parsed element */
 type Node = {
@@ -1169,6 +1169,10 @@ class Writer {
 	 * @returns Text with Markdown syntax characters escaped
 	 */
 	static #escape(text: string) {
+		// most text has none of these characters, and one test costs less than
+		// the replaces below, which each read all of it
+		if (!/[\\`*[\]<~&_]/.test(text)) return text;
+
 		return (
 			text
 				.replace(/[\\`*[\]<]/g, "\\$&")
@@ -1179,6 +1183,54 @@ class Writer {
 					m.replace("_", "\\_"),
 				)
 		);
+	}
+}
+
+/**
+ * Renders an element to Markdown a step at a time, as a render of markup
+ * steps through its chunks, so neither waits unless the element does.
+ */
+class Blocks {
+	/** Render of the element's chunks */
+	readonly #render: Render;
+
+	/** Writes Markdown from the chunks */
+	readonly #writer: Writer;
+
+	/** The end of the Markdown is written */
+	#ended = false;
+
+	/**
+	 * @param element Element to render
+	 * @param options Markdown options
+	 */
+	constructor(element: JSX.Element, options?: Markdown.Options) {
+		this.#render = new Render(element, undefined);
+		this.#writer = new Writer(options);
+	}
+
+	/**
+	 * @returns The Markdown of the next complete block or blocks, a promise to
+	 * wait for before the next step, or `undefined` once all of it is written
+	 */
+	step() {
+		for (let result; (result = this.#render.step());) {
+			if (result instanceof Promise) return result;
+
+			this.#writer.chunk(result);
+			const text = this.#writer.read();
+			if (text) return text;
+		}
+
+		if (this.#ended) return;
+		this.#ended = true;
+
+		return this.#writer.end() || undefined;
+	}
+
+	/** Ends the render if it is not read to its end. */
+	close() {
+		return this.#render.close();
 	}
 }
 
@@ -1212,16 +1264,16 @@ export class Markdown {
 
 	/** @yields Markdown as each block completes */
 	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
-		const writer = new Writer(this.#options);
+		const blocks = new Blocks(this.#element, this.#options);
 
-		for await (const chunk of new Markup(this.#element)) {
-			writer.chunk(chunk);
-			const text = writer.read();
-			if (text) yield text;
+		try {
+			for (let result; (result = blocks.step());) {
+				if (typeof result === "string") yield result;
+				else await result;
+			}
+		} finally {
+			await blocks.close();
 		}
-
-		const text = writer.end();
-		if (text) yield text;
 	}
 
 	/**
@@ -1230,7 +1282,7 @@ export class Markdown {
 	 * @returns `ReadableStream` of Markdown
 	 */
 	static stream(element: JSX.Element, options?: Markdown.Options) {
-		return Markup.stream(new Markdown(element, options), { raw: true });
+		return readable(new Blocks(element, options));
 	}
 
 	/**
@@ -1241,6 +1293,18 @@ export class Markdown {
 	 * @returns Concatenated Markdown
 	 */
 	static async string(element: JSX.Element, options?: Markdown.Options) {
-		return (await Array.fromAsync(new Markdown(element, options))).join("");
+		const blocks = new Blocks(element, options);
+		let markdown = "";
+
+		try {
+			for (let result; (result = blocks.step());) {
+				if (typeof result === "string") markdown += result;
+				else await result;
+			}
+		} finally {
+			await blocks.close();
+		}
+
+		return markdown;
 	}
 }

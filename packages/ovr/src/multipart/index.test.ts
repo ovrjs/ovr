@@ -1571,6 +1571,41 @@ describe("hostile and malformed bodies", () => {
 		expect(performance.now() - started).toBeLessThan(500);
 		expect(found[0]![1].length).toBe(128 * 64 * 1024);
 	});
+
+	it("finds each boundary among content made of the boundary's own bytes", async () => {
+		// a boundary that repeats its bytes moves the search on the least
+		const boundary = "abcab";
+		const delimiter = `\r\n--${boundary}`;
+		const pieces = ["\r", "\n", "-", "a", "b", "c", "x", "\r\n--abca", "ab"];
+		let seed = 1;
+		const random = () => (seed = (seed * 48271) % 2147483647);
+		const expected = Array.from({ length: 32 }, (_, i) => {
+			let content = "";
+			for (let length = random() % 96; content.length < length;)
+				content += pieces[random() % pieces.length];
+			// near matches only, never the delimiter itself
+			while (content.includes(delimiter))
+				content = content.replace(delimiter, "");
+			return [`field-${i}`, content];
+		});
+		const body = encode(
+			expected
+				.map(
+					([name, content]) =>
+						`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${content}\r\n`,
+				)
+				.join("") + `--${boundary}--\r\n`,
+		);
+
+		for (const size of [1, 2, 3, 7, 31, 4096]) {
+			const chunks: Uint8Array[] = [];
+			for (let i = 0; i < body.length; i += size)
+				chunks.push(body.slice(i, i + size));
+			expect(await fields(new Multipart(request(boundary, chunks)))).toEqual(
+				expected,
+			);
+		}
+	});
 });
 
 describe("quoted header parameters", () => {
@@ -1655,4 +1690,34 @@ it("reads a server's own request object, which the platform cannot copy", async 
 		parts.push([part.name, await part.text()]);
 
 	expect(parts).toEqual([["text", "Buy milk"]]);
+});
+
+it("a part keeps the request's URL and method, and its signal aborts with the request's", async () => {
+	const body = new FormData();
+	body.set("text", "Buy milk");
+	body.set("done", "on");
+	const controller = new AbortController();
+	const multipart = new Multipart(
+		new Request("http://localhost/todos?list=1", {
+			method: "PUT",
+			body,
+			signal: controller.signal,
+		}),
+	);
+
+	const signals: AbortSignal[] = [];
+	for await (const part of multipart) {
+		expect(part.url).toBe("http://localhost/todos?list=1");
+		expect(part.method).toBe("PUT");
+		expect(part.signal.aborted).toBe(false);
+		signals.push(part.signal);
+		await part.text();
+	}
+
+	controller.abort(new Error("gone"));
+	expect(signals.length).toBe(2);
+	for (const signal of signals) {
+		expect(signal.aborted).toBe(true);
+		expect(signal.reason).toEqual(new Error("gone"));
+	}
 });

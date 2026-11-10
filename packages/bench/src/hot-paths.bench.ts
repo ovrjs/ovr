@@ -6,7 +6,7 @@ import { bench, describe, expect } from "vitest";
 const url = baseline("render");
 const { Render: Before }: { Render: typeof o.Markup } = await import(url);
 const { JSX: Original }: { JSX: typeof o.JSX } = await import(
-	baseline("jsx", { "../markup/index.js": url })
+	baseline("jsx", { "../render/index.js": url })
 );
 
 function page(jsx: typeof o.JSX.jsx, count = 500) {

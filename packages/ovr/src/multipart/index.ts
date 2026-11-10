@@ -14,6 +14,14 @@ class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
 
+	/**
+	 * How far the search can move on from the byte it reads where the needle
+	 * would end: from that byte's last place in the needle to the needle's end,
+	 * or the whole length for a byte the needle does not have. Most bytes of a
+	 * file are not in its boundary, so most of a file is never read.
+	 */
+	readonly skip = new Uint8Array(256).fill(this.length);
+
 	/** Stores where each byte is located in the needle */
 	readonly loc: (number[] | undefined)[] = new Array(256);
 
@@ -31,7 +39,14 @@ class Needle extends Uint8Array {
 
 		// boundaries are at most 70 characters, checked before a needle is made
 
-		for (let i = 0; i < this.length; i++) (this.loc[this[i]!] ??= []).push(i);
+		for (let i = 0; i < this.length; i++) {
+			const byte = this[i]!;
+
+			// the last byte is where the search reads, so it moves on from before it
+			if (i !== this.end) this.skip[byte] = this.end - i;
+
+			(this.loc[byte] ??= []).push(i);
+		}
 
 		// a short needle without a unique byte, such as "\r\n\r\n", starts at 0
 		const unique = this.findIndex((byte) => this.loc[byte]!.length === 1);
@@ -71,6 +86,9 @@ class Part extends Request {
 	/** Part body */
 	declare readonly body: ReadableStream<Uint8Array<ArrayBuffer>>;
 
+	/** Signal of the request the part is from */
+	readonly #signal: AbortSignal;
+
 	/**
 	 * Create a new multipart part
 	 *
@@ -84,7 +102,8 @@ class Part extends Request {
 		// each byte as one character, so `Headers` accepts the UTF-8 bytes
 		// browsers send in names and filenames, decoded below
 		let text = "";
-		for (const byte of rawHeaders) text += String.fromCharCode(byte);
+		for (let i = 0; i < rawHeaders.length; i++)
+			text += String.fromCharCode(rawHeaders[i]!);
 
 		// create headers
 		for (const line of text.split("\r\n")) {
@@ -110,9 +129,16 @@ class Part extends Request {
 		super(req, {
 			headers: parsed,
 			body,
+			// A request made from another follows its signal with a listener,
+			// and each listener added is compared with all those before it, so
+			// the cost of a form grew with the square of its number of parts.
+			// The part has the request's own signal instead, see `signal`.
+			signal: null,
 			// @ts-expect-error - streaming https://developer.mozilla.org/en-US/docs/Web/API/RequestInit#duplex
 			duplex: "half",
 		});
+
+		this.#signal = req.signal;
 
 		[this.type] = Header.shift(this.headers.get(Header.name.type));
 
@@ -124,12 +150,19 @@ class Part extends Request {
 		this.filename = Part.#utf8(filename);
 	}
 
+	/** Signal of the request the part is from, the same one for each part */
+	override get signal() {
+		return this.#signal;
+	}
+
 	/**
 	 * @param value Header parameter, one character per byte
 	 * @returns The UTF-8 text it encodes, or `null` without one
 	 */
 	static #utf8(value: string | undefined) {
 		if (value === undefined) return null;
+		// most names are ASCII, which is the same text in UTF-8
+		if (!/[^\0-\x7f]/.test(value)) return value;
 		try {
 			return Codec.decode(Uint8Array.from(value, (c) => c.charCodeAt(0)));
 		} catch {
@@ -387,27 +420,36 @@ export class Multipart extends Request {
 	 * @returns If found, shifts the buffer and returns the result.
 	 */
 	#find(needle: Needle) {
+		const haystack = this.#memory;
 		const haystackLength = this.#valid;
-		const haystack = this.#memory.subarray(0, haystackLength);
-		const { anchor, length } = needle;
+		const { anchor, end, length, skip } = needle;
 		const byte = needle[anchor]!;
+		const last = needle[end]!;
 
+		// Reading only where the needle would end skips most of the haystack.
+		// `Uint8Array.indexOf` reads every byte of it, and in V8 does so several
+		// times slower than a loop, which made large files slow to parse.
 		for (
-			let at = haystack.indexOf(byte, this.#start + anchor);
-			at !== -1;
-			at = haystack.indexOf(byte, at + 1)
+			let i = this.#start + end, current: number;
+			i < haystackLength;
+			i += skip[current]!
 		) {
-			const start = at - anchor;
-			// may still be completed by the next chunk
-			if (start + length > haystackLength) break;
+			current = haystack[i]!;
 
-			let i = 0;
-			while (i < length && needle[i] === haystack[start + i]) i++;
+			// the anchor is checked before comparing, so a haystack of near
+			// matches costs one read for each of its bytes
+			if (current === last && haystack[i - end + anchor] === byte) {
+				const start = i - end;
 
-			if (i === length) {
-				this.#start = start;
-				this.#end = start + length;
-				return this.#shift();
+				let match = 0;
+				while (match < length && needle[match] === haystack[start + match])
+					match++;
+
+				if (match === length) {
+					this.#start = start;
+					this.#end = start + length;
+					return this.#shift();
+				}
 			}
 		}
 
