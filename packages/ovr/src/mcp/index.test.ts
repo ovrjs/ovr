@@ -1011,16 +1011,27 @@ describe("Mcp", () => {
 				text: "# First post\n",
 			},
 		]);
+		// a page may change at any time, and without sign-in is the same for all
+		expect(read.body.result).toMatchObject({ ttlMs: 0, cacheScope: "public" });
 
+		// invalid params since 2026-07-28, which names the resource
 		const missing = await rpc("resources/read", {
 			uri: "http://localhost/posts/7",
 		});
-		expect(missing.body.error.code).toBe(-32002);
+		expect(missing.body.error).toMatchObject({
+			code: -32602,
+			data: { uri: "http://localhost/posts/7" },
+		});
 
 		const other = await rpc("resources/read", {
 			uri: "https://example.com/posts",
 		});
-		expect(other.body.error.code).toBe(-32002);
+		expect(other.body.error.code).toBe(-32602);
+
+		// removed in 2026-07-28
+		const ping = await rpc("ping");
+		expect(ping.status).toBe(404);
+		expect(ping.body.error.code).toBe(-32601);
 	});
 
 	test("headers must match the request", async () => {
@@ -1203,6 +1214,18 @@ describe("Mcp", () => {
 				params: { uri: "http://localhost/posts" },
 			});
 			expect(read.body.result.contents[0].text).toContain("Third post");
+			expect(read.body.result).not.toHaveProperty("ttlMs");
+
+			// an earlier version's own code for a missing resource, and its ping
+			const missing = await legacy(app, {
+				id: 5,
+				method: "resources/read",
+				params: { uri: "http://localhost/posts/7" },
+			});
+			expect(missing.body.error.code).toBe(-32002);
+			expect(
+				(await legacy(app, { id: 6, method: "ping" })).body.result,
+			).toEqual({});
 		});
 
 		test("form issues reach an earlier client as a tool error", async () => {

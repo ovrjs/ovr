@@ -263,6 +263,7 @@ export class Mcp {
 				method,
 				params,
 				session,
+				legacy,
 			);
 
 			c.json({
@@ -463,6 +464,7 @@ export class Mcp {
 		method: string,
 		params: Json,
 		session: unknown,
+		legacy: boolean,
 	): Promise<Json> {
 		const cache = { ttlMs: 60_000, cacheScope: "public" };
 
@@ -474,7 +476,9 @@ export class Mcp {
 					...cache,
 				};
 			case "ping":
-				return {};
+				// removed in 2026-07-28
+				if (legacy) return {};
+				throw new RpcError(-32601, "Method not found", 404);
 			case "tools/list":
 				return {
 					tools: Array.from(this.#list().values(), (tool) => tool.definition),
@@ -513,7 +517,7 @@ export class Mcp {
 				};
 			}
 			case "resources/read":
-				return this.#resource(c, params, session);
+				return this.#resource(c, params, session, legacy);
 			default:
 				throw new RpcError(-32601, "Method not found", 404);
 		}
@@ -745,15 +749,26 @@ export class Mcp {
 	 * @param session Session the token authorizes
 	 * @returns Resource contents
 	 */
-	async #resource(c: Context, params: Json, session: unknown) {
+	async #resource(c: Context, params: Json, session: unknown, legacy: boolean) {
 		let url: URL;
 		try {
 			url = new URL(String(params.uri));
 		} catch {
 			throw new RpcError(-32602, "Invalid resource URI");
 		}
-		if (!this.#readable(c, url))
-			throw new RpcError(-32002, "Resource not found");
+
+		// its own code before 2026-07-28, invalid params since
+		const missing = () =>
+			new RpcError(legacy ? -32002 : -32602, "Resource not found", 200, {
+				uri: url.href,
+			});
+		// a page read as the user is theirs alone, and may change at any time
+		const cache = {
+			ttlMs: 0,
+			cacheScope: this.#options.auth ? "private" : "public",
+		};
+
+		if (!this.#readable(c, url)) throw missing();
 
 		const res = await this.#run(c, session, url);
 		// the page's form has issues, such as a search with invalid parameters
@@ -769,9 +784,10 @@ export class Mcp {
 						text: `${Mcp.#live} ${url.href}`,
 					},
 				],
+				...cache,
 			};
 
-		if (res.status === 404) throw new RpcError(-32002, "Resource not found");
+		if (res.status === 404) throw missing();
 		if (!res.ok)
 			throw new RpcError(
 				-32603,
@@ -780,6 +796,7 @@ export class Mcp {
 
 		return {
 			contents: [{ uri: url.href, mimeType: type ?? Mime.type.md, ...body }],
+			...cache,
 		};
 	}
 
