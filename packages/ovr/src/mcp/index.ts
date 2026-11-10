@@ -128,11 +128,11 @@ export class Mcp {
 	static readonly #output = 4 * Size.mb;
 
 	/**
-	 * Tells an agent a route answers with an event stream, which may never end,
-	 * so it is the agent's to open and close
+	 * Scheme that names a page of an app agents sign in to. An `https` name
+	 * says the agent can fetch the page itself, which it cannot without the
+	 * user's session, so it reads the page through this endpoint.
 	 */
-	static readonly #live =
-		"This is a live event stream. Request the address yourself to read its events as they arrive, and close the connection to stop:";
+	static readonly #scheme = "page:";
 
 	/** Redirects followed after a tool call */
 	static readonly #redirects = 5;
@@ -498,11 +498,13 @@ export class Mcp {
 								route.description &&
 								/[:*]/.test(route.pattern) === templates,
 						).map((route) => {
-							const { href } = new URL(
-								route.pattern.replace(parameters, (_, name?: string) =>
-									name ? `{${name}}` : "{+wildcard}",
+							const href = this.#name(
+								new URL(
+									route.pattern.replace(parameters, (_, name?: string) =>
+										name ? `{${name}}` : "{+wildcard}",
+									),
+									c.url,
 								),
-								c.url,
 							);
 							return {
 								[templates ? "uriTemplate" : "uri"]: templates
@@ -753,6 +755,12 @@ export class Mcp {
 		let url: URL;
 		try {
 			url = new URL(String(params.uri));
+			// a page by its name, or by its address, as a link in a page gives it
+			if (url.protocol === Mcp.#scheme)
+				url = new URL(
+					url.pathname + url.search + url.hash,
+					`${c.url.protocol}//${url.host}`,
+				);
 		} catch {
 			throw new RpcError(-32602, "Invalid resource URI");
 		}
@@ -760,7 +768,7 @@ export class Mcp {
 		// its own code before 2026-07-28, invalid params since
 		const missing = () =>
 			new RpcError(legacy ? -32002 : -32602, "Resource not found", 200, {
-				uri: url.href,
+				uri: String(params.uri),
 			});
 		// a page read as the user is theirs alone, and may change at any time
 		const cache = {
@@ -779,9 +787,9 @@ export class Mcp {
 			return {
 				contents: [
 					{
-						uri: url.href,
+						uri: this.#name(url),
 						mimeType: Mime.type.text,
-						text: `${Mcp.#live} ${url.href}`,
+						text: this.#stream(url),
 					},
 				],
 				...cache,
@@ -795,9 +803,32 @@ export class Mcp {
 			);
 
 		return {
-			contents: [{ uri: url.href, mimeType: type ?? Mime.type.md, ...body }],
+			contents: [
+				{ uri: this.#name(url), mimeType: type ?? Mime.type.md, ...body },
+			],
 			...cache,
 		};
+	}
+
+	/**
+	 * @param url A page's address
+	 * @returns The page's resource name: its address, or with sign-in the same
+	 * host and path as a `page:` URI
+	 */
+	#name(url: URL) {
+		return this.#options.auth
+			? `${Mcp.#scheme}//${url.host}${url.pathname}${url.search}${url.hash}`
+			: url.href;
+	}
+
+	/**
+	 * @param url Address of a route that answers with an event stream
+	 * @returns What to tell the agent, a stream may never end so it is not read
+	 */
+	#stream(url: URL) {
+		return this.#options.auth
+			? `This is a live event stream, which is not read through this connection. It needs the user's sign-in, so the user can open it in their browser: ${url.href}`
+			: `This is a live event stream. Request the address yourself to read its events as they arrive, and close the connection to stop: ${url.href}`;
 	}
 
 	/**
@@ -942,12 +973,19 @@ export class Mcp {
 			const { type, text, blob, live } = await Mcp.#body(res);
 
 			if (live)
-				return Mcp.#result(`${Mcp.#live} ${url.href}`, false, {
-					type: "resource_link",
-					uri: url.href,
-					name: url.pathname,
-					mimeType: type,
-				});
+				return Mcp.#result(
+					this.#stream(url),
+					false,
+					// a link only where the agent can open it
+					this.#options.auth
+						? undefined
+						: {
+								type: "resource_link",
+								uri: url.href,
+								name: url.pathname,
+								mimeType: type,
+							},
+				);
 
 			const [kind] = type?.split("/") ?? [];
 
@@ -968,7 +1006,7 @@ export class Mcp {
 						? { type: kind, data: blob, mimeType: type }
 						: {
 								type: "resource",
-								resource: { uri: url.href, mimeType: type, blob },
+								resource: { uri: this.#name(url), mimeType: type, blob },
 							},
 			);
 		}

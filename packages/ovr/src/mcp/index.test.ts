@@ -1,4 +1,4 @@
-import { App } from "../app/index.js";
+import { App, agents } from "../app/index.js";
 import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
@@ -755,6 +755,95 @@ describe("Mcp", () => {
 
 		expect((await rpc("resources/read", { uri })).result.contents).toEqual([
 			{ uri, mimeType: "text/plain", text: note },
+		]);
+	});
+
+	test("with sign-in a page is named page://, since its address needs the user's session", async () => {
+		const pages = [
+			Route.get("/invoices")
+				.describe("List invoices")
+				.use(() =>
+					jsx("main", {
+						children: jsx("a", { href: "/invoices/7", children: "Invoice 7" }),
+					}),
+				),
+			Route.get("/invoices/:id")
+				.describe("Read an invoice")
+				.use((c) => jsx("main", { children: `Invoice ${c.params.id}` })),
+			Route.get("/live")
+				.describe("Live events")
+				.use((c) => {
+					c.res.headers.set("content-type", "text/event-stream");
+					c.res.body = "data: tick\n\n";
+				}),
+		];
+		const auth: Mcp.Auth = {
+			[agents]: {
+				origin: "http://localhost",
+				bearer: async () => ({ user: "1" }),
+				mount: () => [],
+			},
+		};
+		const signed = new App().use(pages, new Mcp({ name: "billing", auth }));
+		const open = new App().use(pages, new Mcp({ name: "billing" }));
+		const rpc = async (
+			app: App,
+			method: string,
+			params?: Record<string, unknown>,
+		) =>
+			(
+				(await (
+					await app.fetch("http://localhost/mcp", request(method, params))
+				).json()) as any
+			).result;
+
+		expect(
+			(await rpc(signed, "resources/list")).resources.map(
+				(resource: { uri: string }) => resource.uri,
+			),
+		).toEqual(["page://localhost/invoices", "page://localhost/live"]);
+		expect(
+			(await rpc(signed, "resources/templates/list")).resourceTemplates[0]
+				.uriTemplate,
+		).toBe("page://localhost/invoices/{id}");
+		// without sign-in the address is the name, the agent can fetch it
+		expect((await rpc(open, "resources/list")).resources[0].uri).toBe(
+			"http://localhost/invoices",
+		);
+
+		// read by its name, or by its address as a link in a page gives it
+		for (const uri of [
+			"page://localhost/invoices",
+			"http://localhost/invoices",
+		])
+			expect(await rpc(signed, "resources/read", { uri })).toMatchObject({
+				contents: [
+					{
+						uri: "page://localhost/invoices",
+						// a link in the page stays a real address, for the user to open
+						text: "[Invoice 7](http://localhost/invoices/7)\n",
+					},
+				],
+				cacheScope: "private",
+			});
+		expect(
+			(
+				await rpc(open, "resources/read", {
+					uri: "page://localhost/invoices/7",
+				})
+			).contents[0],
+		).toMatchObject({
+			uri: "http://localhost/invoices/7",
+			text: "Invoice 7\n",
+		});
+
+		// a stream the agent cannot open itself is not linked
+		const live = await rpc(signed, "tools/call", { name: "get_live" });
+		expect(live.content).toEqual([
+			{
+				type: "text",
+				text: "This is a live event stream, which is not read through this connection. It needs the user's sign-in, so the user can open it in their browser: http://localhost/live",
+			},
 		]);
 	});
 
