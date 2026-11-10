@@ -256,16 +256,55 @@ describe("Mcp", () => {
 
 	test("a tool redirect cannot fetch a hidden resource", async () => {
 		const { app, rpc } = setup();
+		let went = false;
 		let called = false;
+		const go = Route.post("/go")
+			.describe("Go somewhere")
+			.use((c) => {
+				went = true;
+				c.redirect("/private", 303);
+			});
 		app.use(
-			Route.post("/go").use((c) => c.redirect("/private", 303)),
+			go,
 			Route.get("/private").use(() => {
 				called = true;
 			}),
 		);
-		await rpc("tools/call", { name: "post_go" });
+		await rpc("tools/call", { name: go.tool!.name });
+		expect(went).toBe(true);
 		expect(called).toBe(false);
 	});
+
+	test.each(["PUT", "PATCH", "DELETE"] as const)(
+		"a %s tool's fields come from its body",
+		async (method) => {
+			const { app, rpc } = setup();
+			let title: string | undefined;
+			const update = new Route(method, "/notes/:id")
+				.describe("Change a note")
+				.fields({ title: Field.text().min(1) })
+				.use(async (c) => {
+					const result = await c.data();
+					if (result.issues) return c.text("invalid", 422);
+					title = result.data.title;
+					c.text("saved");
+				});
+			app.use(update);
+
+			const saved = await rpc("tools/call", {
+				name: update.tool!.name,
+				arguments: { id: "1", title: "Renamed" },
+			});
+			expect(title).toBe("Renamed");
+			expect(saved.body.result.isError).toBe(false);
+
+			const missing = await rpc("tools/call", {
+				name: update.tool!.name,
+				arguments: { id: "1" },
+			});
+			expect(missing.body.result.isError).toBe(true);
+		},
+	);
 
 	test("a page an agent reads points a form to its tool, with only its values", async () => {
 		const { app, rpc } = setup();

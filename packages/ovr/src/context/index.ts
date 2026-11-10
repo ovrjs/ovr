@@ -309,14 +309,17 @@ export class Context<
 	}
 
 	/**
-	 * Parse route form data from search params or multipart requests.
+	 * Parse route form data: from the search params of a GET or HEAD request,
+	 * and from the multipart body of any other.
 	 *
-	 * @param options Multipart options for POST requests
+	 * @param options Multipart options for requests with a body
 	 * @returns Parsed form data with possible invalid redirect URL state
 	 */
 	async data(options?: Multipart.Options): Promise<Context.Result<Shape>> {
 		return (this.#parsed ??= (async () => {
-			const post = this.req.method === Method.post;
+			// GET and HEAD carry their fields in the URL, every other method in its body
+			const post =
+				this.req.method !== Method.get && this.req.method !== Method.head;
 			const form = this.route as Route.Post | undefined;
 
 			if (!form?.parse) return null as Context.Result<Shape>;
