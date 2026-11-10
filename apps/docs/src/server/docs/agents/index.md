@@ -101,7 +101,14 @@ A tool call is a request to the route. The arguments become form data, or search
 
 A client may state the user's language. The route receives it as `Accept-Language`, as a person's browser sends it, and the `Content-Language` the route answers with is reported back to the client.
 
-Pages an agent reads through MCP point each form that submits to a tool to that tool, such as ``(tool `post_notes_id_update`)``, with only the form's current values and messages, since the tool's input schema already describes its fields. A single checkbox's value is `true` or `false`, like its argument. Forms that submit elsewhere, and pages requested as Markdown outside MCP, describe every field.
+Pages an agent reads through MCP give each form as the call to its tool, with the arguments the form's address holds, such as a delete beside each item:
+
+```md
+- [ovr](https://ovrjs.com/)
+  Delete ovr: tool `post_bookmarks_id_delete`, `id`: `0b8f5d0a`
+```
+
+A form with current values or messages, such as an edit form, lists them under the tool's name, since the tool's input schema already describes its fields. A single checkbox's value is `true` or `false`, like its argument. A form that submits to a route you have not described is left out, as the agent has no tool to submit it with. Pages requested as Markdown outside MCP describe every form, with its address and fields.
 
 `route.tool` is the name and description a route is called with, and whether it only reads, or `undefined` when it is not a tool. Names of patterns with `_` or other punctuation, or longer than 64 characters, end with a short hash of the pattern, so `/a/b` and `/a_b` get different names. Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, so you find out when the app starts.
 

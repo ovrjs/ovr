@@ -342,23 +342,88 @@ describe("Mcp", () => {
 		});
 		expect(body.result.content[0].text).toBe(
 			[
-				"**Form:** `POST http://localhost/notes/7/rename` (tool `post_notes_id_rename`)",
+				// the call, with the argument the address held and the form's values
+				"**Tool:** `post_notes_id_rename`",
 				"",
+				"- `id`: `7`",
 				"- `title`: `Groceries`",
 				// unchecked, a boolean argument
 				"- `pinned`: `false`",
 				"",
 				"Submit: Save",
-				"",
-				// not a tool, so described in full
-				"**Form:** `POST http://localhost/notes/7/archive` as `multipart/form-data`",
-				"",
-				"- reason `reason` (text, required)",
-				"",
-				"Submit: Submit",
+				// the archive form has no tool, so the agent has no way to submit it
 				"",
 			].join("\n"),
 		);
+	});
+
+	test("a page read through the endpoint gives each action as the tool call to make", async () => {
+		const add = Route.post("/bookmarks")
+			.describe("Save a bookmark")
+			.fields({ url: Field.url() })
+			.use(() => {});
+		const remove = Route.post("/bookmarks/:id/delete")
+			.describe("Delete a bookmark")
+			.use(() => {});
+		// not described, so not for agents
+		const logout = Route.post("/logout").use(() => {});
+		const page = Route.get("/bookmarks")
+			.describe("Bookmarks")
+			.use(() =>
+				jsx("main", {
+					children: [
+						logout.Form({ submit: "Log out" }),
+						add.Form({ submit: "Add" }),
+						jsx("ul", {
+							children: ["a1", "b2"].map((id) =>
+								jsx("li", {
+									children: [
+										jsx("a", { href: `https://${id}.example/`, children: id }),
+										remove.Form({ params: { id }, submit: `Delete ${id}` }),
+									],
+								}),
+							),
+						}),
+					],
+				}),
+			);
+		const app = new App().use(
+			add,
+			remove,
+			logout,
+			page,
+			new Mcp({ name: "bookmarks" }),
+		);
+
+		// the call and its argument on a line with the item, no address to take
+		// apart, and no form the agent cannot submit
+		const res = await app.fetch(
+			"http://localhost/mcp",
+			request("tools/call", { name: "get_bookmarks", arguments: {} }),
+		);
+		expect(((await res.json()) as any).result.content[0].text).toBe(
+			[
+				"Add: tool `post_bookmarks`",
+				"",
+				"- [a1](https://a1.example/)",
+				"  Delete a1: tool `post_bookmarks_id_delete`, `id`: `a1`",
+				"- [b2](https://b2.example/)",
+				"  Delete b2: tool `post_bookmarks_id_delete`, `id`: `b2`",
+				"",
+			].join("\n"),
+		);
+
+		// read as Markdown over HTTP, every form with the address to send it to
+		const direct = await (
+			await app.fetch("http://localhost/bookmarks", {
+				headers: { accept: "text/markdown" },
+			})
+		).text();
+		expect(direct).toContain("**Form:** `POST http://localhost/logout`");
+		expect(direct).toContain(
+			"**Form:** `POST http://localhost/bookmarks/a1/delete`",
+		);
+		expect(direct).not.toContain("tool");
 	});
 
 	test("a page preserves the value of a checkbox group with one option", async () => {

@@ -41,9 +41,13 @@ export namespace App {
 		/**
 		 * @param method Request method
 		 * @param pathname URL pathname
-		 * @returns The route a request would run, before running it
+		 * @returns The route a request would run and its parameters, before
+		 * running it
 		 */
-		find(method: string, pathname: string): Route | undefined;
+		find(
+			method: string,
+			pathname: string,
+		): { route: Route; params: Record<string, string> } | undefined;
 	}
 
 	/** A service that adds its routes and middleware to the app. */
@@ -165,8 +169,14 @@ export class App {
 						routes: this.#routes,
 						fetch: this.fetch,
 						memory: this.#options.form?.memory ?? memory,
-						find: (method, pathname) =>
-							this.#trie.find(App.#match(method) + pathname)?.route,
+						find: (method, pathname) => {
+							const match = this.#trie.find(App.#match(method) + pathname);
+							if (!match) return;
+							const params: Record<string, string> = {};
+							for (const name in match.params)
+								params[name] = App.#decode(match.params[name]!, name === "*");
+							return { route: match.route, params };
+						},
 					}),
 				);
 			} else if (Array.isArray(route)) {

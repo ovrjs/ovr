@@ -620,11 +620,14 @@ describe("Markdown", () => {
 					h("noscript", null, "JavaScript is required."),
 					h("button", null, "Go"),
 				),
-				{ base: "https://example.com/", tool: () => "x_post" },
+				{
+					base: "https://example.com/",
+					tool: () => ({ name: "x_post", args: {} }),
+				},
 			),
 		).toBe(
 			[
-				"**Form:** `POST https://example.com/x` (tool `x_post`)",
+				"**Tool:** `x_post`",
 				"",
 				"- `email`",
 				"  - Expected email",
@@ -647,10 +650,13 @@ describe("Markdown", () => {
 				h("button", null, "Save"),
 			);
 		expect(
-			await md(form(), { base: "https://example.com/", tool: () => "x_post" }),
+			await md(form(), {
+				base: "https://example.com/",
+				tool: () => ({ name: "x_post", args: {} }),
+			}),
 		).toBe(
 			[
-				"**Form:** `POST https://example.com/x` (tool `x_post`)",
+				"**Tool:** `x_post`",
 				"",
 				"- `id`: `abc-123`",
 				"- `title`: `Hi`",
@@ -682,11 +688,14 @@ describe("Markdown", () => {
 					h("textarea", { name: "body" }),
 					h("button", null, "Save"),
 				),
-				{ base: "https://example.com/", tool: () => "x_post" },
+				{
+					base: "https://example.com/",
+					tool: () => ({ name: "x_post", args: {} }),
+				},
 			),
 		).toBe(
 			[
-				"**Form:** `POST https://example.com/x` (tool `x_post`)",
+				"**Tool:** `x_post`",
 				"",
 				"- `title`: `One`",
 				"- `pinned`: `true`",

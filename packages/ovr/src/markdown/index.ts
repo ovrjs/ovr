@@ -47,16 +47,21 @@ export namespace Markdown {
 		readonly base?: string | URL | undefined;
 
 		/**
-		 * @internal Names the tool that submits a form, if there is one, set by
-		 * an MCP endpoint. The form is then described by its tool, with only its
-		 * values and messages.
+		 * @internal Finds the tool that submits a form, if there is one, set by
+		 * an MCP endpoint. A form is then written as the call to its tool, with
+		 * the arguments its address holds, its values, and its messages. A form
+		 * without a tool is left out: the agent has no way to submit it.
 		 *
 		 * @param method Form method
 		 * @param action Resolved form action
-		 * @returns Tool name
+		 * @returns The tool's name, and the arguments from the address's parameters
 		 */
 		readonly tool?:
-			((method: string, action: URL) => string | undefined) | undefined;
+			| ((
+					method: string,
+					action: URL,
+			  ) => { name: string; args: Record<string, string> } | undefined)
+			| undefined;
 	};
 }
 
@@ -362,9 +367,16 @@ class Writer {
 				run.push(child);
 			} else {
 				paragraph();
+				const block = this.#block(child);
 				add(
-					this.#block(child),
-					Writer.#lists.has(child.tag) ? list : separator,
+					block,
+					// a list, or a tool's call on one line, follows what it belongs to
+					Writer.#lists.has(child.tag) ||
+						(child.tag === "form" &&
+							this.#options.tool &&
+							!block.includes("\n"))
+						? list
+						: separator,
 				);
 			}
 		}
@@ -585,6 +597,8 @@ class Writer {
 		// an unsafe action is described as the page itself
 		const action = this.#url(node.attrs.action ?? "") ?? this.#url("")!;
 		const tool = this.#options.tool?.(method, action);
+		// read through an MCP endpoint, only what the agent can call is a form
+		if (this.#options.tool && !tool) return "";
 		const labels = new Map<string, string>();
 		const fields: Field[] = [];
 		const byName = new Map<string, Field>();
@@ -714,7 +728,7 @@ class Writer {
 								const by = (child.attrs.formmethod ?? method).toUpperCase();
 								const other = this.#options.tool?.(by, to);
 								submit += other
-									? ` (tool ${Writer.#code(other)})`
+									? ` (${Writer.#call(other)})`
 									: ` (${Writer.#code(`${by} ${this.#href(to)}`)})`;
 							}
 							submits.push(submit);
@@ -797,7 +811,6 @@ class Writer {
 				: "";
 
 		const target = Writer.#code(`${method} ${this.#href(action)}`);
-		const by = tool ? ` (tool ${Writer.#code(tool)})` : "";
 		const lines: string[] = [];
 
 		if (tool) {
@@ -816,7 +829,28 @@ class Writer {
 					for (const note of f.notes) line += `\n  - ${note}`;
 					return line;
 				});
-			if (entries.length) lines.push("", ...entries);
+			while (notes.at(-1) === "") notes.pop();
+
+			// a call an agent can make as it is written, such as a delete beside
+			// each item, on one line
+			if (!entries.length && !notes.length)
+				return `${submits.join(", ") || "Submit"}: ${Writer.#call(tool)}`;
+			if (cell) return "";
+
+			return [
+				`**Tool:** ${Writer.#code(tool.name)}`,
+				"",
+				// arguments the address held, unless a field gives the same
+				...Object.entries(tool.args)
+					.filter(([name]) => !byName.get(name)?.value.length)
+					.map(
+						([name, value]) =>
+							`- ${Writer.#code(name)}: ${Writer.#code(value)}`,
+					),
+				...entries,
+				...(notes.length ? ["", ...notes] : []),
+				...(submits.length ? ["", `Submit: ${submits.join(", ")}`] : []),
+			].join("\n");
 		} else if (fields.length) {
 			lines.push(
 				"",
@@ -837,13 +871,24 @@ class Writer {
 
 		// only a button, such as a delete in each row, fits in the cell
 		if (cell)
-			return lines.length
-				? ""
-				: `${submits.join(", ") || "Submit"}: ${target}${by}`;
+			return lines.length ? "" : `${submits.join(", ") || "Submit"}: ${target}`;
 
 		if (submits.length) lines.push("", `Submit: ${submits.join(", ")}`);
 
-		return [`**Form:** ${target}${encoding}${by}`, ...lines].join("\n");
+		return [`**Form:** ${target}${encoding}`, ...lines].join("\n");
+	}
+
+	/**
+	 * @param tool Tool and the arguments an address gave
+	 * @returns The call, as an agent makes it
+	 */
+	static #call(tool: { name: string; args: Record<string, string> }) {
+		return [
+			`tool ${Writer.#code(tool.name)}`,
+			...Object.entries(tool.args).map(
+				([name, value]) => `${Writer.#code(name)}: ${Writer.#code(value)}`,
+			),
+		].join(", ");
 	}
 
 	/**

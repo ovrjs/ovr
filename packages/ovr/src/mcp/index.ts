@@ -799,7 +799,7 @@ export class Mcp {
 
 		const url = new URL(pathname, c.url.origin);
 		// a more specific pattern could select another route
-		if (this.#app!.find(route.method, url.pathname) !== route)
+		if (this.#app!.find(route.method, url.pathname)?.route !== route)
 			return Mcp.#result(`Parameters do not match ${route.pattern}`, true);
 
 		const read = route.method === Method.get;
@@ -974,10 +974,21 @@ export class Mcp {
 	 * reads points to the tool instead of repeating its fields
 	 */
 	#tool(c: Context) {
-		return (method: string, action: URL) =>
-			action.origin === c.url.origin && !action.username && !action.password
-				? this.#app!.find(method, action.pathname)?.tool?.name
-				: undefined;
+		return (method: string, action: URL) => {
+			if (action.origin !== c.url.origin || action.username || action.password)
+				return;
+
+			const match = this.#app!.find(method, action.pathname);
+			const name = match?.route.tool?.name;
+			if (!name) return;
+
+			// the address's parameters, as the arguments the tool takes them by
+			const args: Record<string, string> = {};
+			for (const param in match.params)
+				args[param === "*" ? "wildcard" : param] = match.params[param]!;
+
+			return { name, args };
+		};
 	}
 
 	/**
@@ -989,7 +1000,7 @@ export class Mcp {
 		// credentials are no part of a page's address
 		if (url.origin !== c.url.origin || url.username || url.password)
 			return false;
-		const route = this.#app!.find(Method.get, url.pathname);
+		const route = this.#app!.find(Method.get, url.pathname)?.route;
 		return Boolean(route?.description);
 	}
 
