@@ -362,7 +362,12 @@ class Writer {
 		return this.#inline(children)
 			.split("\n")
 			.map((line) =>
-				line.trim().replace(/^([#>+-]|\d+[.)]|={2,}|-{2,})(?=\s|$)/, "\\$1"),
+				line
+					.trim()
+					// a quote needs no space after it, and a line of `=` makes a heading of the one above
+					.replace(/^(>|=+$|(?:[#+-]|-{2,})(?=\s|$))/, "\\$1")
+					// the escape goes before the delimiter, one before a digit is text
+					.replace(/^(\d+)([.)])(?=\s|$)/, "$1\\$2"),
 			)
 			.join("\n")
 			.trim();
@@ -622,8 +627,8 @@ class Writer {
 		const visit = (parent: Node, label?: string, quiet?: boolean) => {
 			for (const child of parent.children) {
 				if (typeof child === "string") {
-					if (!quiet && child.trim())
-						notes.push(child.replace(/\s+/g, " ").trim());
+					// escaped as a paragraph is, so its text cannot write Markdown
+					if (!quiet && child.trim()) notes.push(this.#paragraph([child]));
 					continue;
 				}
 
@@ -693,11 +698,11 @@ class Writer {
 		// how to encode the body, for an agent that submits it itself
 		const encoding =
 			!tool && method !== "GET" && node.attrs.enctype
-				? ` as \`${node.attrs.enctype}\``
+				? ` as ${Writer.#code(node.attrs.enctype)}`
 				: "";
 
 		const lines = [
-			`**Form:** \`${method} ${this.#href(action)}\`${encoding}${tool ? ` (tool \`${tool}\`)` : ""}`,
+			`**Form:** ${Writer.#code(`${method} ${this.#href(action)}`)}${encoding}${tool ? ` (tool ${Writer.#code(tool)})` : ""}`,
 		];
 
 		if (tool) {
@@ -960,11 +965,15 @@ class Writer {
 	 * @returns Text with Markdown syntax characters escaped
 	 */
 	static #escape(text: string) {
-		return text
-			.replace(/[\\`*[\]<]/g, "\\$&")
-			.replace(/(^|[^\p{L}\p{N}])_|_(?=[^\p{L}\p{N}]|$)/gu, (m) =>
-				m.replace("_", "\\_"),
-			);
+		return (
+			text
+				.replace(/[\\`*[\]<~]/g, "\\$&")
+				// a character reference written out as text
+				.replace(/&(?=#?\w+;)/g, "\\$&")
+				.replace(/(^|[^\p{L}\p{N}])_|_(?=[^\p{L}\p{N}]|$)/gu, (m) =>
+					m.replace("_", "\\_"),
+				)
+		);
 	}
 }
 

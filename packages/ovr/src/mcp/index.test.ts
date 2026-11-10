@@ -538,6 +538,35 @@ describe("Mcp", () => {
 		expect(remove.annotations).not.toHaveProperty("destructiveHint");
 	});
 
+	test("a number field keeps its type and rules, and a number calls it", async () => {
+		let bought: number | undefined;
+		const buy = Route.post("/buy")
+			.describe("Buy")
+			.fields({ quantity: Field.number({ label: "Quantity" }).int().min(1) })
+			.use(async (c) => {
+				const result = await c.data();
+				if (result.issues) return c.text("invalid", 422);
+				bought = result.data.quantity;
+				c.text("ok");
+			});
+		const app = new App().use(buy, new Mcp({ name: "shop" }));
+		const rpc = async (method: string, params?: Record<string, unknown>) =>
+			(
+				await app.fetch("http://localhost/mcp", request(method, params))
+			).json() as Promise<any>;
+
+		expect((await rpc("tools/list")).result.tools[0].inputSchema).toEqual({
+			type: "object",
+			properties: {
+				quantity: { type: "integer", minimum: 1, title: "Quantity" },
+			},
+			required: ["quantity"],
+		});
+
+		await rpc("tools/call", { name: "post_buy", arguments: { quantity: 3 } });
+		expect(bought).toBe(3);
+	});
+
 	test("tools call the route and follow its redirect", async () => {
 		const { rpc, posts } = setup();
 		const { body } = await rpc("tools/call", {

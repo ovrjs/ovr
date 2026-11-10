@@ -1010,8 +1010,9 @@ export class Schema<Output>
 				return { schema: { anyOf: [node.schema, { const: def.value }] } };
 			}
 			case "preprocess":
-				// any input, or none, may be preprocessed into a valid value
-				return c.io === "input"
+				// any input, or none, may be preprocessed into a valid value, unless
+				// the preprocessor only normalizes, where the input is the value
+				return c.io === "input" && !normalizers.has(def.fn)
 					? { schema: {}, optional: true }
 					: Schema.#node(def.inner, c);
 			case "transform":
@@ -1061,6 +1062,8 @@ export class Schema<Output>
 	static #unchanged(def: Schema.Def): boolean {
 		switch (def.type) {
 			case "preprocess":
+				// a normalizer leaves a valid value as it is
+				return normalizers.has(def.fn) && Schema.#unchanged(def.inner.def);
 			case "transform":
 			case "json":
 				return false;

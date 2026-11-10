@@ -73,7 +73,7 @@ Route.get("/api/:id").use((c) => {
 });
 ```
 
-> On [schema-enabled POST routes](/schema#post-forms), `Context.data` parses typed form data, and on [schema-enabled GET routes](/schema#get-forms) it parses typed search params. Routes without a schema return `null`.
+> On [routes with a schema](/schema#post-forms), `Context.data` parses typed form data from the request body. On [GET routes](/schema#get-forms) it parses typed search params. Routes without a schema return `null`.
 
 ## Response
 

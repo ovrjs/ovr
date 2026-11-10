@@ -367,6 +367,24 @@ describe("a body the client got wrong, which the app does not catch", () => {
 		expect(res.status).toBe(413);
 	});
 
+	test("the answer keeps headers set before the error, such as for CORS", async () => {
+		const res = await new App()
+			.use(async (c, next) => {
+				c.res.headers.set("access-control-allow-origin", "*");
+				c.html("<p>page</p>");
+				await next();
+			}, add)
+			.fetch(`${origin}/todos`, {
+				method: "POST",
+				headers: { ...headers, "content-type": "application/json" },
+				body: "{}",
+			});
+
+		expect(res.status).toBe(415);
+		expect(res.headers.get("access-control-allow-origin")).toBe("*");
+		expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+	});
+
 	test("the app's own error handling still sees the error first", async () => {
 		let caught: unknown;
 		const res = await new App()

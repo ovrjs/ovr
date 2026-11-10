@@ -121,22 +121,19 @@ import { Writable } from "node:stream";
 import { Route } from "ovr";
 
 const upload = Route.post("/upload").use(async (c) => {
-	try {
-		for await (const part of c.form()) {
-			if (part.name === "photo") {
-				await part.body.pipeTo(
-					Writable.toWeb(createWriteStream(`/uploads/${part.filename}`)),
-				);
-			}
+	for await (const part of c.form()) {
+		if (part.name === "photo") {
+			await part.body.pipeTo(
+				Writable.toWeb(createWriteStream(`/uploads/${part.filename}`)),
+			);
 		}
-
-		c.text("Upload Complete", 201);
-	} catch (error) {
-		console.error(error);
-		c.text("Upload Failed", 500);
 	}
+
+	c.text("Upload Complete", 201);
 });
 ```
+
+A body that is not multipart form data, is malformed, or is over a [limit](#options) is answered by the app with 415, 400, or 413.
 
 ### H3
 

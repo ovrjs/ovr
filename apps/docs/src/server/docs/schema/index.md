@@ -62,7 +62,7 @@ Schemas also implement [Standard JSON Schema](https://standardschema.dev/json-sc
 
 ## POST forms
 
-Use `Field` to describe the expected inputs for a POST route. `Context.data()` parses the [`multipart` request](/multipart) with the matching types. Try it in the [form demo](/demo/form).
+Use `Field` to describe the expected inputs for a POST route. `Context.data()` parses the [`multipart` request](/multipart) with the matching types, as it does for `PUT`, `PATCH`, and `DELETE` routes. Try it in the [form demo](/demo/form).
 
 ```tsx
 import { Field, Route } from "ovr";

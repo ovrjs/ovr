@@ -205,7 +205,35 @@ describe("Markdown", () => {
 				h("p", null, "<b>not bold</b>"),
 			]),
 		).toBe(
-			"\\# not a heading \\*literal\\* \\[x\\] snake_case \\_under\\_ \\<tag> & © 😀\n\n\\1. not a list\n\n\\<b>not bold\\</b>\n",
+			"\\# not a heading \\*literal\\* \\[x\\] snake_case \\_under\\_ \\<tag> & © 😀\n\n1\\. not a list\n\n\\<b>not bold\\</b>\n",
+		);
+	});
+
+	test("escapes what would start a block or strike text through", async () => {
+		expect(
+			await md([
+				h("p", null, "~~~"),
+				h("p", null, ">quote"),
+				h("p", null, "Title", h("br"), "="),
+				h("p", null, "~~struck~~ &amp; ~5"),
+			]),
+		).toBe(
+			"\\~\\~\\~\n\n\\>quote\n\nTitle\n\\=\n\n\\~\\~struck\\~\\~ \\&amp; \\~5\n",
+		);
+	});
+
+	test("text loose in a form, and its action, cannot write Markdown", async () => {
+		expect(
+			await md(
+				h(
+					"form",
+					{ action: "/search?q=a`b", method: "post", enctype: "a`b" },
+					h("div", null, "# heading *bold* [link](https://evil.example) <b>"),
+				),
+				{ base: "https://example.com/" },
+			),
+		).toBe(
+			"**Form:** ``POST https://example.com/search?q=a`b`` as ``a`b``\n\n\\# heading \\*bold\\* \\[link\\](https://evil.example) \\<b>\n",
 		);
 	});
 

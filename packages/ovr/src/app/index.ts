@@ -8,7 +8,7 @@ import {
 } from "../multipart/index.js";
 import { Route, freeze } from "../route/index.js";
 import { Trie } from "../trie/index.js";
-import { Header, Method, type Util } from "../util/index.js";
+import { Header, Method, Mime, type Util } from "../util/index.js";
 
 /** Internal protocol for services that `app.use` mounts, such as `Auth`. */
 export const mount = Symbol("mount");
@@ -208,17 +208,22 @@ export class App {
 			);
 		} catch (error) {
 			// a body the client got wrong, which nothing in the app answered
-			if (error instanceof Limit)
-				return new Response(error.message, { status: 413 });
-			if (error instanceof Unsupported)
-				return new Response(
-					"Unsupported Media Type: send multipart/form-data",
-					{ status: 415 },
-				);
-			if (error instanceof Malformed)
-				return new Response(`Bad Request: ${error.message}`, { status: 400 });
+			const [status, message] =
+				error instanceof Limit
+					? [413, error.message]
+					: error instanceof Unsupported
+						? [415, "Unsupported Media Type: send multipart/form-data"]
+						: error instanceof Malformed
+							? [400, `Bad Request: ${error.message}`]
+							: [];
 
-			throw error;
+			if (!status) throw error;
+
+			// with the headers middleware set before it, such as for CORS
+			const headers = new Headers(c.res.headers);
+			headers.set(Header.name.type, Header.utf8(Mime.type.text));
+
+			return new Response(message, { status, headers });
 		}
 	};
 

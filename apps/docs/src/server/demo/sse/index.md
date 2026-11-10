@@ -15,7 +15,7 @@ const sse = Route.get("/sse").use((c) => {
 	// set the content-type header to create a SSE
 	c.res.headers.set("content-type", "text/event-stream");
 
-	// passed into `render.stream`
+	// passed into `Markup.stream`
 	return async function* () {
 		yield "data: server\n\n";
 		await delay();
