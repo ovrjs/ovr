@@ -215,10 +215,10 @@ describe("Markdown", () => {
 				h("p", null, "~~~"),
 				h("p", null, ">quote"),
 				h("p", null, "Title", h("br"), "="),
-				h("p", null, "~~struck~~ &amp; ~5"),
+				h("p", null, "~~struck~~ &amp; ~5 ~/projects"),
 			]),
 		).toBe(
-			"\\~\\~\\~\n\n\\>quote\n\nTitle\n\\=\n\n\\~\\~struck\\~\\~ \\&amp; \\~5\n",
+			"\\~\\~\\~\n\n\\>quote\n\nTitle\n\\=\n\n\\~\\~struck\\~\\~ \\&amp; ~5 ~/projects\n",
 		);
 	});
 
@@ -364,6 +364,61 @@ describe("Markdown", () => {
 			]),
 		).toBe(
 			"1. a\n2. b\n   - nested\n3. c\n\n- one\n\n  ```\n  x\n\n  y\n  ```\n\n  two\n- own\n  - list\n",
+		);
+	});
+
+	test("a form around a table keeps the table, and names each control in its cell", async () => {
+		expect(
+			await md(
+				h(
+					"form",
+					{ action: "/bulk", method: "post" },
+					h(
+						"table",
+						null,
+						h("tr", null, h("th", null, ""), h("th", null, "Title"), h("th")),
+						["1", "2"].map((id) =>
+							h(
+								"tr",
+								null,
+								h(
+									"td",
+									null,
+									h("input", { type: "checkbox", name: "ids", value: id }),
+								),
+								h("td", null, h("a", { href: `/posts/${id}` }, `Post ${id}`)),
+								h(
+									"td",
+									null,
+									h("button", { name: "archive", value: id }, "Archive"),
+								),
+							),
+						),
+					),
+					h("label", { for: "note" }, "Note"),
+					h("input", { id: "note", name: "note" }),
+					h("p", null, "Optional"),
+					Markup.raw("<pre>a\n  b</pre>"),
+					h("pre", null, "x\n  y"),
+					h("button", null, "Delete selected"),
+					h("a", { href: "/posts" }, "Cancel"),
+				),
+			),
+		).toBe(
+			[
+				"**Form:** `POST /bulk`",
+				"- ids `ids` (checkbox), options: `1`, `2`\n- Note `note` (text)\n  - Optional",
+				[
+					"|  | Title |  |",
+					"| --- | --- | --- |",
+					"| `ids=1` | [Post 1](/posts/1) | Archive `archive=1` |",
+					"| `ids=2` | [Post 2](/posts/2) | Archive `archive=2` |",
+				].join("\n"),
+				"<pre>a\n  b</pre>",
+				"```\nx\n  y\n```",
+				"[Cancel](/posts)",
+				"Submit: Delete selected\n",
+			].join("\n\n"),
 		);
 	});
 

@@ -147,6 +147,9 @@ class Writer {
 	/** Depth inside a skipped element */
 	#skipping = 0;
 
+	/** Writing a form's table, where a control in a cell is named */
+	#controls = false;
+
 	/** Reader mode: before, inside, or after `<main>` */
 	#main: "before" | "inside" | "after" = "before";
 
@@ -631,14 +634,18 @@ class Writer {
 				name;
 
 			if (type === "checkbox" || type === "radio") {
+				// a box without a label of its own, such as one in each row of a
+				// table, is its value alone
+				const option = (value: string, label: string) =>
+					`${value}${label !== value && label !== name ? ` (${label})` : ""}`;
 				let group = byName.get(name);
 				const value = attrs.value ?? "on";
 				if (group && group.type === type) {
-					group.options.push(`${value}${label !== value ? ` (${label})` : ""}`);
+					group.options.push(option(value, label));
 					group.lone = false;
 				} else {
 					group = Writer.#field(legend || label, name, type);
-					group.options.push(`${value}${label !== value ? ` (${label})` : ""}`);
+					group.options.push(option(value, label));
 					group.lone = type === "checkbox" && attrs.value === undefined;
 					fields.push(group);
 					byName.set(name, group);
@@ -674,6 +681,13 @@ class Writer {
 			Writer.#rules(entry, attrs);
 			fields.push(entry);
 			byName.set(name, entry);
+		};
+
+		// a block among the notes, with a line between it and the others
+		const block = (text: string) => {
+			if (!text) return;
+			if (notes.length && notes.at(-1)) notes.push("");
+			notes.push(text, "");
 		};
 
 		const visit = (parent: Node, label?: string, quiet?: boolean) => {
@@ -719,12 +733,25 @@ class Writer {
 					case "legend":
 						legend = Writer.#plain(child);
 						break;
-					case "fieldset": {
-						const outer = legend;
-						visit(child, label);
-						legend = outer;
+					case "table": {
+						// its controls are fields, and the table is kept, with each
+						// control named in its cell, a row's button included
+						const before = submits.length;
+						visit(child, label, true);
+						submits.length = before;
+						this.#controls = true;
+						block(this.#table(child));
+						this.#controls = false;
 						break;
 					}
+					case "pre":
+						block(this.#pre(child));
+						break;
+					case "!":
+						// raw HTML, as it is
+						if (!quiet) block(child.children[0] as string);
+						break;
+					case "a":
 					case "p":
 					case "span":
 					case "small":
@@ -732,7 +759,9 @@ class Writer {
 					case "noscript":
 					case "strong":
 					case "em": {
+						if (quiet) break;
 						if (
+							child.tag !== "a" &&
 							child.children.some(
 								(c) =>
 									typeof c !== "string" &&
@@ -742,7 +771,9 @@ class Writer {
 							visit(child, label);
 							break;
 						}
-						const text = this.#paragraph(child.children);
+						const text = this.#paragraph(
+							child.tag === "a" ? [child] : child.children,
+						);
 						if (text) {
 							const last = fields.at(-1);
 							// messages after a field, such as errors, belong to it
@@ -801,6 +832,7 @@ class Writer {
 			);
 		}
 
+		while (notes.at(-1) === "") notes.pop();
 		if (notes.length) lines.push("", ...notes);
 
 		// only a button, such as a delete in each row, fits in the cell
@@ -880,9 +912,19 @@ class Writer {
 				case "input":
 				case "select":
 				case "textarea":
-				case "button":
+				case "button": {
 					// controls outside of a form do nothing without a script
+					if (!this.#controls) break;
+					const { name, value, type } = child.attrs;
+					if (child.tag === "button") out += inner();
+					if (name && type !== "hidden") {
+						// a box sends "on" without a value, others what is typed
+						const sent =
+							value ?? (type === "checkbox" || type === "radio" ? "on" : "");
+						out += ` ${Writer.#code(sent ? `${name}=${sent}` : name)} `;
+					}
 					break;
+				}
 				default:
 					out += Writer.#isBlock(child)
 						? ` ${this.#blocks(child.children, "\n")} `
@@ -1069,9 +1111,10 @@ class Writer {
 	static #escape(text: string) {
 		return (
 			text
-				.replace(/[\\`*[\]<~]/g, "\\$&")
-				// a character reference written out as text
-				.replace(/&(?=#?\w+;)/g, "\\$&")
+				.replace(/[\\`*[\]<]/g, "\\$&")
+				// a run of `~`, which strikes text through or opens a fence, and not
+				// one alone, as in `~/projects`; and a character reference
+				.replace(/~(?=~)|(?<=~)~|&(?=#?\w+;)/g, "\\$&")
 				.replace(/(^|[^\p{L}\p{N}])_|_(?=[^\p{L}\p{N}]|$)/gu, (m) =>
 					m.replace("_", "\\_"),
 				)

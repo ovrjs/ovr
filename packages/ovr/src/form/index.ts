@@ -720,6 +720,16 @@ class FieldSchema<
 			Boolean(this.parse(this.#read(new URLSearchParams(), "")).issues));
 	}
 
+	/** How each picker writes its value */
+	static readonly #formats: Record<string, string | undefined> = {
+		date: "Date as YYYY-MM-DD",
+		"datetime-local": "Date and time as YYYY-MM-DDTHH:mm",
+		month: "Month as YYYY-MM",
+		week: "Week as YYYY-Www, such as 2026-W46",
+		time: "Time as HH:mm",
+		color: "Color as #rrggbb",
+	};
+
 	/**
 	 * @internal The label people read, which names a terse field such as
 	 * `dob`, and an unchecked box's default
@@ -728,9 +738,13 @@ class FieldSchema<
 	 */
 	override [annotate](io: "input" | "output") {
 		const label = this.#options.props?.label;
+		const format = FieldSchema.#formats[this.type as string];
 
 		return {
 			...(label && { title: label }),
+			// what a browser's picker sends, which a string alone does not say
+			...(format && { description: format }),
+			...(this.type === "date" && { format: "date" }),
 			// a browser leaves an unchecked box out and it reads as false, so
 			// input, such as an agent's, may leave it out too
 			...(io === "input" &&

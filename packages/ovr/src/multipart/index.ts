@@ -211,6 +211,9 @@ export namespace Multipart {
 	export type Part = InstanceType<typeof Part>;
 }
 
+/** Default most memory a request body takes while it is read, 4MB */
+export const memory = 4 * Size.mb;
+
 /** Multipart request */
 export class Multipart extends Request {
 	/** New line needle to share across requests and parts */
@@ -218,7 +221,7 @@ export class Multipart extends Request {
 
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
-		memory: 4 * Size.mb,
+		memory,
 		payload: 16 * Size.mb,
 		parts: Infinity,
 	};

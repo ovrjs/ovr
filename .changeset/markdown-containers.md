@@ -9,3 +9,4 @@ Markdown keeps more of a page:
 - Raw markup is its own block only when it starts with a block element, so `Markup.raw("&euro;")` stays in its sentence.
 - A list keeps items inside a wrapper element and a list placed directly in a list, and paragraphs in one item stay apart.
 - A button with a `formaction` says where it submits.
+- A form around a table, such as one with a checkbox in each row, keeps the table and its links, with each control named in its cell. A `<pre>`, a link, and raw markup in a form are kept as they are.

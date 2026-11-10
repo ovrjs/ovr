@@ -124,9 +124,6 @@ export class Mcp {
 	/** `_meta` key prefix */
 	static readonly #meta = "io.modelcontextprotocol/";
 
-	/** Largest request body */
-	static readonly #limit = Size.mb;
-
 	/** Largest response an agent reads from a route */
 	static readonly #output = 4 * Size.mb;
 
@@ -324,11 +321,12 @@ export class Mcp {
 		if (type?.trim() !== Mime.type.json)
 			throw new RpcError(-32700, "Expected application/json", 415);
 
+		// read into memory, so within what the app allows a form's body there:
+		// a tool's file arguments are in it
+		const limit = this.#app!.memory;
 		const length = Number(c.req.headers.get("content-length"));
 		const bytes =
-			length > Mcp.#limit
-				? undefined
-				: await Codec.read(c.req.body, Mcp.#limit);
+			length > limit ? undefined : await Codec.read(c.req.body, limit);
 		if (!bytes) throw new RpcError(-32600, "Request too large", 413);
 
 		let message: unknown;
@@ -754,16 +752,17 @@ export class Mcp {
 		// the page's form has issues, such as a search with invalid parameters
 		if (typeof res === "string") throw new RpcError(-32602, res);
 
-		const text = await Mcp.#text(res);
+		const { type, ...body } = await Mcp.#body(res);
 
 		if (res.status === 404) throw new RpcError(-32002, "Resource not found");
 		if (!res.ok)
-			throw new RpcError(-32603, `${res.status} ${text || res.statusText}`);
-
-		const [type] = Header.shift(res.headers.get(Header.name.type));
+			throw new RpcError(
+				-32603,
+				`${res.status} ${body.text || res.statusText}`,
+			);
 
 		return {
-			contents: [{ uri: url.href, mimeType: type ?? Mime.type.md, text }],
+			contents: [{ uri: url.href, mimeType: type ?? Mime.type.md, ...body }],
 		};
 	}
 
@@ -792,14 +791,33 @@ export class Mcp {
 		return Boolean(route?.description);
 	}
 
+	/** Media types read as text, any other is a file */
+	static readonly #texts =
+		/^text\/|[/+](?:json|xml)$|^application\/(?:javascript|x-www-form-urlencoded)$/i;
+
 	/**
 	 * @param res Response from a route
-	 * @returns The body, bounded in size
+	 * @returns The body, bounded in size: its text, or a file such as an image
+	 * or a PDF in base64
 	 */
-	static async #text(res: Response) {
+	static async #body(res: Response) {
 		const bytes = await Codec.read(res.body, Mcp.#output);
 		if (!bytes) throw new RpcError(-32603, "Response too large");
-		return Codec.decode(bytes);
+
+		const [type] = Header.shift(res.headers.get(Header.name.type));
+
+		if (!type || Mcp.#texts.test(type)) {
+			try {
+				return { type, text: Codec.decode(bytes) };
+			} catch {
+				// not text after all
+			}
+		}
+
+		return {
+			type: type || "application/octet-stream",
+			blob: Codec.Base64.encode(bytes),
+		};
 	}
 
 	/**
@@ -874,7 +892,8 @@ export class Mcp {
 				);
 			}
 
-			const text = await Mcp.#text(res);
+			const { type, text, blob } = await Mcp.#body(res);
+			const [kind] = type?.split("/") ?? [];
 
 			return Mcp.#result(
 				[
@@ -886,6 +905,15 @@ export class Mcp {
 					.filter(Boolean)
 					.join("\n\n"),
 				!res.ok,
+				// a file, as a person would download or see it
+				blob === undefined
+					? undefined
+					: kind === "image" || kind === "audio"
+						? { type: kind, data: blob, mimeType: type }
+						: {
+								type: "resource",
+								resource: { uri: url.href, mimeType: type, blob },
+							},
 			);
 		}
 	}
@@ -901,9 +929,16 @@ export class Mcp {
 	/**
 	 * @param text Text for the agent
 	 * @param isError The call failed
+	 * @param file A file the route answered with, after the text if any
 	 * @returns Tool result
 	 */
-	static #result(text: string, isError = false) {
-		return { content: [{ type: "text", text }], isError };
+	static #result(text: string, isError = false, file?: Json) {
+		return {
+			content: [
+				...(text || !file ? [{ type: "text", text }] : []),
+				...(file ? [file] : []),
+			],
+			isError,
+		};
 	}
 }

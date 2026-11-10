@@ -431,7 +431,9 @@ describe("Mcp", () => {
 		const body = new ReadableStream<Uint8Array>(
 			{
 				pull(controller) {
-					if (++pulls === 1) controller.enqueue(new Uint8Array(1024 ** 2 + 1));
+					// over the app's `form.memory`, 4MB by default
+					if (++pulls === 1)
+						controller.enqueue(new Uint8Array(4 * 1024 ** 2 + 1));
 					else controller.close();
 				},
 			},
@@ -628,6 +630,79 @@ describe("Mcp", () => {
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toContain("Expected a file");
 		}
+	});
+
+	test("a tool returns a file the route answers with, and fields say their format", async () => {
+		const bytes = new Uint8Array([37, 80, 68, 70, 0, 255]);
+		const app = new App().use(
+			Route.get("/report")
+				.describe("Report")
+				.use((c) => {
+					c.res.headers.set("content-type", "application/pdf");
+					c.res.body = bytes;
+				}),
+			Route.get("/chart")
+				.describe("Chart")
+				.use((c) => {
+					c.res.headers.set("content-type", "image/png");
+					c.res.body = bytes;
+				}),
+			Route.get("/rows")
+				.describe("Rows")
+				.use((c) => {
+					c.res.headers.set("content-type", "text/csv");
+					c.res.body = "a,b\n1,2\n";
+				}),
+			Route.post("/book")
+				.describe("Book")
+				.fields({ day: Field.date(), at: Field.time() })
+				.use((c) => c.text("ok")),
+			new Mcp({ name: "files" }),
+		);
+		const rpc = async (method: string, params?: Record<string, unknown>) =>
+			(
+				await app.fetch("http://localhost/mcp", request(method, params))
+			).json() as Promise<any>;
+		const call = async (name: string) =>
+			(await rpc("tools/call", { name, arguments: {} })).result.content;
+		const blob = bytes.toBase64();
+
+		expect(await call("get_report")).toEqual([
+			{
+				type: "resource",
+				resource: {
+					uri: "http://localhost/report",
+					mimeType: "application/pdf",
+					blob,
+				},
+			},
+		]);
+		expect(await call("get_chart")).toEqual([
+			{ type: "image", data: blob, mimeType: "image/png" },
+		]);
+		expect(await call("get_rows")).toEqual([
+			{ type: "text", text: "a,b\n1,2\n" },
+		]);
+		expect(
+			(await rpc("resources/read", { uri: "http://localhost/report" })).result
+				.contents,
+		).toEqual([
+			{ uri: "http://localhost/report", mimeType: "application/pdf", blob },
+		]);
+
+		const tools = (await rpc("tools/list")).result.tools;
+		const book = tools.find(
+			(tool: { name: string }) => tool.name === "post_book",
+		);
+
+		expect(book.inputSchema.properties).toEqual({
+			day: {
+				type: "string",
+				format: "date",
+				description: "Date as YYYY-MM-DD",
+			},
+			at: { type: "string", description: "Time as HH:mm" },
+		});
 	});
 
 	test("tools call the route and follow its redirect", async () => {

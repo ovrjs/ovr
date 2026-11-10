@@ -5,6 +5,7 @@ import {
 	Malformed,
 	type Multipart,
 	Unsupported,
+	memory,
 } from "../multipart/index.js";
 import { Route, freeze } from "../route/index.js";
 import { Trie } from "../trie/index.js";
@@ -27,6 +28,9 @@ export namespace App {
 
 		/** The app's request handler */
 		readonly fetch: App["fetch"];
+
+		/** Most memory a request body may take, the app's `form.memory` */
+		readonly memory: number;
 
 		/**
 		 * @param method Request method
@@ -154,6 +158,7 @@ export class App {
 					route[mount]({
 						routes: this.#routes,
 						fetch: this.fetch,
+						memory: this.#options.form?.memory ?? memory,
 						find: (method, pathname) =>
 							this.#trie.find(App.#match(method) + pathname)?.route,
 					}),
