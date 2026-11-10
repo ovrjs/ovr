@@ -679,6 +679,9 @@ export class Mcp {
 						type: "object",
 						properties,
 						...(required.size ? { required: [...required] } : {}),
+						// a form takes only its fields. Other routes are left open: a
+						// handler may read the query or the body itself
+						...(form.shape && !read && { additionalProperties: false }),
 					},
 					// no destructiveHint, so clients treat any tool that writes as one
 					// that may need confirming
@@ -794,6 +797,23 @@ export class Mcp {
 		const body = new FormData();
 
 		const { shape } = route as Route.Post;
+
+		if (shape && !read) {
+			// named here, the form would only count one part too many
+			const unexpected = Object.keys(args).filter(
+				(name) => !Object.hasOwn(shape, name) && !tool.params.has(name),
+			);
+			if (unexpected.length)
+				return Mcp.#result(
+					Mcp.#issues(
+						unexpected.map((path) => ({
+							path,
+							message: "Unexpected argument",
+						})),
+					),
+					true,
+				);
+		}
 		for (const [name, value] of Object.entries(args)) {
 			// a parameter is in the path, and also sent when a field has its name
 			if (tool.params.has(name) && !(shape && Object.hasOwn(shape, name)))
@@ -894,10 +914,14 @@ export class Mcp {
 			};
 
 		if (res.status === 404) throw missing();
+		// refused, such as a 403: the request's to change, where a server error
+		// above is the app's
 		if (!res.ok)
 			throw new RpcError(
-				-32603,
-				`${res.status} ${body.text || res.statusText}`,
+				-32602,
+				`${res.status} ${body.text || res.statusText}`.trim(),
+				200,
+				{ uri: String(params.uri), status: res.status },
 			);
 
 		return {

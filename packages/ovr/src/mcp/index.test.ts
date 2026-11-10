@@ -563,6 +563,7 @@ describe("Mcp", () => {
 				quantity: { type: "integer", minimum: 1, title: "Quantity" },
 			},
 			required: ["quantity"],
+			additionalProperties: false,
 		});
 
 		await rpc("tools/call", { name: "post_buy", arguments: { quantity: 3 } });
@@ -1039,6 +1040,15 @@ describe("Mcp", () => {
 			isError: true,
 			content: [{ type: "text", text: "403\n\nNot yours" }],
 		});
+		// and for a resource, an error about the request, not a server fault
+		expect(
+			(await rpc("resources/read", { uri: "http://localhost/forbidden" }))
+				.error,
+		).toEqual({
+			code: -32602,
+			message: "403 Not yours",
+			data: { uri: "http://localhost/forbidden", status: 403 },
+		});
 
 		// without error handling in the app, the error is the server's, as
 		// from any route
@@ -1056,6 +1066,63 @@ describe("Mcp", () => {
 				request("tools/call", { name: "get_broken", arguments: {} }),
 			),
 		).rejects.toThrow("bug");
+	});
+
+	test("a form's tool takes only its fields, other routes are left open", async () => {
+		const app = new App().use(
+			Route.post("/notes/:id")
+				.describe("Edit a note")
+				.fields({ text: Field.text() })
+				.use(async (c) => {
+					const result = await c.data();
+					if (result.issues) return;
+					c.text(`${c.params.id}: ${result.data.text}`);
+				}),
+			// a handler may read the query itself
+			Route.get("/list")
+				.describe("List")
+				.use((c) => c.text(`page ${c.url.searchParams.get("page")}`)),
+			new Mcp({ name: "notes" }),
+		);
+		const rpc = async (method: string, params?: Record<string, unknown>) =>
+			(
+				(await (
+					await app.fetch("http://localhost/mcp", request(method, params))
+				).json()) as any
+			).result;
+		const [edit, list] = (await rpc("tools/list")).tools;
+
+		expect(edit.inputSchema.additionalProperties).toBe(false);
+		expect(list.inputSchema).toEqual({ type: "object", properties: {} });
+
+		expect(
+			await rpc("tools/call", {
+				name: "post_notes_id",
+				arguments: { id: "1", text: "Hi", extra: "x", more: 1 },
+			}),
+		).toMatchObject({
+			isError: true,
+			content: [
+				{
+					type: "text",
+					text: expect.stringContaining(
+						'{"issues":[{"path":"extra","message":"Unexpected argument"},{"path":"more","message":"Unexpected argument"}]}',
+					),
+				},
+			],
+		});
+		expect(
+			(
+				await rpc("tools/call", {
+					name: "post_notes_id",
+					arguments: { id: "1", text: "Hi" },
+				})
+			).content[0].text,
+		).toBe("1: Hi");
+		expect(
+			(await rpc("tools/call", { name: "get_list", arguments: { page: 2 } }))
+				.content[0].text,
+		).toBe("page 2");
 	});
 
 	test("tools call the route and follow its redirect", async () => {
