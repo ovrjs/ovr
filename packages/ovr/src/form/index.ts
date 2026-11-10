@@ -819,10 +819,34 @@ class FieldSchema<
 	}
 
 	/**
+	 * Attributes for the field's control wherever it renders, such as a
+	 * placeholder. Those for one form are passed when it renders.
+	 *
+	 * ```ts
+	 * Field.email().control({ placeholder: "name@example.com" });
+	 * ```
+	 *
+	 * @param attributes Attributes of the control's element
+	 * @returns Field with the attributes
+	 */
+	control(
+		attributes: Tag extends "select"
+			? Field.Props.Select
+			: Tag extends "textarea"
+				? Field.Props.Textarea
+				: // the field is its type
+					Field.Props.Input & { readonly type?: never },
+	): Field.Instance<Output, Tag, Type, Values, Stream> {
+		return this.#with({
+			props: { ...this.#options.props, ...attributes } as Field.Props,
+		});
+	}
+
+	/**
 	 * @param options Options to change
 	 * @returns The same field with them
 	 */
-	#with(options: Pick<Field.Options, "label" | "description">) {
+	#with(options: Pick<Field.Options, "label" | "description" | "props">) {
 		return new FieldSchema<Output, Tag, Type, Values, Stream>(
 			{ ...this.#options, ...options },
 			this.def,
@@ -1432,7 +1456,7 @@ export namespace Field {
 		/**
 		 * A field's label and description are what it means, for people and
 		 * agents, and not attributes of its control: set them with `label()` and
-		 * `describe()`.
+		 * `describe()`, and the control's attributes with `control()`.
 		 */
 		interface Chained {
 			/** Use `field.label(text)` */
@@ -1496,128 +1520,91 @@ export class Field {
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Text input field
 	 */
-	static text(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "text"> {
-		return Field.#input({ ...props, type: "text" });
+	static text(): Field.Instance<string, "input", "text"> {
+		return Field.#input({ type: "text" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Password input field
 	 */
-	static password(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "password"> {
-		return Field.#input({ ...props, type: "password" });
+	static password(): Field.Instance<string, "input", "password"> {
+		return Field.#input({ type: "password" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Search input field
 	 */
-	static search(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "search"> {
-		return Field.#input({ ...props, type: "search" });
+	static search(): Field.Instance<string, "input", "search"> {
+		return Field.#input({ type: "search" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Telephone input field
 	 */
-	static tel(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "tel"> {
-		return Field.#input({ ...props, type: "tel" });
+	static tel(): Field.Instance<string, "input", "tel"> {
+		return Field.#input({ type: "tel" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Color input field
 	 */
-	static color(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "color"> {
-		return Field.#input({ ...props, type: "color" });
+	static color(): Field.Instance<string, "input", "color"> {
+		return Field.#input({ type: "color" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Hidden input field
 	 */
-	static hidden(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "hidden"> {
-		return Field.#input({ ...props, type: "hidden" });
+	static hidden(): Field.Instance<string, "input", "hidden"> {
+		return Field.#input({ type: "hidden" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Date input field
 	 */
-	static date(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "date"> {
-		return Field.#input({ ...props, type: "date" });
+	static date(): Field.Instance<string, "input", "date"> {
+		return Field.#input({ type: "date" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Datetime input field
 	 */
-	static datetime(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "datetime-local"> {
-		return Field.#input({ ...props, type: "datetime-local" });
+	static datetime(): Field.Instance<string, "input", "datetime-local"> {
+		return Field.#input({ type: "datetime-local" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Month input field
 	 */
-	static month(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "month"> {
-		return Field.#input({ ...props, type: "month" });
+	static month(): Field.Instance<string, "input", "month"> {
+		return Field.#input({ type: "month" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Week input field
 	 */
-	static week(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "week"> {
-		return Field.#input({ ...props, type: "week" });
+	static week(): Field.Instance<string, "input", "week"> {
+		return Field.#input({ type: "week" });
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Time input field
 	 */
-	static time(
-		props?: Field.Props.Input,
-	): Field.Instance<string, "input", "time"> {
-		return Field.#input({ ...props, type: "time" });
+	static time(): Field.Instance<string, "input", "time"> {
+		return Field.#input({ type: "time" });
 	}
 
 	/**
 	 * Validates email string.
 	 *
-	 * @param props Input props
 	 * @param message Issue message when invalid
 	 * @returns Email input field
 	 */
-	static email(
-		props?: Field.Props.Input,
-		message?: string,
-	): Field.Instance<string, "input", "email"> {
+	static email(message?: string): Field.Instance<string, "input", "email"> {
 		return new FieldSchema(
-			{ props: { ...props, type: "email" } },
+			{ props: { type: "email" } },
 			Schema.string(Field.#required).email(message),
 		);
 	}
@@ -1625,16 +1612,12 @@ export class Field {
 	/**
 	 * Validates parsable URL.
 	 *
-	 * @param props Input props
 	 * @param message Issue message when invalid
 	 * @returns URL input field
 	 */
-	static url(
-		props?: Field.Props.Input,
-		message?: string,
-	): Field.Instance<string, "input", "url"> {
+	static url(message?: string): Field.Instance<string, "input", "url"> {
 		return new FieldSchema(
-			{ props: { ...props, type: "url" } },
+			{ props: { type: "url" } },
 			Schema.string(Field.#required).url(message),
 		);
 	}
@@ -1676,53 +1659,41 @@ export class Field {
 	/**
 	 * Coerces to number.
 	 *
-	 * @param props Input props
 	 * @returns Number input field
 	 */
-	static number(
-		props?: Field.Props.Input,
-	): Field.Instance<number, "input", "number"> {
-		return Field.#number({ ...props, type: "number" });
+	static number(): Field.Instance<number, "input", "number"> {
+		return Field.#number({ type: "number" });
 	}
 
 	/**
 	 * Coerces to number.
 	 *
-	 * @param props Input props
 	 * @returns Range input field
 	 */
-	static range(
-		props?: Field.Props.Input,
-	): Field.Instance<number, "input", "range"> {
-		return Field.#number({ ...props, type: "range" });
+	static range(): Field.Instance<number, "input", "range"> {
+		return Field.#number({ type: "range" });
 	}
 
 	/**
 	 * - unchecked => key missing => `false`
 	 * - checked => key present => `true`
 	 *
-	 * @param props Input props
 	 * @returns Checkbox input field
 	 */
-	static checkbox(
-		props?: Field.Props.Input,
-	): Field.Instance<boolean, "input", "checkbox"> {
+	static checkbox(): Field.Instance<boolean, "input", "checkbox"> {
 		return new FieldSchema(
-			{ props: { ...props, type: "checkbox" } },
+			{ props: { type: "checkbox" } },
 			Schema.boolean(),
 			(formData, name) => formData.has(name),
 		);
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns File input field
 	 */
-	static file(
-		props?: Field.Props.Input,
-	): Field.Instance<File, "input", "file"> {
+	static file(): Field.Instance<File, "input", "file"> {
 		return new FieldSchema(
-			{ props: { ...props, type: "file" } },
+			{ props: { type: "file" } },
 			Schema.instance(File, Field.#required),
 			(data, name) => {
 				const value = data.get(name);
@@ -1733,14 +1704,11 @@ export class Field {
 	}
 
 	/**
-	 * @param props Input props
 	 * @returns Multiple file input field
 	 */
-	static files(
-		props?: Field.Props.Input,
-	): Field.Instance<File[], "input", "file"> {
+	static files(): Field.Instance<File[], "input", "file"> {
 		return new FieldSchema(
-			{ props: { ...props, type: "file", multiple: true } },
+			{ props: { type: "file", multiple: true } },
 			Schema.array(Schema.instance(File, Field.#required), Field.#required),
 			(data, name) => {
 				const value = data.getAll(name).filter(Field.#nonEmptyFile);
@@ -1754,15 +1722,13 @@ export class Field {
 	/**
 	 * @template V Value type
 	 * @param values Checkbox values
-	 * @param props Input props
 	 * @returns Checkbox group input field
 	 */
 	static checkboxes<const V extends string>(
 		values: readonly [V, ...V[]],
-		props?: Field.Props.Input,
 	): Field.Instance<V[], "input", "checkbox", readonly [V, ...V[]]> {
 		return new FieldSchema(
-			{ values, props: { ...props, type: "checkbox" } },
+			{ values, props: { type: "checkbox" } },
 			Schema.array(Schema.enum(values, Field.#choose), Field.#choose),
 			Field.#readMany,
 			values.length,
@@ -1772,44 +1738,34 @@ export class Field {
 	/**
 	 * @template V Value type
 	 * @param values Radio button values
-	 * @param props Input props
 	 * @returns Radio group input field
 	 */
 	static radio<const V extends string>(
 		values: readonly [V, ...V[]],
-		props?: Field.Props.Input,
 	): Field.Instance<V, "input", "radio", readonly [V, ...V[]]> {
 		return new FieldSchema(
-			{ values, props: { ...props, type: "radio" } },
+			{ values, props: { type: "radio" } },
 			Schema.enum(values, Field.#choose),
 		);
 	}
 
 	/**
-	 * @param props Textarea props
 	 * @returns Textarea field
 	 */
-	static textarea(
-		props?: Field.Props.Textarea,
-	): Field.Instance<string, "textarea"> {
-		return new FieldSchema(
-			{ tag: "textarea", props },
-			Schema.string(Field.#required),
-		);
+	static textarea(): Field.Instance<string, "textarea"> {
+		return new FieldSchema({ tag: "textarea" }, Schema.string(Field.#required));
 	}
 
 	/**
 	 * @template V Value type
 	 * @param values Select options
-	 * @param props Select props
 	 * @returns Select field
 	 */
 	static select<const V extends string>(
 		values: readonly [V, ...V[]],
-		props?: Field.Props.Select,
 	): Field.Instance<V, "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
-			{ tag: "select", values, props },
+			{ tag: "select", values },
 			Schema.enum(values, Field.#choose),
 		);
 	}
@@ -1817,15 +1773,13 @@ export class Field {
 	/**
 	 * @template V Value type
 	 * @param values Select options
-	 * @param props Select props
 	 * @returns Multi-select field
 	 */
 	static multiselect<const V extends string>(
 		values: readonly [V, ...V[]],
-		props?: Field.Props.Select,
 	): Field.Instance<V[], "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
-			{ tag: "select", values, props: { ...props, multiple: true } },
+			{ tag: "select", values, props: { multiple: true } },
 			Schema.array(Schema.enum(values, Field.#choose), Field.#choose),
 			Field.#readMany,
 			values.length,

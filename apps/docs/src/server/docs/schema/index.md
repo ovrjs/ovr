@@ -106,7 +106,7 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 `describe` says how to fill a field in, as a route's [`describe`](/route#describe) says what the route does: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
 
-The object a field takes holds only attributes for its control, such as `Field.text({ placeholder: "Harry Potter" })`.
+`control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<signup.Field name="name" autofocus />`.
 
 - `signup.Fields` renders all the fields _without_ the outer `<form>` shell
 - `signup.Field` renders one field by `name` (each key in the shape)

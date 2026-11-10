@@ -5,13 +5,16 @@ import { Field, Markup, Route } from "ovr";
 
 export const enroll = Route.post("/demo/form")
 	.fields({
-		name: Field.text({ placeholder: "Harry Potter" })
+		name: Field.text()
+			.control({ placeholder: "Harry Potter" })
 			.min(2, "Expected at least 2 characters")
 			.persist(),
-		email: Field.email({ placeholder: "name@hogwarts.edu" }).refine(
-			(v) => v.endsWith("@hogwarts.edu"),
-			"Expected a @hogwarts.edu email",
-		),
+		email: Field.email()
+			.control({ placeholder: "name@hogwarts.edu" })
+			.refine(
+				(v) => v.endsWith("@hogwarts.edu"),
+				"Expected a @hogwarts.edu email",
+			),
 		house: Field.select([
 			"Gryffindor",
 			"Hufflepuff",

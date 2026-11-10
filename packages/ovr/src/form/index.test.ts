@@ -702,7 +702,8 @@ describe("Form schema", () => {
 	});
 
 	test("a label and a description are chained in any order, and kept by what follows", async () => {
-		const field = Field.text({ placeholder: "Title" })
+		const field = Field.text()
+			.control({ placeholder: "Title" })
 			.describe("A short name")
 			.max(40)
 			.label("Title")
@@ -711,7 +712,7 @@ describe("Form schema", () => {
 		const form = new Form({ title: field });
 
 		expect(await Markup.string(form.Field({ name: "title" }))).toBe(
-			'<div><label for="title">Title</label><input id="title" aria-describedby="title-description" placeholder="Title" type="text" name="title"><p id="title-description" data-description>A short name</p></div>',
+			'<div><label for="title">Title</label><input id="title" aria-describedby="title-description" type="text" placeholder="Title" name="title"><p id="title-description" data-description>A short name</p></div>',
 		);
 		expect(
 			Schema.object(form.shape).toJsonSchema({ io: "input" }).properties,
@@ -724,11 +725,28 @@ describe("Form schema", () => {
 			},
 		});
 
-		// they are what the field means, not attributes of its control
+		// a field is made without arguments but its choices, and a label and
+		// a description are what it means, not attributes of its control
+		// @ts-expect-error - use control()
+		Field.text({ placeholder: "Title" });
 		// @ts-expect-error - use label()
-		Field.text({ label: "Title" });
+		Field.text().control({ label: "Title" });
 		// @ts-expect-error - use describe()
-		Field.select(["a", "b"], { description: "Pick one" });
+		Field.select(["a", "b"]).control({ description: "Pick one" });
+		// @ts-expect-error - the field is its type
+		Field.text().control({ type: "email" });
+
+		// attributes add up, and one form's are passed when it renders
+		const wide = Field.textarea()
+			.control({ rows: 3 })
+			.control({ class: "wide" });
+		expect(
+			await Markup.string(
+				new Form({ note: wide }).Field({ name: "note", rows: 8 }),
+			),
+		).toBe(
+			'<div><label for="note">note</label><textarea id="note" required rows="8" class="wide" name="note"></textarea></div>',
+		);
 	});
 
 	test("field label metadata renders text without leaking to controls", async () => {
