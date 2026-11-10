@@ -2,7 +2,7 @@ import { Markup } from "../markup/index.js";
 import { Multipart } from "../multipart/index.js";
 import type { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
-import { Field, Form } from "./index.js";
+import { Field, Form, query } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 type FormValid<S extends Form.Shape> = Extract<
@@ -660,12 +660,12 @@ describe("Form schema", () => {
 		expect(role.includes(' label="Role"')).toBe(false);
 	});
 
-	test("render state reads matching query params from the URL", async () => {
+	test("a GET route's form reads matching query params from the URL", async () => {
 		const form = new Form({
 			q: Field.search(),
 			sort: Field.select(["relevance", "newest"]),
 			inStock: Field.checkbox(),
-		});
+		})[query]();
 		const url = new URL(
 			"https://example.com/search?q=travel+backpack&sort=newest&inStock=on",
 		);
@@ -685,7 +685,7 @@ describe("Form schema", () => {
 		const form = new Form({
 			q: Field.search().min(2),
 			sort: Field.select(["relevance", "newest"]),
-		});
+		})[query]();
 		const params = new URLSearchParams();
 
 		params.set("q", "travel backpack");

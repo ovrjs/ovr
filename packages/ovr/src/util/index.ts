@@ -152,7 +152,9 @@ export class Header {
 
 			if (score > best) {
 				best = score;
-				const quality = Number(Header.params(params?.slice(1) ?? "").q ?? 1);
+				const quality = Number(
+					Header.params(params?.slice(1) ?? "", true).q ?? 1,
+				);
 				q = Number.isNaN(quality) ? 0 : quality;
 			}
 		}
@@ -162,9 +164,11 @@ export class Header {
 
 	/**
 	 * @param header header value to parse
+	 * @param insensitive Lowercase each key, a parameter's name is
+	 * case-insensitive, a cookie's is not
 	 * @returns Map containing each key=value pair
 	 */
-	static params(header: string | null) {
+	static params(header: string | null, insensitive?: boolean) {
 		// without a prototype, so a key such as "__proto__" is only a key
 		const parsed: Record<string, string> = Object.create(null);
 
@@ -185,7 +189,8 @@ export class Header {
 					continue;
 				}
 
-				const key = header.slice(cursor, equal).trim();
+				let key = header.slice(cursor, equal).trim();
+				if (insensitive) key = key.toLowerCase();
 				let value: string;
 				let quoted = false;
 

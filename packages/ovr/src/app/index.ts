@@ -233,6 +233,9 @@ export class App {
 	 * @returns The decoded value, or the value as sent when it is malformed
 	 */
 	static #decode(value: string, wildcard: boolean) {
+		// a wildcard is relative to its route, so `/files//etc/passwd` cannot
+		// make it an absolute path
+		if (wildcard) value = value.replace(/^\/+/, "");
 		if (!value.includes("%")) return value;
 
 		try {

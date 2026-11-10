@@ -170,6 +170,12 @@ test("GET /wild/*", async () => {
 	expect(json["*"]).toBe("hello/");
 });
 
+test("a wildcard stays relative, extra slashes cannot make it a root path", async () => {
+	const res = await appFetch("/wild//etc/passwd");
+
+	expect((await res.json())["*"]).toBe("etc/passwd");
+});
+
 test("POST /post/", async () => {
 	const body = new FormData();
 	body.append("key", "value");
@@ -383,6 +389,21 @@ describe("a body the client got wrong, which the app does not catch", () => {
 		expect(res.status).toBe(415);
 		expect(res.headers.get("access-control-allow-origin")).toBe("*");
 		expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+	});
+
+	test("content type and part parameter names match in any case", async () => {
+		const res = await new App()
+			.use(add)
+			.fetch(`${origin}/todos`, {
+				method: "POST",
+				headers: {
+					...headers,
+					"content-type": 'Multipart/Form-Data; Boundary="x"',
+				},
+				body: '--x\r\ncontent-disposition: form-data; NAME="text"\r\n\r\nBuy milk\r\n--x--\r\n',
+			});
+
+		expect(await res.text()).toBe("saved");
 	});
 
 	test("the app's own error handling still sees the error first", async () => {

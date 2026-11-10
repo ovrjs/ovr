@@ -147,6 +147,9 @@ export namespace Form {
  *
  * @template Shape Form field shape type
  */
+/** Internal protocol for a GET route, to make the form its fields render. */
+export const query = Symbol("query");
+
 export class Form<Shape extends Form.Shape = Form.Shape> {
 	/** Query param keys ordered as `[return, form]`. */
 	static readonly params = ["_return", "_form"] as const;
@@ -167,6 +170,12 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 	/** Form id. */
 	readonly #id: string;
+
+	/**
+	 * If search params fill the fields by name, as a GET form submits them.
+	 * Other forms restore only what they persisted, so a link cannot fill them.
+	 */
+	#query = false;
 
 	/** Field definitions. */
 	readonly shape: Shape;
@@ -190,6 +199,13 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			(sum, field) => sum + field.parts,
 			0,
 		);
+	}
+
+	/** @returns The form for a GET route, whose submission is the page's URL */
+	[query]() {
+		const form = new Form(this.shape);
+		form.#query = true;
+		return form;
 	}
 
 	/**
@@ -307,19 +323,22 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	#restore(stateInput?: URL): Form.State<Shape> | undefined {
 		if (stateInput) {
 			const values = this.#sanitize(
-				this.names.reduce<Record<string, unknown>>((data, name) => {
-					if (stateInput.searchParams.has(name)) {
-						const value = FieldSchema.read(
-							this.shape[name]!,
-							stateInput.searchParams,
-							name,
-						);
+				(this.#query ? this.names : []).reduce<Record<string, unknown>>(
+					(data, name) => {
+						if (stateInput.searchParams.has(name)) {
+							const value = FieldSchema.read(
+								this.shape[name]!,
+								stateInput.searchParams,
+								name,
+							);
 
-						if (value != null) own(data, name, value);
-					}
+							if (value != null) own(data, name, value);
+						}
 
-					return data;
-				}, {}),
+						return data;
+					},
+					{},
+				),
 				false,
 			);
 			const encoded = stateInput.searchParams.get(Form.params[1]);

@@ -1,4 +1,4 @@
-import { Form as FormSchema } from "../form/index.js";
+import { Form as FormSchema, query } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema as ValueSchema } from "../schema/index.js";
@@ -577,9 +577,12 @@ export class Route<
 	): Route.Of<Kind, Pattern, Params, S> {
 		this.#configure("fields");
 		this.#before("fields");
+		const form = fields instanceof FormSchema ? fields : new FormSchema(fields);
+
 		return Object.assign(
 			this,
-			fields instanceof FormSchema ? fields : new FormSchema(fields),
+			// a GET form's submission is the URL, so its fields read from it
+			this.method === Method.get ? form[query]() : form,
 		) as any;
 	}
 

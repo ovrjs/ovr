@@ -237,6 +237,137 @@ describe("Markdown", () => {
 		);
 	});
 
+	test("forms in a table's cells follow the table", async () => {
+		const remove = Route.post("/posts/:id/delete").use((c) => c.text("ok"));
+
+		expect(
+			await md(
+				h(
+					"table",
+					null,
+					h("tr", null, h("th", null, "Title"), h("th", null, "Actions")),
+					["1", "2"].map((id) =>
+						h(
+							"tr",
+							null,
+							h("td", null, `Post ${id}`),
+							h("td", null, remove.Form({ params: { id }, submit: "Delete" })),
+						),
+					),
+				),
+			),
+		).toBe(
+			[
+				"| Title | Actions |\n| --- | --- |\n| Post 1 |  |\n| Post 2 |  |",
+				"**Form:** `POST /posts/1/delete` as `multipart/form-data`",
+				"Submit: Delete",
+				"**Form:** `POST /posts/2/delete` as `multipart/form-data`",
+				"Submit: Delete\n",
+			].join("\n\n"),
+		);
+	});
+
+	test("an inline element that holds blocks, such as a custom element, is a container", async () => {
+		expect(
+			await md([
+				h("p", null, "Before"),
+				h(
+					"my-card",
+					null,
+					h("h2", null, "Title"),
+					h("ul", null, h("li", null, "a"), h("li", null, "b")),
+					h("pre", null, "one\n  two"),
+					h(
+						"span",
+						null,
+						h("form", { action: "/go" }, h("button", null, "Go")),
+					),
+				),
+				h("div", null, "Updated ", h("relative-time", null, "2h"), " ago"),
+				h(
+					"dl",
+					null,
+					h("dt", null, "Code"),
+					h("dd", null, h("pre", null, "x")),
+				),
+				// a link's contents stay its text
+				h("a", { href: "/card" }, h("h3", null, "Card"), h("p", null, "More")),
+			]),
+		).toBe(
+			[
+				"Before",
+				"## Title",
+				"- a\n- b",
+				"```\none\n  two\n```",
+				"**Form:** `GET /go`",
+				"Submit: Go",
+				"Updated 2h ago",
+				"**Code**",
+				"```\nx\n```",
+				"[Card  More](/card)\n",
+			].join("\n\n"),
+		);
+	});
+
+	test("raw HTML is a block only when it starts with one", async () => {
+		expect(
+			await md([
+				h("div", null, "Price: ", Markup.raw("&euro;"), "5 total"),
+				h("ul", null, h("li", null, "A ", Markup.raw("<b>bold</b>"), " item")),
+				"Loose ",
+				Markup.raw("<i>text</i>"),
+				Markup.raw("<figure>block</figure>"),
+			]),
+		).toBe(
+			"Price: &euro;5 total\n\n- A <b>bold</b> item\n\nLoose <i>text</i>\n\n<figure>block</figure>\n",
+		);
+	});
+
+	test("lists keep items in a wrapper, a list placed directly in a list, and an item's blocks", async () => {
+		expect(
+			await md([
+				h(
+					"ol",
+					null,
+					h("li", null, "a"),
+					h("my-item", null, h("li", null, "b")),
+					h("ul", null, h("li", null, "nested")),
+					"text",
+					h("li", null, "c"),
+				),
+				h(
+					"ul",
+					null,
+					h(
+						"li",
+						null,
+						h("p", null, "one"),
+						h("pre", null, "x\n\ny"),
+						h("p", null, "two"),
+					),
+					h("li", null, "own", h("ul", null, h("li", null, "list"))),
+				),
+			]),
+		).toBe(
+			"1. a\n2. b\n   - nested\n3. c\n\n- one\n\n  ```\n  x\n\n  y\n  ```\n\n  two\n- own\n  - list\n",
+		);
+	});
+
+	test("a button that submits elsewhere says where", async () => {
+		expect(
+			await md(
+				h(
+					"form",
+					{ action: "/posts/1", method: "post" },
+					h("button", null, "Save"),
+					h("button", { formaction: "/posts/1/delete" }, "Delete"),
+				),
+			),
+		).toBe(
+			"**Form:** `POST /posts/1`\n\nSubmit: Save, Delete (`POST /posts/1/delete`)\n",
+		);
+	});
+
 	test("skips head, scripts, styles, and hidden elements", async () => {
 		expect(
 			await md(

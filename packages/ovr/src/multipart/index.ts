@@ -118,6 +118,7 @@ class Part extends Request {
 
 		const { name, filename } = Header.params(
 			this.headers.get(Header.name.disp),
+			true,
 		);
 		this.name = Part.#utf8(name);
 		this.filename = Part.#utf8(filename);
@@ -283,7 +284,7 @@ export class Multipart extends Request {
 
 		if (!Mime.multipart(mime)) throw new Unsupported("Unsupported Media Type");
 
-		const { boundary } = Header.params(params);
+		const { boundary } = Header.params(params, true);
 
 		if (!boundary) throw new Malformed("Boundary Not Found");
 		// RFC 2046: 1 to 70 characters from a limited set, not ending in a space

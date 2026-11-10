@@ -92,6 +92,9 @@ class Writer {
 		"search",
 	]);
 
+	/** Lists */
+	static readonly #lists = new Set(["ul", "ol", "menu"]);
+
 	/** Block elements, everything else is inline */
 	static readonly #blockTags = new Set([
 		...Writer.#containers,
@@ -220,13 +223,14 @@ class Writer {
 	 */
 	#raw(html: string) {
 		if (!html || this.#skipping) return;
+		const node = Writer.#node("!", {}, html);
 		const parent = this.#stack.at(-1);
-		if (parent) parent.children.push(Writer.#node("!", {}, html));
-		else {
+		if (parent) parent.children.push(node);
+		else if (Writer.#isBlock(node)) {
 			// its own block at the top level
 			this.#flush();
 			this.#write(html);
-		}
+		} else this.#pending.children.push(node);
 	}
 
 	#open(tag: string, attrs: Record<string, string>) {
@@ -297,7 +301,7 @@ class Writer {
 
 		const [node] = this.#stack.splice(index);
 
-		if (!index && Writer.#blockTags.has(node!.tag)) {
+		if (!index && (Writer.#blockTags.has(node!.tag) || Writer.#holds(node!))) {
 			// a complete top level block
 			this.#pending.children.pop();
 			this.#flush();
@@ -329,29 +333,41 @@ class Writer {
 
 	/**
 	 * @param children Nodes
+	 * @param separator Between blocks
+	 * @param list Before a list, an item's own list follows it without a gap
 	 * @returns Markdown blocks, with inline runs as paragraphs
 	 */
-	#blocks(children: (Node | string)[], separator = "\n\n") {
-		const blocks: string[] = [];
+	#blocks(children: (Node | string)[], separator = "\n\n", list = separator) {
+		let blocks = "";
 		let run: (Node | string)[] = [];
+
+		const add = (block: string, between = separator) => {
+			if (block) blocks += (blocks && between) + block;
+		};
 
 		const paragraph = () => {
 			if (!run.length) return;
-			blocks.push(this.#paragraph(run));
+			add(this.#paragraph(run));
 			run = [];
 		};
 
 		for (const child of children) {
-			if (typeof child === "string" || !Writer.#blockTags.has(child.tag)) {
+			if (
+				typeof child === "string" ||
+				!(Writer.#isBlock(child) || Writer.#holds(child))
+			) {
 				run.push(child);
 			} else {
 				paragraph();
-				blocks.push(this.#block(child));
+				add(
+					this.#block(child),
+					Writer.#lists.has(child.tag) ? list : separator,
+				);
 			}
 		}
 		paragraph();
 
-		return blocks.filter(Boolean).join(separator);
+		return blocks;
 	}
 
 	/**
@@ -384,9 +400,7 @@ class Writer {
 			case "":
 			case "p":
 			case "dt":
-			case "dd":
 			case "caption":
-			case "figcaption":
 			case "legend":
 				return tag === "dt"
 					? Writer.#wrap(this.#paragraph(children), "**")
@@ -434,15 +448,32 @@ class Writer {
 		let n = Number(node.attrs.start ?? 1) || 1;
 		const items: string[] = [];
 
-		for (const child of node.children) {
-			if (typeof child === "string" || child.tag !== "li") continue;
-			const marker = ordered ? `${n++}. ` : "- ";
-			const text = this.#blocks(child.children, "\n");
-			items.push(
-				marker +
-					text.replace(/\n/g, "\n" + " ".repeat(marker.length)).trimEnd(),
-			);
-		}
+		// lines that are not blank, which need no indent
+		const indent = (text: string, width: number) =>
+			text.replace(/\n(?=[^\n])/g, "\n" + " ".repeat(width)).trimEnd();
+
+		const visit = (parent: Node) => {
+			for (const child of parent.children) {
+				if (typeof child === "string") continue;
+				if (child.tag === "li") {
+					const marker = ordered ? `${n++}. ` : "- ";
+					items.push(
+						marker +
+							indent(this.#blocks(child.children, "\n\n", "\n"), marker.length),
+					);
+				} else if (Writer.#lists.has(child.tag)) {
+					// a list directly in a list belongs to the item before it
+					const width = ordered ? `${n - 1}. `.length : 2;
+					const nested = this.#list(child);
+					if (!nested) continue;
+					if (items.length)
+						items[items.length - 1] +=
+							"\n" + " ".repeat(width) + indent(nested, width);
+					else items.push(nested);
+				} else visit(child); // items inside a wrapper, such as a custom element
+			}
+		};
+		visit(node);
 
 		return items.join("\n");
 	}
@@ -474,6 +505,17 @@ class Writer {
 	#table(node: Node) {
 		const rows: string[][] = [];
 		let caption = "";
+		// a form cannot be written in a row, so those in a cell follow the table
+		const forms: Node[] = [];
+
+		const take = (parent: Node) => {
+			parent.children = parent.children.filter((child) => {
+				if (typeof child === "string") return true;
+				if (child.tag === "form") return forms.push(child) && false;
+				take(child);
+				return true;
+			});
+		};
 
 		const visit = (parent: Node) => {
 			for (const child of parent.children) {
@@ -487,19 +529,22 @@ class Writer {
 									typeof cell !== "string" &&
 									(cell.tag === "td" || cell.tag === "th"),
 							)
-							.map((cell) =>
-								this.#inline(cell.children)
+							.map((cell) => {
+								take(cell);
+								return this.#inline(cell.children)
 									.replace(/\s+/g, " ")
 									.trim()
-									.replaceAll("|", "\\|"),
-							),
+									.replaceAll("|", "\\|");
+							}),
 					);
 				} else visit(child);
 			}
 		};
 		visit(node);
 
-		if (!rows.length) return caption;
+		const after = forms.map((form) => this.#form(form));
+
+		if (!rows.length) return [caption, ...after].filter(Boolean).join("\n\n");
 
 		// a loop, a spread of many rows would overflow the stack
 		let width = 0;
@@ -514,6 +559,7 @@ class Writer {
 				line(Array(width).fill("---")),
 				...rows.slice(1).map(line),
 			].join("\n"),
+			...after,
 		]
 			.filter(Boolean)
 			.join("\n\n");
@@ -639,8 +685,20 @@ class Writer {
 						field(child, label);
 						break;
 					case "button":
-						if ((child.attrs.type ?? "submit") === "submit")
-							submits.push(Writer.#plain(child) || "Submit");
+						if ((child.attrs.type ?? "submit") === "submit") {
+							let submit = Writer.#escape(Writer.#plain(child) || "Submit");
+							// a button that submits somewhere else, such as a delete
+							const to =
+								child.attrs.formaction && this.#url(child.attrs.formaction);
+							if (to) {
+								const by = (child.attrs.formmethod ?? method).toUpperCase();
+								const other = this.#options.tool?.(by, to);
+								submit += other
+									? ` (tool ${Writer.#code(other)})`
+									: ` (${Writer.#code(`${by} ${this.#href(to)}`)})`;
+							}
+							submits.push(submit);
+						}
 						break;
 					case "label":
 						// controls inside use the label
@@ -738,8 +796,7 @@ class Writer {
 		}
 
 		if (notes.length) lines.push("", ...notes);
-		if (submits.length)
-			lines.push("", `Submit: ${submits.map(Writer.#escape).join(", ")}`);
+		if (submits.length) lines.push("", `Submit: ${submits.join(", ")}`);
 
 		return lines.join("\n");
 	}
@@ -814,7 +871,7 @@ class Writer {
 					// controls outside of a form do nothing without a script
 					break;
 				default:
-					out += Writer.#blockTags.has(child.tag)
+					out += Writer.#isBlock(child)
 						? ` ${this.#blocks(child.children, "\n")} `
 						: inner();
 			}
@@ -853,6 +910,38 @@ class Writer {
 	 */
 	#href(url: URL) {
 		return this.#options.base ? url.href : url.pathname + url.search + url.hash;
+	}
+
+	/** Raw HTML that starts with a block element, or a comment */
+	static readonly #rawBlock = new RegExp(
+		`^\\s*<(?:!|(?:${[...Writer.#blockTags].filter((tag) => tag !== "!").join("|")})\\b)`,
+		"i",
+	);
+
+	/**
+	 * @param node Element
+	 * @returns If the element is a block, raw HTML is one when it starts with one
+	 */
+	static #isBlock(node: Node) {
+		return node.tag === "!"
+			? Writer.#rawBlock.test(node.children[0] as string)
+			: Writer.#blockTags.has(node.tag);
+	}
+
+	/**
+	 * @param node Inline element
+	 * @returns If it holds blocks, so it is read as a container, such as a
+	 * custom element around a card. A link is not, its contents are its text
+	 */
+	static #holds(node: Node): boolean {
+		return (
+			node.tag !== "a" &&
+			node.children.some(
+				(child) =>
+					typeof child !== "string" &&
+					(Writer.#isBlock(child) || Writer.#holds(child)),
+			)
+		);
 	}
 
 	/**

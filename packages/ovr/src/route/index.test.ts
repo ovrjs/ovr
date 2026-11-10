@@ -654,14 +654,51 @@ describe("editing records", () => {
 		expect(html).not.toContain("values=");
 		expect(html).not.toContain("not a file");
 
-		// submitted values restored from the URL override the record
-		const state = new URL("http://localhost:5173/posts/1?title=Typed");
+		// a failed submission's persisted values override the record
+		const persisted = Route.post("/posts/:id")
+			.fields({ ...fields, title: fields.title.persist().min(10) })
+			.use((c) => c.text("ok"));
+		const body = new FormData();
+		body.set("title", "Typed");
+		body.set("body", "Other");
+		const result = await persisted.parse(body);
+		if (!result.issues) throw new Error("Expected issues");
+		const state = new URL("http://localhost:5173/posts/1");
+		state.search = new URLSearchParams(result.search).toString();
 		const restored = await Markup.string(
-			update.Form({ params: { id: "1" }, values: post, state }),
+			persisted.Form({ params: { id: "1" }, values: post, state }),
 		);
 
 		expect(restored).toContain('value="Typed"');
 		expect(restored).toContain(">Text</textarea>");
+	});
+
+	test("a link's search params fill a GET form, and no other", async () => {
+		const shape = { id: Field.hidden(), title: Field.text() };
+		const state = new URL(
+			"http://localhost:5173/posts/1/edit?id=2&title=Typed",
+		);
+		const values = { id: "1", title: "Draft" };
+		const update = Route.post("/posts/:id")
+			.fields(shape)
+			.use((c) => c.text("ok"));
+		const search = Route.get("/posts")
+			.fields(shape)
+			.use((c) => c.text("ok"));
+		const form = new Form(shape);
+
+		for (const html of [
+			await Markup.string(update.Form({ params: { id: "1" }, values, state })),
+			await Markup.string(form.Fields({ values, state })),
+		]) {
+			expect(html).toContain('name="id" value="1"');
+			expect(html).toContain('value="Draft"');
+		}
+
+		const filled = await Markup.string(search.Form({ values, state }));
+
+		expect(filled).toContain('name="id" value="2"');
+		expect(filled).toContain('value="Typed"');
 	});
 
 	test("Form labels its submit button", async () => {

@@ -175,7 +175,7 @@ Only opt in non-sensitive fields. Values marked with `.persist()` are encoded in
 
 ## GET forms
 
-`Route.get` can use the same schema helpers for GET forms that send the value as search params. `Context.data()` reads the `_form` to create a URL, or the current URL can also be used to persist the state.
+`Route.get` can use the same schema helpers for GET forms that send the value as search params. `Context.data()` reads the `_form` to create a URL, or the current URL can also be used to persist the state. Only a GET route's form reads its fields from search params, since that is where it submits them. Other forms restore just what they [persisted](#persisted-form-state), so a link cannot fill in an edit form.
 
 ```tsx
 import { Field, Route } from "ovr";
