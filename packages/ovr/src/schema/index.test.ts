@@ -526,9 +526,9 @@ describe("toJsonSchema", () => {
 
 	test("a field's label is its title", () => {
 		const form = Schema.object({
-			dob: Field.date({ label: "Date of birth" }),
-			tz: Field.text({ label: "Time zone" }).optional(),
-			agree: Field.checkbox({ label: "I agree" }),
+			dob: Field.date().label("Date of birth"),
+			tz: Field.text().label("Time zone").optional(),
+			agree: Field.checkbox().label("I agree"),
 			name: Field.text(),
 		});
 		const { properties } = form.toJsonSchema({ io: "input" });

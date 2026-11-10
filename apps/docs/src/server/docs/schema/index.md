@@ -102,9 +102,11 @@ export const page = Route.get("/signup").use((c) => (
 
 A control is `required` when leaving it empty fails validation, so browsers and screen readers know before submitting, and agents reading the page as Markdown see it too. Fields made `.optional()` or given a `.default()` are not required. A lone `Field.checkbox()` never is, since unchecked is `false`, and neither are the boxes of `Field.checkboxes()`, where `required` would mean every box. Pass `required={false}` to leave it to the server, or add `novalidate` to the form to show only the server's messages.
 
-> Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, a `label` prop can be passed into the field during creation for a custom label: `Field.text({ label: "Full Name" })`.
+> Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, give the field a label: `Field.text().label("Full Name")`.
 
-A `description` says how to fill a field in, for people and for [agents](/agents#tools) alike: `Field.url({ label: "URL", description: "An http or https address" })`. It renders in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`, and it is the field's `description` in its [JSON Schema](#json-schema), so an agent reads it before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
+`describe` says how to fill a field in, as a route's [`describe`](/route#describe) says what the route does: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
+
+The object a field takes holds only attributes for its control, such as `Field.text({ placeholder: "Harry Potter" })`.
 
 - `signup.Fields` renders all the fields _without_ the outer `<form>` shell
 - `signup.Field` renders one field by `name` (each key in the shape)
@@ -184,7 +186,7 @@ import { Field, Route } from "ovr";
 
 export const search = Route.get("/search")
 	.fields({
-		q: Field.search({ label: "Search" }).optional(),
+		q: Field.search().label("Search").optional(),
 		minPrice: Field.number().min(0).optional(),
 		inStock: Field.checkbox(),
 	})

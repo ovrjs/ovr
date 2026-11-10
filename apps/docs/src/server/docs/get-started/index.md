@@ -89,7 +89,7 @@ const list = Route.get("/")
 
 const add = Route.post("/todos")
 	.describe("Add a todo")
-	.fields({ text: Field.text({ label: "Todo" }) })
+	.fields({ text: Field.text().label("Todo") })
 	.use(async (c) => {
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);

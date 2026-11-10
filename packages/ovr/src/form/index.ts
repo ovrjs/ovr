@@ -737,7 +737,7 @@ class FieldSchema<
 	 * @returns Keywords added to the property's JSON Schema
 	 */
 	override [annotate](io: "input" | "output") {
-		const { label, description } = this.#options.props ?? {};
+		const { label, description } = this.#options;
 		// what a browser's picker sends, which a string alone does not say
 		const format = FieldSchema.#formats[this.type as string];
 		const described = [description?.replace(/\.$/, ""), format]
@@ -782,6 +782,53 @@ class FieldSchema<
 			this.#read,
 			this.parts,
 			true,
+			this.#persist,
+		);
+	}
+
+	/**
+	 * Name the field. People read it as the control's label, or a group's
+	 * legend, and agents as the field's `title`. Without one it is the field's
+	 * name.
+	 *
+	 * ```ts
+	 * Field.email().label("Email address");
+	 * ```
+	 *
+	 * @param text Label
+	 * @returns Field with the label
+	 */
+	label(text: string): Field.Instance<Output, Tag, Type, Values, Stream> {
+		return this.#with({ label: text });
+	}
+
+	/**
+	 * Say how to fill the field in. People read it under the control, and
+	 * agents as the field's `description`, as a route's `describe()` is its
+	 * tool's.
+	 *
+	 * ```ts
+	 * Field.url().describe("An http or https address");
+	 * ```
+	 *
+	 * @param text Description
+	 * @returns Field with the description
+	 */
+	describe(text: string): Field.Instance<Output, Tag, Type, Values, Stream> {
+		return this.#with({ description: text });
+	}
+
+	/**
+	 * @param options Options to change
+	 * @returns The same field with them
+	 */
+	#with(options: Pick<Field.Options, "label" | "description">) {
+		return new FieldSchema<Output, Tag, Type, Values, Stream>(
+			{ ...this.#options, ...options },
+			this.def,
+			this.#read,
+			this.parts,
+			this.streaming,
 			this.#persist,
 		);
 	}
@@ -847,14 +894,10 @@ class FieldSchema<
 		const issue = state?.issues?.find((i) => i.path[0] === props.name);
 		const issueId = issue && `${props.name}-issue`;
 		const hidden = this.type === "hidden";
-		const help = props.description ?? this.#options.props?.description;
+		const { label = props.name, description } = this.#options;
 		const descriptionId =
-			help && !hidden ? `${props.name}-description` : undefined;
-		const {
-			label = props.name,
-			description,
-			...control
-		} = {
+			description && !hidden ? `${props.name}-description` : undefined;
+		const control = {
 			id: hidden ? undefined : props.name,
 			required: this.#required(),
 			autofocus: issue && state?.issues?.[0] === issue,
@@ -1083,6 +1126,12 @@ export namespace Field {
 
 		/** Values are used for group inputs */
 		readonly values?: V;
+
+		/** What people call the field, set with `label()` */
+		readonly label?: string;
+
+		/** How to fill the field in, set with `describe()` */
+		readonly description?: string;
 
 		/** Field props */
 		readonly props?: Props | undefined;
@@ -1380,26 +1429,27 @@ export namespace Field {
 	export type Props = Props.Input | Props.Select | Props.Textarea;
 
 	export namespace Props {
-		/** Extra props in addition to HTML attributes */
-		interface Meta {
-			/** Field label */
-			readonly label?: string;
+		/**
+		 * A field's label and description are what it means, for people and
+		 * agents, and not attributes of its control: set them with `label()` and
+		 * `describe()`.
+		 */
+		interface Chained {
+			/** Use `field.label(text)` */
+			readonly label?: never;
 
-			/**
-			 * How to fill the field in, shown to people under the control and to
-			 * agents as the field's description in its schema.
-			 */
-			readonly description?: string;
+			/** Use `field.describe(text)` */
+			readonly description?: never;
 		}
 
-		/** Props for `<input>` fields */
-		export type Input = Meta & JSX.IntrinsicElements["input"];
+		/** Attributes of an `<input>` field's control */
+		export type Input = JSX.IntrinsicElements["input"] & Chained;
 
-		/** Props for `<select>` fields */
-		export type Select = Meta & JSX.IntrinsicElements["select"];
+		/** Attributes of a `<select>` field's control */
+		export type Select = JSX.IntrinsicElements["select"] & Chained;
 
-		/** Props for `<textarea>` fields */
-		export type Textarea = Meta & JSX.IntrinsicElements["textarea"];
+		/** Attributes of a `<textarea>` field's control */
+		export type Textarea = JSX.IntrinsicElements["textarea"] & Chained;
 	}
 }
 

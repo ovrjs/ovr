@@ -647,13 +647,10 @@ describe("Form schema", () => {
 
 	test("a description is shown under its control, described to agents, and read with an issue", async () => {
 		const form = new Form({
-			url: Field.url({
-				label: "URL",
-				description: "An http or https address.",
-			}),
-			due: Field.date({ description: "When it is due" }),
-			id: Field.hidden({ description: "The bookmark to change" }),
-			size: Field.radio(["s", "m"], { description: "Pick one" }),
+			url: Field.url().label("URL").describe("An http or https address."),
+			due: Field.date().describe("When it is due"),
+			id: Field.hidden().describe("The bookmark to change"),
+			size: Field.radio(["s", "m"]).describe("Pick one"),
 			plain: Field.text(),
 		});
 
@@ -704,10 +701,40 @@ describe("Form schema", () => {
 		});
 	});
 
+	test("a label and a description are chained in any order, and kept by what follows", async () => {
+		const field = Field.text({ placeholder: "Title" })
+			.describe("A short name")
+			.max(40)
+			.label("Title")
+			.persist()
+			.optional();
+		const form = new Form({ title: field });
+
+		expect(await Markup.string(form.Field({ name: "title" }))).toBe(
+			'<div><label for="title">Title</label><input id="title" aria-describedby="title-description" placeholder="Title" type="text" name="title"><p id="title-description" data-description>A short name</p></div>',
+		);
+		expect(
+			Schema.object(form.shape).toJsonSchema({ io: "input" }).properties,
+		).toEqual({
+			title: {
+				type: "string",
+				maxLength: 40,
+				title: "Title",
+				description: "A short name",
+			},
+		});
+
+		// they are what the field means, not attributes of its control
+		// @ts-expect-error - use label()
+		Field.text({ label: "Title" });
+		// @ts-expect-error - use describe()
+		Field.select(["a", "b"], { description: "Pick one" });
+	});
+
 	test("field label metadata renders text without leaking to controls", async () => {
 		const form = new Form({
-			email: Field.email({ label: "Email Address" }),
-			role: Field.radio(["reader", "admin"], { label: "Role" }),
+			email: Field.email().label("Email Address"),
+			role: Field.radio(["reader", "admin"]).label("Role"),
 		});
 
 		const email = await Markup.string(form.Field({ name: "email" }));

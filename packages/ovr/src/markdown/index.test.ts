@@ -567,7 +567,7 @@ describe("Markdown", () => {
 	test("forms describe their fields, values, choices, and errors", async () => {
 		const route = Route.post("/bookmarks")
 			.fields({
-				title: Field.text({ label: "Title" }),
+				title: Field.text().label("Title"),
 				kind: Field.select(["a", "b"]),
 				tags: Field.checkboxes(["x", "y"]),
 				size: Field.radio(["s", "m"]),

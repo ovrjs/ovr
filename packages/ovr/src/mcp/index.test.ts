@@ -311,7 +311,7 @@ describe("Mcp", () => {
 		const rename = Route.post("/notes/:id/rename")
 			.describe("Rename a note")
 			.fields({
-				title: Field.text({ label: "Title" }).min(1),
+				title: Field.text().label("Title").min(1),
 				pinned: Field.checkbox(),
 			})
 			.use(() => {});
@@ -430,10 +430,7 @@ describe("Mcp", () => {
 		const save = Route.post("/bookmarks/:id")
 			.describe("Change a bookmark")
 			.fields({
-				url: Field.url({
-					label: "URL",
-					description: "An http or https address",
-				}),
+				url: Field.url().label("URL").describe("An http or https address"),
 			})
 			.use(() => {});
 		const app = new App().use(
@@ -676,7 +673,7 @@ describe("Mcp", () => {
 		let bought: number | undefined;
 		const buy = Route.post("/buy")
 			.describe("Buy")
-			.fields({ quantity: Field.number({ label: "Quantity" }).int().min(1) })
+			.fields({ quantity: Field.number().label("Quantity").int().min(1) })
 			.use(async (c) => {
 				const result = await c.data();
 				if (result.issues) return c.text("invalid", 422);
@@ -707,7 +704,7 @@ describe("Mcp", () => {
 		const upload = Route.post("/upload")
 			.describe("Upload a photo")
 			.fields({
-				photo: Field.file({ label: "Photo" }),
+				photo: Field.file().label("Photo"),
 				extras: Field.files().optional(),
 			})
 			.use(async (c) => {

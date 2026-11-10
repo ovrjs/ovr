@@ -15,7 +15,7 @@ import { Pool } from "pg";
 
 const users = new Table("users", {
 	id: Schema.string(),
-	email: Field.email({ label: "Email" }),
+	email: Field.email().label("Email"),
 });
 
 const database = new Database(

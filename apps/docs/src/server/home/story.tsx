@@ -74,7 +74,7 @@ const outputs = (async () => {
 
 	const add = o.Route.post("/todos")
 		.describe("Add a todo")
-		.fields({ text: o.Field.text({ label: "Todo" }) })
+		.fields({ text: o.Field.text().label("Todo") })
 		.use(async (c) => {
 			const result = await c.data();
 			if (result.issues) return c.redirect(result.url, 303);

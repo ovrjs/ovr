@@ -4,7 +4,7 @@ import { Auth, Database, Field, Schema, Table } from "ovr";
 /** Demo accounts; Auth stores credentials and sessions in its own tables. */
 export const users = new Table("users", {
 	id: Schema.string().uuid(),
-	email: Field.email({ label: "Email" }),
+	email: Field.email().label("Email"),
 });
 
 /** Migrations an application keeps as SQL files, applied after Auth's own. */

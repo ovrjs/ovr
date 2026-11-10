@@ -3,7 +3,7 @@ import { Pool } from "pg";
 
 const users = new Table("users", {
 	id: Schema.string().uuid(),
-	email: Field.email({ label: "Email" }),
+	email: Field.email().label("Email"),
 });
 
 const bookmarks = new Table(
@@ -11,8 +11,10 @@ const bookmarks = new Table(
 	{
 		id: Schema.string().uuid(),
 		owner: Schema.string().uuid(),
-		title: Field.text({ label: "Title" }).min(1).max(120),
-		url: Field.url({ label: "URL", description: "An http or https address" })
+		title: Field.text().label("Title").min(1).max(120),
+		url: Field.url()
+			.label("URL")
+			.describe("An http or https address")
 			.max(300)
 			.refine(
 				(value) => /^https?:\/\//i.test(value),
