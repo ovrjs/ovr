@@ -1,0 +1,56 @@
+# Checks of the official MCP conformance suite that ovr does not pass, each
+# with its reason. `conformance.test.ts` runs what the 2026-07-28 revision
+# requires and fails on any failure that is not listed here, and on any entry
+# here that starts to pass.
+#
+# Nearly all are the suite's own fixtures: it calls tools, resources, and
+# prompts by fixed names such as `test_simple_text` and `test://static-text`,
+# written for an SDK's example server. A tool's name here is generated from its
+# route, `get_notes_id`, so the app cannot offer one by another name. The
+# protocol those scenarios exercise is covered by the checks that do run, each
+# of which also validates every message against the specification's schema.
+
+server:
+  # tools called by a fixed name
+  - tools-call-simple-text
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-error
+  - tools-call-with-progress
+  - server-stateless:sep-2575-server-rejects-undeclared-capability
+  - server-stateless:sep-2575-missing-capability-http-400
+  - server-stateless:sep-2575-http-server-no-independent-requests-on-stream
+  - server-stateless:sep-2575-server-no-log-without-loglevel
+
+  # resources read by a fixed URI
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+
+  # prompts and completion are optional features that ovr does not have, a
+  # route is a tool or a resource
+  - prompts-list
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  - completion-complete
+  - caching:sep-2549-prompts-list-caching-hints
+
+  # asking the client for more input mid-request, which a server may do and
+  # ovr does not: a route answers from its request. The suite reaches these
+  # through tools with fixed names too
+  - input-required-result-basic-elicitation
+  - input-required-result-basic-sampling
+  - input-required-result-basic-list-roots
+  - input-required-result-request-state
+  - input-required-result-multiple-input-requests
+  - input-required-result-multi-round
+  - input-required-result-missing-input-response
+  - input-required-result-non-tool-request
+  - input-required-result-result-type
+  - input-required-result-tampered-state
+  - input-required-result-capability-check
+  - input-required-result-ignore-extra-params

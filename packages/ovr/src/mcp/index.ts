@@ -212,7 +212,7 @@ export class Mcp {
 
 		try {
 			const origin = c.req.headers.get(Header.name.origin);
-			if (origin !== null && origin !== c.url.origin)
+			if (origin !== null && (origin !== c.url.origin || Mcp.#rebound(c)))
 				throw new RpcError(-32600, "Invalid origin", 403);
 
 			const session = await this.#authorize(c);
@@ -234,7 +234,8 @@ export class Mcp {
 			const version = meta[`${Mcp.#meta}protocolVersion`];
 			const header = c.req.headers.get("mcp-protocol-version");
 
-			if (method === "initialize") {
+			// a request with a version in `_meta` is 2026-07-28's, which removed it
+			if (method === "initialize" && version === undefined) {
 				// an earlier version's handshake, answered with the requested
 				// version when supported, otherwise the newest earlier one
 				const requested = params.protocolVersion;
@@ -265,7 +266,7 @@ export class Mcp {
 				// earlier clients need not send them, but sent ones must match, so
 				// a proxy routing on them sees the request that runs
 				Mcp.#mirror(c, method, params, true);
-			} else this.#validate(c, method, params, version, header);
+			} else this.#validate(c, method, params, meta, header);
 
 			const language = this.#language(c, meta, legacy);
 
@@ -313,6 +314,23 @@ export class Mcp {
 				error.status,
 			);
 		}
+	}
+
+	/**
+	 * DNS rebinding: a site whose name resolves to this machine, so the user's
+	 * browser sends its requests here, with the site as both host and origin.
+	 * A browser request from this machine for another host is one.
+	 *
+	 * @param c Request context
+	 * @returns `true` when a local client asks for a host that is not local
+	 */
+	static #rebound(c: Context) {
+		const local = (host: string) =>
+			host === "localhost" ||
+			host.endsWith(".localhost") ||
+			/^127\.|^\[?::1\]?$|^\[?::ffff:127\./.test(host);
+
+		return Boolean(c.ip && local(c.ip) && !local(c.url.hostname));
 	}
 
 	/**
@@ -426,28 +444,48 @@ export class Mcp {
 	 * @param c Request context
 	 * @param method JSON-RPC method
 	 * @param params Request params
-	 * @param version Protocol version from `_meta`
+	 * @param meta Request `_meta`, which carries the version and capabilities
 	 * @param header `MCP-Protocol-Version` header
 	 */
 	#validate(
 		c: Context,
 		method: string,
 		params: Json,
-		version: unknown,
+		meta: Json,
 		header: string | null,
 	) {
+		const version = meta[`${Mcp.#meta}protocolVersion`];
+		const invalid = (field: string) =>
+			new RpcError(-32602, `Invalid params: _meta needs ${field}`, 400);
+
+		if (version === undefined) {
+			// this version by its header, so what is missing is the field
+			if (header !== null && Mcp.#versions.includes(header))
+				throw invalid(`${Mcp.#meta}protocolVersion`);
+		} else if (typeof version !== "string") {
+			throw invalid(`${Mcp.#meta}protocolVersion`);
+		} else if (header !== version) {
+			// before the version is judged: a proxy routes on the header
+			throw new RpcError(
+				-32020,
+				"Header mismatch: MCP-Protocol-Version does not match the request",
+				400,
+			);
+		}
+
 		if (typeof version !== "string" || !Mcp.#versions.includes(version))
 			throw new RpcError(-32022, "Unsupported protocol version", 400, {
 				supported: [...Mcp.#versions, ...Mcp.#legacy],
 				requested: typeof version === "string" ? version : header,
 			});
 
-		if (header !== version)
-			throw new RpcError(
-				-32020,
-				"Header mismatch: MCP-Protocol-Version does not match the request",
-				400,
-			);
+		const capabilities = meta[`${Mcp.#meta}clientCapabilities`];
+		if (
+			!capabilities ||
+			typeof capabilities !== "object" ||
+			Array.isArray(capabilities)
+		)
+			throw invalid(`${Mcp.#meta}clientCapabilities`);
 
 		Mcp.#mirror(c, method, params);
 	}

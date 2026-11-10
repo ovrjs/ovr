@@ -911,6 +911,86 @@ describe("Mcp", () => {
 		);
 	});
 
+	test("a 2026-07-28 request needs its _meta fields, matching headers, and no removed method", async () => {
+		const { app } = setup();
+		const send = async (
+			method: string,
+			meta: Record<string, unknown> | undefined,
+			header: string | null = version,
+		) => {
+			const res = await app.fetch("http://localhost/mcp", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"mcp-method": method,
+					...(header && { "mcp-protocol-version": header }),
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 1,
+					method,
+					params: meta ? { _meta: meta } : {},
+				}),
+			});
+
+			return {
+				status: res.status,
+				code: ((await res.json()) as any).error?.code,
+			};
+		};
+		const protocol = { "io.modelcontextprotocol/protocolVersion": version };
+		const capabilities = { "io.modelcontextprotocol/clientCapabilities": {} };
+
+		// a missing field is invalid params, when the header says it is this version
+		for (const meta of [undefined, capabilities, protocol])
+			expect(await send("tools/list", meta)).toEqual({
+				status: 400,
+				code: -32602,
+			});
+		// client info is optional
+		expect(
+			(await send("tools/list", { ...protocol, ...capabilities })).status,
+		).toBe(200);
+
+		// a header that differs is a mismatch, before the version is judged
+		expect(
+			await send("tools/list", {
+				...capabilities,
+				"io.modelcontextprotocol/protocolVersion": "v999",
+			}),
+		).toEqual({ status: 400, code: -32020 });
+		expect(
+			await send(
+				"tools/list",
+				{ ...capabilities, "io.modelcontextprotocol/protocolVersion": "v999" },
+				"v999",
+			),
+		).toEqual({ status: 400, code: -32022 });
+
+		// the earlier handshake is not a method of this version
+		expect(await send("initialize", { ...protocol, ...capabilities })).toEqual({
+			status: 404,
+			code: -32601,
+		});
+	});
+
+	test("a browser request from this machine for another host is refused, as DNS rebinding", async () => {
+		const { app } = setup();
+		const send = (host: string, ip: string | undefined) =>
+			app.fetch(`http://${host}/mcp`, {
+				...request("tools/list", {}, { origin: `http://${host}` }),
+				ip,
+			});
+
+		expect((await send("evil.example", "127.0.0.1")).status).toBe(403);
+		expect((await send("evil.example", "::1")).status).toBe(403);
+		// this machine by its own names, and a host its visitors reach
+		expect((await send("localhost:3000", "127.0.0.1")).status).toBe(200);
+		expect((await send("127.0.0.1:3000", "::ffff:127.0.0.1")).status).toBe(200);
+		expect((await send("app.example", "203.0.113.7")).status).toBe(200);
+		expect((await send("app.example", undefined)).status).toBe(200);
+	});
+
 	test("tools call the route and follow its redirect", async () => {
 		const { rpc, posts } = setup();
 		const { body } = await rpc("tools/call", {

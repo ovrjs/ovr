@@ -2806,7 +2806,10 @@ describe("agents", () => {
 				params: {
 					name: "post_notes",
 					arguments: { text },
-					_meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28" },
+					_meta: {
+						"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+						"io.modelcontextprotocol/clientCapabilities": {},
+					},
 				},
 			}),
 			ip,

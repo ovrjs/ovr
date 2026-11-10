@@ -139,7 +139,9 @@ claude mcp add --transport http ovr https://ovrjs.com/mcp
 
 ### Protocol
 
-The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) Streamable HTTP transport: each JSON-RPC request is a POST that receives a JSON response, with `server/discover`, the mirrored request headers, and no sessions. Clients of the earlier [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) and 2025-06-18 versions, such as ChatGPT's, start with `initialize` and send the version in the `MCP-Protocol-Version` header; they are served the same tools and resources, also without sessions. Requests from another `Origin` are rejected.
+The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) Streamable HTTP transport: each JSON-RPC request is a POST that receives a JSON response, with `server/discover`, the mirrored request headers, and no sessions. Clients of the earlier [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) and 2025-06-18 versions, such as ChatGPT's, start with `initialize` and send the version in the `MCP-Protocol-Version` header; they are served the same tools and resources, also without sessions. Requests from another `Origin` are rejected. So is a browser request that reaches the endpoint from the same machine for a host that is not local, which is how a site attacks a local server by [DNS rebinding](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#security--endpoint); it needs the [client IP](/app#client-ip) from your server.
+
+The endpoint is tested with the official [MCP conformance suite](https://github.com/modelcontextprotocol/conformance) for 2026-07-28. Its scenarios for prompts, completion, and asking the client for input are not passed, since ovr has none of those, and neither are the ones that call tools and resources by fixed names, since a tool is named after its route.
 
 ## WebMCP
 
