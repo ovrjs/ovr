@@ -878,6 +878,8 @@ export class Mcp {
 		// the page's form has issues, such as a search with invalid parameters
 		if (typeof res === "string") throw new RpcError(-32602, res);
 
+		if (res.status >= 500) throw await Mcp.#failed(res);
+
 		const { type, live, ...body } = await Mcp.#body(res);
 		if (live)
 			return {
@@ -1071,6 +1073,8 @@ export class Mcp {
 				);
 			}
 
+			if (res.status >= 500) throw await Mcp.#failed(res);
+
 			const { type, text, blob, live } = await Mcp.#body(res);
 
 			if (live)
@@ -1111,6 +1115,19 @@ export class Mcp {
 							},
 			);
 		}
+	}
+
+	/**
+	 * A server error is the app's to fix, not something the agent can act on
+	 * as it can on a form's issues, so it is a protocol error and not a result.
+	 * The app's own error page stays with the app.
+	 *
+	 * @param res Response the app answered a failure with
+	 * @returns The JSON-RPC internal error
+	 */
+	static async #failed(res: Response) {
+		await res.body?.cancel();
+		return new RpcError(-32603, "Internal error", 200, { status: res.status });
 	}
 
 	/**

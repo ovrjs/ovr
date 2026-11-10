@@ -991,6 +991,73 @@ describe("Mcp", () => {
 		expect((await send("app.example", undefined)).status).toBe(200);
 	});
 
+	test("a server error is a JSON-RPC internal error, a client's mistake is a result", async () => {
+		const seen: unknown[] = [];
+		const app = new App().use(
+			// the app's own error handling sees the error first, and answers
+			async (c, next) => {
+				try {
+					await next();
+				} catch (error) {
+					seen.push(error);
+					c.text("Something went wrong, with details for people", 500);
+				}
+			},
+			Route.get("/broken")
+				.describe("Broken")
+				.use(() => {
+					throw new Error("bug");
+				}),
+			Route.get("/forbidden")
+				.describe("Forbidden")
+				.use((c) => c.text("Not yours", 403)),
+			new Mcp({ name: "errors" }),
+		);
+		const rpc = async (method: string, params: Record<string, unknown>) =>
+			(
+				await app.fetch("http://localhost/mcp", request(method, params))
+			).json() as Promise<any>;
+		const internal = {
+			code: -32603,
+			message: "Internal error",
+			data: { status: 500 },
+		};
+
+		expect(
+			(await rpc("tools/call", { name: "get_broken", arguments: {} })).error,
+		).toEqual(internal);
+		expect(
+			(await rpc("resources/read", { uri: "http://localhost/broken" })).error,
+		).toEqual(internal);
+		expect(seen).toHaveLength(2);
+
+		// what the agent can act on stays a result it reads
+		expect(
+			(await rpc("tools/call", { name: "get_forbidden", arguments: {} }))
+				.result,
+		).toMatchObject({
+			isError: true,
+			content: [{ type: "text", text: "403\n\nNot yours" }],
+		});
+
+		// without error handling in the app, the error is the server's, as
+		// from any route
+		const bare = new App().use(
+			Route.get("/broken")
+				.describe("Broken")
+				.use(() => {
+					throw new Error("bug");
+				}),
+			new Mcp({ name: "errors" }),
+		);
+		await expect(
+			bare.fetch(
+				"http://localhost/mcp",
+				request("tools/call", { name: "get_broken", arguments: {} }),
+			),
+		).rejects.toThrow("bug");
+	});
+
 	test("tools call the route and follow its redirect", async () => {
 		const { rpc, posts } = setup();
 		const { body } = await rpc("tools/call", {
