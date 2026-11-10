@@ -27,7 +27,7 @@ Submit: Create post
 
 - When the page has a `<main>` element, only its contents are written, leaving out the navigation and footer. A page without one is written when it ends instead of block by block.
 - Links and images are absolute, so an agent can follow them.
-- Forms are described by where they submit and how to encode the body, their fields with types, rules such as `required`, choices, and current values, and errors from a failed submission. A form in a table's cell, such as a delete button in each row, is written after the table.
+- Forms are described by where they submit and how to encode the body, their fields with types, rules such as `required`, choices, and current values, and errors from a failed submission. A form in a table's cell that is only a button, such as a delete in each row, is written in the cell as ``Delete: `POST https://example.com/posts/1/delete` ``. One with fields is written after the table.
 - Scripts, styles, and elements with `hidden` or `aria-hidden="true"` are left out. `<noscript>` content is kept, since agents do not run scripts.
 - Raw markup from `Markup.raw` is written as it is, since Markdown can contain HTML.
 

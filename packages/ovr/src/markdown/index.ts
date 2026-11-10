@@ -505,15 +505,20 @@ class Writer {
 	#table(node: Node) {
 		const rows: string[][] = [];
 		let caption = "";
-		// a form cannot be written in a row, so those in a cell follow the table
+		// a form with fields cannot be written in a row, so it follows the table
 		const forms: Node[] = [];
 
 		const take = (parent: Node) => {
-			parent.children = parent.children.filter((child) => {
-				if (typeof child === "string") return true;
-				if (child.tag === "form") return forms.push(child) && false;
+			parent.children = parent.children.flatMap<Node | string>((child) => {
+				if (typeof child === "string") return [child];
+				if (child.tag === "form") {
+					const line = this.#form(child, true);
+					if (line) return [Writer.#node("!", {}, line)];
+					forms.push(child);
+					return [];
+				}
 				take(child);
-				return true;
+				return [child];
 			});
 		};
 
@@ -569,9 +574,10 @@ class Writer {
 	 * Describes a form: where it submits, its fields, and its buttons.
 	 *
 	 * @param node `<form>` element
+	 * @param cell For a table's cell: one line, empty if it does not fit
 	 * @returns Markdown
 	 */
-	#form(node: Node) {
+	#form(node: Node, cell?: boolean) {
 		const method = (node.attrs.method ?? "GET").toUpperCase();
 		// an unsafe action is described as the page itself
 		const action = this.#url(node.attrs.action ?? "") ?? this.#url("")!;
@@ -759,9 +765,9 @@ class Writer {
 				? ` as ${Writer.#code(node.attrs.enctype)}`
 				: "";
 
-		const lines = [
-			`**Form:** ${Writer.#code(`${method} ${this.#href(action)}`)}${encoding}${tool ? ` (tool ${Writer.#code(tool)})` : ""}`,
-		];
+		const target = Writer.#code(`${method} ${this.#href(action)}`);
+		const by = tool ? ` (tool ${Writer.#code(tool)})` : "";
+		const lines: string[] = [];
 
 		if (tool) {
 			// the tool's input schema describes the fields, so only what the page
@@ -796,9 +802,16 @@ class Writer {
 		}
 
 		if (notes.length) lines.push("", ...notes);
+
+		// only a button, such as a delete in each row, fits in the cell
+		if (cell)
+			return lines.length
+				? ""
+				: `${submits.join(", ") || "Submit"}: ${target}${by}`;
+
 		if (submits.length) lines.push("", `Submit: ${submits.join(", ")}`);
 
-		return lines.join("\n");
+		return [`**Form:** ${target}${encoding}${by}`, ...lines].join("\n");
 	}
 
 	/**

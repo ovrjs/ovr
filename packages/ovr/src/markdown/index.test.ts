@@ -237,8 +237,11 @@ describe("Markdown", () => {
 		);
 	});
 
-	test("forms in a table's cells follow the table", async () => {
+	test("a table cell keeps a form that is only a button, one with fields follows the table", async () => {
 		const remove = Route.post("/posts/:id/delete").use((c) => c.text("ok"));
+		const rename = Route.post("/posts/:id")
+			.fields({ title: Field.text() })
+			.use((c) => c.text("ok"));
 
 		expect(
 			await md(
@@ -254,15 +257,26 @@ describe("Markdown", () => {
 							h("td", null, remove.Form({ params: { id }, submit: "Delete" })),
 						),
 					),
+					h(
+						"tr",
+						null,
+						h("td", null, "Post 3"),
+						h("td", null, rename.Form({ params: { id: "3" } })),
+					),
 				),
 			),
 		).toBe(
 			[
-				"| Title | Actions |\n| --- | --- |\n| Post 1 |  |\n| Post 2 |  |",
-				"**Form:** `POST /posts/1/delete` as `multipart/form-data`",
-				"Submit: Delete",
-				"**Form:** `POST /posts/2/delete` as `multipart/form-data`",
-				"Submit: Delete\n",
+				[
+					"| Title | Actions |",
+					"| --- | --- |",
+					"| Post 1 | Delete: `POST /posts/1/delete` |",
+					"| Post 2 | Delete: `POST /posts/2/delete` |",
+					"| Post 3 |  |",
+				].join("\n"),
+				"**Form:** `POST /posts/3` as `multipart/form-data`",
+				"- title `title` (text, required)",
+				"Submit: Submit\n",
 			].join("\n\n"),
 		);
 	});
