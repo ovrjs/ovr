@@ -148,12 +148,14 @@ export class State {
 
 	/**
 	 * Return to a local path after the next login, such as an agent's
-	 * authorization request.
+	 * authorization request, or the page that sent the user to log in. Any
+	 * other path is ignored.
 	 *
 	 * @param path Local path with its query
 	 */
 	remember(path: string) {
 		this.#origin();
+		if (!State.#local(path)) return;
 		this.#set(State.#return, path, {
 			maxAge: Math.floor((15 * Time.minute) / Time.second),
 		});
@@ -170,11 +172,21 @@ export class State {
 
 		this.#set(State.#return, "", { maxAge: 0 });
 
-		return path.startsWith("/") &&
+		return State.#local(path) ? path : fallback;
+	}
+
+	/**
+	 * @param path Path from a request or a cookie
+	 * @returns `true` for a path of this origin, which a browser cannot read as
+	 * another host, short enough for a cookie
+	 */
+	static #local(path: string) {
+		return (
+			path.startsWith("/") &&
 			!path.startsWith("//") &&
-			!path.includes("\\")
-			? path
-			: fallback;
+			!path.includes("\\") &&
+			path.length <= 2048
+		);
 	}
 
 	/** Replace the current session and issue a new signed, secure cookie. */

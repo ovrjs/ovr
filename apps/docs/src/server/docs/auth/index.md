@@ -188,6 +188,8 @@ app.use(
 
 `c.session()` returns the session, or `null` when nobody is signed in. Check it before anything private, and return a redirect to your authentication `page`; pages that are public but change for signed-in users render either way.
 
+To bring the user back after they sign in, link to the page with `_return`, such as `/login?_return=/recipes/1`. `auth.forms(c)` reads it, and after registration or login the user goes there instead of `redirect`. Only a path of your own origin is followed; any other is ignored.
+
 A session is `{ id, user, expiration }`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 
 A session ends after a week without use, and renews while it is used: reading it moves its end out by another week, at most once a day. However often it is used, it ends 30 days after sign-in, and the user signs in again. Set these with `idle` and `lifetime`. Each request checks the database, so revocation and renewal apply across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.

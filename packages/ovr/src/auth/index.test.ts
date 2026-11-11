@@ -1170,6 +1170,80 @@ describe("configured passkey callbacks", () => {
 		expect(response.status).toBe(400);
 	});
 
+	test.each([
+		["/recipes/1?tab=photos", "/recipes/1?tab=photos"],
+		["//evil.example/path", "/"],
+		["https://evil.example/", "/"],
+	])(
+		"signing up from /signup?_return=%s goes to %s",
+		async (back, location) => {
+			const accounts = new Table("return_accounts", {
+				id: Schema.string(),
+				email: Field.email(),
+			});
+			const database = new Database(
+				{ query: run, connect: async () => ({ query: run, release() {} }) },
+				[accounts, ...Auth.tables],
+			);
+			const auth = new Auth({
+				...setup().settings,
+				database,
+				users: accounts,
+				page: "/signup",
+			});
+			const app = new App().use(
+				auth,
+				Route.get("/signup").use((c) => {
+					const { Register } = auth.forms(c);
+					return Register({ children: Register.Field({ name: "email" }) });
+				}),
+			);
+			const page = await app.fetch(
+				`${origin}/signup?_return=${encodeURIComponent(back)}`,
+			);
+			const html = await page.text();
+			const cookie = page.headers
+				.getSetCookie()
+				.map((v) => v.split(";")[0])
+				.join("; ");
+			const post = (path: string, body: FormData) =>
+				app.fetch(origin + path, {
+					method: "POST",
+					headers: { origin, cookie },
+					ip: "192.0.2.1",
+					body,
+				});
+			await engine.exec(
+				"CREATE TABLE return_accounts (id text PRIMARY KEY, email text NOT NULL)",
+			);
+			try {
+				const body = new FormData();
+				body.set("email", "cook@example.com");
+				body.set(
+					"bootstrap",
+					/data-bootstrap="([^"]+)"/
+						.exec(html)![1]!
+						.replaceAll("&quot;", '"')
+						.replaceAll("&amp;", "&"),
+				);
+				const start = await post("/_passkey/options/register", body);
+				expect(start.ok).toBe(true);
+				const { ceremony, options } = await start.json();
+				body.delete("bootstrap");
+				body.set("ceremony", ceremony);
+				body.set(
+					"credential",
+					JSON.stringify(await registration(options.challenge, await pair())),
+				);
+				const registered = await post("/auth/register", body);
+				expect(registered.status).toBe(303);
+				expect(registered.headers.get("location")).toBe(location);
+			} finally {
+				await engine.exec("DROP TABLE return_accounts");
+			}
+		},
+	);
+
 	test("public signup cannot override a server-default role used by an admin edit form", async () => {
 		const accounts = new Table(
 			"signup_accounts",

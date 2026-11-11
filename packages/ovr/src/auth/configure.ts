@@ -231,6 +231,10 @@ export function configure<U extends Auth.Users>(
 			props: { nonce?: string } = {},
 		): Auth.Forms<Auth.Fields<U>> {
 			const passkey = new Passkey(c, state(c));
+			// the page that sent the user here, such as /login?_return=/recipes/1,
+			// is where they go after logging in
+			const back = c.url.searchParams.get(Form.params[0]);
+			if (back) state(c).remember(back);
 			const Register = passkey.form(register, "register", {
 				...props,
 				endpoint: registration.url(),
