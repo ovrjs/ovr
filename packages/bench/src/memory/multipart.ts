@@ -1,5 +1,5 @@
 /**
- * What `c.data()` and `c.form()` hold at once for a large multipart body.
+ * What `c.data()` and `c.multipart()` hold at once for a large multipart body.
  *
  * node --expose-gc packages/bench/src/memory/multipart.ts
  *
@@ -49,7 +49,7 @@ const upload = (peak: Peak) => {
 };
 
 const app = (peak: () => Peak) =>
-	new App({ form: { payload: 64 * 1024 * 1024 } }).use(
+	new App({ multipart: { payload: 64 * 1024 * 1024 } }).use(
 		Route.post("/upload")
 			.fields({ file: Field.file() })
 			.use(async (c) => {
@@ -60,7 +60,7 @@ const app = (peak: () => Peak) =>
 			}),
 		Route.post("/stream").use(async (c) => {
 			let bytes = 0;
-			for await (const part of c.form())
+			for await (const part of c.multipart())
 				for await (const value of part.body) bytes += value.length;
 			return c.text(String(bytes));
 		}),
@@ -75,7 +75,7 @@ await scenario(`c.data() with a ${mb(size)} MB file field`, async (peak) => {
 	return res.text();
 });
 
-await scenario(`c.form() streaming a ${mb(size)} MB file`, async (peak) => {
+await scenario(`c.multipart() streaming a ${mb(size)} MB file`, async (peak) => {
 	current = peak;
 	const req = upload(peak);
 	const res = await server.fetch(

@@ -199,7 +199,7 @@ export namespace Multipart {
 		 *
 		 * It bounds the parser, not what is read from it: `data()`, and
 		 * `c.data()` in a route, keep each value, a file's included, so they are
-		 * bounded by `payload`. An app's `form.memory` is also the largest request
+		 * bounded by `payload`. An app's `multipart.memory` is also the largest request
 		 * its MCP endpoint reads.
 		 *
 		 * @default 4 * 1024 * 1024
@@ -264,6 +264,18 @@ const newLine = new Needle("\r\n\r\n");
 
 /** Multipart request */
 export class Multipart extends Request {
+	/** A body over a limit, answered 413 when a route does not catch it */
+	static readonly Limit = Limit;
+
+	/** Malformed form data, answered 400 when a route does not catch it */
+	static readonly Malformed = Malformed;
+
+	/**
+	 * A content type other than multipart form data, answered 415 when a route
+	 * does not catch it. A kind of `Malformed`.
+	 */
+	static readonly Unsupported = Unsupported;
+
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
 		memory,

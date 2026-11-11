@@ -51,7 +51,7 @@ async function fetch(req: Request) {
 import { Route } from "ovr";
 
 const post = Route.post("/posts").use(async (c) => {
-	for await (const part of c.form()) {
+	for await (const part of c.multipart()) {
 		// ...
 	}
 });
@@ -68,7 +68,7 @@ const data = await mp.data(); // FormData
 
 ## Options
 
-Options are available for the maximum `memory` allocation, max total `payload` size, and max number of `parts`, to prevent attackers from sending massive requests. `memory` bounds what the parser holds while it reads. `Multipart.data` and `c.data()` keep every value, uploaded files included, so what they hold is bounded by `payload`; stream large files with `c.form()` instead.
+Options are available for the maximum `memory` allocation, max total `payload` size, and max number of `parts`, to prevent attackers from sending massive requests. `memory` bounds what the parser holds while it reads. `Multipart.data` and `c.data()` keep every value, uploaded files included, so what they hold is bounded by `payload`; stream large files with `c.multipart()` instead.
 
 ```ts
 const options: Multipart.Options = {
@@ -84,7 +84,7 @@ new Multipart(request, options);
 new App({ form: options });
 
 // Context.form sets the options for the current request
-c.form(options);
+c.multipart(options);
 ```
 
 ## Comparisons
@@ -121,7 +121,7 @@ import { Writable } from "node:stream";
 import { Route } from "ovr";
 
 const upload = Route.post("/upload").use(async (c) => {
-	for await (const part of c.form()) {
+	for await (const part of c.multipart()) {
 		if (part.name === "photo") {
 			await part.body.pipeTo(
 				Writable.toWeb(createWriteStream(`/uploads/${part.filename}`)),

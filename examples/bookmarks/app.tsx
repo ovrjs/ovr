@@ -198,7 +198,7 @@ const mcp = new Mcp({
 });
 
 /** Mounts passkey endpoints, the MCP endpoint, and the application's CRUD routes. */
-export const app = new App({ form: { payload: 128 * 1024 } });
+export const app = new App({ multipart: { payload: 128 * 1024 } });
 
 app.use(
 	(c, next) => {

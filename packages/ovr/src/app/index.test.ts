@@ -1,5 +1,6 @@
 import { Field } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
+import { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
 import { Method } from "../util/index.js";
 import { App } from "./index.js";
@@ -366,7 +367,7 @@ describe("a body the client got wrong, which the app does not catch", () => {
 	test("a body over the limit is answered 413", async () => {
 		const body = new FormData();
 		body.set("text", "x".repeat(2048));
-		const res = await new App({ form: { payload: 1024 } })
+		const res = await new App({ multipart: { payload: 1024 } })
 			.use(add)
 			.fetch(`${origin}/todos`, { method: "POST", headers, body });
 
@@ -445,7 +446,9 @@ describe("a body the client got wrong, which the app does not catch", () => {
 		expect((await send(new App().use(errors, custom), "/custom")).status).toBe(
 			422,
 		);
-		expect(caught).toEqual([expect.any(TypeError)]);
+		// told apart from the app's own errors by its class
+		expect(caught).toEqual([expect.any(Multipart.Unsupported)]);
+		expect(caught[0]).toBeInstanceOf(Multipart.Malformed);
 
 		// and an error of the app's reaches the middleware
 		const broken = Route.post("/broken").use(() => {

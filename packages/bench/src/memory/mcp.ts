@@ -43,7 +43,7 @@ const download = Route.get("/download")
 		});
 	});
 
-const app = new App({ form: { memory: 16 * 1024 * 1024 } }).use(
+const app = new App({ multipart: { memory: 16 * 1024 * 1024 } }).use(
 	new Mcp(),
 	upload,
 	download,

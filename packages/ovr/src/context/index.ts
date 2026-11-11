@@ -273,7 +273,7 @@ export class Context<
 	 * import { Route } from "ovr";
 	 *
 	 * const post = Route.post("/posts").use(async (c) => {
-	 * 	for await (const part of c.form()) {
+	 * 	for await (const part of c.multipart()) {
 	 * 		if (part.name === "email") {
 	 * 			// ...
 	 * 		}
@@ -281,8 +281,8 @@ export class Context<
 	 * })
 	 * ```
 	 */
-	form(options?: Multipart.Options) {
-		return new Multipart(this.req, { ...this.#options.form, ...options });
+	multipart(options?: Multipart.Options) {
+		return new Multipart(this.req, { ...this.#options.multipart, ...options });
 	}
 
 	/**
@@ -322,7 +322,7 @@ export class Context<
 			// a body too large or not form data throws, for the handler to answer
 			const result = await form.parse(
 				post
-					? this.form({ parts: form.parts, ...options })
+					? this.multipart({ parts: form.parts, ...options })
 					: this.url.searchParams,
 			);
 

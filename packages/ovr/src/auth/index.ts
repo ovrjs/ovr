@@ -19,7 +19,7 @@ export namespace Auth {
 	/** Authentication validation issue. */
 
 	/** Request capabilities required while preparing the built-in UI. */
-	export type Context = Pick<ContextType, "url" | "cookie" | "res" | "form"> & {
+	export type Context = Pick<ContextType, "url" | "cookie" | "res" | "multipart"> & {
 		data: (options?: { payload: number }) => Promise<unknown>;
 	};
 	/**

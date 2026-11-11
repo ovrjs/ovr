@@ -68,7 +68,7 @@ Route.get("/api/:id").use((c) => {
 	c.route; // matched `Route`
 	c.session(); // signed-in session, with app.use(auth)
 	c.cookie.get(name); // get cookie
-	c.form(); // multipart form data
+	c.multipart(); // multipart form data, part by part
 	c.data(); // route schema data
 });
 ```

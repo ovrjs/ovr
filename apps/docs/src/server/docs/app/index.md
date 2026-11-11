@@ -35,13 +35,13 @@ ovr comes with basic [cross-site request forgery](https://developer.mozilla.org/
 new App({ csrf: false }); // disables the built-in protection
 ```
 
-### Form
+### Multipart
 
 [Multipart form data options](/multipart#options): `memory`, 4MB by default, is the most the parser holds at once, and also the largest request the [MCP endpoint](/agents#tools) reads; `payload`, 16MB by default, is the largest body; and `parts` has no limit unless you set one.
 
 ```ts
 new App({
-	form: {
+	multipart: {
 		memory: 12 * 1024 ** 2, // increase to 12MB
 		payload: 1024 ** 3, // increase to 1GB
 		parts: 4, // only accept up to 4 parts

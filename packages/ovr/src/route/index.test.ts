@@ -571,7 +571,7 @@ describe("Route schema helpers", () => {
 					c.text(error instanceof Error ? error.message : String(error), 413);
 				}
 			});
-		const app = new App({ form: { parts: 1 } }).use(submit);
+		const app = new App({ multipart: { parts: 1 } }).use(submit);
 		const data = new FormData();
 
 		data.set("a", "x");
@@ -606,7 +606,7 @@ describe("Route schema helpers", () => {
 					c.text(error instanceof Error ? error.message : String(error), 413);
 				}
 			});
-		const app = new App({ form: { parts: 1 } }).use(submit);
+		const app = new App({ multipart: { parts: 1 } }).use(submit);
 		const data = new FormData();
 
 		data.set("a", "x");

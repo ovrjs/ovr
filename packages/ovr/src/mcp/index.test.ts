@@ -595,7 +595,7 @@ describe("Mcp", () => {
 		const body = new ReadableStream<Uint8Array>(
 			{
 				pull(controller) {
-					// over the app's `form.memory`, 4MB by default
+					// over the app's `multipart.memory`, 4MB by default
 					if (++pulls === 1)
 						controller.enqueue(new Uint8Array(4 * 1024 ** 2 + 1));
 					else controller.close();

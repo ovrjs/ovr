@@ -35,7 +35,7 @@ export namespace App {
 		/** The app's request handler */
 		readonly fetch: App["fetch"];
 
-		/** Most memory a request body may take, the app's `form.memory` */
+		/** Most memory a request body may take, the app's `multipart.memory` */
 		readonly memory: number;
 
 		/**
@@ -100,9 +100,9 @@ export namespace App {
 
 		/**
 		 * Multipart form data options
-		 * (overridden by options passed into `Context.form(options)`)
+		 * (overridden by options passed into `Context.multipart(options)`)
 		 */
-		readonly form?: Multipart.Options;
+		readonly multipart?: Multipart.Options;
 	};
 }
 
@@ -168,7 +168,7 @@ export class App {
 					route[mount]({
 						routes: this.#routes,
 						fetch: this.fetch,
-						memory: this.#options.form?.memory ?? memory,
+						memory: this.#options.multipart?.memory ?? memory,
 						find: (method, pathname) =>
 							this.#find(method, pathname) ?? undefined,
 					}),
