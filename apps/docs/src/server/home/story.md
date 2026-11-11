@@ -34,7 +34,7 @@ const done = Route.post("/todos/:id/done")
 	.describe("Mark a todo as done")
 	.use(async (c) => {
 		await db.done(c.params.id);
-		c.redirect(list.url(), 303);
+		c.redirect(list, 303);
 	});
 
 const add = Route.post("/todos")
@@ -45,6 +45,6 @@ const add = Route.post("/todos")
 		if (result.issues) return c.redirect(result.url, 303);
 
 		await db.add(result.data.text);
-		c.redirect(list.url(), 303);
+		c.redirect(list, 303);
 	});
 ```

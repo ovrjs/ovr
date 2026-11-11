@@ -28,7 +28,7 @@ function Page({ title, children }: { title: string; children: JSX.Element }) {
 }
 
 const login = Route.get("/login").use(async (c) => {
-	if (await c.session()) return c.redirect(list.url(), 303);
+	if (await c.session()) return c.redirect(list, 303);
 	const { Register, Login } = auth.forms(c);
 
 	return (
@@ -46,7 +46,7 @@ const create = Route.post("/bookmarks")
 	.fields(editable)
 	.use(async (c) => {
 		const session = await c.session();
-		if (!session) return c.redirect(login.url(), 303);
+		if (!session) return c.redirect(login, 303);
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
 
@@ -62,7 +62,7 @@ const create = Route.post("/bookmarks")
 			return c.redirect(invalid.url, 303);
 		}
 
-		return c.redirect(list.url(), 303);
+		return c.redirect(list, 303);
 	});
 
 const update = Route.post("/bookmarks/:id")
@@ -71,7 +71,7 @@ const update = Route.post("/bookmarks/:id")
 	.fields(editable)
 	.use(async (c) => {
 		const session = await c.session();
-		if (!session) return c.redirect(login.url(), 303);
+		if (!session) return c.redirect(login, 303);
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
 
@@ -92,7 +92,7 @@ const update = Route.post("/bookmarks/:id")
 			throw error;
 		}
 
-		return c.redirect(list.url(), 303);
+		return c.redirect(list, 303);
 	});
 
 const remove = Route.post("/bookmarks/:id/delete")
@@ -100,7 +100,7 @@ const remove = Route.post("/bookmarks/:id/delete")
 	.params({ id })
 	.use(async (c) => {
 		const session = await c.session();
-		if (!session) return c.redirect(login.url(), 303);
+		if (!session) return c.redirect(login, 303);
 		const [bookmark] = await database.sql`
 			DELETE FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
@@ -108,14 +108,14 @@ const remove = Route.post("/bookmarks/:id/delete")
 		`.parse(bookmarks);
 
 		if (!bookmark) return c.text("Not Found", 404);
-		return c.redirect(list.url(), 303);
+		return c.redirect(list, 303);
 	});
 
 const list = Route.get("/bookmarks")
 	.describe("The latest 50 bookmarks")
 	.use(async (c) => {
 		const session = await c.session();
-		if (!session) return c.redirect(login.url(), 303);
+		if (!session) return c.redirect(login, 303);
 		const { Logout } = auth.forms(c);
 		const rows = await database.sql`
 			SELECT * FROM ${bookmarks} WHERE owner = ${session.user}
@@ -152,7 +152,7 @@ const edit = Route.get("/bookmarks/:id/edit")
 	.params({ id })
 	.use(async (c) => {
 		const session = await c.session();
-		if (!session) return c.redirect(login.url(), 303);
+		if (!session) return c.redirect(login, 303);
 		const [bookmark] = await database.sql`
 			SELECT * FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
@@ -174,7 +174,7 @@ const edit = Route.get("/bookmarks/:id/edit")
 	});
 
 const connect = Route.get("/connect").use(async (c) => {
-	if (!(await c.session())) return c.redirect(login.url(), 303);
+	if (!(await c.session())) return c.redirect(login, 303);
 	const request = await auth.consent(c);
 	if (!request) return c.text("This request expired. Connect again.", 400);
 
@@ -208,7 +208,7 @@ app.use(
 	},
 	auth,
 	mcp,
-	Route.get("/").use((c) => c.redirect(list.url(), 303)),
+	Route.get("/").use((c) => c.redirect(list, 303)),
 	login,
 	connect,
 	list,

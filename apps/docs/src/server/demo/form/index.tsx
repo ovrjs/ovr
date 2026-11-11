@@ -48,7 +48,7 @@ export const enroll = Route.post("/demo/form")
 
 		// create new student record...
 
-		c.redirect(form.url(), 303);
+		c.redirect(form, 303);
 	});
 
 export const form = Route.get("/demo/form").use((c) => {

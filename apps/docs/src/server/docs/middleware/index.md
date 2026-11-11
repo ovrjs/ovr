@@ -100,7 +100,7 @@ Route.get("/api/:id").use((c) => {
 	c.html(body, status); // HTML
 	c.text(body, status); // plain text
 	c.json(data, status); // JSON
-	c.redirect(location, status); // redirect to a URL, such as a route's route.url()
+	c.redirect(location, status); // redirect to a location, or a route without parameters
 
 	c.cookie.set(name, value, options); // set cookie
 

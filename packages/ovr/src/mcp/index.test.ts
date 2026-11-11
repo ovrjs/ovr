@@ -86,14 +86,14 @@ function setup() {
 			if (result.data.title === "Taken")
 				return c.redirect(result.invalid({ title: "Already used" }).url, 303);
 			posts.set(String(posts.size + 1), result.data.title);
-			return c.redirect(list.url(), 303);
+			return c.redirect(list, 303);
 		});
 
 	const remove = Route.post("/posts/:id/delete")
 		.describe("Delete a post")
 		.use((c) => {
 			if (!posts.delete(c.params.id)) return c.text("Not Found", 404);
-			return c.redirect(list.url(), 303);
+			return c.redirect(list, 303);
 		});
 
 	const hidden = Route.post("/internal").use(() => "secret");

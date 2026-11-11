@@ -94,7 +94,7 @@ const add = Route.post("/todos")
 		if (result.issues) return c.redirect(result.url, 303);
 
 		todos.push(result.data.text);
-		c.redirect(list.url(), 303);
+		c.redirect(list, 303);
 	});
 
 const app = new App().use(list, add, new Mcp({ name: "todos" }));

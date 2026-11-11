@@ -918,11 +918,11 @@ describe("chained routes", () => {
 		const files = Route.get("/files/*");
 		const home = Route.get("/");
 		Route.get("/go").use((c) => {
-			// @ts-expect-error a route's address is its url(), which gives parameters their values
+			// @ts-expect-error parameters need values, from route.url({ params })
 			c.redirect(item, 303);
 			// @ts-expect-error a wildcard too
 			c.redirect(files);
-			c.redirect(home.url());
+			c.redirect(home);
 			c.redirect(item.url({ params: { id: "1" } }), 303);
 		});
 	});
