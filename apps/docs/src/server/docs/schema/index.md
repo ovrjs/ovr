@@ -35,7 +35,7 @@ if (result.issues) {
 
 ## JSON Schema
 
-`toJsonSchema` describes a schema as a [JSON Schema](https://json-schema.org/) object, for example to document an API or define tool parameters.
+`toJsonSchema` describes a schema as a [JSON Schema](https://json-schema.org/) object, for example to document an API or define tool parameters. A schema's `describe(text)` is its `description` there.
 
 ```ts
 user.toJsonSchema();
@@ -104,7 +104,7 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 > Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, give the field a label: `Field.text().label("Full Name")`.
 
-`describe` says how to fill a field in, as a route's [`describe`](/route#describe) says what the route does: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
+`describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
 
 `control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<signup.Field name="name" autofocus />`.
 

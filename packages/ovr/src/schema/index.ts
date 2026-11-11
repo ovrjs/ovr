@@ -185,7 +185,7 @@ export namespace Schema {
 	 *
 	 * Parsing, JSON Schema, and database tables are all derived from it.
 	 */
-	export type Def =
+	export type Def = (
 		| { readonly type: "unknown" }
 		| {
 				readonly type: "string" | "boolean" | "number" | "bigint" | "date";
@@ -246,7 +246,11 @@ export namespace Schema {
 				readonly type: "check";
 				readonly inner: Schema<unknown>;
 				readonly check: Check;
-		  };
+		  }
+	) & {
+		/** What the value is, see `describe()` */
+		readonly description?: string;
+	};
 
 	/** Validation applied to the output of another schema. */
 	export type Check =
@@ -613,6 +617,35 @@ export class Schema<Output>
 	}
 
 	/**
+	 * Say what the value is. Agents read it as the `description` in its JSON
+	 * Schema, such as of a tool's argument, and a field shows it to people
+	 * under its control.
+	 *
+	 * ```ts
+	 * Schema.string().uuid().describe("The bookmark's ID");
+	 * Field.url().describe("An http or https address");
+	 * ```
+	 *
+	 * @param text Description
+	 * @returns Schema with the description
+	 */
+	describe(text: string) {
+		return this.derive<Output>({ ...this.def, description: text }) as this;
+	}
+
+	/**
+	 * @returns The description given with `describe()`, here or on the
+	 * schema this one wraps, such as before `optional()`
+	 */
+	get description(): string | undefined {
+		let def: Schema.Def | undefined = this.def;
+		while (def) {
+			if (def.description !== undefined) return def.description;
+			def = "inner" in def ? def.inner.def : undefined;
+		}
+	}
+
+	/**
 	 * @internal Overridden by Field to describe itself as an object's property
 	 * @param _io Side of the description
 	 * @returns Keywords added to the property's JSON Schema
@@ -942,6 +975,23 @@ export class Schema<Output>
 	 * @returns Description, optional when its key may be omitted
 	 */
 	static #node(
+		schema: Schema<unknown>,
+		c: Schema.JsonSchema.Context,
+	): Schema.JsonSchema.Node {
+		const node = Schema.#kind(schema, c);
+		const { description } = schema.def;
+
+		return description === undefined
+			? node
+			: { ...node, schema: { ...node.schema, description } };
+	}
+
+	/**
+	 * @param schema Schema to describe
+	 * @param c Context
+	 * @returns JSON Schema of the schema's kind
+	 */
+	static #kind(
 		schema: Schema<unknown>,
 		c: Schema.JsonSchema.Context,
 	): Schema.JsonSchema.Node {

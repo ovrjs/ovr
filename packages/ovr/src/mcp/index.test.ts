@@ -704,6 +704,31 @@ describe("Mcp", () => {
 		expect(remove.annotations).not.toHaveProperty("destructiveHint");
 	});
 
+	test("a described parameter and field tell agents what they are", async () => {
+		const app = new App().use(
+			Route.post("/bookmarks/:id")
+				.describe("Rename a bookmark")
+				.params({ id: Schema.string().uuid().describe("The bookmark's ID") })
+				.fields({ title: Field.text().describe("A short name").optional() })
+				.use((c) => c.text("ok")),
+			new Mcp({ name: "bookmarks" }),
+		);
+		const res = await app.fetch("http://localhost/mcp", request("tools/list"));
+		const { properties } = ((await res.json()) as any).result.tools[0]
+			.inputSchema;
+
+		expect(properties.id).toEqual({
+			type: "string",
+			format: "uuid",
+			description: "The bookmark's ID",
+		});
+		// kept by what follows, such as optional()
+		expect(properties.title).toEqual({
+			type: "string",
+			description: "A short name",
+		});
+	});
+
 	test("a number field keeps its type and rules, and a number calls it", async () => {
 		let bought: number | undefined;
 		const buy = Route.post("/buy")

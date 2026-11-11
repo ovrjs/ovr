@@ -769,7 +769,8 @@ class FieldSchema<
 	 * @returns Keywords added to the property's JSON Schema
 	 */
 	override [annotate](io: "input" | "output") {
-		const { label, description } = this.#config;
+		const { label } = this.#config;
+		const { description } = this;
 		// what a browser's picker sends, which a string alone does not say
 		const format = FieldSchema.#formats[this.type as string];
 		const described = [description?.replace(/\.$/, ""), format]
@@ -828,22 +829,6 @@ class FieldSchema<
 	}
 
 	/**
-	 * Say how to fill the field in. People read it under the control, and
-	 * agents as the field's `description`, as a route's `describe()` is its
-	 * tool's.
-	 *
-	 * ```ts
-	 * Field.url().describe("An http or https address");
-	 * ```
-	 *
-	 * @param text Description
-	 * @returns Field with the description
-	 */
-	describe(text: string): Field.Instance<Output, Tag, Type, Values, Stream> {
-		return this.#with({ description: text });
-	}
-
-	/**
 	 * Attributes for the field's control wherever it renders, such as a
 	 * placeholder. Those for one form are passed when it renders.
 	 *
@@ -871,7 +856,7 @@ class FieldSchema<
 	 * @param changes What to change
 	 * @returns The same field with them
 	 */
-	#with(changes: Pick<Field.Config, "label" | "description" | "props">) {
+	#with(changes: Pick<Field.Config, "label" | "props">) {
 		return this.#copy({ config: { ...this.#config, ...changes } });
 	}
 
@@ -986,7 +971,8 @@ class FieldSchema<
 		const issue = state?.issues?.find((i) => i.path[0] === props.name);
 		const issueId = issue && `${props.name}-issue`;
 		const hidden = this.type === "hidden";
-		const { label = props.name, description } = this.#config;
+		const { label = props.name } = this.#config;
+		const { description } = this;
 		const descriptionId =
 			description && !hidden ? `${props.name}-description` : undefined;
 		const control = {
@@ -1189,9 +1175,6 @@ export namespace Field {
 
 		/** What people call the field, set with `label()` */
 		readonly label?: string;
-
-		/** How to fill the field in, set with `describe()` */
-		readonly description?: string;
 
 		/** Field props */
 		readonly props?: Props | undefined;
