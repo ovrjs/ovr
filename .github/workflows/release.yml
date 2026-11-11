@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      # prereleases, published under the next tag while Changesets is in pre mode
+      - next
 
 permissions: {}
 jobs:
