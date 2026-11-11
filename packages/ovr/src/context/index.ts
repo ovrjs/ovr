@@ -1,6 +1,6 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
-import { Form as FormSchema } from "../form/index.js";
+import { type Field, Form as FormSchema, forms } from "../form/index.js";
 import { Markdown } from "../markdown/index.js";
 import { Markup } from "../markup/index.js";
 import type { Middleware } from "../middleware/index.js";
@@ -75,9 +75,7 @@ export namespace Context {
 	 *
 	 * @template S Form shape
 	 */
-	export type Result<S extends FormSchema.Shape> = [FormSchema.Shape] extends [
-		S,
-	]
+	export type Result<S extends Field.Shape> = [Field.Shape] extends [S]
 		? null
 		: Util.Prettify<
 				FormSchema.Parse.Result<
@@ -98,7 +96,7 @@ export namespace Context {
  */
 export class Context<
 	Params extends Record<string, unknown> = Trie.Params,
-	Shape extends FormSchema.Shape = FormSchema.Shape,
+	Shape extends Field.Shape = Field.Shape,
 > {
 	/**
 	 * Incoming `Request` to the server.
@@ -315,9 +313,9 @@ export class Context<
 			// GET and HEAD carry their fields in the URL, every other method in its body
 			const post =
 				this.req.method !== Method.get && this.req.method !== Method.head;
-			const form = this.route as Route.Post | undefined;
+			const form = this.route && forms.get(this.route);
 
-			if (!form?.parse) return null as Context.Result<Shape>;
+			if (!form) return null as Context.Result<Shape>;
 
 			// a body too large or not form data throws, for the handler to answer
 			const result = await form.parse(
@@ -365,7 +363,7 @@ export class Context<
 			const create = result.invalid;
 
 			return Object.assign(result, {
-				invalid: (messages: FormSchema.Parse.Messages<FormSchema.Shape>) => {
+				invalid: (messages: FormSchema.Parse.Messages<Field.Shape>) => {
 					const result = create(messages);
 					this.#agentIssues(result.issues);
 					return invalid(result);

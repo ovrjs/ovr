@@ -3,7 +3,7 @@ title: Form
 description: First class form validation with ovr.
 ---
 
-`Schema` powers the `Field` and `Form` helpers used below. This demo builds a typed multipart form, preserves opted-in invalid values through redirects, and streams the uploaded license file when validation succeeds.
+`Schema` powers the fields and the route `Form` used below. This demo builds a typed multipart form, preserves opted-in invalid values through redirects, and streams the uploaded license file when validation succeeds.
 
 ```tsx
 import { Field, Route } from "ovr";

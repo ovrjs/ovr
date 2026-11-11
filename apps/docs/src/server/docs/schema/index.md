@@ -3,7 +3,7 @@ title: Schema
 description: Type-safe validation and form generation with ovr.
 ---
 
-ovr's `Schema` API is modeled after [Zod](https://zod.dev/) and implements [Standard Schema](https://standardschema.dev/). Use it on its own to parse arbitrary values, or use `Field` and `Form` to turn those validations into HTML forms.
+ovr's `Schema` API is modeled after [Zod](https://zod.dev/) and implements [Standard Schema](https://standardschema.dev/). Use it on its own to parse arbitrary values, or use `Field` to turn those validations into HTML forms.
 
 ## Parse
 
@@ -116,7 +116,7 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 The `state` prop for each component takes the current page `c.url`. The URL contains a same-origin `_return` query param on the action URL so invalid redirects can return to the page that rendered the form.
 
-> If you want to reuse the schema outside of a route, create it with `new Form(shape)` and pass the resulting form to `route.fields(form)`.
+> To share fields between routes, reuse the shape object, such as `.fields({ ...shape, note: Field.textarea() })`.
 
 ### Edit a record
 

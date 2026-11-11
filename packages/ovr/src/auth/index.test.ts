@@ -307,7 +307,7 @@ function setup(extra: Partial<State.Options> = {}) {
 			});
 	app.use(issue("register"), issue("login"), Passkey.client);
 	const register = Route.post("/register")
-		.fields({ email: Field.email() })
+		.fields({ email: Field.email(), ...Passkey.shape })
 		.use(async (c) => {
 			const input = await c.data();
 			if (input.issues) throw input;
@@ -316,12 +316,10 @@ function setup(extra: Partial<State.Options> = {}) {
 			c.json(credential);
 		});
 	const login = Route.post("/login")
-		.fields({})
+		.fields(Passkey.shape)
 		.use(async (c) =>
 			c.json(await new Passkey(c, new State(c, options)).login(credentials)),
 		);
-	Passkey.prepare(register);
-	Passkey.prepare(login);
 	app.use(
 		register,
 		login,
@@ -930,9 +928,8 @@ describe("form contracts", () => {
 	test("retains typed route parameters and safely serializes script arguments", async () => {
 		const state = setup();
 		const route = Route.post("/accounts/:account/passkeys")
-			.fields({ email: Field.email() })
+			.fields({ email: Field.email(), ...Passkey.shape })
 			.use((c) => c.text(c.params.account));
-		Passkey.prepare(route);
 		state.app.use(
 			route,
 			Route.get("/typed").use((c) => {

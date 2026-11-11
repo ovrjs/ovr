@@ -1,5 +1,5 @@
 import { App } from "../app/index.js";
-import { Field, Form } from "../form/index.js";
+import { Field, Form, forms } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Markup } from "../markup/index.js";
 import { Mcp } from "../mcp/index.js";
@@ -78,13 +78,13 @@ describe("Route schema helpers", () => {
 		});
 	});
 
-	test("Route.get parses query params with a Form instance", async () => {
-		const form = new Form({
+	test("Route.get parses query params with a shared shape", async () => {
+		const shape = {
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
-		});
+		};
 		const user = Route.get("/user")
-			.fields(form)
+			.fields(shape)
 			.use(async (c) => {
 				const result = await c.data();
 
@@ -664,7 +664,7 @@ describe("editing records", () => {
 		const body = new FormData();
 		body.set("title", "Typed");
 		body.set("body", "Other");
-		const result = await persisted.parse(body);
+		const result = await forms.get(persisted)!.parse(body);
 		if (!result.issues) throw new Error("Expected issues");
 		const state = new URL("http://localhost:5173/posts/1");
 		state.search = new URLSearchParams(result.search).toString();
@@ -1137,6 +1137,6 @@ describe("chained routes", () => {
 				expectTypeOf(c.params).toEqualTypeOf<{ id: string }>();
 			});
 
-		expect(update.names).toEqual(["title"]);
+		expect(forms.get(update)!.names).toEqual(["title"]);
 	});
 });

@@ -431,50 +431,48 @@ export function oauth(
 	 * Allows the agent. The user confirms with their passkey, so a script or
 	 * agent driving a signed-in browser cannot allow it for them.
 	 */
-	const approve = Passkey.prepare(
-		Route.post(paths.approve)
-			.fields({ request: Field.hidden() })
-			.use(same, async (c) => {
-				const failed = () =>
-					c.text("Your passkey could not be verified. Try again.", 400);
-				const result = await Issue.data(c);
-				if (!result || result.issues) return failed();
+	const approve = Route.post(paths.approve)
+		.fields({ request: Field.hidden(), ...Passkey.shape })
+		.use(same, async (c) => {
+			const failed = () =>
+				c.text("Your passkey could not be verified. Try again.", 400);
+			const result = await Issue.data(c);
+			if (!result || result.issues) return failed();
 
-				const pending = await asked(c, result.data.request);
-				if (!pending) return;
+			const pending = await asked(c, result.data.request);
+			if (!pending) return;
 
-				let credential;
-				try {
-					// a passkey confirms the request it was asked for, not another
-					credential = await new Passkey(c, state(c)).login(
-						storage.credentials,
-						await Passkey.fields({ request: result.data.request }),
-						// the prompt offered only this user's passkeys
-						pending.user,
-					);
-				} catch (error) {
-					if (!unverified(error)) throw error;
-					return failed();
-				}
-				// the passkey of the user who was asked
-				if (credential.user !== pending.user) return c.text("Forbidden", 403);
+			let credential;
+			try {
+				// a passkey confirms the request it was asked for, not another
+				credential = await new Passkey(c, state(c)).login(
+					storage.credentials,
+					await Passkey.fields({ request: result.data.request }),
+					// the prompt offered only this user's passkeys
+					pending.user,
+				);
+			} catch (error) {
+				if (!unverified(error)) throw error;
+				return failed();
+			}
+			// the passkey of the user who was asked
+			if (credential.user !== pending.user) return c.text("Forbidden", 403);
 
-				const code = Token.random();
-				await storage.tokens.set(code, {
-					kind: "code",
-					user: pending.user,
-					client: pending.client,
-					resource: pending.resource,
-					scope: "",
-					// compared at the exchange only when the request named it (OAuth 2.1)
-					...(pending.named && { redirect: pending.redirect }),
-					challenge: pending.challenge,
-					expiration: Date.now() + lifetime.code,
-				});
+			const code = Token.random();
+			await storage.tokens.set(code, {
+				kind: "code",
+				user: pending.user,
+				client: pending.client,
+				resource: pending.resource,
+				scope: "",
+				// compared at the exchange only when the request named it (OAuth 2.1)
+				...(pending.named && { redirect: pending.redirect }),
+				challenge: pending.challenge,
+				expiration: Date.now() + lifetime.code,
+			});
 
-				return back(c, pending, { code });
-			}),
-	);
+			return back(c, pending, { code });
+		});
 
 	/** Denies the agent, which needs no passkey */
 	const deny = Route.post(paths.deny)

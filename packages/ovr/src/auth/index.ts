@@ -28,7 +28,7 @@ export namespace Auth {
 	 *
 	 * @template Shape Registration fields of the users table
 	 */
-	export interface Forms<Shape extends Form.Shape> {
+	export interface Forms<Shape extends Field.Shape> {
 		Register: Route.Form<string> & {
 			Field: Form<Shape>["Field"];
 			Fields: Form<Shape>["Fields"];

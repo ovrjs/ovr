@@ -1,5 +1,6 @@
 import { type App, agents, direct, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
+import { forms } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters } from "../route/index.js";
 import { Schema } from "../schema/index.js";
@@ -653,20 +654,20 @@ export class Mcp<P extends string = string> {
 			if (!tool) continue;
 
 			const { name, read } = tool;
-			const form = route as Route.Post;
+			const shape = forms.get(route)?.shape;
 			// names are unique, app.use() throws for two routes sharing one
 
 			const properties: Json = {};
 			const required = new Set<string>();
 
-			if (form.shape) {
-				const schema = Mcp.#json(Schema.object(form.shape));
+			if (shape) {
+				const schema = Mcp.#json(Schema.object(shape));
 				Object.assign(properties, schema.properties);
 				for (const field of (schema.required ?? []) as string[])
 					required.add(field);
 				// a tool's arguments are JSON, so a file is sent as its contents
-				for (const name in form.shape) {
-					const field = form.shape[name]!;
+				for (const name in shape) {
+					const field = shape[name]!;
 					if (field.type === "file")
 						properties[name] = {
 							...(properties[name] as Json),
@@ -690,7 +691,7 @@ export class Mcp<P extends string = string> {
 					...(required.size > 0 && { required: [...required] }),
 					// a form takes only its fields. Other routes are left open: a
 					// handler may read the query or the body itself
-					...(form.shape && !read && { additionalProperties: false }),
+					...(shape && !read && { additionalProperties: false }),
 				},
 				// no destructiveHint, so clients treat any tool that writes as one
 				// that may need confirming
@@ -835,7 +836,7 @@ export class Mcp<P extends string = string> {
 		const read = route.method === Method.get;
 		const body = new FormData();
 
-		const { shape } = route as Route.Post;
+		const shape = forms.get(route)?.shape;
 
 		if (shape && !read) {
 			// named here, the form would only count one part too many

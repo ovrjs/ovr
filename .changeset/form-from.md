@@ -2,4 +2,4 @@
 "ovr": major
 ---
 
-`Form.from()` is removed, since `new Form(shape)` is the one way to make a form outside a route. `route.fields()` still accepts a shape or a form.
+`Form` is internal, and `route.fields(shape)` is the one way to give a route fields. A route renders them with `Field`, `Fields`, and `component`, and no longer has the form's `parse`, `shape`, `names`, `parts`, `extend`, `pick`, and `omit`, which `c.data()` and the MCP endpoint use for it. To share fields, reuse the shape object, typed `Field.Shape`. `Form.from()` and `Route.Schema` are removed.

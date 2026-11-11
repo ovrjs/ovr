@@ -937,65 +937,6 @@ describe("Form schema", () => {
 		expect(html.includes("aria-invalid")).toBe(false);
 	});
 
-	test("form shape methods extend, pick, and omit preserve parse behavior", async () => {
-		const extended = new Form({ a: Field.text() }).extend({
-			b: Field.checkbox(),
-		});
-		const picked = new Form({
-			a: Field.text(),
-			b: Field.number(),
-			c: Field.checkbox(),
-		}).pick(["a", "c"]);
-		const omitted = new Form({
-			a: Field.text(),
-			b: Field.number(),
-			c: Field.checkbox(),
-		}).omit(["b"]);
-
-		const extendedData = new FormData();
-		extendedData.set("a", "x");
-		extendedData.set("b", "on");
-
-		const pickedData = new FormData();
-		pickedData.set("a", "x");
-		pickedData.set("c", "on");
-
-		const omittedData = new FormData();
-		omittedData.set("a", "x");
-		omittedData.set("c", "on");
-
-		expect(valid(await extended.parse(extendedData))).toEqual({
-			a: "x",
-			b: true,
-		});
-		expect(valid(await picked.parse(pickedData))).toEqual({ a: "x", c: true });
-		expect(valid(await omitted.parse(omittedData))).toEqual({
-			a: "x",
-			c: true,
-		});
-	});
-
-	test("form extend accepts another form schema", async () => {
-		const base = new Form({ a: Field.text() });
-		const extra = new Form({ b: Field.checkbox() });
-		const extended = base.extend(extra);
-		const data = new FormData();
-
-		data.set("a", "x");
-		data.set("b", "on");
-
-		const result = valid(await extended.parse(data));
-
-		expect(result).toEqual({ a: "x", b: true });
-	});
-
-	test("form field helper APIs stay available after pick", () => {
-		const form = new Form({ a: Field.text(), b: Field.number() }).pick(["a"]);
-
-		expect(typeof form.Field).toBe("function");
-		expect(typeof form.component({ name: "a" }).Control).toBe("function");
-	});
-
 	test("file and files fields parse file values", async () => {
 		const single = new Form({ upload: Field.file() });
 		const many = new Form({ uploads: Field.file().multiple() });

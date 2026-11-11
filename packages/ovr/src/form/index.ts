@@ -13,7 +13,7 @@ import { Checksum, Codec, Size } from "../util/index.js";
 
 export namespace Form {
 	/** Form field shape. */
-	export type Shape = Record<string, Field.Any>;
+	export type Shape = Field.Shape;
 
 	/** Persisted form value */
 	export type Value = string | number | boolean | string[];
@@ -144,6 +144,12 @@ export namespace Form {
 export const query = Symbol("query");
 
 /**
+ * Each route's form, kept apart from the route so its parsing is not part of
+ * the route's API.
+ */
+export const forms = new WeakMap<object, Form<any>>();
+
+/**
  * Maximum encoded state size in bytes. Outside the class, since a static that
  * reads another module is a side effect, which keeps `Form` in bundles that
  * only use `Field`.
@@ -222,42 +228,6 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		form.#query = true;
 		return form;
 	}
-
-	/**
-	 * Merge `extra` into the current fields.
-	 *
-	 * @template E Extra field shape type
-	 * @param extra Extra fields or form schema to merge
-	 * @returns New form schema with merged fields
-	 */
-	extend: {
-		<E extends Form.Shape>(extra: E): Form<ShapeUtil.Extend<Shape, E>>;
-		<E extends Form.Shape>(extra: Form<E>): Form<ShapeUtil.Extend<Shape, E>>;
-		(extra: Form<any>): Form<ShapeUtil.Extend<Shape, Form.Shape>>;
-	} = (extra: Form.Shape | Form<any>) =>
-		new Form(
-			ShapeUtil.extend(this.shape, extra instanceof Form ? extra.shape : extra),
-		);
-
-	/**
-	 * Keep only selected field names.
-	 *
-	 * @template N Selected field names
-	 * @param names Non-empty list of field names to keep
-	 * @returns New form schema with only selected fields
-	 */
-	pick = <N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) =>
-		new Form(ShapeUtil.pick(this.shape, names));
-
-	/**
-	 * Remove selected field names.
-	 *
-	 * @template N Field names to remove
-	 * @param names Non-empty list of field names to remove
-	 * @returns New form schema without selected fields
-	 */
-	omit = <N extends ShapeUtil.Name<Shape>>(names: readonly [N, ...N[]]) =>
-		new Form(ShapeUtil.omit(this.shape, names));
 
 	/**
 	 * @param name Form data name
@@ -1153,6 +1123,9 @@ export const field = (value: unknown): value is Field.Any =>
 	value instanceof FieldSchema;
 
 export namespace Field {
+	/** Fields by name, as a route's `fields` takes them. */
+	export type Shape = Record<string, Field.Any>;
+
 	/**
 	 * Base options to create a Field.
 	 *

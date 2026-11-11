@@ -22,7 +22,7 @@ export function configure<U extends Auth.Users>(
 	storage: Storage,
 	state: (c: State.Context) => State,
 ) {
-	type Shape = Form.Shape;
+	type Shape = Field.Shape;
 	const { users } = options;
 	const defaults = (users.options.default ?? []) as readonly string[];
 	/**
@@ -144,42 +144,38 @@ export function configure<U extends Auth.Users>(
 				else back(c, method);
 			}
 		};
-	const register = Passkey.prepare(
-		Route.post(paths.register)
-			.fields(shape)
-			.use(guard("register"), async (c) => {
-				// the users table's fields, only known at runtime
-				const input = (await Issue.data(c)) as Form.Parse.Result<Shape> | null;
-				if (!input || input.issues) throw new Issue("registration fields");
-				const data = values(input.data);
-				const credential = await new Passkey(c, state(c)).register(
-					await Passkey.fields(data),
-				);
-				// only the table's fields, never protocol fields
-				await storage
-					.register(async (t, user) => {
-						await t.sql`INSERT INTO ${users} ${t.sql.values(users, { ...data, id: user } as never)}`;
-					}, credential)
-					.catch((error: unknown) => {
-						// an account or passkey that already exists
-						if (Database.unique(error)) throw new Issue("account");
-						throw error;
-					});
-				await enter(c, credential.user);
-			}),
-	);
-	const login = Passkey.prepare(
-		Route.post(paths.login)
-			.fields({})
-			.use(guard("login"), async (c) => {
-				// Bound the body before verification.
-				if (!(await Issue.data(c))) throw new Issue("login request");
-				const credential = await new Passkey(c, state(c)).login(
-					storage.credentials,
-				);
-				await enter(c, credential.user);
-			}),
-	);
+	const register = Route.post(paths.register)
+		.fields({ ...shape, ...Passkey.shape })
+		.use(guard("register"), async (c) => {
+			// the users table's fields, only known at runtime
+			const input = (await Issue.data(c)) as Form.Parse.Result<Shape> | null;
+			if (!input || input.issues) throw new Issue("registration fields");
+			const data = values(input.data);
+			const credential = await new Passkey(c, state(c)).register(
+				await Passkey.fields(data),
+			);
+			// only the table's fields, never protocol fields
+			await storage
+				.register(async (t, user) => {
+					await t.sql`INSERT INTO ${users} ${t.sql.values(users, { ...data, id: user } as never)}`;
+				}, credential)
+				.catch((error: unknown) => {
+					// an account or passkey that already exists
+					if (Database.unique(error)) throw new Issue("account");
+					throw error;
+				});
+			await enter(c, credential.user);
+		});
+	const login = Route.post(paths.login)
+		.fields(Passkey.shape)
+		.use(guard("login"), async (c) => {
+			// Bound the body before verification.
+			if (!(await Issue.data(c))) throw new Issue("login request");
+			const credential = await new Passkey(c, state(c)).login(
+				storage.credentials,
+			);
+			await enter(c, credential.user);
+		});
 	const logout = Route.post(paths.logout).use(guard("logout"), async (c) => {
 		await state(c).logout();
 		c.redirect(page, 303);

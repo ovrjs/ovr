@@ -1,5 +1,5 @@
 import type { Context as ContextType } from "../context/index.js";
-import { Field, Form } from "../form/index.js";
+import { Field } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
@@ -30,7 +30,7 @@ export namespace Passkey {
 	 */
 	export interface Post<Pattern extends string> extends Pick<
 		Route.Post,
-		"Fields" | "extend" | "names"
+		"Fields"
 	> {
 		pattern: Pattern;
 		Form: Route.Form<Pattern>;
@@ -67,13 +67,13 @@ export namespace Passkey {
 
 /** ES256 passkeys with single-use, browser-bound ceremonies. */
 export class Passkey {
-	static readonly #routes = new WeakSet<object>();
 	/** Weak entity tag of the browser module */
 	static readonly #etag = etag;
-	static readonly #fields = new Form({
+	/** Hidden fields the browser module fills, added to each ceremony route's own */
+	static readonly shape = {
 		credential: Field.hidden().json(Schema.unknown()),
 		ceremony: Field.hidden(),
-	});
+	};
 	static readonly #payload = Schema.object({
 		credential: Schema.unknown(),
 		ceremony: Schema.string(),
@@ -114,21 +114,6 @@ export class Passkey {
 	constructor(c: Auth.Context, auth: State) {
 		this.#c = c;
 		this.#auth = auth;
-	}
-
-	/**
-	 * Complete a passkey POST schema at startup, before mounting it in an App.
-	 *
-	 * @template T Passkey POST route
-	 */
-	static prepare<T extends Pick<Passkey.Post<string>, "extend" | "names">>(
-		route: T,
-	) {
-		if (!Passkey.#routes.has(route)) {
-			if (route.extend) Object.assign(route, route.extend(Passkey.#fields));
-			Passkey.#routes.add(route);
-		}
-		return route;
 	}
 
 	/**

@@ -1,4 +1,4 @@
-import { Form as FormSchema, query } from "../form/index.js";
+import { type Field, Form as FormSchema, forms, query } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema as ValueSchema } from "../schema/index.js";
@@ -197,13 +197,20 @@ export namespace Route {
 	};
 
 	/**
-	 * Form method subset attached to route helper types.
+	 * The components a route with fields renders them with.
 	 *
-	 * Omits `component` so schema-specific `component` signatures are not widened when a
-	 * concrete `Form<S>` is intersected onto the route type, and the form's internal
-	 * `query` method, which a route does not offer.
+	 * @template S Form field shape
 	 */
-	type FormMethods = Omit<Route.Schema<any>, "component" | typeof query>;
+	type Components<S extends Field.Shape> = Pick<
+		FormSchema<S>,
+		"Field" | "Fields" | "component"
+	>;
+
+	/**
+	 * Omits `component` so schema-specific `component` signatures are not widened when a
+	 * concrete shape is intersected onto the route type.
+	 */
+	type FormMethods = Omit<Components<any>, "component">;
 
 	/**
 	 * Optional form helper methods available when a route may have a schema.
@@ -223,11 +230,9 @@ export namespace Route {
 	 *
 	 * @template Shape Form field shape
 	 */
-	type WithSchema<Shape extends FormSchema.Shape> = [FormSchema.Shape] extends [
-		Shape,
-	]
+	type WithSchema<Shape extends Field.Shape> = [Field.Shape] extends [Shape]
 		? MaybeForm
-		: Route.Schema<Shape>;
+		: Components<Shape>;
 
 	/**
 	 * GET route type with route components and optional schema helpers.
@@ -239,7 +244,7 @@ export namespace Route {
 	export type Get<
 		Pattern extends string = string,
 		Params extends Route.ParamsBase = any,
-		Shape extends FormSchema.Shape = any,
+		Shape extends Field.Shape = any,
 	> = Route<Pattern, Params, Shape, "get"> &
 		WithAnchor<Pattern> &
 		WithButton<Pattern> &
@@ -256,7 +261,7 @@ export namespace Route {
 	export type Post<
 		Pattern extends string = string,
 		Params extends Route.ParamsBase = any,
-		Shape extends FormSchema.Shape = any,
+		Shape extends Field.Shape = any,
 	> = Route<Pattern, Params, Shape, "post"> &
 		WithButton<Pattern> &
 		WithForm<Pattern> &
@@ -277,7 +282,7 @@ export namespace Route {
 		K extends Route.Kind,
 		Pattern extends string,
 		Params extends Route.ParamsBase,
-		Shape extends FormSchema.Shape,
+		Shape extends Field.Shape,
 	> = K extends "get"
 		? Route.Get<Pattern, Params, Shape>
 		: K extends "post"
@@ -326,14 +331,6 @@ export namespace Route {
 		/** Call `.fields()` before `.use()` */
 		readonly fields: never;
 	};
-
-	/**
-	 * Schema helper type attached to routes that have a form schema.
-	 *
-	 * @template S Form field shape
-	 */
-	export type Schema<S extends FormSchema.Shape = FormSchema.Shape> =
-		FormSchema<S>;
 
 	/**
 	 * A parameter's value in a URL: text, or a number a `params` schema may
@@ -477,7 +474,7 @@ export class Route<
 	Pattern extends string = string,
 	// any by default so a `Route` type accepts every route
 	Params extends Route.ParamsBase = any,
-	Shape extends FormSchema.Shape = any,
+	Shape extends Field.Shape = any,
 	Kind extends Route.Kind = any,
 > {
 	/** HTTP method */
@@ -631,20 +628,18 @@ export class Route<
 	 * renders by default.
 	 *
 	 * @template S Field shape
-	 * @param fields Field shape or form schema
+	 * @param fields Field shape
 	 * @returns The route with form helpers
 	 */
-	fields<S extends FormSchema.Shape>(
-		fields: S | FormSchema<S>,
-	): Route.Of<Kind, Pattern, Params, S> {
+	fields<S extends Field.Shape>(fields: S): Route.Of<Kind, Pattern, Params, S> {
 		this.#configure("fields");
-		const form = fields instanceof FormSchema ? fields : new FormSchema(fields);
+		let form = new FormSchema(fields);
+		// a GET form's submission is the URL, so its fields read from it
+		if (this.method === Method.get) form = form[query]();
+		forms.set(this, form);
+		const { Field, Fields, component } = form;
 
-		return Object.assign(
-			this,
-			// a GET form's submission is the URL, so its fields read from it
-			this.method === Method.get ? form[query]() : form,
-		) as any;
+		return Object.assign(this, { Field, Fields, component }) as any;
 	}
 
 	/**
@@ -842,7 +837,7 @@ export class Route<
 					>),
 					...rest,
 				})) as Route.Anchor<Pattern>,
-		}) as Route.Get<Pattern, ExtractParams<Pattern>, FormSchema.Shape>;
+		}) as Route.Get<Pattern, ExtractParams<Pattern>, Field.Shape>;
 	}
 
 	/**
@@ -854,7 +849,7 @@ export class Route<
 		return Route.#withComponents(new Route(Method.post, pattern)) as Route.Post<
 			Pattern,
 			ExtractParams<Pattern>,
-			FormSchema.Shape
+			Field.Shape
 		>;
 	}
 }

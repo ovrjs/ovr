@@ -10,5 +10,5 @@ export { Markup } from "./markup/index.js";
 export { Markdown } from "./markdown/index.js";
 export { Route } from "./route/index.js";
 export { Table } from "./table/index.js";
-export { Field, Form } from "./form/index.js";
+export { Field } from "./form/index.js";
 export { Schema } from "./schema/index.js";
