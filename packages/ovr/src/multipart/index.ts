@@ -55,7 +55,7 @@ class Needle extends Uint8Array {
 }
 
 /** Multipart part */
-export class Part extends Request {
+class Part extends Request {
 	/**
 	 * Form input `name` attribute
 	 *
@@ -248,18 +248,27 @@ export namespace Multipart {
 		parts?: number | undefined;
 	};
 
-	/** Type for a `Part` of the multipart body */
-	export type Part = InstanceType<typeof Part>;
+	// interfaces, so that declaration files name them `Multipart.Part` and
+	// so on, which an alias of the class would not be
+
+	/** A `Part` of the multipart body */
+	export interface Part extends PartClass {}
 
 	/** A body over a limit */
-	export type Limit = InstanceType<typeof Limit>;
+	export interface Limit extends LimitClass {}
 
 	/** Malformed form data */
-	export type Malformed = InstanceType<typeof Malformed>;
+	export interface Malformed extends MalformedClass {}
 
 	/** A content type other than multipart form data */
-	export type Unsupported = InstanceType<typeof Unsupported>;
+	export interface Unsupported extends UnsupportedClass {}
 }
+
+/** The classes `Multipart`'s types are named for */
+type PartClass = Part;
+type LimitClass = Limit;
+type MalformedClass = Malformed;
+type UnsupportedClass = Unsupported;
 
 /** Default most memory a request body takes while it is read, 4MB */
 export const memory = 4 * Size.mb;
@@ -280,16 +289,18 @@ const newLine = new Needle("\r\n\r\n");
  */
 export class Multipart {
 	/** A body over a limit, answered 413 when a route does not catch it */
-	static readonly Limit = Limit;
+	static readonly Limit: new (message?: string) => Multipart.Limit = Limit;
 
 	/** Malformed form data, answered 400 when a route does not catch it */
-	static readonly Malformed = Malformed;
+	static readonly Malformed: new (message?: string) => Multipart.Malformed =
+		Malformed;
 
 	/**
 	 * A content type other than multipart form data, answered 415 when a route
 	 * does not catch it. A kind of `Malformed`.
 	 */
-	static readonly Unsupported = Unsupported;
+	static readonly Unsupported: new (message?: string) => Multipart.Unsupported =
+		Unsupported;
 
 	/** Parser options */
 	readonly #options: Required<Multipart.Options> = {
@@ -662,7 +673,7 @@ export class Multipart {
 	}
 
 	/** @yields Multipart form data `Part`(s) */
-	async *[Symbol.asyncIterator]() {
+	async *[Symbol.asyncIterator](): AsyncGenerator<Multipart.Part, void> {
 		let complete = false;
 
 		try {

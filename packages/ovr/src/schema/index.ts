@@ -107,9 +107,7 @@ export namespace Schema {
 		}
 
 		/** Invalid result type. */
-		export interface Invalid extends InstanceType<
-			typeof Schema.AggregateIssue
-		> {
+		export interface Invalid extends Schema.AggregateIssue {
 			data?: never;
 		}
 
@@ -269,8 +267,14 @@ export namespace Schema {
 				readonly message: string;
 		  };
 
-	/** Schema.Issue type */
-	export type Issue = InstanceType<typeof Schema.Issue>;
+	// interfaces, so that declaration files name them `Schema.Issue` and
+	// `Schema.AggregateIssue`, which an alias of the class would not be
+
+	/** Validation issue produced during parsing */
+	export interface Issue extends IssueClass {}
+
+	/** AggregateIssue containing at least one `Schema.Issue` */
+	export interface AggregateIssue extends AggregateIssueClass {}
 
 	export namespace Issue {
 		/** Issue path representation. */
@@ -431,7 +435,7 @@ export class ShapeUtil {
 // spell out what `Error` has in each runtime, such as Node's
 
 /** Validation issue produced during parsing. */
-export class Issue extends Error {
+class Issue extends Error {
 	/** Expected type/value. */
 	readonly expected: string;
 
@@ -474,8 +478,12 @@ export class Issue extends Error {
 	}
 }
 
+/** The classes `Schema`'s issue types are named for */
+type IssueClass = Issue;
+type AggregateIssueClass = AggregateIssue;
+
 /** AggregateIssue containing at least one Schema.Issue */
-export class AggregateIssue extends AggregateError {
+class AggregateIssue extends AggregateError {
 	/** Non-empty tuple of issues */
 	readonly issues: Schema.Issue.List;
 
@@ -544,10 +552,14 @@ export class Schema<Output>
 	};
 
 	/** Validation issue produced during parsing. */
-	static readonly Issue = Issue;
+	static readonly Issue: new (
+		...args: ConstructorParameters<typeof Issue>
+	) => Schema.Issue = Issue;
 
 	/** AggregateIssue containing at least one Schema.Issue */
-	static readonly AggregateIssue = AggregateIssue;
+	static readonly AggregateIssue: new (
+		...args: ConstructorParameters<typeof AggregateIssue>
+	) => Schema.AggregateIssue = AggregateIssue;
 
 	readonly "~standard": StandardSchemaV1.Props<unknown, Output> &
 		StandardJSONSchemaV1.Props<unknown, Output> = {

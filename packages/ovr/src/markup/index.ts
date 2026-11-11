@@ -719,6 +719,9 @@ export const readable = (render: {
 	);
 };
 
+/** The class `Markup.Chunk` is named for */
+type ChunkClass = Chunk;
+
 export namespace Markup {
 	/** Markup options */
 	export type Options = {
@@ -726,8 +729,8 @@ export namespace Markup {
 		raw?: boolean;
 	};
 
-	/** Rendered `Chunk` instance */
-	export type Chunk = InstanceType<typeof Chunk>;
+	/** Rendered `Chunk` instance, an interface so declaration files name it */
+	export interface Chunk extends ChunkClass {}
 }
 
 /**
@@ -828,7 +831,7 @@ export class Markup {
 	 * @param html Safe markup to render
 	 * @returns New _safe_ `Chunk`
 	 */
-	static raw(html: unknown) {
+	static raw(html: unknown): Markup.Chunk {
 		return new Chunk(html, true);
 	}
 

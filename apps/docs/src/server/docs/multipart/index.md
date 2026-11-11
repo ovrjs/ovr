@@ -17,8 +17,6 @@ The platform built-in [`Request.formData`](https://developer.mozilla.org/en-US/d
 
 To stream parts of a multipart request, construct a new `Multipart` async iterable, and use a [`for await...of`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for-await...of) loop to iterate through each part. Each `Multipart.Part` extends the web [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) object, so all of the methods such as `part.text()` and `part.bytes()` are available to use. Additional properties provide quick access to form-specific details like the input `name`, `filename`, and content `type`. `Multipart` reads the request's body, so read the parts or `data()`, not the request's own body methods.
 
-> Write the type of a part as `Multipart.Part`. ovr also exports it as the type `MultipartPart`, and the errors as `MultipartLimit`, `MultipartMalformed`, and `MultipartUnsupported`, the names TypeScript writes in your declaration files, for a function that returns a part, for example.
-
 ```ts
 import { upload } from "./upload";
 import { Multipart } from "ovr";
