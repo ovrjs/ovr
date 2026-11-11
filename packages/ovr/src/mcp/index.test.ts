@@ -1,6 +1,7 @@
 import { App, agents } from "../app/index.js";
 import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
+import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Mcp } from "./index.js";
@@ -820,6 +821,75 @@ describe("Mcp", () => {
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toContain("Expected a file");
 		}
+	});
+
+	test("a JSON field takes its value whole, as its input schema describes it", async () => {
+		const item = Schema.object({
+			name: Schema.string(),
+			amount: Schema.string(),
+		});
+		const received: unknown[] = [];
+		const answer = async (c: Middleware.Context) => {
+			const result = await c.data();
+			if (!result || result.issues) return c.json(result?.issues, 422);
+			received.push(result.data);
+			c.text("ok");
+		};
+		const app = new App().use(
+			Route.post("/recipes")
+				.describe("Add a recipe")
+				.fields({
+					ingredients: Field.textarea()
+						.json(Schema.array(item))
+						.label("Ingredients"),
+					source: Field.hidden()
+						.json(Schema.object({ page: Schema.number() }))
+						.optional(),
+				})
+				.use(answer),
+			Route.get("/search")
+				.describe("Search")
+				.fields({ tags: Field.text().json(Schema.array(Schema.string())) })
+				.use(answer),
+			new Mcp({ name: "recipes" }),
+		);
+		const rpc = async (method: string, params?: Record<string, unknown>) =>
+			(
+				await app.fetch("http://localhost/mcp", request(method, params))
+			).json() as Promise<any>;
+
+		const { tools } = (await rpc("tools/list")).result;
+		expect(
+			tools.find((tool: any) => tool.name === "post_recipes").inputSchema
+				.properties.ingredients,
+		).toEqual({
+			title: "Ingredients",
+			type: "array",
+			items: {
+				type: "object",
+				properties: { name: { type: "string" }, amount: { type: "string" } },
+				required: ["name", "amount"],
+			},
+		});
+
+		const ingredients = [
+			{ name: "butter", amount: "1 stick" },
+			{ name: "flour", amount: "2 cups" },
+		];
+		for (const [name, args] of [
+			["post_recipes", { ingredients, source: { page: 7 } }],
+			["post_recipes", { ingredients: [ingredients[0]] }],
+			["get_search", { tags: ["fall", "easy"] }],
+		] as const) {
+			const { result } = await rpc("tools/call", { name, arguments: args });
+			expect(result.isError).toBe(false);
+		}
+
+		expect(received).toEqual([
+			{ ingredients, source: { page: 7 } },
+			{ ingredients: [ingredients[0]] },
+			{ tags: ["fall", "easy"] },
+		]);
 	});
 
 	test("a tool returns a file the route answers with, and fields say their format", async () => {

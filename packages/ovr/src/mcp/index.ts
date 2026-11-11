@@ -1,6 +1,6 @@
 import { type App, agents, direct, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
-import { forms } from "../form/index.js";
+import { type Field, forms } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters, schemas } from "../route/index.js";
 import { Schema } from "../schema/index.js";
@@ -665,7 +665,8 @@ export class Mcp<P extends string = string> {
 				Object.assign(properties, schema.properties);
 				for (const field of (schema.required ?? []) as string[])
 					required.add(field);
-				// a tool's arguments are JSON, so a file is sent as its contents
+				// a tool's arguments are JSON, so a file is sent as its contents,
+				// and a JSON field as the value it parses, not a string of it
 				for (const name in shape) {
 					const field = shape[name]!;
 					if (field.type === "file")
@@ -673,6 +674,15 @@ export class Mcp<P extends string = string> {
 							...(properties[name] as Json),
 							...(field.parts > 1 ? { items: Mcp.#file } : Mcp.#file),
 						};
+					else if (Mcp.#whole(field)) {
+						const {
+							type: _,
+							contentMediaType: __,
+							contentSchema,
+							...keywords
+						} = properties[name] as Json;
+						properties[name] = { ...(contentSchema as Json), ...keywords };
+					}
 				}
 			}
 
@@ -728,6 +738,18 @@ export class Mcp<P extends string = string> {
 		},
 		required: ["name"],
 	};
+
+	/**
+	 * @param field Form field
+	 * @returns `true` for a field that parses its one value as JSON, such as
+	 * `Field.textarea().json(schema)`, also when made optional
+	 */
+	static #whole(field: Field.Any) {
+		let def: Schema.Def | undefined = field.def;
+		while (def && def.type !== "json")
+			def = "inner" in def ? def.inner.def : undefined;
+		return Boolean(def);
+	}
 
 	/**
 	 * @param value Tool argument for a file field
@@ -860,6 +882,15 @@ export class Mcp<P extends string = string> {
 			// a parameter is in the path, and also sent when a field has its name
 			if (pathParams.has(name) && !field) continue;
 			const upload = !read && field?.type === "file";
+			// a JSON field reads one value, so an array is sent whole, as its
+			// input schema describes it
+			const whole = field && Mcp.#whole(field);
+			if (whole && value != null) {
+				const text = JSON.stringify(value);
+				if (read) url.searchParams.append(name, text);
+				else body.append(name, text);
+				continue;
+			}
 			for (const item of Array.isArray(value) ? value : [value]) {
 				if (item == null || item === false) continue;
 				if (upload) {
