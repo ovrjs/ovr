@@ -32,10 +32,10 @@ export namespace Auth {
 		Register: Route.Form<string> & {
 			Field: Form<Shape>["Field"];
 			Fields: Form<Shape>["Fields"];
-			Error: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
 		Login: Route.Form<string> & {
-			Error: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
 		Logout: Route.Form<string>;
 	}

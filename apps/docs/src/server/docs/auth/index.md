@@ -147,14 +147,14 @@ Supply children to control the markup and styling:
 ```tsx
 <Register class="stack">
 	<Register.Field name="email" />
-	<Register.Error class="error" />
+	<Register.Issue class="error" />
 	<button>Create account</button>
 </Register>
 ```
 
-`Register.Field` renders one typed field; `Register.Fields` renders them all. `Login.Error` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/schema#post-forms) as ordinary forms.
+`Register.Field` renders one typed field; `Register.Fields` renders them all. `Login.Issue` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/schema#post-forms) as ordinary forms.
 
-`<Register.Error class="error" />` generates the following element. `Login.Error` uses the same markup:
+`<Register.Issue class="error" />` generates the following element. `Login.Issue` uses the same markup:
 
 ```html
 <p role="status" aria-live="polite" class="error" data-passkey-error></p>

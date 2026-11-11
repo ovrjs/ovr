@@ -1046,7 +1046,7 @@ function managed(
 					class: "registration",
 					children: [
 						jsx(Register.Field, { name: "email" }),
-						jsx(Register.Error, { class: "error" }),
+						jsx(Register.Issue, { class: "error" }),
 						jsx("button", { children: "Join" }),
 					],
 				}),

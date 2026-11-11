@@ -244,8 +244,8 @@ export function configure<U extends Auth.Users>(
 					? Math.min(3600, Math.max(0, Math.ceil((retry - Date.now()) / 1000)))
 					: undefined;
 			const error =
-				(method: string, component: typeof Register.Error) =>
-				(props: Parameters<typeof Register.Error>[0]) =>
+				(method: string, component: typeof Register.Issue) =>
+				(props: Parameters<typeof Register.Issue>[0]) =>
 					component({
 						...props,
 						children:
@@ -258,8 +258,8 @@ export function configure<U extends Auth.Users>(
 										: "Authentication failed. Try again."
 								: undefined),
 					});
-			Register.Error = error("register", Register.Error);
-			Login.Error = error("login", Login.Error);
+			Register.Issue = error("register", Register.Issue);
+			Login.Issue = error("login", Login.Issue);
 			return {
 				Register: Object.assign(Register, {
 					Field: fields.Field,

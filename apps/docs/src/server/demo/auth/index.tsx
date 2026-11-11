@@ -59,7 +59,7 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 						<h2>Create account</h2>
 						<Register>
 							<Register.Field name="email" />
-							<Register.Error class="text-red-700" />
+							<Register.Issue class="text-red-700" />
 							<button>Create account</button>
 						</Register>
 

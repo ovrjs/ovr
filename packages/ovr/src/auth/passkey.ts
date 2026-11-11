@@ -21,7 +21,7 @@ export namespace Passkey {
 	 * @template Pattern Pattern of the route the form submits to
 	 */
 	export type Component<Pattern extends string> = Route.Form<Pattern> & {
-		Error: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+		Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 	};
 	/**
 	 * POST route contract retaining typed pathname parameters.
@@ -141,8 +141,8 @@ export class Passkey {
 								children: method === "register" ? "Create account" : "Log in",
 							}),
 						],
-						// A supplied Error component takes precedence over this accessible fallback.
-						Form.Error({ "data-passkey-fallback": true }),
+						// A supplied Issue component takes precedence over this accessible fallback.
+						Form.Issue({ "data-passkey-fallback": true }),
 						async () =>
 							jsx("script", {
 								id: `passkey-${crypto.randomUUID()}`,
@@ -172,7 +172,7 @@ export class Passkey {
 					],
 				}),
 			{
-				Error: (props: JSX.IntrinsicElements["p"]) =>
+				Issue: (props: JSX.IntrinsicElements["p"]) =>
 					jsx("p", {
 						role: "status",
 						"aria-live": "polite",
