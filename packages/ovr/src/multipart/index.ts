@@ -55,7 +55,7 @@ class Needle extends Uint8Array {
 }
 
 /** Multipart part */
-class Part extends Request {
+export class Part extends Request {
 	/**
 	 * Form input `name` attribute
 	 *

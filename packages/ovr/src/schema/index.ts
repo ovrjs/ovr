@@ -431,7 +431,7 @@ export class ShapeUtil {
 // spell out what `Error` has in each runtime, such as Node's
 
 /** Validation issue produced during parsing. */
-class Issue extends Error {
+export class Issue extends Error {
 	/** Expected type/value. */
 	readonly expected: string;
 
@@ -475,7 +475,7 @@ class Issue extends Error {
 }
 
 /** AggregateIssue containing at least one Schema.Issue */
-class AggregateIssue extends AggregateError {
+export class AggregateIssue extends AggregateError {
 	/** Non-empty tuple of issues */
 	readonly issues: Schema.Issue.List;
 
