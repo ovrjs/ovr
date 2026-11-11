@@ -17,6 +17,7 @@
     "8-auth",
     "9-database",
     "agent-limits",
+    "choices-for-agents",
     "choices-return-source",
     "json-tool-arguments"
   ]
