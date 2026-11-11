@@ -88,6 +88,24 @@ export class Tag extends Chunk {
 }
 
 /**
+ * Markup with its Markdown source, from `Markdown.raw`, internal to ovr. It
+ * is written as its markup, and as its source in Markdown.
+ */
+export class Source extends Chunk {
+	/** Markdown source */
+	readonly markdown: string;
+
+	/**
+	 * @param markdown Markdown source
+	 * @param html Safe markup it renders to
+	 */
+	constructor(markdown: unknown, html: unknown) {
+		super(html, true);
+		this.markdown = String(markdown ?? "");
+	}
+}
+
+/**
  * Chunks a later sibling rendered while an earlier one was still rendering,
  * yielded together once they are next. Internal to ovr.
  */

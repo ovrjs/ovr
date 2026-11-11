@@ -1,5 +1,12 @@
 import type { JSX } from "../jsx/index.js";
-import { Group, type Markup, Render, Tag, readable } from "../markup/index.js";
+import {
+	Group,
+	type Markup,
+	Render,
+	Source,
+	Tag,
+	readable,
+} from "../markup/index.js";
 
 /** Parsed element */
 type Node = {
@@ -208,7 +215,8 @@ class Writer {
 			// it ends, so they share one empty set, which is never changed
 			this.#open(chunk.name, attrs ?? Writer.#none);
 			if (chunk.closed) this.#close(chunk.name);
-		} else if (chunk.raw) this.#raw(chunk.value);
+		} else if (chunk instanceof Source) this.#raw(chunk.markdown, true);
+		else if (chunk.raw) this.#raw(chunk.value);
 		else this.#text(chunk.value);
 	}
 
@@ -231,13 +239,15 @@ class Writer {
 
 	/**
 	 * Raw HTML, such as from `Markup.raw`, is valid Markdown, so it is
-	 * written as it is.
+	 * written as it is, as is Markdown source from `Markdown.raw`, which is
+	 * always its own block.
 	 *
-	 * @param html HTML
+	 * @param html HTML, or Markdown source
+	 * @param source The text is Markdown source
 	 */
-	#raw(html: string) {
+	#raw(html: string, source?: boolean) {
 		if (!html || this.#skipping) return;
-		const node = Writer.#node("!", {}, html);
+		const node = Writer.#node("!", source ? { source: "" } : {}, html);
 		const parent = this.#stack.at(-1);
 		if (parent) parent.children.push(node);
 		else if (Writer.#isBlock(node)) {
@@ -1047,7 +1057,8 @@ class Writer {
 	 */
 	static #isBlock(node: Node) {
 		return node.tag === "!"
-			? Writer.#rawBlock.test(node.children[0] as string)
+			? "source" in node.attrs ||
+					Writer.#rawBlock.test(node.children[0] as string)
 			: Writer.#blockTags.has(node.tag);
 	}
 
@@ -1318,5 +1329,22 @@ export class Markdown {
 		}
 
 		return markdown;
+	}
+
+	/**
+	 * Markdown source with the HTML it renders to, such as steps written in
+	 * Markdown. Pages show the HTML, and agents reading the page as Markdown
+	 * get the source. Neither is escaped, so both must be safe.
+	 *
+	 * ```tsx
+	 * <section>{Markdown.raw(recipe.steps, render(recipe.steps))}</section>
+	 * ```
+	 *
+	 * @param markdown Markdown source
+	 * @param html Safe HTML it renders to
+	 * @returns New _safe_ chunk
+	 */
+	static raw(markdown: unknown, html: unknown): Markup.Chunk {
+		return new Source(markdown, html);
 	}
 }

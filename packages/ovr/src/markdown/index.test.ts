@@ -856,3 +856,35 @@ describe("c.md", () => {
 		expect(browser.headers.get("vary")).toBe("Accept");
 	});
 });
+
+describe("Markdown.raw", () => {
+	const steps = "1. Grease the pan.\n2. Bake at 325°F.";
+	const html = "<ol><li>Grease the pan.</li><li>Bake at 325°F.</li></ol>";
+	const page = () =>
+		jsx("main", {
+			children: [
+				jsx("h1", { children: "Buns" }),
+				jsx("section", {
+					children: [
+						jsx("h2", { children: "Steps" }),
+						Markdown.raw(steps, html),
+					],
+				}),
+				jsx("p", {
+					children: ["Serve ", Markdown.raw("*warm*", "<em>warm</em>"), "."],
+				}),
+			],
+		});
+
+	test("a page shows the HTML", async () => {
+		expect(await Markup.string(page())).toBe(
+			`<main><h1>Buns</h1><section><h2>Steps</h2>${html}</section><p>Serve <em>warm</em>.</p></main>`,
+		);
+	});
+
+	test("an agent reads the source, as its own block or in its sentence", async () => {
+		expect(await Markdown.string(page())).toBe(
+			`# Buns\n\n## Steps\n\n${steps}\n\nServe *warm*.\n`,
+		);
+	});
+});

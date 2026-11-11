@@ -211,6 +211,8 @@ function Theme() {
 
 Use it for markup you trust, such as HTML from a Markdown processor or an SVG file, never for user input.
 
+For content written in Markdown, `Markdown.raw(markdown, html)` renders the HTML on the page and gives agents reading it as [Markdown](#markdown) the source instead, such as a recipe's steps. Neither is escaped.
+
 ## Markdown
 
 `Markdown` renders the same elements to Markdown, with the same ways in: an async iterable, a stream, and a string. Text is escaped, so a page's content, such as a user's comment, cannot write Markdown of its own. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use `Markdown` to render it yourself, such as to write files or answer with part of a page.
