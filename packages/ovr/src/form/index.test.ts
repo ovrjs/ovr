@@ -687,15 +687,15 @@ describe("Form schema", () => {
 			'<p id="url-description" data-description class="muted">An http or https address.</p>',
 		);
 
-		// agents: the field's description, before a picker's format, and for a
-		// hidden field too
+		// agents: the field's description as written, before a picker's format,
+		// and for a hidden field too
 		expect(
 			Schema.object(form.shape).toJsonSchema({
 				io: "input",
 				unrepresentable: "any",
 			}).properties,
 		).toMatchObject({
-			url: { title: "URL", description: "An http or https address" },
+			url: { title: "URL", description: "An http or https address." },
 			due: { description: "When it is due. Date as YYYY-MM-DD" },
 			id: { description: "The bookmark to change" },
 		});

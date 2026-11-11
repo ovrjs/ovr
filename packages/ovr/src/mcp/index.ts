@@ -4,7 +4,15 @@ import { type Field, forms } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters, schemas } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec, Header, Method, Mime, Size, noStore } from "../util/index.js";
+import {
+	Codec,
+	Header,
+	Method,
+	Mime,
+	Prose,
+	Size,
+	noStore,
+} from "../util/index.js";
 
 /** JSON-RPC request id */
 type Id = string | number | null;
@@ -685,15 +693,10 @@ export class Mcp<P extends string = string> {
 										...property,
 										...Mcp.#file,
 										// the field's own, such as a size limit, then how to send it
-										description: [
-											(property.description as string | undefined)?.replace(
-												/\.$/,
-												"",
-											),
+										description: Prose.join(
+											property.description as string | undefined,
 											Mcp.#file.description,
-										]
-											.filter(Boolean)
-											.join(". "),
+										),
 									};
 					else if (Mcp.#whole(field)) {
 						const {
@@ -1058,7 +1061,8 @@ export class Mcp<P extends string = string> {
 	/**
 	 * @param c Request context
 	 * @returns The name of the tool a form submits to, so the page an agent
-	 * reads points to the tool instead of repeating its fields
+	 * reads points to the tool instead of repeating its fields, and the fields
+	 * whose choices only the page lists
 	 */
 	#tool(c: Context) {
 		return (method: string, action: URL) => {
@@ -1071,7 +1075,13 @@ export class Mcp<P extends string = string> {
 			for (const param in match.params)
 				args[param === "*" ? "wildcard" : param] = match.params[param]!;
 
-			return { name, args };
+			// choices from a schema, given as the form renders
+			const choices = new Set<string>();
+			const shape = forms.get(match.route)?.shape;
+			for (const field in shape)
+				if (shape[field]!.options?.length === 0) choices.add(field);
+
+			return { name, args, choices };
 		};
 	}
 

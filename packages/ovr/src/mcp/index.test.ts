@@ -526,6 +526,67 @@ describe("Mcp", () => {
 		);
 	});
 
+	test("a description written as sentences keeps its last period", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Route.post("/notes")
+				.describe("Save a note")
+				.fields({
+					note: Field.text().describe("Ends with a period."),
+					day: Field.date().describe("The day it is for."),
+					photo: Field.file().describe("At most 3 MB."),
+					plain: Field.text().describe("No period"),
+				})
+				.use(() => {}),
+		);
+		const { body } = await rpc("tools/list");
+		const { properties } = body.result.tools.find(
+			(tool: { name: string }) => tool.name === "post_notes",
+		).inputSchema;
+		expect(properties.note.description).toBe("Ends with a period.");
+		expect(properties.day.description).toBe(
+			"The day it is for. Date as YYYY-MM-DD.",
+		);
+		expect(properties.photo.description).toBe(
+			"At most 3 MB. A file. Send its contents as `text`, or as `base64` when it is not text.",
+		);
+		expect(properties.plain.description).toBe("No period");
+	});
+
+	test("choices given as the form renders are listed with its tool", async () => {
+		const { app, rpc } = setup();
+		const publish = Route.post("/recipes/:slug/publish")
+			.describe("Publish a recipe")
+			.fields({
+				photos: Field.checkboxes(Schema.string().uuid()),
+				tags: Field.checkboxes(["spring", "fall"]),
+			})
+			.use(() => {});
+		const a = "3c0deb25-0b6e-4a8e-9f0e-6c1d2b3a4f5e";
+		app.use(
+			publish,
+			Route.get("/recipes/:slug")
+				.describe("A recipe")
+				.use((c) =>
+					publish.Form({
+						params: { slug: c.params.slug },
+						children: [
+							publish.Field({ name: "photos", options: [a] }),
+							publish.Field({ name: "tags" }),
+						],
+					}),
+				),
+		);
+		const { body } = await rpc("resources/read", {
+			uri: "http://localhost/recipes/soup",
+		});
+		const text = body.result.contents[0].text;
+		expect(text).toContain("**Tool:** `post_recipes_slug_publish`");
+		expect(text).toContain(`- \`photos\`, options: \`${a}\``);
+		// the tool's schema lists fixed choices
+		expect(text).not.toContain("`tags`");
+	});
+
 	test("a page preserves the value of a checkbox group with one option", async () => {
 		const { app, rpc } = setup();
 		const route = Route.post("/preferences")

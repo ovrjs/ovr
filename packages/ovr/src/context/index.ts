@@ -19,10 +19,7 @@ export const agent = new WeakMap<
 		readonly session?: unknown;
 		issues?: readonly { readonly path: string; readonly message: string }[];
 		/** The tool a form submits to and its arguments, so a page points to it */
-		readonly tool?: (
-			method: string,
-			action: URL,
-		) => { name: string; args: Record<string, string> } | undefined;
+		readonly tool?: Markdown.Options[typeof tools];
 	}
 >();
 

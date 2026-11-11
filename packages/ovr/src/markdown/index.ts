@@ -64,13 +64,21 @@ export namespace Markdown {
 		 *
 		 * @param method Form method
 		 * @param action Resolved form action
-		 * @returns The tool's name, and the arguments from the address's parameters
+		 * @returns The tool's name, the arguments from the address's parameters,
+		 * and the fields whose choices are given as the form renders, which its
+		 * input schema can't list
 		 */
 		readonly [tools]?:
 			| ((
 					method: string,
 					action: URL,
-			  ) => { name: string; args: Record<string, string> } | undefined)
+			  ) =>
+					| {
+							name: string;
+							args: Record<string, string>;
+							choices: ReadonlySet<string>;
+					  }
+					| undefined)
 			| undefined;
 	};
 }
@@ -849,16 +857,20 @@ class Writer {
 
 		const lines = tool
 			? // the tool's input schema describes the fields, so only what the
-				// page adds: current values, such as an edit form's, and messages
+				// page adds: current values, such as an edit form's, choices
+				// known only as it renders, such as a record's own IDs, and messages
 				fields
-					.map((f) =>
+					.map((f) => ({
 						// a single checkbox is a boolean argument, unchecked included
-						f.lone ? { ...f, value: [String(f.value.length > 0)] } : f,
-					)
-					.filter((f) => f.value.length || f.notes.length)
+						...(f.lone ? { ...f, value: [String(f.value.length > 0)] } : f),
+						options: tool.choices.has(f.name) ? f.options : [],
+					}))
+					.filter((f) => f.value.length || f.options.length || f.notes.length)
 					.map((f) => {
 						let line = `- ${Writer.#code(f.name)}`;
 						if (f.value.length) line += `: ${Writer.#codes(f.value)}`;
+						if (f.options.length)
+							line += `, options: ${Writer.#codes(f.options)}`;
 						return Writer.#notes(f, line);
 					})
 			: fields.map((f) => {

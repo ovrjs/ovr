@@ -395,3 +395,26 @@ export class Time {
 	static readonly day = 24 * 60 * 60 * 1000;
 	static readonly week = 7 * 24 * 60 * 60 * 1000;
 }
+
+/** Descriptions written for people and agents */
+export class Prose {
+	/**
+	 * Joins parts of a description into sentences. A part without its own
+	 * end gets a period before the next, and when any part ends as a
+	 * sentence, so does the whole.
+	 *
+	 * @param parts Parts, empty ones skipped
+	 * @returns The description, or an empty string
+	 */
+	static join(...parts: (string | undefined)[]) {
+		const given = parts.filter((part): part is string => Boolean(part));
+		const ended = (part: string) => /[.!?]$/.test(part);
+		let joined = given.reduce(
+			(text, part) =>
+				text ? `${text}${ended(text) ? "" : "."} ${part}` : part,
+			"",
+		);
+		if (given.some(ended) && !ended(joined)) joined += ".";
+		return joined;
+	}
+}

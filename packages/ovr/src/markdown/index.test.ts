@@ -622,7 +622,7 @@ describe("Markdown", () => {
 				),
 				{
 					base: "https://example.com/",
-					[tools]: () => ({ name: "x_post", args: {} }),
+					[tools]: () => ({ name: "x_post", args: {}, choices: new Set() }),
 				},
 			),
 		).toBe(
@@ -652,7 +652,7 @@ describe("Markdown", () => {
 		expect(
 			await md(form(), {
 				base: "https://example.com/",
-				[tools]: () => ({ name: "x_post", args: {} }),
+				[tools]: () => ({ name: "x_post", args: {}, choices: new Set() }),
 			}),
 		).toBe(
 			[
@@ -690,7 +690,7 @@ describe("Markdown", () => {
 				),
 				{
 					base: "https://example.com/",
-					[tools]: () => ({ name: "x_post", args: {} }),
+					[tools]: () => ({ name: "x_post", args: {}, choices: new Set() }),
 				},
 			),
 		).toBe(

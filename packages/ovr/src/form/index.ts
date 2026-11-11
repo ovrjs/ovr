@@ -9,7 +9,7 @@ import {
 	normalizers,
 	own,
 } from "../schema/index.js";
-import { Checksum, Codec, Size } from "../util/index.js";
+import { Checksum, Codec, Prose, Size } from "../util/index.js";
 
 /** Internal protocol for a GET route, to make the form its fields render. */
 export const query = Symbol("query");
@@ -620,9 +620,7 @@ class FieldSchema<
 		const { description } = this;
 		// what a browser's picker sends, which a string alone does not say
 		const format = FieldSchema.#formats[this.type as string];
-		const described = [description?.replace(/\.$/, ""), format]
-			.filter(Boolean)
-			.join(". ");
+		const described = Prose.join(description, format);
 
 		return {
 			...(label && { title: label }),
