@@ -99,10 +99,16 @@ describe("Table", () => {
 	});
 
 	test("rejects columns that cannot be stored", () => {
+		// a value that may be left out is a type error
+		void (() => {
+			// @ts-expect-error - use nullable()
+			new Table("t", { c: Schema.string().optional() });
+			// @ts-expect-error - use nullable()
+			new Table("t", { c: Schema.string().nullish() });
+		});
+
 		for (const schema of [
-			Schema.string().optional(),
 			Schema.string().default("x"),
-			Schema.string().nullish(),
 			Schema.string().transform((s) => s.length),
 			Schema.string().json(Schema.object({})),
 			Schema.instance(URL),

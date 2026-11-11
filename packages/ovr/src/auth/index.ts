@@ -19,9 +19,10 @@ export namespace Auth {
 	/** Authentication validation issue. */
 
 	/** Request capabilities required while preparing the built-in UI. */
-	export type Context = Pick<ContextType, "url" | "cookie" | "res" | "multipart"> & {
-		data: (options?: { payload: number }) => Promise<unknown>;
-	};
+	export type Context = Pick<
+		ContextType,
+		"url" | "cookie" | "res" | "multipart"
+	> & { data: (options?: { payload: number }) => Promise<unknown> };
 	/**
 	 * Request-scoped UI pieces with application field names preserved.
 	 *
@@ -96,54 +97,23 @@ export namespace Auth {
 		]: Extract<U["shape"][K], Field.Any>;
 	};
 
-	/**
-	 * A character or sequence a path of the app's own cannot hold: a query,
-	 * a fragment, a scheme, a pattern, whitespace, or a segment that resolves
-	 * to another path
-	 */
-	type Unsafe =
-		"\\" | "?" | "#" | ":" | "*" | " " | "\t" | "\n" | "//" | "/./" | "/../";
+	/** Auth's own endpoints, which its page cannot be */
+	type Endpoint =
+		| "/auth/register"
+		| "/auth/login"
+		| "/auth/logout"
+		| "/_passkey/options/register"
+		| "/_passkey/options/login"
+		| "/_passkey/client.js";
 
 	/**
-	 * A path of the app's own, such as `/login`, checked as it is written. A
-	 * path that is not written out, such as one read from the environment, is
-	 * taken as it is.
+	 * A page path, a path of the app's own that is not one of Auth's endpoints.
 	 *
-	 * @template P Path
+	 * @template P Page path
 	 */
-	export type Path<P extends string> = string extends P
-		? P
-		: P extends `/${string}`
-			? P extends `${string}${Unsafe}${string}` | `${string}/.` | `${string}/..`
-				? Path.Invalid
-				: P extends "/"
-					? P
-					: P extends `${string}/`
-						? Path.Invalid
-						: P
-			: Path.Invalid;
-
-	export namespace Path {
-		/** Shown in place of a path that is not one of the app's own */
-		export type Invalid =
-			"Auth paths are local paths, such as /login, without a query or a trailing slash";
-
-		/** Auth's own endpoints, which its page cannot be */
-		export type Endpoint =
-			| "/auth/register"
-			| "/auth/login"
-			| "/auth/logout"
-			| "/_passkey/options/register"
-			| "/_passkey/options/login"
-			| "/_passkey/client.js";
-
-		/**
-		 * @template P Page path
-		 */
-		export type Page<P extends string> = P extends Endpoint
-			? "Auth's page cannot be one of its endpoints"
-			: Path<P>;
-	}
+	export type Page<P extends string> = P extends Endpoint
+		? "Auth's page cannot be one of its endpoints"
+		: Route.Path<P>;
 
 	/**
 	 * Authentication configuration; all instances share the database.
@@ -193,15 +163,15 @@ export namespace Auth {
 				? unknown
 				: `Give the users table's ${Unfilled<U>} column a default`);
 		/** Authentication page, also used for generic failure redirects. Defaults to /login. */
-		readonly page?: Path.Page<P>;
+		readonly page?: Page<P>;
 		/** Destination after registration or login. Defaults to /. */
-		readonly redirect?: Path<R>;
+		readonly redirect?: Route.Path<R>;
 		/**
 		 * Page where users approve agents, which sign in when an MCP endpoint is
 		 * given this `auth`. The page calls `auth.consent(c)` for the request and
 		 * its form. Defaults to /connect.
 		 */
-		readonly consent?: Path<C>;
+		readonly consent?: Route.Path<C>;
 	}
 
 	/** An agent's request to act for the user, shown on the consent page. */

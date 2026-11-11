@@ -31,6 +31,20 @@ export namespace Table {
 	export type Any = Table<string, any, any>;
 
 	/**
+	 * Columns whose value may be left out, as with `optional()`, which a row
+	 * read from the database always has.
+	 *
+	 * @template S Table shape
+	 */
+	export type Omissible<S extends Shape> = {
+		[K in keyof S]: undefined extends Schema.Infer<S[K]>
+			? unknown extends Schema.Infer<S[K]>
+				? never
+				: K
+			: never;
+	}[keyof S];
+
+	/**
 	 * A name Postgres can quote: not empty and without a NUL character.
 	 *
 	 * @template N Table, schema, or column name
@@ -161,7 +175,10 @@ export class Table<
 				Table.Identifier<Extract<keyof S, string>>,
 			]
 				? unknown
-				: "Column names cannot be empty or hold a NUL character"),
+				: "Column names cannot be empty or hold a NUL character") &
+			([Table.Omissible<S>] extends [never]
+				? unknown
+				: `Column ${Extract<Table.Omissible<S>, string>} can be left out: use nullable() or the default option, not optional()`),
 		options = {} as O &
 			(O["schema"] extends string
 				? [Table.Identifier<O["schema"]>] extends [never]
@@ -244,8 +261,7 @@ export class Table<
 					column,
 					`use the parsed object or array schema for JSON instead of json()`,
 				);
-			case "optional":
-			case "nullish":
+			// optional() and nullish() are type errors, see `Table.Omissible`
 			case "default":
 				throw Table.#invalid(
 					column,

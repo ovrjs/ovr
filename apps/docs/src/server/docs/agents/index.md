@@ -70,7 +70,7 @@ app.use(mcp);
 | -------------- | -------------- | ----------------------------------------------------------- |
 | `name`         | The app's host | Server name shown in clients                                |
 | `instructions` | None           | Guidance for agents on how to use the app                   |
-| `path`         | `/mcp`         | Endpoint path                                               |
+| `path`         | `/mcp`         | Endpoint path, a fixed path of the app's own                |
 | `auth`         | None           | `Auth` service agents sign in with, see [Sign in](#sign-in) |
 
 ### Tools

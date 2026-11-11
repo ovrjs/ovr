@@ -2,6 +2,7 @@ import { App } from "../app/index.js";
 import { Field, Form } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Markup } from "../markup/index.js";
+import { Mcp } from "../mcp/index.js";
 import { Schema } from "../schema/index.js";
 import { Route } from "./index.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
@@ -936,6 +937,47 @@ describe("chained routes", () => {
 		} catch (error) {
 			if (!(error instanceof TypeError)) throw error;
 		}
+	});
+
+	test("a pattern and an MCP endpoint's path are checked as they are written", () => {
+		void (() => {
+			// @ts-expect-error - a pattern starts with /
+			Route.get("posts");
+			// @ts-expect-error - without a query
+			Route.get("/posts?page=1");
+			// @ts-expect-error - another host
+			Route.post("//evil.example/x");
+			// @ts-expect-error - a fixed path, without parameters
+			new Mcp({ path: "/mcp/:id" });
+			// @ts-expect-error - a fixed path, without a trailing slash
+			new Mcp({ path: "/mcp/" });
+		});
+
+		const fromConfig: string = "/anything";
+		expect(Route.get(fromConfig).pattern).toBe("/anything");
+		expect(Route.get("/files/:id/*").pattern).toBe("/files/:id/*");
+		expect(new Mcp({ path: "/agents/mcp" })).toBeInstanceOf(Mcp);
+	});
+
+	test("a parameter a schema made a number can be given back as one", async () => {
+		const post = Route.get("/posts/:id")
+			.params({ id: Schema.number().preprocess(Number).int() })
+			.use((c) => {
+				expectTypeOf(c.params.id).toEqualTypeOf<number>();
+				return post.Anchor({
+					params: { id: c.params.id + 1 },
+					children: "Next",
+				});
+			});
+
+		expectTypeOf(
+			post.url({ params: { id: 7 } }),
+		).toEqualTypeOf<`/posts/${number}`>();
+		expect(post.url({ params: { id: 7 } })).toBe("/posts/7");
+		expect(post.url({ params: { id: 7n } })).toBe("/posts/7");
+
+		const res = await new App().use(post).fetch("http://localhost/posts/7");
+		expect(await res.text()).toBe('<a href="/posts/8">Next</a>');
 	});
 
 	test("links encode parameter values", async () => {

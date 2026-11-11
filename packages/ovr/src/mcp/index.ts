@@ -37,8 +37,12 @@ class RpcError extends Error {
 }
 
 export namespace Mcp {
-	/** MCP server options */
-	export type Options = {
+	/**
+	 * MCP server options
+	 *
+	 * @template P Path of the endpoint
+	 */
+	export type Options<P extends string = string> = {
 		/**
 		 * Server name shown in clients.
 		 *
@@ -54,7 +58,7 @@ export namespace Mcp {
 		 *
 		 * @default "/mcp"
 		 */
-		readonly path?: string;
+		readonly path?: Route.Path<P>;
 
 		/**
 		 * Requires agents to sign in, and mounts the OAuth endpoints they sign
@@ -99,7 +103,7 @@ export namespace Mcp {
  * app.use(new Mcp({ instructions: "Save and organize bookmarks." }));
  * ```
  */
-export class Mcp {
+export class Mcp<P extends string = string> {
 	/** Supported protocol versions */
 	static readonly #versions = ["2026-07-28"];
 
@@ -131,7 +135,7 @@ export class Mcp {
 	 */
 	static readonly #discovery = "/.well-known/oauth-protected-resource";
 
-	readonly #options: Mcp.Options & { path: string };
+	readonly #options: Omit<Mcp.Options, "path"> & { path: string };
 
 	/** App the endpoint is mounted on */
 	#app?: App.Mount;
@@ -146,7 +150,7 @@ export class Mcp {
 	>();
 
 	/** @param options MCP server options */
-	constructor(options: Mcp.Options = {}) {
+	constructor(options: Mcp.Options<P> = {}) {
 		this.#options = { ...options, path: options.path ?? "/mcp" };
 	}
 

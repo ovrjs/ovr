@@ -271,6 +271,6 @@ Each column schema can be stored in several Postgres types, and `check` accepts 
 | `Schema.object()`, `array()`    | `jsonb`, `json`                                                        |
 | `.nullable()`                   | allows `NULL`                                                          |
 
-Use `.nullable()` for `NULL` and the `default` option for columns the database supplies. Columns can't use `.optional()`, `.default()`, `.transform()`, `.json()`, or schemas without a column type. JSON array items that may be `undefined` must also accept `null`, because JSON stores `undefined` items as `null`.
+Use `.nullable()` for `NULL` and the `default` option for columns the database supplies. Columns can't use `.optional()` or `.nullish()`, which are type errors, or `.default()`, `.transform()`, `.json()`, or schemas without a column type. JSON array items that may be `undefined` must also accept `null`, because JSON stores `undefined` items as `null`.
 
 `bigint` and `numeric` values are converted to the schema's `bigint` or `number`, except integers beyond `Number.MAX_SAFE_INTEGER`, which fail validation instead of losing precision, including `numeric[]` items `pg` has already parsed as numbers. Dates inside JSON are converted from their ISO strings. JSON values are serialized when written through `values` and `set`, and `null` is stored as JSON `null` unless the column is `.nullable()`. Serialize JSON yourself when binding it in other queries.

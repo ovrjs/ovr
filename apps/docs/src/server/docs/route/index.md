@@ -7,7 +7,7 @@ description: ovr application routes.
 
 ovr's built-in router offers efficient matching, supporting static paths, [parameters](#parameters), and [wildcards](#wildcard). Utilizing a [radix trie](https://en.wikipedia.org/wiki/Radix_tree) structure ensures performance does not degrade as more routes are added.
 
-Create a route to a specific resource in your application with the `Route` class. Construct the route with an HTTP `method` and the route `pattern`, then add the [`middleware`](/middleware) that handles the request with `use`.
+Create a route to a specific resource in your application with the `Route` class. Construct the route with an HTTP `method` and the route `pattern`, then add the [`middleware`](/middleware) that handles the request with `use`. A pattern written out is checked as a type: it starts with `/`, and has no query, fragment, or whitespace.
 
 ```ts
 import { Route } from "ovr";
@@ -238,7 +238,7 @@ page.pattern; // "/hello/:name"
 
 ### URL
 
-The `url` method creates a _relative_ URL (without the `origin`) for the route. It inserts params into the pattern, encoded so a value stays in its own segment, and throws a `TypeError` for a value that is empty, `.`, or `..`, or a URL that would start with `//`, since each would point somewhere else: `{ name: "a/b" }` gives `/hello/a%2Fb`, and the route decodes it back to `"a/b"`. A wildcard keeps its slashes.
+The `url` method creates a _relative_ URL (without the `origin`) for the route. It inserts params into the pattern, strings or numbers such as an ID a `params` schema converted, encoded so a value stays in its own segment, and throws a `TypeError` for a value that is empty, `.`, or `..`, or a URL that would start with `//`, since each would point somewhere else: `{ name: "a/b" }` gives `/hello/a%2Fb`, and the route decodes it back to `"a/b"`. A wildcard keeps its slashes.
 
 Given the pattern `/hello/:name`, the `name` param is required, and the result is typed by the path it builds:
 

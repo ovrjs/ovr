@@ -52,7 +52,7 @@ export function configure<U extends Auth.Users>(
 		login: "/auth/login",
 		logout: "/auth/logout",
 		options: "/_passkey/options",
-	};
+	} as const;
 	const page = options.page ?? "/login";
 	const redirect = options.redirect ?? "/";
 	const fields = new Form(shape);

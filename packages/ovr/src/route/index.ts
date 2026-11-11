@@ -43,10 +43,23 @@ type Last<P extends string> = P extends `${string}/${infer R}` ? Last<R> : P;
  *
  * @template P Route pattern
  */
-type Checked<P extends string> =
-	Last<P> extends `${string}:${string}*`
-		? "Separate the parameter from the wildcard, as in /:id/*"
-		: P;
+type Checked<P extends string> = string extends P
+	? P
+	: P extends `/${string}`
+		? P extends `${string}${"?" | "#" | "\\" | " " | "\t" | "\n" | "//"}${string}`
+			? "A route pattern is a path, such as /posts/:id, without a query or a fragment"
+			: Last<P> extends `${string}:${string}*`
+				? "Separate the parameter from the wildcard, as in /:id/*"
+				: P
+		: "A route pattern starts with /, such as /posts/:id";
+
+/**
+ * A character or sequence a path of the app's own cannot hold: a query,
+ * a fragment, a scheme, a pattern, whitespace, or a segment that resolves
+ * to another path
+ */
+type Unsafe =
+	"\\" | "?" | "#" | ":" | "*" | " " | "\t" | "\n" | "//" | "/./" | "/../";
 
 /** Whitespace `String.prototype.trim` removes */
 type Space =
@@ -94,7 +107,7 @@ type Trim<S extends string> = S extends
  */
 export type InsertParams<
 	Pattern extends string,
-	Params extends Trie.Params,
+	Params extends Route.URLParams,
 > = Pattern extends `${infer Start}:${infer Param}/${infer Rest}`
 	? Param extends keyof Params
 		? `${Start}${Params[Param]}/${InsertParams<Rest, Params>}`
@@ -275,6 +288,31 @@ export namespace Route {
 	export type ParamsBase = Record<string, unknown>;
 
 	/**
+	 * A fixed path of the app's own, such as `/login`, checked as it is
+	 * written: without parameters, a query, or a trailing slash. A path that is
+	 * not written out, such as one read from the environment, is taken as it is.
+	 *
+	 * @template P Path
+	 */
+	export type Path<P extends string> = string extends P
+		? P
+		: P extends `/${string}`
+			? P extends `${string}${Unsafe}${string}` | `${string}/.` | `${string}/..`
+				? Path.Invalid
+				: P extends "/"
+					? P
+					: P extends `${string}/`
+						? Path.Invalid
+						: P
+			: Path.Invalid;
+
+	export namespace Path {
+		/** Shown in place of a path that is not one of the app's own */
+		export type Invalid =
+			"A path of the app's own, such as /login, without parameters, a query, or a trailing slash";
+	}
+
+	/**
 	 * A route after `use()`: its middleware is typed by the params and fields
 	 * set before it, so they cannot change, and calling `params()` or
 	 * `fields()` is a type error.
@@ -296,6 +334,15 @@ export namespace Route {
 	 */
 	export type Schema<S extends FormSchema.Shape = FormSchema.Shape> =
 		FormSchema<S>;
+
+	/**
+	 * A parameter's value in a URL: text, or a number a `params` schema may
+	 * have converted it to, written as its digits.
+	 */
+	export type URLParam = string | number | bigint;
+
+	/** Parameter values to write into a route's pattern */
+	export type URLParams = Record<string, URLParam>;
 
 	/**
 	 * Options to construct a relative URL from the route.
@@ -328,8 +375,8 @@ export namespace Route {
 				readonly params?: undefined;
 			}
 		: {
-				/** Route pattern parameters */
-				readonly params: Params;
+				/** Route pattern parameters, numbers too, as `params` schemas may give them */
+				readonly params: { readonly [K in keyof Params]: Route.URLParam };
 			});
 
 	/**
@@ -345,7 +392,7 @@ export namespace Route {
 	] extends [never, never]
 		? InsertParams<
 				Pattern,
-				O extends { readonly params: infer P extends Trie.Params } ? P : {}
+				O extends { readonly params: infer P extends Route.URLParams } ? P : {}
 			>
 		: string;
 
@@ -648,13 +695,14 @@ export class Route<
 			? [(O & Route.URLOptions<ExtractParams<Pattern>>)?]
 			: [O & Route.URLOptions<ExtractParams<Pattern>>]
 	): Route.Href<Pattern, O> {
-		const params = options?.params as Record<string, string> | undefined;
+		const params = options?.params as Route.URLParams | undefined;
 		const path = params
 			? this.pattern.replace(parameters, (_, name?: string) =>
 					name
-						? Route.#segment(params[name]!)
+						? Route.#segment(String(params[name]!))
 						: // the wildcard keeps its slashes, each of its segments is encoded
-							params["*"]!.split("/")
+							String(params["*"]!)
+								.split("/")
 								.map((segment) => (segment ? Route.#segment(segment) : segment))
 								.join("/"),
 				)
