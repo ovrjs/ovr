@@ -11,5 +11,3 @@ Add `Table` and `Database` for Postgres:
 - **Checks:** `database.check()` is a basic compatibility check of the live database's columns, and of the foreign keys library tables need, such as Auth's to the users table.
 
 Applications supply a pg-compatible pool.
-
-Store schemas as inspectable definitions available through `schema.def`. Add `Schema.date()` and `.uuid()`.
