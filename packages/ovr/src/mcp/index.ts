@@ -11,18 +11,6 @@ type Id = string | number | null;
 /** JSON object */
 type Json = Record<string, unknown>;
 
-/** Tool made from a route */
-type Tool = {
-	/** Route the tool calls */
-	readonly route: Route;
-
-	/** Tool definition sent to clients */
-	readonly definition: Json;
-
-	/** Pattern parameters by the argument that fills them, `wildcard` fills `*` */
-	readonly params: ReadonlyMap<string, string>;
-};
-
 /** JSON-RPC error */
 class RpcError extends Error {
 	/** JSON-RPC error code */
@@ -137,6 +125,12 @@ export class Mcp {
 	/** Redirects followed after a tool call */
 	static readonly #redirects = 5;
 
+	/**
+	 * Path of the protected resource metadata, RFC 9728, which the endpoint's
+	 * path follows
+	 */
+	static readonly #discovery = "/.well-known/oauth-protected-resource";
+
 	readonly #options: Mcp.Options & { path: string };
 
 	/** App the endpoint is mounted on */
@@ -199,9 +193,7 @@ export class Mcp {
 			};
 
 			// part of the way in too, an agent reads it before it has a token
-			const discovery = Route.get(
-				`/.well-known/oauth-protected-resource${path}`,
-			).use(metadata);
+			const discovery = Route.get(Mcp.#discovery + path).use(metadata);
 			direct.add(discovery);
 			routes.push(discovery);
 
@@ -219,6 +211,8 @@ export class Mcp {
 		noStore(c.res.headers);
 
 		let id: Id = null;
+		const reply = (body: Json, status?: number) =>
+			c.json({ jsonrpc: "2.0", id, ...body }, status);
 
 		try {
 			const origin = c.req.headers.get(Header.name.origin);
@@ -226,7 +220,6 @@ export class Mcp {
 				throw new RpcError(-32600, "Invalid origin", 403);
 
 			const session = await this.#authorize(c);
-			if (session === undefined) return;
 
 			const message = await this.#read(c);
 			if (!("id" in message)) {
@@ -248,9 +241,7 @@ export class Mcp {
 				// an earlier version's handshake, answered with the requested
 				// version when supported, otherwise the newest earlier one
 				const requested = params.protocolVersion;
-				c.json({
-					jsonrpc: "2.0",
-					id,
+				reply({
 					result: {
 						protocolVersion:
 							typeof requested === "string" && Mcp.#legacy.includes(requested)
@@ -275,7 +266,7 @@ export class Mcp {
 				// earlier clients need not send them, but sent ones must match, so
 				// a proxy routing on them sees the request that runs
 				Mcp.#mirror(c, method, params, true);
-			} else this.#validate(c, method, params, meta, header);
+			} else this.#validate(c, method, params, meta, version, header);
 
 			const language = this.#language(c, meta, legacy);
 
@@ -287,9 +278,7 @@ export class Mcp {
 				legacy,
 			);
 
-			c.json({
-				jsonrpc: "2.0",
-				id,
+			reply({
 				result: legacy
 					? result
 					: {
@@ -314,10 +303,8 @@ export class Mcp {
 		} catch (error) {
 			if (!(error instanceof RpcError)) throw error;
 
-			c.json(
+			reply(
 				{
-					jsonrpc: "2.0",
-					id,
 					error: { code: error.code, message: error.message, data: error.data },
 				},
 				error.status,
@@ -362,11 +349,7 @@ export class Mcp {
 				throw new RpcError(-32602, "Invalid acceptLanguage", 400);
 			// a proxy may remove the header, but one that is sent must be the same
 			if (header !== null && header !== stated)
-				throw new RpcError(
-					-32020,
-					"Header mismatch: Accept-Language does not match the request",
-					400,
-				);
+				throw Mcp.#mismatch("Accept-Language");
 		}
 
 		const accept = stated ?? (valid(header) ? header : undefined);
@@ -380,7 +363,7 @@ export class Mcp {
 
 	/**
 	 * @param c Request context
-	 * @returns The session, `null` without auth, or `undefined` after responding 401
+	 * @returns The session, or `null` without auth
 	 */
 	async #authorize(c: Context) {
 		const { auth, path } = this.#options;
@@ -391,18 +374,9 @@ export class Mcp {
 
 		c.res.headers.set(
 			"www-authenticate",
-			`Bearer resource_metadata="${new URL(`/.well-known/oauth-protected-resource${path}`, c.url).href}"`,
+			`Bearer resource_metadata="${new URL(Mcp.#discovery + path, c.url).href}"`,
 		);
-		c.json(
-			{
-				jsonrpc: "2.0",
-				id: null,
-				error: { code: -32001, message: "Unauthorized" },
-			},
-			401,
-		);
-
-		return undefined;
+		throw new RpcError(-32001, "Unauthorized", 401);
 	}
 
 	/**
@@ -477,6 +451,7 @@ export class Mcp {
 	 * @param method JSON-RPC method
 	 * @param params Request params
 	 * @param meta Request `_meta`, which carries the version and capabilities
+	 * @param version Protocol version in `_meta`
 	 * @param header `MCP-Protocol-Version` header
 	 */
 	#validate(
@@ -484,31 +459,31 @@ export class Mcp {
 		method: string,
 		params: Json,
 		meta: Json,
+		version: unknown,
 		header: string | null,
 	) {
-		const version = meta[`${Mcp.#meta}protocolVersion`];
 		const invalid = (field: string) =>
-			new RpcError(-32602, `Invalid params: _meta needs ${field}`, 400);
+			new RpcError(
+				-32602,
+				`Invalid params: _meta needs ${Mcp.#meta}${field}`,
+				400,
+			);
 
 		if (version === undefined) {
 			// this version by its header, so what is missing is the field
 			if (header !== null && Mcp.#versions.includes(header))
-				throw invalid(`${Mcp.#meta}protocolVersion`);
+				throw invalid("protocolVersion");
 		} else if (typeof version !== "string") {
-			throw invalid(`${Mcp.#meta}protocolVersion`);
+			throw invalid("protocolVersion");
 		} else if (header !== version) {
 			// before the version is judged: a proxy routes on the header
-			throw new RpcError(
-				-32020,
-				"Header mismatch: MCP-Protocol-Version does not match the request",
-				400,
-			);
+			throw Mcp.#mismatch("MCP-Protocol-Version");
 		}
 
-		if (typeof version !== "string" || !Mcp.#versions.includes(version))
+		if (version === undefined || !Mcp.#versions.includes(version))
 			throw new RpcError(-32022, "Unsupported protocol version", 400, {
 				supported: [...Mcp.#versions, ...Mcp.#legacy],
-				requested: typeof version === "string" ? version : header,
+				requested: version ?? header,
 			});
 
 		const capabilities = meta[`${Mcp.#meta}clientCapabilities`];
@@ -517,9 +492,22 @@ export class Mcp {
 			typeof capabilities !== "object" ||
 			Array.isArray(capabilities)
 		)
-			throw invalid(`${Mcp.#meta}clientCapabilities`);
+			throw invalid("clientCapabilities");
 
 		Mcp.#mirror(c, method, params);
+	}
+
+	/**
+	 * @param header Header that does not match the request
+	 * @param part What it should match
+	 * @returns The JSON-RPC error
+	 */
+	static #mismatch(header: string, part = "the request") {
+		return new RpcError(
+			-32020,
+			`Header mismatch: ${header} does not match ${part}`,
+			400,
+		);
 	}
 
 	/**
@@ -531,12 +519,9 @@ export class Mcp {
 	 * @param optional Check only the headers that are sent
 	 */
 	static #mirror(c: Context, method: string, params: Json, optional?: boolean) {
-		const mismatch = (message: string) =>
-			new RpcError(-32020, `Header mismatch: ${message}`, 400);
-
 		const sent = c.req.headers.get("mcp-method");
 		if ((sent !== null || !optional) && sent !== method)
-			throw mismatch("Mcp-Method does not match the request method");
+			throw Mcp.#mismatch("Mcp-Method", "the request method");
 
 		const name =
 			method === "tools/call" || method === "prompts/get"
@@ -556,7 +541,7 @@ export class Mcp {
 					value = null;
 				}
 			}
-			if (value !== name) throw mismatch("Mcp-Name does not match the request");
+			if (value !== name) throw Mcp.#mismatch("Mcp-Name");
 		}
 	}
 
@@ -606,12 +591,9 @@ export class Mcp {
 			case "ping":
 				// removed in 2026-07-28
 				if (legacy) return {};
-				throw new RpcError(-32601, "Method not found", 404);
+				break;
 			case "tools/list":
-				return {
-					tools: Array.from(this.#list().values(), (tool) => tool.definition),
-					...cache,
-				};
+				return { tools: this.#tools(), ...cache };
 			case "tools/call":
 				return this.#call(c, params, session);
 			case "resources/list":
@@ -648,19 +630,19 @@ export class Mcp {
 			}
 			case "resources/read":
 				return this.#resource(c, params, session, legacy);
-			default:
-				throw new RpcError(-32601, "Method not found", 404);
 		}
+
+		throw new RpcError(-32601, "Method not found", 404);
 	}
 
 	/**
 	 * Built for each request, so routes mounted after the endpoint are
 	 * included. Mounted routes are final, so their tools do not change.
 	 *
-	 * @returns Tools by name, from the app's current routes
+	 * @returns Tool definitions, from the app's current routes
 	 */
-	#list() {
-		const tools = new Map<string, Tool>();
+	#tools() {
+		const tools: Json[] = [];
 
 		for (const route of this.#app!.routes) {
 			const { tool } = route;
@@ -669,8 +651,6 @@ export class Mcp {
 			const { name, read } = tool;
 			const form = route as Route.Post;
 			// names are unique, app.use() throws for two routes sharing one
-
-			const params = Mcp.#params(route);
 
 			const properties: Json = {};
 			const required = new Set<string>();
@@ -684,37 +664,33 @@ export class Mcp {
 				for (const name in form.shape) {
 					const field = form.shape[name]!;
 					if (field.type === "file")
-						properties[name] =
-							field.parts > 1
-								? { ...(properties[name] as Json), items: Mcp.#file }
-								: { ...(properties[name] as Json), ...Mcp.#file };
+						properties[name] = {
+							...(properties[name] as Json),
+							...(field.parts > 1 ? { items: Mcp.#file } : Mcp.#file),
+						};
 				}
 			}
 
-			for (const [param, key] of params) {
+			for (const [param, key] of Mcp.#params(route)) {
 				const schema = route.paramSchemas?.[key];
 				properties[param] = schema ? Mcp.#json(schema) : { type: "string" };
 				required.add(param);
 			}
 
-			tools.set(name, {
-				route,
-				params,
-				definition: {
-					name,
-					description: tool.description,
-					inputSchema: {
-						type: "object",
-						properties,
-						...(required.size ? { required: [...required] } : {}),
-						// a form takes only its fields. Other routes are left open: a
-						// handler may read the query or the body itself
-						...(form.shape && !read && { additionalProperties: false }),
-					},
-					// no destructiveHint, so clients treat any tool that writes as one
-					// that may need confirming
-					annotations: { readOnlyHint: read, openWorldHint: false },
+			tools.push({
+				name,
+				description: tool.description,
+				inputSchema: {
+					type: "object",
+					properties,
+					...(required.size > 0 && { required: [...required] }),
+					// a form takes only its fields. Other routes are left open: a
+					// handler may read the query or the body itself
+					...(form.shape && !read && { additionalProperties: false }),
 				},
+				// no destructiveHint, so clients treat any tool that writes as one
+				// that may need confirming
+				annotations: { readOnlyHint: read, openWorldHint: false },
 			});
 		}
 
@@ -759,14 +735,12 @@ export class Mcp {
 		const { name, type, text, base64 } = argument;
 		if (typeof name !== "string" || !name) return;
 
-		const options = typeof type === "string" ? { type } : undefined;
-
-		let file: File;
-		if (typeof text === "string") file = new File([text], name, options);
+		let contents: string | Uint8Array<ArrayBuffer>;
+		if (typeof text === "string") contents = text;
 		else if (typeof base64 !== "string") return;
 		else {
 			try {
-				file = new File([Codec.Base64.decode(base64)], name, options);
+				contents = Codec.Base64.decode(base64);
 			} catch {
 				// not base64
 				return;
@@ -777,7 +751,11 @@ export class Mcp {
 		// its contents would be held twice: as the file, and as its text
 		delete argument.text;
 		delete argument.base64;
-		return file;
+		return new File(
+			[contents],
+			name,
+			typeof type === "string" ? { type } : undefined,
+		);
 	}
 
 	/**
@@ -808,7 +786,7 @@ export class Mcp {
 				? this.#app!.routes.find((route) => route.tool?.name === params.name)
 				: undefined;
 		if (!route) throw new RpcError(-32602, `Unknown tool: ${params.name}`);
-		const tool = { route, params: Mcp.#params(route) };
+		const pathParams = Mcp.#params(route);
 
 		const args = (params.arguments ?? {}) as Json;
 		if (typeof args !== "object" || Array.isArray(args))
@@ -816,34 +794,38 @@ export class Mcp {
 
 		// reported like the form's issues, where a browser would get a 404
 		const issues: { path: string; message: string }[] = [];
-		for (const [param, key] of tool.params) {
+		for (const [param, key] of pathParams) {
 			const value = args[param];
 			for (const { message } of typeof value === "string" ||
 			typeof value === "number"
-				? (tool.route.paramSchemas?.[key]?.parse(String(value)).issues ?? [])
+				? (route.paramSchemas?.[key]?.parse(String(value)).issues ?? [])
 				: [{ message: "Required field" }])
 				issues.push({ path: param, message });
 		}
 		if (issues.length) return Mcp.#result(Mcp.#issues(issues), true);
 
-		let pathname: string;
+		let url: URL | undefined;
 		try {
-			pathname = route.url({
-				params: Object.fromEntries(
-					Array.from(tool.params, ([param, key]) => [key, String(args[param])]),
-				),
-			} as never);
+			url = new URL(
+				route.url({
+					params: Object.fromEntries(
+						Array.from(pathParams, ([param, key]) => [
+							key,
+							String(args[param]),
+						]),
+					),
+				} as never),
+				c.url.origin,
+			);
 		} catch (error) {
 			// a value such as `..` or `/host` would leave its place in the path,
 			// and one with a lone surrogate cannot be encoded
 			if (!(error instanceof TypeError || error instanceof URIError))
 				throw error;
-			return Mcp.#result(`Parameters do not match ${route.pattern}`, true);
 		}
 
-		const url = new URL(pathname, c.url.origin);
 		// a more specific pattern could select another route
-		if (this.#app!.find(route.method, url.pathname)?.route !== route)
+		if (!url || this.#app!.find(route.method, url.pathname)?.route !== route)
 			return Mcp.#result(`Parameters do not match ${route.pattern}`, true);
 
 		const read = route.method === Method.get;
@@ -854,7 +836,7 @@ export class Mcp {
 		if (shape && !read) {
 			// named here, the form would only count one part too many
 			const unexpected = Object.keys(args).filter(
-				(name) => !Object.hasOwn(shape, name) && !tool.params.has(name),
+				(name) => !Object.hasOwn(shape, name) && !pathParams.has(name),
 			);
 			if (unexpected.length)
 				return Mcp.#result(
@@ -868,13 +850,11 @@ export class Mcp {
 				);
 		}
 		for (const [name, value] of Object.entries(args)) {
+			const field =
+				shape && Object.hasOwn(shape, name) ? shape[name] : undefined;
 			// a parameter is in the path, and also sent when a field has its name
-			if (tool.params.has(name) && !(shape && Object.hasOwn(shape, name)))
-				continue;
-			const upload =
-				!read && shape && Object.hasOwn(shape, name)
-					? shape[name]!.type === "file"
-					: false;
+			if (pathParams.has(name) && !field) continue;
+			const upload = !read && field?.type === "file";
 			for (const item of Array.isArray(value) ? value : [value]) {
 				if (item == null || item === false) continue;
 				if (upload) {
@@ -921,9 +901,10 @@ export class Mcp {
 	 * @returns Resource contents
 	 */
 	async #resource(c: Context, params: Json, session: unknown, legacy: boolean) {
+		const uri = String(params.uri);
 		let url: URL;
 		try {
-			url = new URL(String(params.uri));
+			url = new URL(uri);
 			// a page by its name, or by its address, as a link in a page gives it
 			if (url.protocol === Mcp.#scheme)
 				url = new URL(
@@ -937,7 +918,7 @@ export class Mcp {
 		// its own code before 2026-07-28, invalid params since
 		const missing = () =>
 			new RpcError(legacy ? -32002 : -32602, "Resource not found", 200, {
-				uri: String(params.uri),
+				uri,
 			});
 		// a page read as the user is theirs alone, and may change at any time
 		const cache = {
@@ -953,39 +934,34 @@ export class Mcp {
 
 		if (res.status >= 500) throw await Mcp.#failed(res);
 
+		// a stream is only from a page that succeeds, so it passes the checks below
 		const { type, live, ...body } = await Mcp.#body(res);
-		if (live)
-			return {
-				contents: [
-					{
-						uri: this.#name(url),
-						mimeType: Mime.type.text,
-						text: this.#stream(url),
-					},
-				],
-				...cache,
-			};
 
 		if (res.status === 404) throw missing();
 		// refused, such as a 403: the request's to change, where a server error
 		// above is the app's
-		if (!res.ok)
+		if (!res.ok) {
+			const retry = res.headers.get("retry-after");
 			throw new RpcError(
 				-32602,
 				`${res.status} ${body.text || res.statusText}`.trim(),
 				200,
 				{
-					uri: String(params.uri),
+					uri,
 					status: res.status,
-					...(res.headers.has("retry-after") && {
-						retryAfter: res.headers.get("retry-after"),
-					}),
+					...(retry !== null && { retryAfter: retry }),
 				},
 			);
+		}
 
 		return {
 			contents: [
-				{ uri: this.#name(url), mimeType: type ?? Mime.type.md, ...body },
+				{
+					uri: this.#name(url),
+					...(live
+						? { mimeType: Mime.type.text, text: this.#stream(url) }
+						: { mimeType: type ?? Mime.type.md, ...body }),
+				},
 			],
 			...cache,
 		};
@@ -1019,10 +995,7 @@ export class Mcp {
 	 */
 	#tool(c: Context) {
 		return (method: string, action: URL) => {
-			if (action.origin !== c.url.origin || action.username || action.password)
-				return;
-
-			const match = this.#app!.find(method, action.pathname);
+			const match = this.#find(c, method, action);
 			const name = match?.route.tool?.name;
 			if (!name) return;
 
@@ -1041,11 +1014,19 @@ export class Mcp {
 	 * @returns `true` if the URL is a page agents can read
 	 */
 	#readable(c: Context, url: URL) {
+		return Boolean(this.#find(c, Method.get, url)?.route.description);
+	}
+
+	/**
+	 * @param c Request context
+	 * @param method Request method
+	 * @param url URL of a page of the app
+	 * @returns The route that answers it, `undefined` for another site's
+	 */
+	#find(c: Context, method: string, url: URL) {
 		// credentials are no part of a page's address
-		if (url.origin !== c.url.origin || url.username || url.password)
-			return false;
-		const route = this.#app!.find(Method.get, url.pathname)?.route;
-		return Boolean(route?.description);
+		if (url.origin === c.url.origin && !url.username && !url.password)
+			return this.#app!.find(method, url.pathname);
 	}
 
 	/** Media types read as text, any other is a file */
@@ -1139,6 +1120,9 @@ export class Mcp {
 		let redirected: URL | undefined;
 		/** The call writes, so a redirect from it means it was done */
 		const wrote = init !== undefined;
+		/** A page of this app, by its path */
+		const redirect = (page: URL) =>
+			`Redirected to ${page.pathname}${page.search}`;
 
 		for (let i = 0; ; i++) {
 			const res = await this.#run(c, session, url, init);
@@ -1164,7 +1148,7 @@ export class Mcp {
 					next.origin !== c.url.origin
 						? `Redirected to ${next.href}`
 						: readable
-							? `Redirected to ${next.pathname}${next.search}`
+							? redirect(next)
 							: "Redirected",
 				);
 			}
@@ -1175,7 +1159,7 @@ export class Mcp {
 			if (redirected && wrote && !res.ok) {
 				await res.body?.cancel();
 				return Mcp.#result(
-					`Redirected to ${redirected.pathname}${redirected.search}, which could not be read: ${Mcp.#status(res)}`,
+					`${redirect(redirected)}, which could not be read: ${Mcp.#status(res)}`,
 				);
 			}
 
@@ -1201,12 +1185,7 @@ export class Mcp {
 			const [kind] = type?.split("/") ?? [];
 
 			return Mcp.#result(
-				[
-					redirected &&
-						`Redirected to ${redirected.pathname}${redirected.search}`,
-					!res.ok && Mcp.#status(res),
-					text,
-				]
+				[redirected && redirect(redirected), !res.ok && Mcp.#status(res), text]
 					.filter(Boolean)
 					.join("\n\n"),
 				!res.ok,

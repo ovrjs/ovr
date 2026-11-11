@@ -112,8 +112,7 @@ class Writer {
 		"h4",
 		"h5",
 		"h6",
-		"ul",
-		"ol",
+		...Writer.#lists,
 		"li",
 		"pre",
 		"blockquote",
@@ -138,7 +137,6 @@ class Writer {
 		"legend",
 		"address",
 		"noscript",
-		"menu",
 	]);
 
 	/** Attributes of an element without any, never changed */
@@ -180,8 +178,7 @@ class Writer {
 
 	/** @returns The rest of the Markdown */
 	end() {
-		while (this.#stack.length) this.#close(this.#stack.at(-1)!.tag);
-		this.#flush();
+		this.#finish();
 		if (this.#main === "before") {
 			for (const block of this.#before) this.#write(block, true);
 		}
@@ -262,28 +259,25 @@ class Writer {
 			return;
 		}
 
-		// the page's content, however it is wrapped, such as in a custom element:
-		// what came before is dropped, and its contents are read as top level
-		if (tag === "main" && this.#main === "before") {
-			this.#stack.length = 0;
-			this.#pending = Writer.#node("");
-			this.#before = [];
-			this.#main = "inside";
-			this.#depth = 1;
-			return;
-		}
-		if (tag === "main" && this.#main === "inside") {
+		if (tag === "main" && this.#main !== "after") {
+			// the page's content, however it is wrapped, such as in a custom
+			// element: what came before is dropped, and its contents are read as
+			// top level
+			if (this.#main === "before") {
+				this.#stack.length = 0;
+				this.#pending = Writer.#node("");
+				this.#before = [];
+				this.#main = "inside";
+			}
+			// a nested one is counted, so it does not end the outer one
 			this.#depth++;
 			return;
 		}
 
 		if (!this.#stack.length) {
-			if (Writer.#containers.has(tag)) {
-				this.#flush();
-				return;
-			}
-
+			// a container is a block too, but is not written itself
 			if (Writer.#blockTags.has(tag)) this.#flush();
+			if (Writer.#containers.has(tag)) return;
 		}
 
 		const node = Writer.#node(tag, attrs);
@@ -300,8 +294,7 @@ class Writer {
 		if (tag === "main" && this.#main === "inside") {
 			if (--this.#depth) return;
 			// elements left open end with it, so nothing after it is written
-			while (this.#stack.length) this.#close(this.#stack.at(-1)!.tag);
-			this.#flush();
+			this.#finish();
 			this.#main = "after";
 			return;
 		}
@@ -328,6 +321,12 @@ class Writer {
 		// children, final now, are kept at their size instead of the room an
 		// array grows to as it is added to
 		for (const done of closed) done.children = done.children.slice();
+	}
+
+	/** Ends the elements left open, and writes what is pending */
+	#finish() {
+		while (this.#stack.length) this.#close(this.#stack.at(-1)!.tag);
+		this.#flush();
 	}
 
 	/** Writes inline content at the top level as a paragraph */
@@ -427,12 +426,9 @@ class Writer {
 		switch (tag) {
 			case "":
 			case "p":
-			case "dt":
 			case "caption":
 			case "legend":
-				return tag === "dt"
-					? Writer.#wrap(this.#paragraph(children), "**")
-					: this.#paragraph(children);
+				return this.#paragraph(children);
 			case "h1":
 			case "h2":
 			case "h3":
@@ -442,6 +438,7 @@ class Writer {
 				const text = this.#inline(children).replace(/\s+/g, " ").trim();
 				return text && `${"#".repeat(Number(tag[1]))} ${text}`;
 			}
+			case "dt":
 			case "summary":
 				return Writer.#wrap(this.#paragraph(children), "**");
 			case "ul":
@@ -494,9 +491,9 @@ class Writer {
 					const width = ordered ? `${n - 1}. `.length : 2;
 					const nested = this.#list(child);
 					if (!nested) continue;
+					// on the lines after the item, indented as its contents are
 					if (items.length)
-						items[items.length - 1] +=
-							"\n" + " ".repeat(width) + indent(nested, width);
+						items[items.length - 1] += indent(`\n${nested}`, width);
 					else items.push(nested);
 				} else visit(child); // items inside a wrapper, such as a custom element
 			}
@@ -518,7 +515,9 @@ class Writer {
 		const language = /(?:^|\s)lang(?:uage)?-(\S+)/.exec(
 			code?.attrs.class ?? node.attrs.class ?? "",
 		)?.[1];
-		const text = Writer.#content(node).replace(/^\n/, "").replace(/\n$/, "");
+		// the newline HTML ignores after `<pre>`, and a last one, which the
+		// fence's own line break replaces
+		const text = Writer.#content(node).replace(/^\n|\n$/g, "");
 		const fence = "`".repeat(Math.max(3, Writer.#ticks(text) + 1));
 		return `${fence}${language ?? ""}\n${text}\n${fence}`;
 	}
@@ -575,25 +574,22 @@ class Writer {
 		};
 		visit(node);
 
-		const after = forms.map((form) => this.#form(form));
+		let table = "";
+		if (rows.length) {
+			// a loop, a spread of many rows would overflow the stack
+			let width = 0;
+			for (const row of rows) width = Math.max(width, row.length);
+			// the header sets the columns, shorter rows are filled in by the reader
+			const line = (row: string[]) => `| ${row.join(" | ")} |`;
 
-		if (!rows.length) return [caption, ...after].filter(Boolean).join("\n\n");
-
-		// a loop, a spread of many rows would overflow the stack
-		let width = 0;
-		for (const row of rows) width = Math.max(width, row.length);
-		// the header sets the columns, shorter rows are filled in by the reader
-		const line = (row: string[]) => `| ${row.join(" | ")} |`;
-
-		return [
-			caption,
-			[
+			table = [
 				line(Array.from({ length: width }, (_, i) => rows[0]![i] ?? "")),
 				line(Array(width).fill("---")),
 				...rows.slice(1).map(line),
-			].join("\n"),
-			...after,
-		]
+			].join("\n");
+		}
+
+		return [caption, table, ...forms.map((form) => this.#form(form))]
 			.filter(Boolean)
 			.join("\n\n");
 	}
@@ -630,6 +626,22 @@ class Writer {
 		};
 		collect(node);
 
+		/** A new field, which a later control with its name may add to */
+		const add = (label: string, name: string, type: string) => {
+			const entry: Field = {
+				label,
+				name,
+				type,
+				value: [],
+				options: [],
+				notes: [],
+				rules: [],
+			};
+			fields.push(entry);
+			byName.set(name, entry);
+			return entry;
+		};
+
 		const field = (control: Node, label: string | undefined) => {
 			const { attrs } = control;
 			const name = attrs.name;
@@ -645,10 +657,7 @@ class Writer {
 			// a tool's form shows its hidden values, such as an ID, which the
 			// tool's arguments need and the page shows nowhere else
 			if (type === "hidden" && tool && name && attrs.value !== undefined) {
-				const entry = Writer.#field(name, name, type);
-				entry.value.push(attrs.value);
-				fields.push(entry);
-				byName.set(name, entry);
+				add(name, name, type).value.push(attrs.value);
 				return;
 			}
 			if (!name || type === "hidden" || type === "button" || type === "reset")
@@ -667,22 +676,18 @@ class Writer {
 					`${value}${label !== value && label !== name ? ` (${label})` : ""}`;
 				let group = byName.get(name);
 				const value = attrs.value ?? "on";
-				if (group && group.type === type) {
-					group.options.push(option(value, label));
-					group.lone = false;
-				} else {
-					group = Writer.#field(legend || label, name, type);
-					group.options.push(option(value, label));
+				if (group?.type === type) group.lone = false;
+				else {
+					group = add(legend || label, name, type);
 					group.lone = type === "checkbox" && attrs.value === undefined;
-					fields.push(group);
-					byName.set(name, group);
 				}
+				group.options.push(option(value, label));
 				if ("checked" in attrs) group.value.push(value);
 				Writer.#rules(group, attrs);
 				return;
 			}
 
-			const entry = Writer.#field(label, name, type);
+			const entry = add(label, name, type);
 
 			if (control.tag === "select") {
 				if ("multiple" in attrs) entry.type = "select multiple";
@@ -706,8 +711,6 @@ class Writer {
 			} else if (attrs.value) entry.value.push(attrs.value);
 
 			Writer.#rules(entry, attrs);
-			fields.push(entry);
-			byName.set(name, entry);
 		};
 
 		// a block among the notes, with a line between it and the others
@@ -824,73 +827,59 @@ class Writer {
 			!tool && method !== "GET" && node.attrs.enctype
 				? ` as ${Writer.#code(node.attrs.enctype)}`
 				: "";
+		// what the form calls: its tool, or the address it submits to
+		const call = tool
+			? Writer.#call(tool)
+			: Writer.#code(`${method} ${this.#href(action)}`);
+		const submit = submits.join(", ");
+		while (notes.at(-1) === "") notes.pop();
 
-		const target = Writer.#code(`${method} ${this.#href(action)}`);
-		const lines: string[] = [];
-
-		if (tool) {
-			// the tool's input schema describes the fields, so only what the page
-			// adds: current values, such as an edit form's, and messages
-			const entries = fields
-				.map((f) =>
-					// a single checkbox is a boolean argument, unchecked included
-					f.lone ? { ...f, value: [String(f.value.length > 0)] } : f,
-				)
-				.filter((f) => f.value.length || f.notes.length)
-				.map((f) => {
-					let line = `- ${Writer.#code(f.name)}`;
-					if (f.value.length)
-						line += `: ${f.value.map((v) => Writer.#code(v)).join(", ")}`;
-					for (const note of f.notes) line += `\n  - ${note}`;
-					return line;
-				});
-			while (notes.at(-1) === "") notes.pop();
-
-			// a call an agent can make as it is written, such as a delete beside
-			// each item, on one line
-			if (!entries.length && !notes.length)
-				return `${submits.join(", ") || "Submit"}: ${Writer.#call(tool)}`;
-			if (cell) return "";
-
-			return [
-				`**Tool:** ${Writer.#code(tool.name)}`,
-				"",
-				// arguments the address held, unless a field gives the same
-				...Object.entries(tool.args)
-					.filter(([name]) => !byName.get(name)?.value.length)
-					.map(
-						([name, value]) =>
-							`- ${Writer.#code(name)}: ${Writer.#code(value)}`,
-					),
-				...entries,
-				...(notes.length ? ["", ...notes] : []),
-				...(submits.length ? ["", `Submit: ${submits.join(", ")}`] : []),
-			].join("\n");
-		} else if (fields.length) {
-			lines.push(
-				"",
-				...fields.map((f) => {
+		const lines = tool
+			? // the tool's input schema describes the fields, so only what the
+				// page adds: current values, such as an edit form's, and messages
+				fields
+					.map((f) =>
+						// a single checkbox is a boolean argument, unchecked included
+						f.lone ? { ...f, value: [String(f.value.length > 0)] } : f,
+					)
+					.filter((f) => f.value.length || f.notes.length)
+					.map((f) => {
+						let line = `- ${Writer.#code(f.name)}`;
+						if (f.value.length) line += `: ${Writer.#codes(f.value)}`;
+						return Writer.#notes(f, line);
+					})
+			: fields.map((f) => {
 					let line = `- ${Writer.#escape(f.label)} ${Writer.#code(f.name)} (${[f.type, ...f.rules].join(", ")})`;
 					if (f.options.length)
-						line += `, options: ${f.options.map((o) => Writer.#code(o)).join(", ")}`;
-					if (f.value.length)
-						line += `, value: ${f.value.map((v) => Writer.#code(v)).join(", ")}`;
-					for (const note of f.notes) line += `\n  - ${note}`;
-					return line;
-				}),
-			);
-		}
+						line += `, options: ${Writer.#codes(f.options)}`;
+					if (f.value.length) line += `, value: ${Writer.#codes(f.value)}`;
+					return Writer.#notes(f, line);
+				});
 
-		while (notes.at(-1) === "") notes.pop();
-		if (notes.length) lines.push("", ...notes);
+		// a call an agent can make as it is written, such as a delete beside
+		// each item, on one line, and only that fits in a table's cell
+		if ((tool || cell) && !lines.length && !notes.length)
+			return `${submit || "Submit"}: ${call}`;
+		if (cell) return "";
 
-		// only a button, such as a delete in each row, fits in the cell
-		if (cell)
-			return lines.length ? "" : `${submits.join(", ") || "Submit"}: ${target}`;
-
-		if (submits.length) lines.push("", `Submit: ${submits.join(", ")}`);
-
-		return [`**Form:** ${target}${encoding}`, ...lines].join("\n");
+		return [
+			...(tool
+				? [
+						`**Tool:** ${Writer.#code(tool.name)}`,
+						"",
+						// arguments the address held, unless a field gives the same
+						...Object.entries(tool.args)
+							.filter(([name]) => !byName.get(name)?.value.length)
+							.map((arg) => `- ${Writer.#argument(arg)}`),
+						...lines,
+					]
+				: [
+						`**Form:** ${call}${encoding}`,
+						...(lines.length ? ["", ...lines] : []),
+					]),
+			...(notes.length ? ["", ...notes] : []),
+			...(submits.length ? ["", `Submit: ${submit}`] : []),
+		].join("\n");
 	}
 
 	/**
@@ -900,10 +889,26 @@ class Writer {
 	static #call(tool: { name: string; args: Record<string, string> }) {
 		return [
 			`tool ${Writer.#code(tool.name)}`,
-			...Object.entries(tool.args).map(
-				([name, value]) => `${Writer.#code(name)}: ${Writer.#code(value)}`,
-			),
+			...Object.entries(tool.args).map(Writer.#argument),
 		].join(", ");
+	}
+
+	/**
+	 * @param argument Name and value
+	 * @returns The argument, as code
+	 */
+	static #argument([name, value]: [string, string]) {
+		return `${Writer.#code(name)}: ${Writer.#code(value)}`;
+	}
+
+	/**
+	 * @param field Field in a form
+	 * @param line Its line
+	 * @returns The line, with the field's notes below it
+	 */
+	static #notes(field: Field, line: string) {
+		for (const note of field.notes) line += `\n  - ${note}`;
+		return line;
 	}
 
 	/**
@@ -1072,10 +1077,6 @@ class Writer {
 		return { tag, attrs, children };
 	}
 
-	static #field(label: string, name: string, type: string): Field {
-		return { label, name, type, value: [], options: [], notes: [], rules: [] };
-	}
-
 	/**
 	 * @param field Field to add requirements to
 	 * @param attrs Control attributes
@@ -1140,6 +1141,14 @@ class Writer {
 		const ticks = "`".repeat(Writer.#ticks(text) + 1);
 		const pad = /^`|`$|^ .* $/.test(text) ? " " : "";
 		return `${ticks}${pad}${text}${pad}${ticks}`;
+	}
+
+	/**
+	 * @param values Values
+	 * @returns Each as code, separated by commas
+	 */
+	static #codes(values: string[]) {
+		return values.map((value) => Writer.#code(value)).join(", ");
 	}
 
 	/**
