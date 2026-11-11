@@ -15,30 +15,35 @@ afterEach(async () => {
 });
 
 describe("demo database", () => {
-	test("applies its migration, matches its tables, and persists across restarts", async () => {
-		const folder = mkdtempSync(join(tmpdir(), "ovr-auth-"));
-		folders.push(folder);
+	// it starts a database twice, which takes seconds when other tests run
+	test(
+		"applies its migration, matches its tables, and persists across restarts",
+		{ timeout: 30_000 },
+		async () => {
+			const folder = mkdtempSync(join(tmpdir(), "ovr-auth-"));
+			folders.push(folder);
 
-		const first = await open(folder);
-		const id = crypto.randomUUID();
-		await first.sql`INSERT INTO ${users} ${first.sql.values(users, { id, email: "a@example.com" })}`;
-		await first.close();
+			const first = await open(folder);
+			const id = crypto.randomUUID();
+			await first.sql`INSERT INTO ${users} ${first.sql.values(users, { id, email: "a@example.com" })}`;
+			await first.close();
 
-		const second = await open(folder);
-		stores.push(second);
-		expect(await second.migrate(migrations)).toEqual([]);
-		// Auth tells the check which users table its tables reference
-		new Auth({
-			secret: "test-secret-with-at-least-32-bytes",
-			origin: "https://localhost:5173",
-			database: second,
-			users,
-		});
-		expect(await second.check()).toEqual([]);
-		expect(
-			await second.sql`SELECT * FROM ${second.users}`.parse(users),
-		).toEqual([{ id, email: "a@example.com" }]);
-	});
+			const second = await open(folder);
+			stores.push(second);
+			expect(await second.migrate(migrations)).toEqual([]);
+			// Auth tells the check which users table its tables reference
+			new Auth({
+				secret: "test-secret-with-at-least-32-bytes",
+				origin: "https://localhost:5173",
+				database: second,
+				users,
+			});
+			expect(await second.check()).toEqual([]);
+			expect(
+				await second.sql`SELECT * FROM ${second.users}`.parse(users),
+			).toEqual([{ id, email: "a@example.com" }]);
+		},
+	);
 
 	test("deleting an account removes its credentials, sessions, and agents' tokens", async () => {
 		const database = await open("memory://");

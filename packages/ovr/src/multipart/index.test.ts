@@ -1079,53 +1079,54 @@ describe("MultipartParser", () => {
 			expect(count).toBeLessThan(numParts);
 		});
 
-		it(
-			"handles boundary search spanning buffer resizes",
-			{ timeout: 10000 },
-			async () => {
-				// Large part where boundary search starts near end of buffer, triggers resize during #find
-				const largeContent = new Uint8Array(3 * ONE_MB - 1000); // Close to memory limit
-				for (let i = 0; i < largeContent.length; i++) largeContent[i] = i % 256;
+		it("handles boundary search spanning buffer resizes", async () => {
+			// Large part where boundary search starts near end of buffer, triggers resize during #find
+			const largeContent = new Uint8Array(3 * ONE_MB - 1000); // Close to memory limit
+			for (let i = 0; i < largeContent.length; i++) largeContent[i] = i % 256;
 
-				const encoder = new TextEncoder();
-				const header = encoder.encode(
-					`--${BOUNDARY}\r\nContent-Disposition: form-data; name="large"; filename="span.bin"\r\n\r\n`,
-				);
-				const boundaryStart = encoder.encode(`\r\n--${BOUNDARY}--`); // Boundary after large content
+			const encoder = new TextEncoder();
+			const header = encoder.encode(
+				`--${BOUNDARY}\r\nContent-Disposition: form-data; name="large"; filename="span.bin"\r\n\r\n`,
+			);
+			const boundaryStart = encoder.encode(`\r\n--${BOUNDARY}--`); // Boundary after large content
 
-				// Chunks: header + most of large (triggers resize) + end of large + partial boundary + rest
-				const midLarge = largeContent.length - 500;
-				const chunk1 = largeContent.slice(0, midLarge);
-				const chunk2 = largeContent.slice(midLarge);
-				const partialBoundary = boundaryStart.slice(0, 3); // Partial to span
-				const chunk3 = boundaryStart.slice(3);
+			// Chunks: header + most of large (triggers resize) + end of large + partial boundary + rest
+			const midLarge = largeContent.length - 500;
+			const chunk1 = largeContent.slice(0, midLarge);
+			const chunk2 = largeContent.slice(midLarge);
+			const partialBoundary = boundaryStart.slice(0, 3); // Partial to span
+			const chunk3 = boundaryStart.slice(3);
 
-				const stream = streamChunks([
-					header,
-					chunk1,
-					chunk2,
-					partialBoundary,
-					chunk3,
-				]);
+			const stream = streamChunks([
+				header,
+				chunk1,
+				chunk2,
+				partialBoundary,
+				chunk3,
+			]);
 
-				const req = new Request("http://localhost", {
-					method: "POST",
-					headers: {
-						"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
-					},
-					body: stream,
-					// @ts-expect-error - required for streaming
-					duplex: "half",
-				});
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: stream,
+				// @ts-expect-error - required for streaming
+				duplex: "half",
+			});
 
-				for await (const part of new Multipart(req)) {
-					expect(part.name).toBe("large");
-					const bytes = await part.arrayBuffer();
-					expect(bytes.byteLength).toBe(largeContent.length);
-					expect(new Uint8Array(bytes)).toEqual(largeContent);
-				}
-			},
-		);
+			for await (const part of new Multipart(req)) {
+				expect(part.name).toBe("large");
+				const bytes = await part.arrayBuffer();
+				const received = new Uint8Array(bytes);
+				// a loop, as a deep equality of 3MB takes seconds
+				let same = 0;
+				while (same < received.length && received[same] === largeContent[same])
+					same++;
+				expect(received.length).toBe(largeContent.length);
+				expect(same).toBe(largeContent.length);
+			}
+		});
 	});
 
 	describe("Error Conditions", () => {
