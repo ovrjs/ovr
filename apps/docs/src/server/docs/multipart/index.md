@@ -15,7 +15,7 @@ The platform built-in [`Request.formData`](https://developer.mozilla.org/en-US/d
 
 ## Usage
 
-To stream parts of a multipart request, construct a new `Multipart` async iterable, and use a [`for await...of`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for-await...of) loop to iterate through each part. Each `Multipart.Part` extends the web [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) object, so all of the methods such as `part.text()` and `part.bytes()` are available to use. Additional properties provide quick access to form-specific details like the input `name`, `filename`, and content `type`.
+To stream parts of a multipart request, construct a new `Multipart` async iterable, and use a [`for await...of`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for-await...of) loop to iterate through each part. Each `Multipart.Part` extends the web [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) object, so all of the methods such as `part.text()` and `part.bytes()` are available to use. Additional properties provide quick access to form-specific details like the input `name`, `filename`, and content `type`. `Multipart` reads the request's body, so read the parts or `data()`, not the request's own body methods.
 
 ```ts
 import { upload } from "./upload";
@@ -59,7 +59,7 @@ const post = Route.post("/posts").use(async (c) => {
 
 ### Data
 
-If you do need to buffer all the data in memory, the `Multipart.data` method is available as a drop in replacement for [`Request.formData`](https://developer.mozilla.org/en-US/docs/Web/API/Request/formData), enhanced with thresholds.
+If you do need to buffer all the data in memory, `Multipart.data` reads every part into `FormData`, as [`Request.formData`](https://developer.mozilla.org/en-US/docs/Web/API/Request/formData) does, within the parser's limits.
 
 ```ts
 const mp = new Multipart(req, options);

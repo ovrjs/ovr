@@ -126,7 +126,10 @@ class Part extends Request {
 			throw new Malformed("Invalid Part Header");
 		}
 
-		super(req, {
+		// from its parts, since a server's own request object, such as srvx's,
+		// is not one the platform's constructor can copy
+		super(req.url, {
+			method: req.method,
 			headers: parsed,
 			body,
 			// A request made from another follows its signal with a listener,
@@ -262,8 +265,11 @@ const unexpectedEnd = "Unexpected End of Body";
  */
 const newLine = new Needle("\r\n\r\n");
 
-/** Multipart request */
-export class Multipart extends Request {
+/**
+ * The parts of a multipart request, read one at a time as the body arrives.
+ * It reads the request's body, which cannot be read another way after.
+ */
+export class Multipart {
 	/** A body over a limit, answered 413 when a route does not catch it */
 	static readonly Limit = Limit;
 
@@ -282,6 +288,9 @@ export class Multipart extends Request {
 		payload: 16 * Size.mb,
 		parts: Infinity,
 	};
+
+	/** Request the parts are read from */
+	readonly #req: Request;
 
 	/** Request body reader */
 	readonly #reader: ReadableStreamDefaultReader;
@@ -329,18 +338,7 @@ export class Multipart extends Request {
 	 * ```
 	 */
 	constructor(req: Request, options?: Multipart.Options) {
-		// from its parts, since a server's own request object, such as srvx's,
-		// is not one the platform's constructor can copy
-		super(req.url, {
-			method: req.method,
-			headers: req.headers,
-			body: req.body,
-			signal: req.signal,
-			// a streamed body needs this in Node
-			duplex: "half",
-		} as RequestInit);
-
-		const [mime, params] = Header.shift(this.headers.get(Header.name.type));
+		const [mime, params] = Header.shift(req.headers.get(Header.name.type));
 
 		if (!Mime.multipart(mime)) throw new Unsupported("Unsupported Media Type");
 
@@ -350,10 +348,11 @@ export class Multipart extends Request {
 		// RFC 2046: 1 to 70 characters from a limited set, not ending in a space
 		if (!/^[\w'()+,./:=? -]{0,69}[\w'()+,./:=?-]$/.test(boundary))
 			throw new Malformed("Invalid Boundary");
-		if (!this.body) throw new Malformed("No Request Body");
+		if (!req.body) throw new Malformed("No Request Body");
 
 		Object.assign(this.#options, options);
-		this.#reader = this.body.getReader();
+		this.#req = req;
+		this.#reader = req.body.getReader();
 		this.#opening = new Needle(`--${boundary}`);
 		this.#boundary = new Needle(`\r\n--${boundary}`);
 
@@ -676,7 +675,7 @@ export class Multipart extends Request {
 				if (i === this.#options.parts) throw new Limit("Too Many Parts");
 
 				const { stream, state } = this.#findStream(this.#boundary);
-				yield new Part(this, stream, headers);
+				yield new Part(this.#req, stream, headers);
 
 				// the next part starts after this one's boundary, however much of it
 				// was read: skip the rest here, never parse it as headers
@@ -697,7 +696,7 @@ export class Multipart extends Request {
 	}
 
 	/**
-	 * Drop in replacement for `Request.formData` enhanced with size thresholds.
+	 * Read every part into `FormData`, within the parser's limits.
 	 *
 	 * Only use `data` when buffering all content is needed, otherwise iterate through
 	 * the multipart using `for await...of` instead.
