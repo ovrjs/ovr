@@ -1,6 +1,5 @@
 import { Codec, Header, Mime, Size } from "../util/index.js";
 
-/** Sequence of bytes to find within the stream */
 /** A request body over one of the parser's limits. */
 export class Limit extends RangeError {}
 
@@ -10,6 +9,7 @@ export class Malformed extends TypeError {}
 /** A request body of another type than multipart form data. */
 export class Unsupported extends Malformed {}
 
+/** Sequence of bytes to find within the stream */
 class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
