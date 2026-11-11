@@ -300,8 +300,9 @@ function setup(extra: Partial<State.Options> = {}) {
 					c,
 					new State(c, options),
 					input.data.bootstrap,
-					() => "User",
-					{ method, action: `/${method}` },
+					method === "register"
+						? { method, action: `/${method}`, name: "User" }
+						: { method, action: `/${method}` },
 				);
 			});
 	app.use(issue("register"), issue("login"), Passkey.client);

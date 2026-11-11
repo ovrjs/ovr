@@ -7,16 +7,15 @@ export function listen(
 ) {
 	const script = document.getElementById(id);
 	const form = script?.closest("form");
+	// the accessible error component the form renders before the script
+	const fallback = script?.previousElementSibling;
 	const status =
 		form?.querySelector("[data-passkey-error]:not([data-passkey-fallback])") ??
-		script?.previousElementSibling;
+		fallback;
 	if (!(form instanceof HTMLFormElement) || !(status instanceof HTMLElement))
 		return;
-	if (
-		status !== script?.previousElementSibling &&
-		script?.previousElementSibling instanceof HTMLElement
-	)
-		script.previousElementSibling.hidden = true;
+	if (status !== fallback && fallback instanceof HTMLElement)
+		fallback.hidden = true;
 
 	const hidden = (name: string) => {
 		const field = form.elements.namedItem(name);
@@ -35,6 +34,8 @@ export function listen(
 	let submitted: SubmitEvent | undefined;
 	let retry = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	const limited = () =>
+		`Too many requests. Try again in ${Math.ceil((retry - Date.now()) / 1000)} seconds.`;
 	const reset = () => {
 		clearTimeout(timer);
 		timer = undefined;
@@ -43,14 +44,16 @@ export function listen(
 		credential.value = ceremony.value = "";
 		form.removeAttribute("aria-busy");
 	};
-	const clear = (e: Event) => {
+	/** Mark a form field invalid, or valid again with an empty message */
+	const validity = (field: unknown, message: string) => {
 		if (
-			e.target instanceof HTMLElement &&
-			"setCustomValidity" in e.target &&
-			typeof e.target.setCustomValidity === "function"
+			field instanceof HTMLElement &&
+			"setCustomValidity" in field &&
+			typeof field.setCustomValidity === "function"
 		)
-			e.target.setCustomValidity("");
+			field.setCustomValidity(message);
 	};
+	const clear = (e: Event) => validity(e.target, "");
 	form.addEventListener("input", clear);
 	form.addEventListener("change", clear);
 
@@ -65,7 +68,7 @@ export function listen(
 		e.preventDefault();
 		if (loading) return;
 		if (retry > Date.now()) {
-			status.textContent = `Too many requests. Try again in ${Math.ceil((retry - Date.now()) / 1000)} seconds.`;
+			status.textContent = limited();
 			return;
 		}
 		loading = true;
@@ -98,23 +101,14 @@ export function listen(
 				retry = Number.isNaN(deadline)
 					? now + 60000
 					: Math.min(now + 3600000, Math.max(now + 1000, deadline));
-				throw new Error(
-					`Too many requests. Try again in ${Math.ceil((retry - Date.now()) / 1000)} seconds.`,
-				);
+				throw new Error(limited());
 			}
 			if (res.status === 422) {
 				const result: { fields?: unknown } = await res.json();
 				if (Array.isArray(result.fields))
-					for (const name of result.fields) {
-						if (typeof name !== "string") continue;
-						const field = form.elements.namedItem(name);
-						if (
-							field instanceof HTMLElement &&
-							"setCustomValidity" in field &&
-							typeof field.setCustomValidity === "function"
-						)
-							field.setCustomValidity("Check this field.");
-					}
+					for (const name of result.fields)
+						if (typeof name === "string")
+							validity(form.elements.namedItem(name), "Check this field.");
 				form.reportValidity();
 				throw new Error("Check your registration details and try again.");
 			}
@@ -123,32 +117,21 @@ export function listen(
 			if (!res.ok)
 				throw new Error("Could not start the passkey request. Try again.");
 
-			let result: Credential | null;
-			if (method === "register") {
-				const json: {
-					ceremony: string;
-					options: PublicKeyCredentialCreationOptionsJSON;
-				} = await res.json();
-				ceremony.value = json.ceremony;
+			// creation options for a registration, request options for a login
+			const json: { ceremony: string; options: unknown } = await res.json();
+			ceremony.value = json.ceremony;
 
-				result = await navigator.credentials.create({
-					publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(
-						json.options,
-					),
-				});
-			} else {
-				const json: {
-					ceremony: string;
-					options: PublicKeyCredentialRequestOptionsJSON;
-				} = await res.json();
-				ceremony.value = json.ceremony;
-
-				result = await navigator.credentials.get({
-					publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(
-						json.options,
-					),
-				});
-			}
+			const result = await (method === "register"
+				? navigator.credentials.create({
+						publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(
+							json.options as PublicKeyCredentialCreationOptionsJSON,
+						),
+					})
+				: navigator.credentials.get({
+						publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(
+							json.options as PublicKeyCredentialRequestOptionsJSON,
+						),
+					}));
 			if (!(result instanceof PublicKeyCredential))
 				throw new Error("No passkey was returned. Try again.");
 			credential.value = JSON.stringify(result);
@@ -193,10 +176,10 @@ export function listen(
 
 // Modules execute once per document. Observe streamed HTML and subsequent fragment navigation too.
 const attached = new WeakMap<HTMLScriptElement, () => void>();
+const scripts = () =>
+	document.querySelectorAll<HTMLScriptElement>("script[data-passkey]");
 const scan = () => {
-	for (const script of document.querySelectorAll<HTMLScriptElement>(
-		"script[data-passkey]",
-	)) {
+	for (const script of scripts()) {
 		if (attached.has(script)) continue;
 		const method = script.dataset.passkey;
 		if (method === "register" || method === "login") {
@@ -212,11 +195,7 @@ const scan = () => {
 };
 if (typeof document !== "undefined") {
 	window.addEventListener("pageshow", (e) => {
-		if (e.persisted)
-			for (const script of document.querySelectorAll<HTMLScriptElement>(
-				"script[data-passkey]",
-			))
-				attached.get(script)?.();
+		if (e.persisted) for (const script of scripts()) attached.get(script)?.();
 	});
 	scan();
 	new MutationObserver(scan).observe(document.documentElement, {

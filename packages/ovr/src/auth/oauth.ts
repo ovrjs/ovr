@@ -5,7 +5,7 @@ import { jsx } from "../jsx/index.js";
 import { Limiter, network } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
-import { Codec, Header, Size, Time, noStore } from "../util/index.js";
+import { Codec, Header, Time, noStore } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import { Metadata } from "./metadata.js";
@@ -94,36 +94,37 @@ export function oauth(
 	const page = options.page ?? "/login";
 	const consent = options.consent ?? "/connect";
 
-	const limiter = new Limiter(`auth:tokens:${origin}`, {
-		limit: 60,
-		interval: Time.minute,
-		database: options.database,
-	});
+	/**
+	 * @param name Name of the limit, for this origin
+	 * @param limit Requests a minute
+	 * @param key What the limit counts, the client IP by default
+	 * @returns The limit, shared by every instance through the database
+	 */
+	const minute = (
+		name: string,
+		limit: number,
+		key?: Pick<Limiter.Options, "key">,
+	) =>
+		new Limiter(`auth:${name}:${origin}`, {
+			limit,
+			interval: Time.minute,
+			database: options.database,
+			...key,
+		});
+
+	const limiter = minute("tokens", 60);
 
 	/** Authorization requests, by IP, each can download a document */
-	const authorizations = new Limiter(`auth:authorize:${origin}`, {
-		limit: 30,
-		interval: Time.minute,
-		database: options.database,
-	});
+	const authorizations = minute("authorize", 30);
 
 	/**
 	 * Downloads from each document host by each client IP, so one client
 	 * cannot spend a host's downloads for everyone
 	 */
-	const hosts = new Limiter(`auth:metadata:${origin}`, {
-		limit: 10,
-		interval: Time.minute,
-		database: options.database,
-	});
+	const hosts = minute("metadata", 10);
 
 	/** Downloads from each document host in all, so the server cannot flood one */
-	const ceiling = new Limiter(`auth:metadata-hosts:${origin}`, {
-		limit: 300,
-		interval: Time.minute,
-		database: options.database,
-		key: () => "hosts",
-	});
+	const ceiling = minute("metadata-hosts", 300, { key: () => "hosts" });
 
 	/** Agents found recently, by client ID */
 	const found = new Map<
@@ -133,6 +134,17 @@ export function oauth(
 
 	/** Client IDs without a valid document, until when, by client ID */
 	const missing = new Map<string, number>();
+
+	/**
+	 * @param map Agents found, or client IDs without a document
+	 * @param id Client ID
+	 * @param value What is known about it
+	 */
+	const remember = <T>(map: Map<string, T>, id: string, value: T) => {
+		// the oldest is forgotten first
+		if (map.size >= downloads.cached) map.delete(map.keys().next().value!);
+		map.set(id, value);
+	};
 
 	/** Downloads in progress, by client ID */
 	const pending = new Map<string, Promise<Client | null | undefined>>();
@@ -191,22 +203,16 @@ export function oauth(
 					// a failure that may pass keeps what is known, and is not remembered
 					if (client === null) return null;
 
-					// the oldest is forgotten first
+					// a found agent is added again as the newest, or forgotten
 					found.delete(id);
-					if (client) {
-						if (found.size >= downloads.cached)
-							found.delete(found.keys().next().value!);
-						const now = Date.now();
-						found.set(id, {
+					const now = Date.now();
+					if (client)
+						remember(found, id, {
 							client,
 							expiration: now + downloads.lifetime,
 							stale: now + downloads.stale,
 						});
-					} else {
-						if (missing.size >= downloads.cached)
-							missing.delete(missing.keys().next().value!);
-						missing.set(id, Date.now() + downloads.missing);
-					}
+					else remember(missing, id, now + downloads.missing);
 					return client;
 				})().finally(() => {
 					pending.delete(id);
@@ -223,9 +229,6 @@ export function oauth(
 		return client === null ? refused() : client;
 	};
 
-	const random = () =>
-		Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
-
 	/** Public endpoints that browser-based agents call from their own origin */
 	const cors: Middleware = async (c, next) => {
 		noStore(c.res.headers);
@@ -240,6 +243,20 @@ export function oauth(
 			return;
 		}
 		return next();
+	};
+
+	/**
+	 * @param c Request context
+	 * @param scope Part of the flow the request is for
+	 * @returns `true` when the limit of authorization requests admits it, otherwise answers it
+	 */
+	const authorizing = async (
+		c: Limiter.Context & Pick<Context, "text">,
+		scope?: string,
+	) => {
+		if ((await authorizations.check(c, scope)) === true) return true;
+		c.text("Too many requests. Try again later.", 429);
+		return false;
 	};
 
 	const admit = async (c: Context, limiter: Limiter) => {
@@ -305,15 +322,47 @@ export function oauth(
 		return route;
 	};
 
-	/** @returns `true` for a request from the app's own pages */
-	const same = (c: Pick<Context, "req">) =>
-		c.req.headers.get(Header.name.fetch) === "same-origin" ||
-		c.req.headers.get(Header.name.origin) === origin;
+	/** Accepts only requests from the app's own pages, the consent form's */
+	const same = (
+		c: Pick<Context, "req" | "res" | "text">,
+		next: Middleware.Next,
+	) => {
+		noStore(c.res.headers);
+		if (
+			c.req.headers.get(Header.name.fetch) === "same-origin" ||
+			c.req.headers.get(Header.name.origin) === origin
+		)
+			return next();
+		return c.text("Forbidden", 403);
+	};
 
 	/** @returns `true` for a passkey or form that could not be verified */
 	const unverified = (error: unknown) =>
 		error instanceof Issue ||
 		(typeof error === "object" && error !== null && "issues" in error);
+
+	/**
+	 * @param c Request context
+	 * @param request Sealed authorization request
+	 * @returns The request, `null` when another user decides, or `undefined` when it is invalid or expired
+	 */
+	const read = async (c: State.Context, request: string | null) => {
+		if (!request) return;
+		let pending: Pending;
+		try {
+			pending = JSON.parse(
+				await Token.open(options.secret, "consent", request),
+			) as Pending;
+		} catch (error) {
+			if (!(error instanceof Issue) && !(error instanceof SyntaxError))
+				throw error;
+			return;
+		}
+		if (pending.expiration <= Date.now()) return;
+
+		const session = await state(c).session();
+		return session?.user === pending.user ? pending : null;
+	};
 
 	/**
 	 * @param c Request context
@@ -324,13 +373,10 @@ export function oauth(
 		c: State.Context & Pick<Context, "text">,
 		request: string | null,
 	) => {
-		const pending = await open(request);
-		if (!pending)
+		const pending = await read(c, request);
+		if (pending === undefined)
 			return void c.text("The request expired. Try connecting again.", 400);
-
-		const session = await state(c).session();
-		if (!session || session.user !== pending.user)
-			return void c.text("Forbidden", 403);
+		if (!pending) return void c.text("Forbidden", 403);
 
 		return pending;
 	};
@@ -357,22 +403,18 @@ export function oauth(
 	const prompt = Route.post(paths.prompt)
 		// the consent form's fields, the request is the one the passkey confirms
 		.fields({ request: Field.hidden(), bootstrap: Field.hidden() })
-		.use(async (c) => {
-			noStore(c.res.headers);
-			if (!same(c)) return c.text("Forbidden", 403);
+		.use(same, async (c) => {
+			if (!(await authorizing(c, "approve"))) return;
 
-			if ((await authorizations.check(c, "approve")) !== true)
-				return c.text("Too many requests. Try again later.", 429);
-
-			const input = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
-			if (!input || input.issues)
-				return c.text("Authentication failed. Try again.", 400);
+			const failed = () => c.text("Authentication failed. Try again.", 400);
+			const input = await Issue.data(c);
+			if (!input || input.issues) return failed();
 
 			const pending = await asked(c, input.data.request);
 			if (!pending) return;
 
 			try {
-				await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
+				await Passkey.issue(c, state(c), input.data.bootstrap, {
 					method: "login",
 					action: paths.approve,
 					fields: await Passkey.fields({ request: input.data.request }),
@@ -381,7 +423,7 @@ export function oauth(
 				});
 			} catch (error) {
 				if (!unverified(error)) throw error;
-				return c.text("Authentication failed. Try again.", 400);
+				return failed();
 			}
 		});
 
@@ -392,15 +434,11 @@ export function oauth(
 	const approve = Passkey.prepare(
 		Route.post(paths.approve)
 			.fields({ request: Field.hidden() })
-			.use(async (c) => {
-				noStore(c.res.headers);
-				if (!same(c)) return c.text("Forbidden", 403);
-
-				const result = await c
-					.data({ payload: 128 * Size.kb })
-					.catch(Issue.body);
-				if (!result || result.issues)
-					return c.text("Your passkey could not be verified. Try again.", 400);
+			.use(same, async (c) => {
+				const failed = () =>
+					c.text("Your passkey could not be verified. Try again.", 400);
+				const result = await Issue.data(c);
+				if (!result || result.issues) return failed();
 
 				const pending = await asked(c, result.data.request);
 				if (!pending) return;
@@ -416,12 +454,12 @@ export function oauth(
 					);
 				} catch (error) {
 					if (!unverified(error)) throw error;
-					return c.text("Your passkey could not be verified. Try again.", 400);
+					return failed();
 				}
 				// the passkey of the user who was asked
 				if (credential.user !== pending.user) return c.text("Forbidden", 403);
 
-				const code = random();
+				const code = Token.random();
 				await storage.tokens.set(code, {
 					kind: "code",
 					user: pending.user,
@@ -446,11 +484,8 @@ export function oauth(
 			credential: Field.hidden().optional(),
 			ceremony: Field.hidden().optional(),
 		})
-		.use(async (c) => {
-			noStore(c.res.headers);
-			if (!same(c)) return c.text("Forbidden", 403);
-
-			const result = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
+		.use(same, async (c) => {
+			const result = await Issue.data(c);
 			const pending = await asked(
 				c,
 				!result || result.issues ? null : result.data.request,
@@ -484,8 +519,7 @@ export function oauth(
 			noStore(c.res.headers);
 			const query = c.url.searchParams;
 
-			if ((await authorizations.check(c)) !== true)
-				return c.text("Too many requests. Try again later.", 429);
+			if (!(await authorizing(c))) return;
 
 			const client = await agent(c, query.get("client_id"));
 			if (client === null)
@@ -596,8 +630,8 @@ export function oauth(
 			if (!code && grant !== "refresh_token")
 				return fail(c, "unsupported_grant_type");
 
-			const access = random();
-			const refresh = random();
+			const access = Token.random();
+			const refresh = Token.random();
 			let error = "invalid_grant";
 			/** How long the access token lasts, shorter near the grant's end */
 			let expires = lifetime.access;
@@ -614,7 +648,8 @@ export function oauth(
 							(token.redirect !== undefined &&
 								token.redirect !== params.get("redirect_uri")) ||
 							!/^[\w.~-]{43,128}$/.test(verifier) ||
-							(await hash(verifier)) !== token.challenge
+							// base64url SHA-256, as PKCE S256 uses
+							(await Storage.hash(verifier)) !== token.challenge
 						)
 							return;
 					}
@@ -664,13 +699,9 @@ export function oauth(
 			c.res.headers.set("x-frame-options", "DENY");
 			c.res.headers.append("content-security-policy", "frame-ancestors 'none'");
 
-			const pending = await open(c.url.searchParams.get("request"));
+			const request = c.url.searchParams.get("request");
+			const pending = await read(c, request);
 			if (!pending) return null;
-
-			const session = await state(c).session();
-			if (!session || session.user !== pending.user) return null;
-
-			const request = c.url.searchParams.get("request")!;
 			// the page's passkey prompt is for this request only
 			const Form = new Passkey(c, state(c)).form(approve, "login", {
 				endpoint: prompt.url(),
@@ -684,7 +715,11 @@ export function oauth(
 					Form({
 						...props,
 						children: [
-							jsx("input", { type: "hidden", name: "request", value: request }),
+							jsx("input", {
+								type: "hidden",
+								name: "request",
+								value: request!,
+							}),
 							props.children ?? [
 								jsx("button", { children: "Allow" }),
 								jsx("button", { formaction: deny.url(), children: "Deny" }),
@@ -718,31 +753,6 @@ export function oauth(
 			};
 		},
 	};
-
-	/**
-	 * @param request Sealed authorization request
-	 * @returns The request, unless it is invalid or expired
-	 */
-	async function open(request: string | null) {
-		if (!request) return;
-		try {
-			const pending = JSON.parse(
-				await Token.open(options.secret, "consent", request),
-			) as Pending;
-			if (pending.expiration > Date.now()) return pending;
-		} catch (error) {
-			if (!(error instanceof Issue) && !(error instanceof SyntaxError))
-				throw error;
-		}
-	}
-}
-
-/**
- * @param text Text to hash
- * @returns Base64url SHA-256, as PKCE S256 uses
- */
-function hash(text: string) {
-	return Storage.hash(text);
 }
 
 /**
@@ -753,7 +763,7 @@ function redirectable(uri: unknown) {
 	if (typeof uri !== "string" || uri.length > 2000) return false;
 	try {
 		const url = new URL(uri);
-		if (url.hash || url.username || url.password) return false;
+		if (!plain(url)) return false;
 		if (url.protocol === "https:") return true;
 		if (url.protocol === "http:") return loopback(url.hostname);
 		return ![
@@ -767,6 +777,11 @@ function redirectable(uri: unknown) {
 	} catch {
 		return false;
 	}
+}
+
+/** @returns `true` for a URL without a fragment or credentials */
+function plain(url: URL) {
+	return !url.hash && !url.username && !url.password;
 }
 
 /** @returns `true` for loopback hosts */
@@ -809,7 +824,7 @@ function identify(id: string) {
 	} catch {
 		return;
 	}
-	if (url.pathname === "/" || url.hash || url.username || url.password) return;
+	if (url.pathname === "/" || !plain(url)) return;
 	// exactly as written, so the ID shown reads as the origin it is, unlike
 	// `https://evil.example\@good.example/`, which a URL parses as evil.example
 	if (url.href !== id) return;

@@ -193,26 +193,21 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		},
 	] as const;
 
-	static {
-		for (const table of [
-			Storage.credentials,
-			Storage.sessions,
-			Storage.challenges,
-			Storage.tokens,
-		])
-			owned.set(table, Storage.#migrations);
-
-		// deleting an account deletes what signs in as it, `database.check` verifies it
-		for (const table of [Storage.credentials, Storage.sessions, Storage.tokens])
-			referenced.set(table, { column: "user", by: "Auth" });
-	}
-
 	/** Tables whose rows belong to a user, and must reference the users table. */
 	static readonly owners = [
 		Storage.credentials,
 		Storage.sessions,
 		Storage.tokens,
 	] as const;
+
+	static {
+		for (const table of [...Storage.owners, Storage.challenges])
+			owned.set(table, Storage.#migrations);
+
+		// deleting an account deletes what signs in as it, `database.check` verifies it
+		for (const table of Storage.owners)
+			referenced.set(table, { column: "user", by: "Auth" });
+	}
 
 	/**
 	 * Outstanding ceremonies for one browser. There is no cap across browsers:
@@ -250,13 +245,10 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		if (Math.abs(now - this.#pruned) < Time.minute) return;
 
 		this.#pruned = now;
-		await this.#db
-			.sql`DELETE FROM ${Storage.challenges} WHERE expiration <= ${now}`;
-		await this.#db
-			.sql`DELETE FROM ${Storage.sessions} WHERE expiration <= ${now}`;
-		if (this.#oauth)
-			await this.#db
-				.sql`DELETE FROM ${Storage.tokens} WHERE expiration <= ${now}`;
+		const tables: Table<string, any>[] = [Storage.challenges, Storage.sessions];
+		if (this.#oauth) tables.push(Storage.tokens);
+		for (const table of tables)
+			await this.#db.sql`DELETE FROM ${table} WHERE expiration <= ${now}`;
 	}
 
 	/** OAuth tables are in use, so their rows are pruned too */
@@ -306,21 +298,21 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 
 			return this.#db
 				.sql(async (t) => {
-					const [found] = await t.sql`
-						SELECT * FROM ${Storage.tokens} WHERE id = ${id}
-					`.parse(Storage.tokens);
+					const select = () =>
+						t.sql`SELECT * FROM ${Storage.tokens} WHERE id = ${id}`.parse(
+							Storage.tokens,
+						);
+					const [found] = await select();
 					if (!found) return false;
 
 					// one exchange per user at a time, so a replay or a disconnection
 					// waits for tokens being issued, and its snapshot, taken after the
 					// lock, includes them
-					await Storage.#lock(t.sql, found.user);
+					await Storage.#lock(t.sql, Storage.tokens, found.user);
 					if (!(await this.#account(t.sql, found.user))) return false;
 
 					// read again under the lock, an exchange before it may have used it
-					const [row] = await t.sql`
-						SELECT * FROM ${Storage.tokens} WHERE id = ${id}
-					`.parse(Storage.tokens);
+					const [row] = await select();
 					if (!row) return false;
 
 					if (row.kind !== kind) {
@@ -373,13 +365,10 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		revoke: async (user: string, client: string) => {
 			await this.#db.sql(async (t) => {
 				// waits for an exchange issuing this user's tokens, so the delete sees them
-				await Storage.#lock(t.sql, user);
+				await Storage.#lock(t.sql, Storage.tokens, user);
 				await this.#account(t.sql, user);
-				await t.sql`
-					DELETE FROM ${Storage.tokens}
-					WHERE ${Storage.tokens.columns.user} = ${user}
-						AND ${Storage.tokens.columns.client} = ${client}
-				`;
+				const { columns } = Storage.tokens;
+				await t.sql`DELETE FROM ${Storage.tokens} WHERE ${columns.user} = ${user} AND ${columns.client} = ${client}`;
 			});
 		},
 		/**
@@ -388,10 +377,10 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		 */
 		get: async (token: string) =>
 			Storage.#token(
-				await this.#db.sql`
-					SELECT * FROM ${Storage.tokens}
-					WHERE id = ${await Storage.hash(token)} AND kind = 'access'
-				`.parse(Storage.tokens),
+				await this.#db
+					.sql`SELECT * FROM ${Storage.tokens} WHERE id = ${await Storage.hash(token)} AND kind = 'access'`.parse(
+					Storage.tokens,
+				),
 			),
 	};
 
@@ -409,21 +398,25 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		const users = references.get(this.#db)?.get(Storage.tokens);
 		if (!users) return true;
 
-		const rows = await sql`
-			SELECT 1 FROM ${users} WHERE ${users.columns.id} = ${user} FOR KEY SHARE
-		`;
+		const rows =
+			await sql`SELECT 1 FROM ${users} WHERE ${users.columns.id} = ${user} FOR KEY SHARE`;
 
 		return rows.length > 0;
 	}
 
 	/**
-	 * Serialize issuing and revoking a user's tokens, until the transaction ends.
+	 * Serialize writing a table's rows for one key, until the transaction ends.
 	 *
 	 * @param sql Transaction's SQL tag
-	 * @param user User ID
+	 * @param table Table written to
+	 * @param key What the rows are for, such as a user ID
 	 */
-	static async #lock(sql: Database.Tag, user: string) {
-		await sql`SELECT pg_advisory_xact_lock(hashtext('auth_tokens'), hashtext(${user}))`;
+	static async #lock(
+		sql: Database.Tag,
+		table: Table<string, any>,
+		key: string,
+	) {
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${table.name}), hashtext(${key}))`;
 	}
 
 	/**
@@ -433,15 +426,13 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 	 */
 	async #insert(sql: Database.Tag, token: string, row: Storage.Token) {
 		const id = await Storage.hash(token);
-		await sql`
-			INSERT INTO ${Storage.tokens} ${sql.values(Storage.tokens, {
-				redirect: null,
-				challenge: null,
-				...row,
-				family: row.family ?? id,
-				id,
-			})}
-		`;
+		await sql`INSERT INTO ${Storage.tokens} ${sql.values(Storage.tokens, {
+			redirect: null,
+			challenge: null,
+			...row,
+			family: row.family ?? id,
+			id,
+		})}`;
 	}
 
 	/**
@@ -450,13 +441,18 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 	 */
 	static #token([row]: Table.Row<(typeof Storage.tokens)["shape"]>[]) {
 		if (!row || row.expiration <= Date.now()) return;
-		const { redirect, challenge, kind, ...token } = row;
-		return {
-			...token,
-			kind: kind as Storage.Token["kind"],
-			...(redirect === null ? {} : { redirect }),
-			...(challenge === null ? {} : { challenge }),
-		};
+		// a spent token is never returned, its kind is checked first
+		return Storage.#present(row) as Storage.Token;
+	}
+
+	/**
+	 * @param row Stored row
+	 * @returns The row without its null columns, which records leave out
+	 */
+	static #present(row: object) {
+		return Object.fromEntries(
+			Object.entries(row).filter(([, value]) => value !== null),
+		);
 	}
 
 	readonly challenges: Storage.Challenges = {
@@ -469,7 +465,7 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			return this.#db.sql(async (t) => {
 				// one writer at a time for each browser, so its concurrent requests
 				// cannot share the last slot; the insert's snapshot is taken after the lock
-				await t.sql`SELECT pg_advisory_xact_lock(hashtext('auth_challenges'), hashtext(${challenge.browser}))`;
+				await Storage.#lock(t.sql, table, challenge.browser);
 
 				const rows = await t.sql`
 					INSERT INTO ${table} (id, challenge, browser, method, action, origin, expiration, "user", fields)
@@ -486,34 +482,31 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			});
 		},
 		take: async (id) => {
-			const [row] = await this.#db.sql`
-				DELETE FROM ${Storage.challenges} WHERE id = ${id} RETURNING *
-			`.parse(Storage.challenges);
+			const [row] = await this.#db
+				.sql`DELETE FROM ${Storage.challenges} WHERE id = ${id} RETURNING *`.parse(
+				Storage.challenges,
+			);
 
 			if (!row) return;
 
-			const { id: _, user, fields, ...challenge } = row;
+			const { id: _, ...challenge } = row;
 
-			return {
-				...challenge,
-				...(user === null ? {} : { user }),
-				...(fields === null ? {} : { fields }),
-			};
+			return Storage.#present(challenge) as Storage.Challenge;
 		},
 	};
 
 	readonly sessions: Storage.Sessions = {
 		set: async (_, session) => {
 			await this.#prune();
-			await this.#db.sql`
-				INSERT INTO ${Storage.sessions} ${this.#db.sql.values(Storage.sessions, session)}
-			`;
+			await this.#db
+				.sql`INSERT INTO ${Storage.sessions} ${this.#db.sql.values(Storage.sessions, session)}`;
 		},
 		get: async (id) =>
 			(
-				await this.#db.sql`
-					SELECT * FROM ${Storage.sessions} WHERE id = ${id} AND expiration > ${Date.now()}
-				`.parse(Storage.sessions)
+				await this.#db
+					.sql`SELECT * FROM ${Storage.sessions} WHERE id = ${id} AND expiration > ${Date.now()}`.parse(
+					Storage.sessions,
+				)
 			)[0],
 		renew: async (id, expiration) => {
 			const { columns } = Storage.sessions;
@@ -530,15 +523,17 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 	readonly credentials: Storage.Credentials = {
 		get: async (id) =>
 			(
-				await this.#db.sql`
-					SELECT * FROM ${Storage.credentials} WHERE id = ${id}
-				`.parse(Storage.credentials)
+				await this.#db
+					.sql`SELECT * FROM ${Storage.credentials} WHERE id = ${id}`.parse(
+					Storage.credentials,
+				)
 			)[0],
 		list: async (user) => {
 			const { columns } = Storage.credentials;
-			const rows = await this.#db.sql`
-				SELECT ${columns.id} FROM ${Storage.credentials} WHERE ${columns.user} = ${user}
-			`.parse(Schema.object({ id: Schema.string() }));
+			const rows = await this.#db
+				.sql`SELECT ${columns.id} FROM ${Storage.credentials} WHERE ${columns.user} = ${user}`.parse(
+				Schema.object({ id: Schema.string() }),
+			);
 			return rows.map((row) => row.id);
 		},
 		update: async (credential, previous) => {
@@ -571,9 +566,7 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 	) {
 		return this.#db.sql(async (t) => {
 			await create(t, credential.user);
-			await t.sql`
-				INSERT INTO ${Storage.credentials} ${t.sql.values(Storage.credentials, credential)}
-			`;
+			await t.sql`INSERT INTO ${Storage.credentials} ${t.sql.values(Storage.credentials, credential)}`;
 		});
 	}
 }

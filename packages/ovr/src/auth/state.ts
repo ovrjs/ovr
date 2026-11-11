@@ -59,26 +59,41 @@ export class State {
 		this.#browser ??= this.#c.cookie.get(State.#binding);
 		if (!this.#browser && create) {
 			this.#browser = crypto.randomUUID();
-			this.#c.cookie.set(State.#binding, this.#browser, {
-				secure: true,
-				httpOnly: true,
-				sameSite: "Lax",
-			});
+			this.#set(State.#binding, this.#browser);
 		}
 		return this.#browser;
 	}
 
-	#clear() {
-		noStore(this.#c.res.headers);
-		this.#c.cookie.set(State.#cookie, "", {
+	/**
+	 * Set one of Auth's cookies, which only its origin's server reads.
+	 *
+	 * @param name Cookie name
+	 * @param value Cookie value
+	 * @param options How long it lasts, a browser session without it
+	 */
+	#set(name: string, value: string, options?: { maxAge: number }) {
+		this.#c.cookie.set(name, value, {
 			secure: true,
 			httpOnly: true,
 			sameSite: "Lax",
-			maxAge: 0,
+			...options,
 		});
 	}
 
+	#clear() {
+		noStore(this.#c.res.headers);
+		this.#set(State.#cookie, "", { maxAge: 0 });
+	}
+
 	async #read() {
+		// an agent's tool call, authorized by its token
+		const { req } = this.#c as Partial<Pick<ContextType, "req">>;
+		const call = req && agent.get(req);
+		if (call?.session) return call.session as Auth.Session;
+
+		// nobody is signed in on another host, its session cookie is not sent there
+		if (this.#c.url.origin !== this.options.origin) return null;
+
 		noStore(this.#c.res.headers);
 		const cookie = this.#c.cookie.get(State.#cookie);
 		if (!cookie) return null;
@@ -115,35 +130,19 @@ export class State {
 	 */
 	async #renew(session: Storage.Session, now: number): Promise<Auth.Session> {
 		const { idle, lifetime } = this.options;
-		const expiration = Math.min(now + idle, session.started + lifetime);
+		let { expiration } = session;
+		const later = Math.min(now + idle, session.started + lifetime);
 		// at most once a day, or each half of a shorter idle timeout
-		const renewed = session.expiration - idle;
-		if (
-			now - renewed >= Math.min(Time.day, idle / 2) &&
-			expiration > session.expiration
-		) {
-			await this.options.sessions.renew(session.id, expiration);
-			return { id: session.id, user: session.user, expiration };
+		const renewed = expiration - idle;
+		if (now - renewed >= Math.min(Time.day, idle / 2) && later > expiration) {
+			await this.options.sessions.renew(session.id, later);
+			expiration = later;
 		}
-		return {
-			id: session.id,
-			user: session.user,
-			expiration: session.expiration,
-		};
+		return { id: session.id, user: session.user, expiration };
 	}
 
 	/** Read a non-expired, non-revoked session, renewing it while it is used. */
 	session() {
-		// an agent's tool call, authorized by its token
-		const { req } = this.#c as Partial<Pick<ContextType, "req">>;
-		const call = req && agent.get(req);
-		if (call?.session)
-			return (this.#session ??= Promise.resolve(call.session as Auth.Session));
-
-		// nobody is signed in on another host, its session cookie is not sent there
-		if (this.#c.url.origin !== this.options.origin)
-			return (this.#session ??= Promise.resolve(null));
-
 		return (this.#session ??= this.#read());
 	}
 
@@ -155,10 +154,7 @@ export class State {
 	 */
 	remember(path: string) {
 		this.#origin();
-		this.#c.cookie.set(State.#return, path, {
-			secure: true,
-			httpOnly: true,
-			sameSite: "Lax",
+		this.#set(State.#return, path, {
 			maxAge: Math.floor((15 * Time.minute) / Time.second),
 		});
 	}
@@ -172,12 +168,7 @@ export class State {
 		const path = this.#c.cookie.get(State.#return);
 		if (!path) return fallback;
 
-		this.#c.cookie.set(State.#return, "", {
-			secure: true,
-			httpOnly: true,
-			sameSite: "Lax",
-			maxAge: 0,
-		});
+		this.#set(State.#return, "", { maxAge: 0 });
 
 		return path.startsWith("/") &&
 			!path.startsWith("//") &&
@@ -200,16 +191,11 @@ export class State {
 			expiration: now + this.options.idle,
 		};
 		await this.options.sessions.set(session.id, { ...session, started: now });
-		this.#c.cookie.set(
+		this.#set(
 			State.#cookie,
 			await Token.seal(this.options.secret, "session", session.id),
-			{
-				secure: true,
-				httpOnly: true,
-				sameSite: "Lax",
-				// renewals only change the record, so the cookie covers the lifetime
-				maxAge: Math.floor(this.options.lifetime / Time.second),
-			},
+			// renewals only change the record, so the cookie covers the lifetime
+			{ maxAge: Math.floor(this.options.lifetime / Time.second) },
 		);
 		this.#session = Promise.resolve(session);
 		return session;

@@ -22,16 +22,13 @@ export class AuthData {
 	/** Parse the fixed header, optional attested credential, and optional extensions. */
 	static parse(data: Uint8Array) {
 		if (data.length < 37) throw new Issue("credential");
+		const view = new DataView(data.buffer, data.byteOffset, data.length);
 		const flags = data[32]!;
 		let end = 37;
 		let attestedCredentialData: AuthData.AttestedCredentialData | null = null;
 		if (flags & 64) {
 			if (data.length < 55) throw new Issue("credential");
-			const length = new DataView(
-				data.buffer,
-				data.byteOffset + 53,
-				2,
-			).getUint16(0);
+			const length = view.getUint16(53);
 			end = 55 + length;
 			if (!length || length > 1023 || end >= data.length)
 				throw new Issue("credential");
@@ -52,7 +49,7 @@ export class AuthData {
 		return {
 			rpIdHash: data.subarray(0, 32),
 			flags,
-			counter: new DataView(data.buffer, data.byteOffset + 33, 4).getUint32(0),
+			counter: view.getUint32(33),
 			attestedCredentialData,
 		};
 	}

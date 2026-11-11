@@ -3,7 +3,7 @@ import { Field, Form } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
-import { Codec, Size, Time, noStore } from "../util/index.js";
+import { Codec, Time, noStore } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
 import { CBOR, COSE } from "./cbor.js";
 import { etag, source } from "./client-source.js";
@@ -11,7 +11,7 @@ import { DER } from "./der.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import type { State } from "./state.js";
-import type { Storage } from "./storage.js";
+import { Storage } from "./storage.js";
 import { Token } from "./token.js";
 
 export namespace Passkey {
@@ -45,11 +45,31 @@ export namespace Passkey {
 		/** Form fields the ceremony is for, from `Passkey.fields`, checked when it starts. */
 		readonly fields?: string;
 	}
+	/** The ceremony a signed form may start. */
+	export type Expected = {
+		/** Path the form submits to */
+		action: string;
+		/** Form fields the ceremony is for, from `Passkey.fields` */
+		fields?: string;
+	} & (
+		| {
+				method: "register";
+				/** Name of the new passkey, at most 256 characters, not blank */
+				name: string;
+		  }
+		| {
+				method: "login";
+				/** Credential IDs a login is limited to, for a user already known */
+				allow?: readonly string[];
+		  }
+	);
 }
 
 /** ES256 passkeys with single-use, browser-bound ceremonies. */
 export class Passkey {
 	static readonly #routes = new WeakSet<object>();
+	/** Weak entity tag of the browser module */
+	static readonly #etag = etag;
 	static readonly #fields = new Form({
 		credential: Field.hidden().json(Schema.unknown()),
 		ceremony: Field.hidden(),
@@ -59,7 +79,7 @@ export class Passkey {
 		ceremony: Schema.string(),
 	});
 	static readonly #bootstrap = Schema.object({
-		method: Schema.union([Schema.literal("register"), Schema.literal("login")]),
+		method: Schema.enum(["register", "login"]),
 		action: Schema.string(),
 		origin: Schema.string(),
 		browser: Schema.string(),
@@ -84,10 +104,7 @@ export class Passkey {
 			authenticatorData: Schema.string(),
 			signature: Schema.string(),
 			// browsers leave it out, rather than send null, when there is none
-			userHandle: Schema.union([
-				Schema.string(),
-				Schema.literal(null),
-			]).optional(),
+			userHandle: Schema.string().nullable().optional(),
 		}),
 	});
 	readonly #c: Auth.Context;
@@ -187,7 +204,7 @@ export class Passkey {
 		c.res.headers.set("content-type", "text/javascript; charset=utf-8");
 		c.res.headers.set("x-content-type-options", "nosniff");
 		c.res.headers.set("cache-control", "no-cache");
-		c.res.headers.set("etag", etag);
+		c.res.headers.set("etag", Passkey.#etag);
 		if (
 			c.req.headers
 				.get("if-none-match")
@@ -195,7 +212,7 @@ export class Passkey {
 				.some(
 					(value) =>
 						value.trim() === "*" ||
-						value.trim().replace(/^W\//, "") === etag.slice(2),
+						value.trim().replace(/^W\//, "") === Passkey.#etag.slice(2),
 				)
 		) {
 			c.res.status = 304;
@@ -215,14 +232,7 @@ export class Passkey {
 		c: Pick<ContextType, "url" | "res" | "text" | "json">,
 		auth: State,
 		token: string,
-		label: (() => string | Promise<string>) | undefined,
-		expected: {
-			method: "register" | "login";
-			action: string;
-			fields?: string;
-			/** Credential IDs a login is limited to, for a user already known */
-			allow?: readonly string[];
-		},
+		expected: Passkey.Expected,
 	) {
 		const result = Schema.string()
 			.json(Passkey.#bootstrap)
@@ -247,23 +257,16 @@ export class Passkey {
 			(bootstrap.fields !== undefined && bootstrap.fields !== expected.fields)
 		)
 			throw new Issue("bootstrap binding");
+		// the same method as the form's, checked above
+		const register = expected.method === "register";
 		if (
-			bootstrap.method === "register" &&
+			register &&
 			(!bootstrap.user || Codec.encode(bootstrap.user).length > 64)
 		)
 			throw new Issue("user");
 		const rp = new URL(auth.options.origin).hostname;
-		const name =
-			bootstrap.method === "register" ? ((await label?.()) ?? "") : "";
-		if (
-			bootstrap.method === "register" &&
-			(typeof name !== "string" || !name.trim() || name.length > 256)
-		)
-			throw new Issue("account label");
 		const ceremony = crypto.randomUUID();
-		const challenge = Codec.Base64Url.encode(
-			crypto.getRandomValues(new Uint8Array(32)),
-		);
+		const challenge = Token.random();
 		if (
 			(await auth.options.challenges.set(ceremony, {
 				challenge,
@@ -276,12 +279,10 @@ export class Passkey {
 				...(expected.fields ? { fields: expected.fields } : {}),
 			})) === false
 		) {
-			c.res.headers.set("retry-after", "60");
-			c.text("Too many authentication requests. Try again later.", 429);
-			return;
+			return Issue.limited(c, 60);
 		}
 		noStore(c.res.headers);
-		if (bootstrap.method === "register") {
+		if (register) {
 			c.json({
 				ceremony,
 				options: {
@@ -289,8 +290,8 @@ export class Passkey {
 					rp: { id: rp, name: rp },
 					user: {
 						id: Codec.Base64Url.encode(Codec.encode(bootstrap.user!)),
-						name,
-						displayName: name,
+						name: expected.name,
+						displayName: expected.name,
 					},
 					pubKeyCredParams: [{ type: "public-key", alg: -7 }],
 					authenticatorSelection: {
@@ -348,16 +349,30 @@ export class Passkey {
 		}
 	}
 
-	async #consume(method: "register" | "login") {
+	/**
+	 * Take the ceremony a credential answers, and check what both ceremonies share.
+	 *
+	 * @template T Credential the browser sends
+	 * @param method Ceremony
+	 * @param fields Form fields the ceremony was issued for, from `Passkey.fields`
+	 * @param schema Credential the browser sends
+	 * @returns The ceremony, the credential, and its client data
+	 */
+	async #consume<
+		T extends {
+			id: string;
+			rawId: string;
+			response: { clientDataJSON: string };
+		},
+	>(
+		method: "register" | "login",
+		fields: string | undefined,
+		schema: Schema<T>,
+	) {
 		this.#origin();
-		const parsed = await this.#c
-			.data({ payload: 128 * Size.kb })
-			.catch(Issue.body);
-		const result = Passkey.#payload.parse(
-			parsed && typeof parsed === "object" && "data" in parsed
-				? parsed.data
-				: undefined,
-		);
+		// a route's `c.data()` resolves to its parse result
+		const parsed = (await Issue.data(this.#c)) as { data?: unknown } | null;
+		const result = Passkey.#payload.parse(parsed?.data);
 		if (result.issues) throw new Issue("passkey request");
 		const state = await this.#auth.options.challenges.take(
 			result.data.ceremony,
@@ -372,13 +387,27 @@ export class Passkey {
 			state.action !== this.#c.url.pathname
 		)
 			throw new Issue("challenge binding");
-		return { state, credential: result.data.credential };
+		if (state.fields !== fields) throw new Issue("ceremony fields");
+		const credential = schema.parse(result.data.credential);
+		if (credential.issues) throw new Issue("credential response");
+		const client = this.#client(credential.data.response.clientDataJSON, state);
+		if (
+			!Passkey.#equal(
+				Passkey.#decode(credential.data.id),
+				Passkey.#decode(credential.data.rawId),
+			)
+		)
+			throw new Issue("credential ID");
+		return { state, credential: credential.data, client };
 	}
 
+	/** @returns The client data, verified for the ceremony */
 	#client(value: string, state: Storage.Challenge) {
+		let bytes: Uint8Array<ArrayBuffer>;
 		let json: string;
 		try {
-			json = Codec.decode(Passkey.#decode(value));
+			bytes = Passkey.#decode(value);
+			json = Codec.decode(bytes);
 		} catch (error) {
 			// invalid UTF-8, sent by the client
 			if (error instanceof Issue) throw error;
@@ -397,9 +426,12 @@ export class Passkey {
 			)
 			.parse(json);
 		if (result.issues) throw new Issue("client data");
+		return bytes;
 	}
 
-	async #data(data: AuthData.Data) {
+	/** @returns Authenticator data, for this origin and a verified user */
+	async #data(bytes: Uint8Array) {
+		const data = AuthData.parse(bytes);
 		if (
 			!Passkey.#equal(
 				data.rpIdHash,
@@ -411,6 +443,7 @@ export class Passkey {
 			throw new Issue("RP ID");
 		if (!(data.flags & 1) || !(data.flags & 4)) throw new Issue("user");
 		if (data.flags & 16 && !(data.flags & 8)) throw new Issue("backup flags");
+		return data;
 	}
 
 	static #equal(a: Uint8Array, b: Uint8Array) {
@@ -421,50 +454,48 @@ export class Passkey {
 	}
 
 	/** Digest canonical application values so field order cannot change the binding. */
-	static async fields(value: unknown) {
-		return Codec.Base64Url.encode(
-			await Passkey.#hash(
-				Codec.encode(
-					JSON.stringify(value, (_, value) =>
-						value && typeof value === "object" && !Array.isArray(value)
-							? Object.fromEntries(
-									Object.entries(value).sort(([a], [b]) =>
-										a < b ? -1 : a > b ? 1 : 0,
-									),
-								)
-							: value,
-					),
-				),
+	static fields(value: unknown) {
+		// base64url SHA-256, like a stored token
+		return Storage.hash(
+			JSON.stringify(value, (_, value) =>
+				value && typeof value === "object" && !Array.isArray(value)
+					? Object.fromEntries(
+							Object.entries(value).sort(([a], [b]) =>
+								a < b ? -1 : a > b ? 1 : 0,
+							),
+						)
+					: value,
 			),
 		);
 	}
 
 	/** Verify registration before persisting a new credential. */
 	async register(fields?: string) {
-		const { state, credential } = await this.#consume("register");
-		if (state.fields !== fields) throw new Issue("registration fields");
-		const result = Passkey.#registration.parse(credential);
-		if (result.issues) throw new Issue("registration");
-		this.#client(result.data.response.clientDataJSON, state);
-		const data = AuthData.parse(
+		const { state, credential } = await this.#consume(
+			"register",
+			fields,
+			Passkey.#registration,
+		);
+		const data = await this.#data(
 			new CBOR(
-				Passkey.#decode(result.data.response.attestationObject),
+				Passkey.#decode(credential.response.attestationObject),
 			).decodeAttestation(),
 		);
-		await this.#data(data);
 		if (!data.attestedCredentialData || !state.user)
 			throw new Issue("credential data");
-		const id = data.attestedCredentialData.credentialId;
+		// the same as `rawId`, which the ceremony checked
 		if (
-			!Passkey.#equal(Passkey.#decode(result.data.id), id) ||
-			!Passkey.#equal(Passkey.#decode(result.data.rawId), id)
+			!Passkey.#equal(
+				Passkey.#decode(credential.id),
+				data.attestedCredentialData.credentialId,
+			)
 		)
 			throw new Issue("credential ID");
 		const key = COSE.toSPKI(data.attestedCredentialData.publicKey);
 		// Web Crypto validates that the P-256 point is on the curve before it is stored.
 		await Passkey.#key(key);
 		return {
-			id: result.data.id,
+			id: credential.id,
 			user: state.user,
 			publicKey: Codec.Base64Url.encode(key),
 			counter: data.counter,
@@ -487,21 +518,15 @@ export class Passkey {
 		fields?: string,
 		user?: string,
 	) {
-		const { state, credential } = await this.#consume("login");
-		if (state.fields !== fields) throw new Issue("login fields");
-		const result = Passkey.#assertion.parse(credential);
-		if (result.issues) throw new Issue("assertion");
-		this.#client(result.data.response.clientDataJSON, state);
-		if (
-			!Passkey.#equal(
-				Passkey.#decode(result.data.id),
-				Passkey.#decode(result.data.rawId),
-			)
-		)
-			throw new Issue("credential ID");
-		const stored = await credentials.get(result.data.id);
-		if (!stored || stored.id !== result.data.id) throw new Issue("credential");
-		const handle = result.data.response.userHandle;
+		const { credential, client } = await this.#consume(
+			"login",
+			fields,
+			Passkey.#assertion,
+		);
+		const { response } = credential;
+		const stored = await credentials.get(credential.id);
+		if (!stored || stored.id !== credential.id) throw new Issue("credential");
+		const handle = response.userHandle;
 		// without a handle, only a passkey of the user identified before the
 		// ceremony, which offered theirs (WebAuthn, verifying an assertion)
 		if (
@@ -510,9 +535,8 @@ export class Passkey {
 				: stored.user !== user
 		)
 			throw new Issue("user handle");
-		const bytes = Passkey.#decode(result.data.response.authenticatorData);
-		const data = AuthData.parse(bytes);
-		await this.#data(data);
+		const bytes = Passkey.#decode(response.authenticatorData);
+		const data = await this.#data(bytes);
 		if (data.attestedCredentialData) throw new Issue("assertion flags");
 		if (Boolean(data.flags & 8) !== stored.eligible)
 			throw new Issue("backup eligibility");
@@ -522,9 +546,7 @@ export class Passkey {
 			((stored.counter || data.counter) && data.counter <= stored.counter)
 		)
 			throw new Issue("signature counter");
-		const hash = await Passkey.#hash(
-			Passkey.#decode(result.data.response.clientDataJSON),
-		);
+		const hash = await Passkey.#hash(client);
 		const signed = new Uint8Array(bytes.length + hash.length);
 		signed.set(bytes);
 		signed.set(hash, bytes.length);
@@ -532,7 +554,7 @@ export class Passkey {
 			!(await crypto.subtle.verify(
 				{ name: "ECDSA", hash: "SHA-256" },
 				await Passkey.#key(Passkey.#decode(stored.publicKey)),
-				DER.unwrap(Passkey.#decode(result.data.response.signature)),
+				DER.unwrap(Passkey.#decode(response.signature)),
 				signed,
 			))
 		)

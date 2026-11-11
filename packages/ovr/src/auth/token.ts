@@ -18,6 +18,11 @@ export class Token {
 		);
 	}
 
+	/** @returns A new random value of 256 bits, base64url, such as a challenge or code */
+	static random() {
+		return Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
+	}
+
 	/** Seal a payload for exactly one authentication purpose. */
 	static async seal(
 		secret: Auth.Options["secret"],
@@ -25,7 +30,7 @@ export class Token {
 		value: string,
 	) {
 		const payload = `${purpose}:${value}`;
-		return `${payload}.${Codec.Base64Url.encode(new Uint8Array(await crypto.subtle.sign("HMAC", await Token.#key(typeof secret === "string" ? secret : secret[0]), Codec.encode(payload))))}`;
+		return `${payload}.${Codec.Base64Url.encode(new Uint8Array(await crypto.subtle.sign("HMAC", await Token.#key([secret].flat()[0]!), Codec.encode(payload))))}`;
 	}
 
 	/** Verify both integrity and purpose before exposing the payload. */
@@ -43,7 +48,7 @@ export class Token {
 				if (Codec.Base64Url.encode(signature) !== text)
 					throw new Issue("token");
 				const payload = Codec.encode(token.slice(0, dot));
-				for (const key of typeof secret === "string" ? [secret] : secret)
+				for (const key of [secret].flat())
 					if (
 						await crypto.subtle.verify(
 							"HMAC",

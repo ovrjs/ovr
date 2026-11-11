@@ -5,7 +5,7 @@ import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
-import { Header, Size, Time, noStore } from "../util/index.js";
+import { Header, Time, noStore } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
 import { Passkey } from "./passkey.js";
@@ -35,25 +35,23 @@ export function configure<U extends Auth.Users>(
 				name !== "id" && field(schema) && !defaults.includes(name),
 		),
 	) as Shape;
+	/** @returns A limit of a method's requests, shared by every instance through the database */
+	const limiter = (method: string, limit: number, interval: number) =>
+		new Limiter(`auth:${method}:${options.origin}`, {
+			limit,
+			interval,
+			database: options.database,
+		});
 	// fixed, they protect Auth's own storage: accounts and outstanding challenges
 	const limits = {
-		register: new Limiter(`auth:register:${options.origin}`, {
-			limit: 5,
-			interval: 10 * Time.minute,
-			database: options.database,
-		}),
-		login: new Limiter(`auth:login:${options.origin}`, {
-			limit: 20,
-			interval: Time.minute,
-			database: options.database,
-		}),
+		register: limiter("register", 5, 10 * Time.minute),
+		login: limiter("login", 20, Time.minute),
 	};
 	const paths = {
 		register: "/auth/register",
 		login: "/auth/login",
 		logout: "/auth/logout",
 		options: "/_passkey/options",
-		client: "/_passkey/client.js",
 	};
 	const page = options.page ?? "/login";
 	const redirect = options.redirect ?? "/";
@@ -70,24 +68,16 @@ export function configure<U extends Auth.Users>(
 				"Auth paths must be literal local paths without queries or trailing slashes",
 			);
 	}
-	const endpoints = [
-		paths.register,
-		paths.login,
-		paths.logout,
-		paths.client,
-		`${paths.options}/register`,
-		`${paths.options}/login`,
-	];
-	if (endpoints.includes(page))
-		throw new TypeError("Auth's page cannot be one of its endpoints");
 	const fields = new Form(shape);
 
 	/** @returns The first field, such as an email, or the host, naming the passkey */
 	const name = (data: Form.Parse.Data<Shape>) => {
 		const value = fields.names[0] && Reflect.get(data, fields.names[0]);
-		return typeof value === "string" && value.trim()
-			? value.trim().slice(0, 256)
-			: new URL(options.origin).hostname;
+		return (
+			typeof value === "string" && value.trim()
+				? value.trim()
+				: new URL(options.origin).hostname
+		).slice(0, 256);
 	};
 
 	const values = (data: object) => {
@@ -123,9 +113,16 @@ export function configure<U extends Auth.Users>(
 			back(c, method, retry);
 			return false;
 		}
-		c.res.headers.set("retry-after", String(Math.ceil((retry - now) / 1000)));
-		c.text("Too many authentication requests. Try again later.", 429);
+		Issue.limited(c, Math.ceil((retry - now) / 1000));
 		return false;
+	};
+	/** Sign the user in, and send them where they were going */
+	const enter = async (
+		c: State.Context & Pick<Context, "redirect">,
+		user: string,
+	) => {
+		await state(c).login(user);
+		c.redirect(state(c).resume(redirect), 303);
 	};
 	const guard =
 		(method: "register" | "login" | "logout", prompt = false) =>
@@ -165,9 +162,7 @@ export function configure<U extends Auth.Users>(
 			.fields(shape)
 			.use(guard("register"), async (c) => {
 				// the users table's fields, only known at runtime
-				const input = (await c
-					.data({ payload: 128 * Size.kb })
-					.catch(Issue.body)) as Form.Parse.Result<Shape> | null;
+				const input = (await Issue.data(c)) as Form.Parse.Result<Shape> | null;
 				if (!input || input.issues) throw new Issue("registration fields");
 				const data = values(input.data);
 				const credential = await new Passkey(c, state(c)).register(
@@ -183,8 +178,7 @@ export function configure<U extends Auth.Users>(
 						if (Database.unique(error)) throw new Issue("account");
 						throw error;
 					});
-				await state(c).login(credential.user);
-				c.redirect(state(c).resume(redirect), 303);
+				await enter(c, credential.user);
 			}),
 	);
 	const login = Passkey.prepare(
@@ -192,13 +186,11 @@ export function configure<U extends Auth.Users>(
 			.fields({})
 			.use(guard("login"), async (c) => {
 				// Bound the body before verification.
-				if (!(await c.data({ payload: 128 * Size.kb }).catch(Issue.body)))
-					throw new Issue("login request");
+				if (!(await Issue.data(c))) throw new Issue("login request");
 				const credential = await new Passkey(c, state(c)).login(
 					storage.credentials,
 				);
-				await state(c).login(credential.user);
-				c.redirect(state(c).resume(redirect), 303);
+				await enter(c, credential.user);
 			}),
 	);
 	const logout = Route.post(paths.logout).use(guard("logout"), async (c) => {
@@ -208,7 +200,7 @@ export function configure<U extends Auth.Users>(
 	const registration = Route.post(`${paths.options}/register`)
 		.fields({ ...shape, bootstrap: Field.hidden() })
 		.use(guard("register", true), async (c) => {
-			const input = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
+			const input = await Issue.data(c);
 			if (!input) throw new Issue("registration request");
 			if (input.issues) {
 				const invalid = fields.names.filter((name) =>
@@ -220,30 +212,36 @@ export function configure<U extends Auth.Users>(
 			if (!(await admit(c, "register", true))) return;
 			// The reserved bootstrap field is added to the validated application shape above.
 			const data = input.data as Form.Parse.Data<Shape> & { bootstrap: string };
-			await Passkey.issue(
-				c,
-				state(c),
-				data.bootstrap,
-				() => name(values(data)),
-				{
-					method: "register",
-					action: paths.register,
-					fields: await Passkey.fields(values(data)),
-				},
-			);
+			const application = values(data);
+			await Passkey.issue(c, state(c), data.bootstrap, {
+				method: "register",
+				action: paths.register,
+				name: name(application),
+				fields: await Passkey.fields(application),
+			});
 		});
 	const assertion = Route.post(`${paths.options}/login`)
 		.fields({ bootstrap: Field.hidden() })
 		.use(guard("login", true), async (c) => {
-			const input = await c.data({ payload: 128 * Size.kb }).catch(Issue.body);
+			const input = await Issue.data(c);
 			if (!input || input.issues) throw new Issue("login request");
-			await Passkey.issue(c, state(c), input.data.bootstrap, undefined, {
+			await Passkey.issue(c, state(c), input.data.bootstrap, {
 				method: "login",
 				action: paths.login,
 			});
 		});
+	const routes = [
+		register,
+		login,
+		logout,
+		registration,
+		assertion,
+		Passkey.client,
+	];
+	if (routes.some((route) => route.pattern === page))
+		throw new TypeError("Auth's page cannot be one of its endpoints");
 	return {
-		routes: [register, login, logout, registration, assertion, Passkey.client],
+		routes,
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */
 		forms(
 			c: Auth.Context,

@@ -156,35 +156,16 @@ export class CBOR {
 	}
 
 	/**
-	 * Read unsigned integer from n bytes using DataView.
+	 * Read a big-endian unsigned integer from n bytes.
 	 *
 	 * @param bytes - Number of bytes to read (1, 2, or 4)
 	 * @returns Decoded unsigned integer
-	 * @throws Issue if stream or integer size is invalid
+	 * @throws Issue if the stream ends first
 	 */
 	#readUint(bytes: number) {
-		if (this.#offset + bytes > this.#data.length) {
-			throw new Issue("CBOR stream");
-		}
-
-		const view = new DataView(
-			this.#data.buffer,
-			this.#data.byteOffset + this.#offset,
-			bytes,
-		);
-
-		this.#offset += bytes;
-
-		switch (bytes) {
-			case 1:
-				return view.getUint8(0);
-			case 2:
-				return view.getUint16(0, false);
-			case 4:
-				return view.getUint32(0, false);
-			default:
-				throw new Issue("CBOR int");
-		}
+		let value = 0;
+		for (const byte of this.#read(bytes)) value = value * 256 + byte;
+		return value;
 	}
 
 	/**
@@ -195,11 +176,8 @@ export class CBOR {
 	 */
 	#parseNext(depth = 0): CBOR.Value {
 		if (depth > 8) throw new Issue("CBOR depth");
-		if (this.#offset >= this.#data.length) {
-			throw new Issue("CBOR stream");
-		}
 
-		const initial = this.#data[this.#offset++]!;
+		const initial = this.#read(1)[0]!;
 		const major = initial >> 5;
 		const minor = initial & 0x1f;
 
@@ -210,12 +188,9 @@ export class CBOR {
 		let length: number;
 		if (minor < 24) {
 			length = minor;
-		} else if (minor === 24) {
-			length = this.#readUint(1);
-		} else if (minor === 25) {
-			length = this.#readUint(2);
-		} else if (minor === 26) {
-			length = this.#readUint(4);
+		} else if (minor < 27) {
+			// 24, 25 and 26 are followed by 1, 2 and 4 bytes
+			length = this.#readUint(2 ** (minor - 24));
 		} else {
 			throw new Issue("CBOR length");
 		}

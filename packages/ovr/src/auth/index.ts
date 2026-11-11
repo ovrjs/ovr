@@ -224,12 +224,10 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 		const origin = new URL(options.origin);
 		if (origin.protocol !== "https:" || origin.origin !== options.origin)
 			throw new TypeError("Auth origin must be an HTTPS origin without a path");
-		const secrets =
-			typeof options.secret === "string"
-				? [options.secret]
-				: [...options.secret];
 		// often from the environment, so its length is checked here
-		if (secrets.some((secret) => Codec.encode(secret).length < 32))
+		if (
+			[options.secret].flat().some((secret) => Codec.encode(secret).length < 32)
+		)
 			throw new TypeError("Auth secret must contain at least 32 bytes");
 		// the users table Auth's tables reference in this database, for its check
 		const chosen = references.get(options.database) ?? new Map();
