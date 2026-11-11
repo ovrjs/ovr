@@ -4,7 +4,7 @@
 
 Elements render to markup with `Markup` and to Markdown with `Markdown`, several times faster.
 
-- **`Render` is `Markup`:** it renders HTML and other markup such as XML. `Render.html` is `Markup.raw`, `Render.Options` is `Markup.Options`, and `Render.Chunk` is `Markup.Chunk`. The `safe` option is `raw`, like `Markup.raw`. `Markup.string(element)` is static, like `Markup.stream`.
+- **`Render` is `Markup`:** it renders HTML and other markup such as XML. `Render.html` is `Markup.raw`, `Render.Options` is `Markup.Options`, and `Render.Chunk` is `Markup.Chunk`. The `safe` option is `raw`, like `Markup.raw`. `Markup.string(element)` is static, like `Markup.stream`, and declaration files name `Markup.Chunk`.
 - **Strings:** `Markup` yields strings of markup, as `Markdown` yields strings of Markdown, instead of chunks to call `toString()` on.
 - **JSX:** `JSX` is exported as a type only. The JSX runtime is `ovr/jsx-runtime`, which TypeScript and bundlers load from `jsxImportSource`. A class is a type error as a JSX tag, where it compiled and failed when rendered. SVG `<linearGradient>` and `<radialGradient>` accept their `<stop>` children.
 - **Markdown:** `Markdown` renders any element to Markdown, as an async iterable, `Markdown.stream`, or `Markdown.string`, written from the rendered elements as they stream, without parsing HTML. Requests that prefer `Accept: text/markdown` receive pages as Markdown, and `c.md(source)` responds with a page's own Markdown, such as a post's source, when it is asked for. HTML responses include `Vary: Accept`. Only the page's `<main>` is written when there is one, found inside any wrapper, and HTML from `Markup.raw` is written as it is.
