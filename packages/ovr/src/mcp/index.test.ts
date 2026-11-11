@@ -610,7 +610,16 @@ describe("Mcp", () => {
 			body,
 			...{ duplex: "half" },
 		});
-		expect((await app.fetch(req)).status).toBe(413);
+		const res = await app.fetch(req);
+		expect(res.status).toBe(413);
+		// the limit, so an agent knows how far to shrink a file
+		expect(await res.json()).toMatchObject({
+			error: {
+				code: -32600,
+				message: expect.stringContaining("at most 4 MB"),
+				data: { limit: 4 * 1024 ** 2 },
+			},
+		});
 		expect(pulls).toBe(1);
 	});
 
@@ -765,7 +774,7 @@ describe("Mcp", () => {
 		const upload = Route.post("/upload")
 			.describe("Upload a photo")
 			.fields({
-				photo: Field.file().label("Photo"),
+				photo: Field.file().label("Photo").describe("A JPEG, 3 MB at most"),
 				extras: Field.file().multiple().optional(),
 			})
 			.use(async (c) => {
@@ -789,6 +798,8 @@ describe("Mcp", () => {
 		expect(inputSchema.required).toEqual(["photo"]);
 		expect(inputSchema.properties.photo).toMatchObject({
 			title: "Photo",
+			description:
+				"A JPEG, 3 MB at most. A file. Send its contents as `text`, or as `base64` when it is not text.",
 			type: "object",
 			properties: { name: { type: "string" }, text: { type: "string" } },
 			required: ["name"],

@@ -400,7 +400,14 @@ export class Mcp<P extends string = string> {
 		const text =
 			length > limit ? undefined : await Mcp.#text(c.req.body, limit);
 		if (text === undefined)
-			throw new RpcError(-32600, "Request too large", 413);
+			// the limit, so an agent knows how far to shrink a file, which base64
+			// makes about a third larger
+			throw new RpcError(
+				-32600,
+				`Request too large: at most ${Mcp.#size(limit)}, with files sent as base64, about a third larger than the file`,
+				413,
+				{ limit },
+			);
 
 		const invalid = () => new RpcError(-32700, "Parse error", 400);
 		if (text === null) throw invalid();
@@ -669,11 +676,25 @@ export class Mcp<P extends string = string> {
 				// and a JSON field as the value it parses, not a string of it
 				for (const name in shape) {
 					const field = shape[name]!;
+					const property = properties[name] as Json;
 					if (field.type === "file")
-						properties[name] = {
-							...(properties[name] as Json),
-							...(field.parts > 1 ? { items: Mcp.#file } : Mcp.#file),
-						};
+						properties[name] =
+							field.parts > 1
+								? { ...property, items: Mcp.#file }
+								: {
+										...property,
+										...Mcp.#file,
+										// the field's own, such as a size limit, then how to send it
+										description: [
+											(property.description as string | undefined)?.replace(
+												/\.$/,
+												"",
+											),
+											Mcp.#file.description,
+										]
+											.filter(Boolean)
+											.join(". "),
+									};
 					else if (Mcp.#whole(field)) {
 						const {
 							type: _,
@@ -738,6 +759,16 @@ export class Mcp<P extends string = string> {
 		},
 		required: ["name"],
 	};
+
+	/**
+	 * @param bytes Size in bytes
+	 * @returns The size to read, such as `4 MB`
+	 */
+	static #size(bytes: number) {
+		return bytes >= Size.mb
+			? `${+(bytes / Size.mb).toFixed(1)} MB`
+			: `${Math.ceil(bytes / Size.kb)} KB`;
+	}
 
 	/**
 	 * @param field Form field
