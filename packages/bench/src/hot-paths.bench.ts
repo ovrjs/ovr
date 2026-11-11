@@ -1,15 +1,19 @@
 import { Trie } from "../../ovr/dist/trie/index.js";
 import { baseline } from "./baseline.js";
 import * as o from "ovr";
+import { Fragment, jsx } from "ovr/jsx-runtime";
 import { bench, describe, expect } from "vitest";
+
+/** The JSX runtime's element function, current or from an older commit */
+type Create = typeof import("ovr/jsx-runtime").jsx;
 
 const url = baseline("render");
 const { Render: Before }: { Render: typeof o.Markup } = await import(url);
-const { JSX: Original }: { JSX: typeof o.JSX } = await import(
+const { JSX: Original }: { JSX: { jsx: Create } } = await import(
 	baseline("jsx", { "../render/index.js": url })
 );
 
-function page(jsx: typeof o.JSX.jsx, count = 500) {
+function page(jsx: Create, count = 500) {
 	return jsx("main", {
 		children: Array.from({ length: count }, (_, i) =>
 			jsx("p", { id: `row-${i}`, children: "Hello, world!" }),
@@ -18,7 +22,7 @@ function page(jsx: typeof o.JSX.jsx, count = 500) {
 }
 
 expect((await Array.fromAsync(new Before(page(Original.jsx)))).join("")).toBe(
-	(await Array.fromAsync(new o.Markup(page(o.JSX.jsx)))).join(""),
+	(await Array.fromAsync(new o.Markup(page(jsx)))).join(""),
 );
 
 const paths = [
@@ -90,7 +94,7 @@ describe("rendering hot path", () => {
 		bench(
 			`render ${count} sibling elements`,
 			async () => {
-				for await (const _ of new o.Markup(page(o.JSX.jsx, count)));
+				for await (const _ of new o.Markup(page(jsx, count)));
 			},
 			options,
 		);
@@ -99,7 +103,7 @@ describe("rendering hot path", () => {
 	bench("render 100 fragments", async () => {
 		for await (const _ of new o.Markup(
 			Array.from({ length: 100 }, (_, i) =>
-				o.JSX.jsx(o.JSX.Fragment, { children: ["Hello, world!", i] }),
+				jsx(Fragment, { children: ["Hello, world!", i] }),
 			),
 		));
 	});

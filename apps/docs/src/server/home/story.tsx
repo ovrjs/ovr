@@ -80,14 +80,14 @@ const outputs = (async () => {
 			if (result.issues) return c.redirect(result.url, 303);
 
 			await db.add(result.data.text);
-			c.redirect(list, 303);
+			c.redirect(list.url(), 303);
 		});
 
 	const done = o.Route.post("/todos/:id/done")
 		.describe("Mark a todo as done")
 		.use(async (c) => {
 			await db.done(c.params.id);
-			c.redirect(list, 303);
+			c.redirect(list.url(), 303);
 		});
 
 	const app = new o.App().use(list, add, done, new o.Mcp({ name: "todos" }));

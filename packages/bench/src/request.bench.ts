@@ -1,6 +1,10 @@
 import { baseline } from "./baseline.js";
 import * as o from "ovr";
+import { jsx } from "ovr/jsx-runtime";
 import { bench, describe, expect } from "vitest";
+
+/** The JSX runtime's element function, current or from an older commit */
+type Create = typeof import("ovr/jsx-runtime").jsx;
 
 // the renderer when each element was a generator, before a render read them
 const commit = "220a8d1fb1b3c37af53ded742f633b46b8c25d32";
@@ -9,7 +13,7 @@ const imports = { "../markup/index.js": markup };
 const { Markup: MarkupBefore }: { Markup: typeof o.Markup } = await import(
 	markup
 );
-const { JSX: JsxBefore }: { JSX: typeof o.JSX } = await import(
+const { JSX: JsxBefore }: { JSX: { jsx: Create } } = await import(
 	baseline("jsx", imports, commit)
 );
 const { Markdown: MarkdownBefore }: { Markdown: typeof o.Markdown } =
@@ -25,7 +29,7 @@ const origin = "http://localhost:5173";
  * @param id Post ID
  * @returns The page
  */
-function page(jsx: typeof o.JSX.jsx, id: string) {
+function page(jsx: Create, id: string) {
 	return jsx("html", {
 		lang: "en",
 		children: [
@@ -98,7 +102,7 @@ let parsed: unknown;
 const app = new o.App().use(
 	o.Route.get("/text").use((c) => c.text("hello")),
 	o.Route.get("/json/:id").use((c) => c.json({ id: c.params.id })),
-	o.Route.get("/posts/:id").use((c) => page(o.JSX.jsx, c.params.id)),
+	o.Route.get("/posts/:id").use((c) => page(jsx, c.params.id)),
 	o.Route.get("/search")
 		.fields({ q: o.Field.search(), page: o.Field.number() })
 		.use(async (c) => {
@@ -147,13 +151,13 @@ expect((await app.fetch(origin + "/search?q=ovr&page=2")).status).toBe(200);
 expect(parsed).toEqual({ q: "ovr", page: 2 });
 
 // the same page, written the same, before and after
-expect(await o.Markup.string(page(o.JSX.jsx, "7"))).toBe(
+expect(await o.Markup.string(page(jsx, "7"))).toBe(
 	await MarkupBefore.string(page(JsxBefore.jsx, "7")),
 );
-expect(await text(o.Markup.stream(page(o.JSX.jsx, "7")))).toBe(
+expect(await text(o.Markup.stream(page(jsx, "7")))).toBe(
 	await text(MarkupBefore.stream(page(JsxBefore.jsx, "7"))),
 );
-expect(await o.Markdown.string(page(o.JSX.jsx, "7"))).toBe(
+expect(await o.Markdown.string(page(jsx, "7"))).toBe(
 	await MarkdownBefore.string(page(JsxBefore.jsx, "7")),
 );
 
@@ -203,7 +207,7 @@ describe("small page to an HTML string", () => {
 	bench(
 		"after",
 		async () => {
-			await o.Markup.string(page(o.JSX.jsx, "7"));
+			await o.Markup.string(page(jsx, "7"));
 		},
 		options,
 	);
@@ -221,7 +225,7 @@ describe("small page to an HTML stream", () => {
 	bench(
 		"after",
 		async () => {
-			await text(o.Markup.stream(page(o.JSX.jsx, "7")));
+			await text(o.Markup.stream(page(jsx, "7")));
 		},
 		options,
 	);
@@ -239,7 +243,7 @@ describe("small page to a Markdown string", () => {
 	bench(
 		"after",
 		async () => {
-			await o.Markdown.string(page(o.JSX.jsx, "7"));
+			await o.Markdown.string(page(jsx, "7"));
 		},
 		options,
 	);
@@ -257,7 +261,7 @@ describe("small page to a Markdown stream", () => {
 	bench(
 		"after",
 		async () => {
-			await text(o.Markdown.stream(page(o.JSX.jsx, "7")));
+			await text(o.Markdown.stream(page(jsx, "7")));
 		},
 		options,
 	);

@@ -1,21 +1,20 @@
 import * as o from "ovr";
+import { jsx } from "ovr/jsx-runtime";
 import { bench, describe } from "vitest";
 
 async function Async() {
-	return o.JSX.jsx("p", { children: "Async" });
+	return jsx("p", { children: "Async" });
 }
 
 function* Component() {
 	for (let r = 0; r < 500; r++) {
-		yield o.JSX.jsx("div", {
-			children: [r, o.JSX.jsx(Async, { class: "text-sm" })],
-		});
+		yield jsx("div", { children: [r, jsx(Async, { class: "text-sm" })] });
 	}
 }
 
 describe("render", () => {
 	bench("generate 500", async () => {
-		const r = new o.Markup(o.JSX.jsx(Component, {}));
+		const r = new o.Markup(jsx(Component, {}));
 		for await (const _r of r);
 	});
 });

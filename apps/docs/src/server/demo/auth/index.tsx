@@ -80,11 +80,11 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 	/** Protected dashboard route for demo session/credential output. */
 	const admin = Route.get("/demo/auth/admin").use(async (c) => {
 		const session = await c.session();
-		if (!session) return c.redirect(auth, 303);
+		if (!session) return c.redirect(auth.url(), 303);
 		const user = await account(database, session.user);
 		if (!user) {
 			await service.logout(c);
-			return c.redirect(auth, 303);
+			return c.redirect(auth.url(), 303);
 		}
 		const { Logout } = service.forms(c);
 		const Layout = createLayout(c);

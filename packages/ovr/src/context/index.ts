@@ -5,7 +5,7 @@ import { Markdown } from "../markdown/index.js";
 import { Markup } from "../markup/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
-import { Route } from "../route/index.js";
+import type { Route } from "../route/index.js";
 import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
@@ -218,9 +218,9 @@ export class Context<
 	}
 
 	/**
-	 * Creates a redirect response.
+	 * Creates a redirect response. For a route of the app, pass its
+	 * `route.url()`, which gives a route with parameters their values.
 	 *
-	 * @template L Location: a URL, or a route without parameters
 	 * @param location redirect `Location` header
 	 * @param status HTTP status code
 	 *
@@ -230,21 +230,10 @@ export class Context<
 	 * - [307 Temporary Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/307)
 	 * - [308 Permanent Redirect](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/308)
 	 */
-	redirect<L extends string | URL | Route>(
-		// a route with parameters needs values, which only route.url() is given
-		location: L extends Route<infer P>
-			? P extends `${string}${":" | "*"}${string}`
-				? never
-				: L
-			: L,
-		status: 301 | 302 | 303 | 307 | 308 = 302,
-	) {
+	redirect(location: string | URL, status: 301 | 302 | 303 | 307 | 308 = 302) {
 		this.res.body = null;
 		this.res.status = status;
-		this.res.headers.set(
-			Header.name.loc,
-			location instanceof Route ? location.url() : String(location),
-		);
+		this.res.headers.set(Header.name.loc, String(location));
 	}
 
 	/**

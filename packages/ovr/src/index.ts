@@ -3,7 +3,7 @@ export { Auth } from "./auth/index.js";
 export { Database } from "./database/index.js";
 export { Limiter } from "./limiter/index.js";
 export { Mcp } from "./mcp/index.js";
-export { JSX } from "./jsx/index.js";
+export type { JSX } from "./jsx/index.js";
 export type { Middleware } from "./middleware/index.js";
 export { Multipart } from "./multipart/index.js";
 export { Markup } from "./markup/index.js";
