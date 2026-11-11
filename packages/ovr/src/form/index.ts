@@ -5,6 +5,7 @@ import {
 	ShapeUtil,
 	annotate,
 	append,
+	exact,
 	normalizers,
 	own,
 } from "../schema/index.js";
@@ -259,6 +260,14 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		new Form(ShapeUtil.omit(this.shape, names));
 
 	/**
+	 * @param name Form data name
+	 * @returns The field, own fields only, so a name such as "constructor" has none
+	 */
+	#field(name: string) {
+		return Object.hasOwn(this.shape, name) ? this.shape[name] : undefined;
+	}
+
+	/**
 	 * @param name Unexpected form field name
 	 * @param path Parent path
 	 * @returns Schema issue for unexpected form field names
@@ -284,9 +293,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 
 		if (values) {
 			for (const [name, value] of Object.entries(values)) {
-				const field = Object.hasOwn(this.shape, name)
-					? this.shape[name]
-					: undefined;
+				const field = this.#field(name);
 
 				if (
 					field &&
@@ -336,13 +343,14 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 */
 	#restore(stateInput?: URL): Form.State<Shape> | undefined {
 		if (stateInput) {
+			const { searchParams } = stateInput;
 			const values = this.#sanitize(
 				(this.#query ? this.names : []).reduce<Record<string, unknown>>(
 					(data, name) => {
-						if (stateInput.searchParams.has(name)) {
+						if (searchParams.has(name)) {
 							const value = FieldSchema.read(
 								this.shape[name]!,
-								stateInput.searchParams,
+								searchParams,
 								name,
 							);
 
@@ -355,7 +363,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 				),
 				false,
 			);
-			const encoded = stateInput.searchParams.get(Form.params[1]);
+			const encoded = searchParams.get(Form.params[1]);
 
 			if (encoded && encoded.length <= maxStateBytes * 2) {
 				try {
@@ -390,7 +398,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						)
 						.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
 
-					if (result.data?.id === this.#id) {
+					// valid only for this form, its id is a literal
+					if (!result.issues) {
 						const current = this.#sanitize(result.data.values);
 
 						return {
@@ -415,41 +424,30 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 */
 	#invalid(issues: Schema.Issue[], values: Record<string, unknown>) {
 		const result = new Schema.AggregateIssue(issues, this.#sanitize(values));
+		const persisted = result.values;
 		let search: Form.Parse.Result.Search;
 
-		if (result.values) {
-			// trim persisted values until the encoded state fits
-			for (let i = this.names.length; i >= 0; i--) {
-				// skip on the first time - try to encode everything first
-				if (i !== this.names.length) delete result.values[this.names[i]!];
-
-				const state = Codec.encode(
-					JSON.stringify({
-						issues: result.issues,
-						id: this.#id,
-						...(Object.keys(result.values).length
-							? { values: result.values }
-							: {}),
-					} satisfies Form.State),
-				);
-
-				if (state.byteLength <= maxStateBytes) {
-					search = [[Form.params[1], Codec.Base64Url.encode(state)]];
-					break;
-				}
-			}
-		} else {
-			// fall back to issues-only state when nothing persisted.
+		// encode everything first, then trim persisted values until the state fits
+		for (let i = this.names.length; ; i--) {
 			const state = Codec.encode(
 				JSON.stringify({
 					issues: result.issues,
 					id: this.#id,
+					// issues only when nothing is persisted
+					...(persisted && Object.keys(persisted).length
+						? { values: persisted }
+						: {}),
 				} satisfies Form.State),
 			);
 
 			if (state.byteLength <= maxStateBytes) {
 				search = [[Form.params[1], Codec.Base64Url.encode(state)]];
+				break;
 			}
+
+			if (!persisted || !i) break;
+
+			delete persisted[this.names[i - 1]!];
 		}
 
 		return Object.assign(result, { search });
@@ -476,8 +474,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 			form = source;
 
 			for (const name of new Set(source.keys())) {
-				if (!Object.hasOwn(this.shape, name))
-					issues.push(this.#unexpected(name, path));
+				if (!this.#field(name)) issues.push(this.#unexpected(name, path));
 			}
 		} else if (source instanceof URLSearchParams) {
 			form = source;
@@ -494,10 +491,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					const part = current.value;
 
 					if (part.name) {
-						// own fields only, so a name such as "constructor" is unexpected
-						const field = Object.hasOwn(this.shape, part.name)
-							? this.shape[part.name]
-							: undefined;
+						const field = this.#field(part.name);
 
 						if (!field) {
 							issues.push(this.#unexpected(part.name, path));
@@ -790,14 +784,7 @@ class FieldSchema<
 	 * @returns Part field
 	 */
 	stream(): Field.Instance<Output, Tag, Type, Values, true> {
-		return new FieldSchema<Output, Tag, Type, Values, true>(
-			this.#options,
-			this.def,
-			this.#read,
-			this.parts,
-			true,
-			this.#persist,
-		);
+		return this.#copy({ stream: true });
 	}
 
 	/**
@@ -861,13 +848,33 @@ class FieldSchema<
 	 * @returns The same field with them
 	 */
 	#with(options: Pick<Field.Options, "label" | "description" | "props">) {
-		return new FieldSchema<Output, Tag, Type, Values, Stream>(
-			{ ...this.#options, ...options },
-			this.def,
+		return this.#copy({ options: { ...this.#options, ...options } });
+	}
+
+	/**
+	 * @template O Output type of the copy
+	 * @template S If the copy streams as a part
+	 * @param changes What the copy changes, the rest is this field's
+	 * @returns A copy of this field
+	 */
+	#copy<O = Output, S extends boolean | undefined = Stream>({
+		options = this.#options,
+		def = this.def,
+		stream = this.streaming as S,
+		persist = this.#persist,
+	}: {
+		options?: Field.Options<Values, Tag>;
+		def?: Schema.Def;
+		stream?: S;
+		persist?: boolean;
+	}) {
+		return new FieldSchema<O, Tag, Type, Values, S>(
+			options,
+			def,
 			this.#read,
 			this.parts,
-			this.streaming,
-			this.#persist,
+			stream,
+			persist,
 		);
 	}
 
@@ -886,14 +893,7 @@ class FieldSchema<
 		this: Field.Instance<Output, Tag, U, Values, Stream>,
 	): Field.Instance<Output, Tag, U, Values, Stream>;
 	persist() {
-		return new FieldSchema<Output, Tag, Type, Values, Stream>(
-			this.#options,
-			this.def,
-			this.#read,
-			this.parts,
-			this.streaming,
-			true,
-		);
+		return this.#copy({ persist: true });
 	}
 
 	/**
@@ -906,14 +906,7 @@ class FieldSchema<
 	override derive<O>(
 		def: Schema.Def,
 	): Field.Instance<O, Tag, Type, Values, Stream> {
-		return new FieldSchema<O, Tag, Type, Values, Stream>(
-			this.#options,
-			def,
-			this.#read,
-			this.parts,
-			this.streaming,
-			this.#persist,
-		);
+		return this.#copy<O>({ def });
 	}
 
 	/**
@@ -946,6 +939,15 @@ class FieldSchema<
 			...this.#options.props,
 			...props,
 		};
+
+		/**
+		 * @param option Option value
+		 * @returns `true` when the value has the option
+		 */
+		const chosen = (option: string) =>
+			Array.isArray(value)
+				? value.includes(option) // checkboxes and multiselect
+				: value === option; // radio and select
 
 		const Description = (data: Field.Component.Description = {}) =>
 			descriptionId && // render nothing without a description
@@ -980,9 +982,7 @@ class FieldSchema<
 					id: groupId(data.value),
 					// autofocus only the first input in the group
 					autofocus: control.autofocus && data.value === this.values?.[0],
-					checked: Array.isArray(value)
-						? value.includes(data.value) // checkboxes
-						: value === data.value, // radio
+					checked: chosen(data.value),
 					...data,
 				});
 
@@ -1042,9 +1042,7 @@ class FieldSchema<
 				((data: Field.Component.Option<Field.Values>) =>
 					jsx("option", {
 						children: data.value,
-						selected: Array.isArray(value)
-							? value.includes(data.value) // multiselect
-							: value === data.value,
+						selected: chosen(data.value),
 						...data,
 					})),
 			...this,
@@ -1053,79 +1051,42 @@ class FieldSchema<
 
 	/**
 	 * @template S Form shape type
-	 * @param props Field control props
-	 * @returns Input group component
-	 */
-	#Group<S extends Form.Shape>(
-		this: FieldSchema<Output, "input", "radio" | "checkbox", Field.Values>,
-		props: Field.Component.Props<S, false>,
-	) {
-		const c = this.component(props);
-
-		return c.Root({
-			children: [
-				// @ts-expect-error - `#Group` runs for grouped inputs, includes `Legend` with label
-				c.Legend(),
-				this.values.map((value: string) => {
-					return jsx("div", {
-						children: [c.Control({ value }), c.Label({ value })],
-					});
-				}),
-				c.Description(),
-				c.Issue(),
-			],
-		});
-	}
-
-	/**
-	 * @template S Form shape type
-	 * @param props Field control props
-	 * @returns Select component
-	 */
-	#Select<S extends Form.Shape>(
-		this: FieldSchema<Output, "select", Type, Field.Values>,
-		props: Field.Component.Props<S, false>,
-	) {
-		const c = this.component(props);
-
-		return c.Root({
-			children: [
-				c.Label(),
-				c.Control({
-					children: this.values.map((value: string) => c.Option({ value })),
-				}),
-				c.Description(),
-				c.Issue(),
-			],
-		});
-	}
-
-	/**
-	 * @template S Form shape type
-	 * @param props Field control props
-	 * @returns Default input component
-	 */
-	#Input<S extends Form.Shape>(props: Field.Component.Props<S, false>) {
-		const c = this.component(props);
-
-		return c.Root({
-			children: [c.Label(), c.Control(), c.Description(), c.Issue()],
-		});
-	}
-
-	/**
-	 * @template S Form shape type
 	 * @param props Field control props including `name` of the field to render
 	 * @returns Component that renders the HTML field with default structure
 	 */
 	render<S extends Form.Shape>(props: Field.Component.Props<S, false>) {
-		if (this.values) {
-			if (this.tag === "select") return this.#Select(props);
+		// the sub-components of each kind of field, told apart by `values` and `tag` below
+		const c = this.component(props) as unknown as Field.Component<Field.Any> & {
+			Legend: (props?: Field.Component.Legend) => JSX.Element;
+			Option: (props: Field.Component.Option<Field.Values>) => JSX.Element;
+		};
+		const { values } = this;
 
-			return this.#Group(props);
-		}
-
-		return this.#Input(props);
+		return c.Root({
+			children: [
+				values && this.tag !== "select"
+					? // radio/checkboxes, a group with a legend, each value labelled
+						[
+							c.Legend(),
+							values.map((value) =>
+								jsx("div", {
+									children: [c.Control({ value }), c.Label({ value })],
+								}),
+							),
+						]
+					: [
+							c.Label(),
+							// a select has an option for each value
+							c.Control(
+								values && {
+									children: values.map((value) => c.Option({ value })),
+								},
+							),
+						],
+				c.Description(),
+				c.Issue(),
+			],
+		});
 	}
 
 	/**
@@ -1617,10 +1578,7 @@ export class Field {
 	 * @returns Email input field
 	 */
 	static email(message?: string): Field.Instance<string, "input", "email"> {
-		return new FieldSchema(
-			{ props: { type: "email" } },
-			Schema.string(Field.#required).email(message),
-		);
+		return Field.#input({ type: "email" }).email(message);
 	}
 
 	/**
@@ -1630,10 +1588,7 @@ export class Field {
 	 * @returns URL input field
 	 */
 	static url(message?: string): Field.Instance<string, "input", "url"> {
-		return new FieldSchema(
-			{ props: { type: "url" } },
-			Schema.string(Field.#required).url(message),
-		);
+		return Field.#input({ type: "url" }).url(message);
 	}
 
 	/**
@@ -1662,12 +1617,7 @@ export class Field {
 		// form submissions read numeric controls as strings
 		if (value == null || value === "") return undefined;
 
-		const number = Number(value);
-
-		// integers beyond 2^53 were or would be rounded, left as text to fail validation
-		return Number.isInteger(number) && !Number.isSafeInteger(number)
-			? String(value)
-			: number;
+		return exact(value);
 	}
 
 	/**

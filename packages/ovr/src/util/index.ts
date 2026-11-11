@@ -123,8 +123,8 @@ export class Header {
 		let q = 0;
 
 		for (const range of accept.split(",")) {
-			const [value, params] = Header.shift(range.trim());
-			const match = value?.trim().toLowerCase();
+			// trimmed and lowercase by `shift`
+			const [match, params] = Header.shift(range);
 			const score =
 				match === mime
 					? 2

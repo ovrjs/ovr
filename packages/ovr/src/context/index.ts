@@ -159,9 +159,7 @@ export class Context<
 	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 */
 	html(body: BodyInit | null, status?: number) {
-		this.res.body = body;
-		this.res.status = status;
-		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.html));
+		this.#respond(body, status, Header.utf8(Mime.type.html));
 	}
 
 	/**
@@ -172,9 +170,7 @@ export class Context<
 	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 */
 	json<D>(data: D extends bigint ? never : D, status?: number) {
-		this.res.body = JSON.stringify(data);
-		this.res.status = status;
-		this.res.headers.set(Header.name.type, Mime.type.json);
+		this.#respond(JSON.stringify(data), status, Mime.type.json);
 	}
 
 	/**
@@ -184,9 +180,7 @@ export class Context<
 	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 */
 	text(body: BodyInit | null, status?: number) {
-		this.res.body = body;
-		this.res.status = status;
-		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.text));
+		this.#respond(body, status, Header.utf8(Mime.type.text));
 	}
 
 	/**
@@ -207,11 +201,20 @@ export class Context<
 	md(body: BodyInit | null, status?: number) {
 		if (!this.#markdown()) return false;
 
-		this.res.body = body;
-		this.res.status = status;
-		this.res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
+		this.#respond(body, status, Header.utf8(Mime.type.md));
 
 		return true;
+	}
+
+	/**
+	 * @param body Response body
+	 * @param status HTTP response status code
+	 * @param type `Content-Type` of the body
+	 */
+	#respond(body: BodyInit | null, status: number | undefined, type: string) {
+		this.res.body = body;
+		this.res.status = status;
+		this.res.headers.set(Header.name.type, type);
 	}
 
 	/**
@@ -412,43 +415,44 @@ export class Context<
 		if (!mw) return; // end of stack
 
 		const r: unknown = await mw(this, () => this.#run(middleware, i + 1));
+		const { res } = this;
 
 		// resolve the return value
 		if (r instanceof Response) {
 			// overwrite
-			this.res.body = r.body;
-			this.res.status = r.status;
+			res.body = r.body;
+			res.status = r.status;
 
 			// merge, each cookie is its own header, added to ones already set
 			for (const [name, header] of r.headers) {
-				if (name !== "set-cookie") this.res.headers.set(name, header);
+				if (name !== Header.name.set) res.headers.set(name, header);
 			}
 			for (const cookie of r.headers.getSetCookie())
-				this.res.headers.append("set-cookie", cookie);
+				res.headers.append(Header.name.set, cookie);
 		} else if (r !== undefined) {
 			// something to stream
-			const [mime] = Header.shift(this.res.headers.get(Header.name.type));
+			const [mime] = Header.shift(res.headers.get(Header.name.type));
 
 			if (!mime || mime === Mime.type.html) {
 				// pages are HTML for browsers and Markdown for agents that ask for it
 				if (this.#markdown()) {
-					this.res.body = Markdown.stream(r, {
+					res.body = Markdown.stream(r, {
 						base: this.url,
 						tool: agent.get(this.req)?.tool,
 					});
-					this.res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
+					res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
 					return;
 				}
 			}
 
-			this.res.body = Markup.stream(r, {
+			res.body = Markup.stream(r, {
 				// other defined types are not markup, so they are not escaped
 				raw: Boolean(mime && !Mime.markup(mime)),
 			});
 
 			if (!mime) {
 				// default to HTML
-				this.res.headers.set(Header.name.type, Header.utf8(Mime.type.html));
+				res.headers.set(Header.name.type, Header.utf8(Mime.type.html));
 			}
 
 			// do not overwrite/remove status - that way user can set it before returning
@@ -483,20 +487,22 @@ export class Context<
 	static async compose(c: Context, middleware: Middleware[]) {
 		await c.#run(middleware);
 
+		const { res } = c;
+
 		if (c.req.method === Method.head) {
-			if (c.res.body instanceof ReadableStream) {
+			if (res.body instanceof ReadableStream) {
 				// cancel unused stream to prevent leaks
-				await c.res.body.cancel(Method.head);
+				await res.body.cancel(Method.head);
 			}
 
-			c.res.body = null;
+			res.body = null;
 		}
 
 		return new Response(
-			c.res.body,
+			res.body,
 			// prevents users from setting the response during the stream
 			// `Response` treats an explicitly undefined status as omitted
-			Object.freeze(c.res) as ResponseInit,
+			Object.freeze(res) as ResponseInit,
 		);
 	}
 }

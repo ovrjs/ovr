@@ -59,6 +59,21 @@ export const append = <I>(issues: I[], more: readonly I[]) => {
 };
 
 /**
+ * Convert to a number without rounding. Integers beyond 2^53 were or would
+ * be rounded, so they are left as text, which fails a number's validation.
+ *
+ * @param value Value to convert, such as form text or a driver's `numeric`
+ * @returns The number, or the text of an integer too large to be one
+ */
+export const exact = (value: unknown) => {
+	const number = Number(value);
+
+	return Number.isInteger(number) && !Number.isSafeInteger(number)
+		? String(value)
+		: number;
+};
+
+/**
  * Compiled parse function. Failures stay plain records until the public
  * `parse` builds the issues, so failed union branches cost no errors.
  */
@@ -531,18 +546,8 @@ export class Schema<Output>
 			return result.issues ? result : { value: result.data };
 		},
 		jsonSchema: {
-			input: ({ target, libraryOptions }) =>
-				this.toJsonSchema({
-					...libraryOptions,
-					target: target as Schema.JsonSchema.Target,
-					io: "input",
-				}),
-			output: ({ target, libraryOptions }) =>
-				this.toJsonSchema({
-					...libraryOptions,
-					target: target as Schema.JsonSchema.Target,
-					io: "output",
-				}),
+			input: (options) => this.#standard(options, "input"),
+			output: (options) => this.#standard(options, "output"),
 		},
 	};
 
@@ -628,6 +633,22 @@ export class Schema<Output>
 			$schema: Schema.#dialects[target],
 			...Schema.#node(this, { target, io, unrepresentable }).schema,
 		} as Record<string, unknown>;
+	}
+
+	/**
+	 * @param options Standard JSON Schema options
+	 * @param io Side of the description
+	 * @returns JSON Schema object
+	 */
+	#standard(
+		{ target, libraryOptions }: StandardJSONSchemaV1.Options,
+		io: "input" | "output",
+	) {
+		return this.toJsonSchema({
+			...libraryOptions,
+			target: target as Schema.JsonSchema.Target,
+			io,
+		});
 	}
 
 	/**
@@ -1604,7 +1625,7 @@ export class Schema<Output>
 	min(
 		this: Schema<string | number | bigint>,
 		value: number | bigint,
-		message = `Expected minimum ${String(value)}`,
+		message = `Expected minimum ${value}`,
 	) {
 		return this.#check({ name: "min", value, message });
 	}
@@ -1699,7 +1720,7 @@ export class Schema<Output>
 	max(
 		this: Schema<string | number | bigint>,
 		value: number | bigint,
-		message = `Expected maximum ${String(value)}`,
+		message = `Expected maximum ${value}`,
 	) {
 		return this.#check({ name: "max", value, message });
 	}

@@ -1,4 +1,4 @@
-import { Schema } from "../schema/index.js";
+import { Schema, append, exact } from "../schema/index.js";
 import { Column, Table } from "../table/index.js";
 
 export namespace Database {
@@ -285,8 +285,7 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 				i,
 			]);
 
-			// one at a time, a very long list spread into `push` overflows the stack
-			if (result.issues) for (const issue of result.issues) issues.push(issue);
+			if (result.issues) append(issues, result.issues);
 			else data.push(result.data);
 		}
 
@@ -377,16 +376,25 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 			if (convert) columns.push([name, convert]);
 		}
 
-		if (!columns.length) return;
+		return Sql.#keys(columns);
+	}
 
-		return (row: unknown) => {
-			if (row == null || typeof row !== "object") return row;
+	/**
+	 * @param keys Converter for each key that needs one
+	 * @returns Converter for an object, `undefined` when no key needs one
+	 */
+	static #keys(keys: [key: string, convert: Convert][]): Convert | undefined {
+		if (!keys.length) return;
 
-			// the driver's row is not modified, it may be shared with other views
-			const decoded: Record<string, unknown> = { ...row };
+		return (value) => {
+			if (value == null || typeof value !== "object" || Array.isArray(value))
+				return value;
 
-			for (const [name, convert] of columns) {
-				decoded[name] = convert(decoded[name]);
+			// copied, a driver's row may be shared with other views
+			const decoded: Record<string, unknown> = { ...value };
+
+			for (const [key, convert] of keys) {
+				if (Object.hasOwn(decoded, key)) decoded[key] = convert(decoded[key]);
 			}
 
 			return decoded;
@@ -402,8 +410,14 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 
 		if (base.type !== "array") return Sql.#number(def);
 
-		const item = Sql.#numbers(base.item.def);
+		return Sql.#each(Sql.#numbers(base.item.def));
+	}
 
+	/**
+	 * @param item Converter for each item
+	 * @returns Converter for an array, `undefined` when items need none
+	 */
+	static #each(item: Convert | undefined): Convert | undefined {
 		return (
 			item && ((value) => (Array.isArray(value) ? value.map(item) : value))
 		);
@@ -437,12 +451,8 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 			)
 				return value;
 
-			const number = Number(value);
-
-			// integers beyond 2^53 may already be rounded, a string fails validation
-			return Number.isInteger(number) && !Number.isSafeInteger(number)
-				? String(value)
-				: number;
+			// integers beyond 2^53 may already be rounded
+			return exact(value);
 		};
 	}
 
@@ -458,13 +468,8 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 		switch (base.type) {
 			case "date":
 				return (value) => (typeof value === "string" ? new Date(value) : value);
-			case "array": {
-				const item = Sql.#dates(base.item.def);
-
-				return (
-					item && ((value) => (Array.isArray(value) ? value.map(item) : value))
-				);
-			}
+			case "array":
+				return Sql.#each(Sql.#dates(base.item.def));
 			case "object": {
 				const keys: [key: string, convert: Convert][] = [];
 
@@ -474,25 +479,7 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 					if (convert) keys.push([key, convert]);
 				}
 
-				if (!keys.length) return;
-
-				return (value) => {
-					if (
-						value == null ||
-						typeof value !== "object" ||
-						Array.isArray(value)
-					)
-						return value;
-
-					const decoded: Record<string, unknown> = { ...value };
-
-					for (const [key, convert] of keys) {
-						if (Object.hasOwn(decoded, key))
-							decoded[key] = convert(decoded[key]);
-					}
-
-					return decoded;
-				};
+				return Sql.#keys(keys);
 			}
 			case "union": {
 				const options = base.options.map(
@@ -861,27 +848,28 @@ class Base<T extends readonly Table.Any[]> {
 			const defaults = new Set<string>(table.options.default ?? []);
 
 			for (const column of Object.values<Column>(table.columns)) {
+				const name = `${label}.${column.name}`;
 				const actual = found.get(column.name);
 				const types = Base.#types[column.type];
 				const nullable = (value: boolean) => (value ? "NULL" : "NOT NULL");
 
 				if (!actual) {
 					differences.push(
-						`${label}.${column.name}: missing column (${types[0]} ${nullable(column.nullable)})`,
+						`${name}: missing column (${types[0]} ${nullable(column.nullable)})`,
 					);
 					continue;
 				}
 
 				if (!types.includes(actual.type))
 					differences.push(
-						`${label}.${column.name}: ${actual.type} cannot store ${column.type} values, use ${types.join(", ")}`,
+						`${name}: ${actual.type} cannot store ${column.type} values, use ${types.join(", ")}`,
 					);
 				if (actual.nullable !== column.nullable)
 					differences.push(
-						`${label}.${column.name}: expected ${nullable(column.nullable)}, found ${nullable(actual.nullable)}`,
+						`${name}: expected ${nullable(column.nullable)}, found ${nullable(actual.nullable)}`,
 					);
 				if (defaults.has(column.name) && !actual.default)
-					differences.push(`${label}.${column.name}: missing default`);
+					differences.push(`${name}: missing default`);
 			}
 
 			// other columns are fine unless inserts cannot omit them
@@ -967,13 +955,12 @@ class Base<T extends readonly Table.Any[]> {
 		if (!key) return [`${label}: missing foreign key to ${expected}`];
 
 		const problems = [
-			...(!key.target || key.column !== "id"
-				? [`references another table or column`]
-				: []),
-			...(!key.cascade ? ["does not cascade deletes"] : []),
-			...(!key.validated ? ["is NOT VALID, validate it"] : []),
-			...(!key.enforced ? ["is NOT ENFORCED"] : []),
-		];
+			(!key.target || key.column !== "id") &&
+				"references another table or column",
+			!key.cascade && "does not cascade deletes",
+			!key.validated && "is NOT VALID, validate it",
+			!key.enforced && "is NOT ENFORCED",
+		].filter(Boolean);
 
 		return [
 			`${label}: foreign key ${problems.join(", ")}, expected ${expected}`,

@@ -169,14 +169,8 @@ export class App {
 						routes: this.#routes,
 						fetch: this.fetch,
 						memory: this.#options.form?.memory ?? memory,
-						find: (method, pathname) => {
-							const match = this.#trie.find(App.#match(method) + pathname);
-							if (!match) return;
-							const params: Record<string, string> = {};
-							for (const name in match.params)
-								params[name] = App.#decode(match.params[name]!, name === "*");
-							return { route: match.route, params };
-						},
+						find: (method, pathname) =>
+							this.#find(method, pathname) ?? undefined,
 					}),
 				);
 			} else if (Array.isArray(route)) {
@@ -217,14 +211,9 @@ export class App {
 			options?.ip,
 		);
 
-		const match = this.#trie.find(App.#match(c.req.method) + c.url.pathname);
-		if (match)
-			for (const name in match.params)
-				match.params[name] = App.#decode(match.params[name]!, name === "*");
-
 		try {
 			return await Context.compose(
-				Object.assign(c, match),
+				Object.assign(c, this.#find(c.req.method, c.url.pathname)),
 				// a route's body errors are answered before global middleware
 				// sees them, so middleware that catches errors gets only the app's
 				c.route
@@ -245,6 +234,23 @@ export class App {
 			return new Response(answer[1], { status: answer[0], headers });
 		}
 	};
+
+	/**
+	 * @param method Request method, GET finds the route for HEAD
+	 * @param pathname URL pathname
+	 * @returns The matched route and its decoded parameters
+	 */
+	#find(method: string, pathname: string) {
+		const match = this.#trie.find(
+			(method === Method.head ? Method.get : method) + pathname,
+		);
+
+		if (match)
+			for (const name in match.params)
+				match.params[name] = App.#decode(match.params[name]!, name === "*");
+
+		return match;
+	}
 
 	/**
 	 * @param error Error from reading a request body
@@ -295,30 +301,21 @@ export class App {
 		}
 	}
 
-	/**
-	 * @param method Request method
-	 * @returns Method to match routes with, GET finds the route for HEAD
-	 */
-	static #match(method: string) {
-		return method === Method.head ? Method.get : method;
-	}
-
 	/** Basic CSRF middleware */
 	static #csrf(c: Middleware.Context, next: Middleware.Next) {
-		const site = c.req.headers.get(Header.name.fetch);
-		const origin = c.req.headers.get(Header.name.origin);
+		const { headers, method } = c.req;
+		const site = headers.get(Header.name.fetch);
+		const origin = headers.get(Header.name.origin);
 
 		if (
-			c.req.method === Method.get ||
-			c.req.method === Method.head ||
+			method === Method.get ||
+			method === Method.head ||
 			site === "same-origin" ||
 			origin === c.url.origin ||
 			(c.route && crossOrigin.has(c.route)) ||
 			// browsers send at least one, so without cookies this is not a browser,
 			// for example an agent submitting a form
-			(site === null &&
-				origin === null &&
-				!c.req.headers.has(Header.name.cookie))
+			(site === null && origin === null && !headers.has(Header.name.cookie))
 		) {
 			return next();
 		}
@@ -348,7 +345,7 @@ export class App {
 						? pathname.slice(0, -1)
 						: undefined;
 
-			if (!other || !this.#trie.find(App.#match(c.req.method) + other)) return;
+			if (!other || !this.#find(c.req.method, other)) return;
 
 			c.url.pathname = other;
 			c.redirect(c.url, 308);

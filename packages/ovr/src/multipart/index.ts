@@ -247,6 +247,9 @@ export namespace Multipart {
 /** Default most memory a request body takes while it is read, 4MB */
 export const memory = 4 * Size.mb;
 
+/** Message for a body that ends before its closing boundary */
+const unexpectedEnd = "Unexpected End of Body";
+
 /**
  * New line needle to share across requests and parts. Outside the class, since
  * a static made as the class loads is a side effect, which keeps `Multipart`
@@ -535,7 +538,7 @@ export class Multipart extends Request {
 				}
 				if (!pending?.length) {
 					// the body ended inside the part
-					if (!found) throw new Malformed("Unexpected End of Body");
+					if (!found) throw new Malformed(unexpectedEnd);
 					pending = found;
 					state.ended = true;
 				}
@@ -652,7 +655,7 @@ export class Multipart extends Request {
 			for (let i = 0; !(await this.#closed()); i++) {
 				const headers = await this.#findConcat(newLine);
 				// a body ends with the closing delimiter, after the last part
-				if (!headers) throw new Malformed("Unexpected End of Body");
+				if (!headers) throw new Malformed(unexpectedEnd);
 				if (i === this.#options.parts) throw new Limit("Too Many Parts");
 
 				const { stream, state } = this.#findStream(this.#boundary);
@@ -664,7 +667,7 @@ export class Multipart extends Request {
 					state.detached = true;
 					await state.pulling?.catch(() => {});
 					if (!state.ended && !(await this.#skip(this.#boundary)))
-						throw new Malformed("Unexpected End of Body");
+						throw new Malformed(unexpectedEnd);
 				}
 			}
 

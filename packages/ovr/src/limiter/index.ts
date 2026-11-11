@@ -13,13 +13,14 @@ import { Codec, Time, noStore } from "../util/index.js";
  */
 export function network(value: string | undefined) {
 	if (!value || value.length > 64 || !/^[\da-f:.]+$/i.test(value)) return;
-	if (!value.includes(":"))
-		return value.split(".").length === 4 &&
-			value
-				.split(".")
-				.every((v) => /^(0|[1-9]\d{0,2})$/.test(v) && Number(v) <= 255)
+	if (!value.includes(":")) {
+		const octets = value.split(".");
+
+		return octets.length === 4 &&
+			octets.every((v) => /^(0|[1-9]\d{0,2})$/.test(v) && Number(v) <= 255)
 			? value
 			: undefined;
+	}
 	let host: string;
 	try {
 		host = new URL(`http://[${value}]`).hostname;

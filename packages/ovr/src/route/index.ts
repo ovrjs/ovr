@@ -490,18 +490,20 @@ export class Route<
 	 * call it; GET tools are read-only.
 	 */
 	get tool(): Route.Tool | undefined {
-		if (!this.description || this.method === Method.head) return;
+		const { description, method, pattern } = this;
 
-		const read = this.method === Method.get;
+		if (!description || method === Method.head) return;
 
-		const segments = this.pattern
+		const read = method === Method.get;
+
+		const segments = pattern
 			.split("/")
 			.filter(Boolean)
 			.map((segment) =>
 				segment === "*" ? "wildcard" : segment.replace(/^:/, ""),
 			);
 
-		let name = `${this.method.toLowerCase()}_${segments.join("_") || "index"}`;
+		let name = `${method.toLowerCase()}_${segments.join("_") || "index"}`;
 
 		// `_` and other punctuation could make two patterns' names the same,
 		// such as `/a/b` and `/a_b`, so those names end with the pattern's hash
@@ -512,12 +514,9 @@ export class Route<
 			name = `${name
 				.replace(/[^\w-]+/g, "_")
 				.replace(/_+/g, "_")
-				.slice(
-					0,
-					56,
-				)}_${Checksum.djb2(`${this.method} ${this.pattern}`).slice(0, 7)}`;
+				.slice(0, 56)}_${Checksum.djb2(`${method} ${pattern}`).slice(0, 7)}`;
 
-		return { name, description: this.description, read };
+		return { name, description, read };
 	}
 
 	/**
@@ -553,8 +552,7 @@ export class Route<
 		// a name the pattern does not have is a type error
 		schemas: P,
 	): Route.Of<Kind, Pattern, Route.Converted<Params, P>, Shape> {
-		this.#configure("params");
-		this.#before("params");
+		this.#configure("params", true);
 
 		this.#paramSchemas = { ...this.#paramSchemas, ...schemas } as Record<
 			string,
@@ -575,8 +573,7 @@ export class Route<
 	fields<S extends FormSchema.Shape>(
 		fields: S | FormSchema<S>,
 	): Route.Of<Kind, Pattern, Params, S> {
-		this.#configure("fields");
-		this.#before("fields");
+		this.#configure("fields", true);
 		const form = fields instanceof FormSchema ? fields : new FormSchema(fields);
 
 		return Object.assign(
@@ -588,33 +585,28 @@ export class Route<
 
 	/**
 	 * A mounted route is final, so the app's tools and middleware stay as
-	 * they were when it was mounted.
+	 * they were when it was mounted. Middleware is typed by the params and
+	 * fields set before it, so they cannot change after it is added.
 	 *
 	 * @param method Method that changes the route
+	 * @param typed If the method changes the types middleware is given
 	 */
-	#configure(method: string) {
-		if (this.#frozen)
+	#configure(method: string, typed = false) {
+		const before = this.#frozen
+			? "app.use()"
+			: typed && this.#stack.length
+				? ".use()"
+				: undefined;
+
+		if (before)
 			throw new TypeError(
-				`Call .${method}() before app.use() on route "${this.pattern}".`,
+				`Call .${method}() before ${before} on route "${this.pattern}".`,
 			);
 	}
 
 	/** Finish the configuration, when an app mounts the route. */
 	[freeze]() {
 		this.#frozen = true;
-	}
-
-	/**
-	 * Middleware is typed by the params and fields set before it, so they
-	 * cannot change after it is added.
-	 *
-	 * @param method Method that changes the types
-	 */
-	#before(method: string) {
-		if (this.#stack.length)
-			throw new TypeError(
-				`Call .${method}() before .use() on route "${this.pattern}".`,
-			);
 	}
 
 	/**

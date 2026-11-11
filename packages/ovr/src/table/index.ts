@@ -214,24 +214,37 @@ export class Table<
 				// form fields normalize their input, a stored value parses unchanged
 				if (normalizers.has(def.fn)) return Table.#type(def.inner.def, column);
 
-				throw new TypeError(
-					`Table ${column}: preprocess() would change stored values when they are read, convert before inserting instead`,
+				throw Table.#invalid(
+					column,
+					`preprocess() would change stored values when they are read, convert before inserting instead`,
 				);
 			case "json":
-				throw new TypeError(
-					`Table ${column}: use the parsed object or array schema for JSON instead of json()`,
+				throw Table.#invalid(
+					column,
+					`use the parsed object or array schema for JSON instead of json()`,
 				);
 			case "optional":
 			case "nullish":
 			case "default":
-				throw new TypeError(
-					`Table ${column}: use nullable() or the default option instead of ${def.type}()`,
+				throw Table.#invalid(
+					column,
+					`use nullable() or the default option instead of ${def.type}()`,
 				);
 		}
 
-		throw new TypeError(
-			`Table ${column}: ${def.type} schemas cannot be stored as a column`,
+		throw Table.#invalid(
+			column,
+			`${def.type} schemas cannot be stored as a column`,
 		);
+	}
+
+	/**
+	 * @param column Column label
+	 * @param problem What is wrong with the column's schema
+	 * @returns Error for a column schema the table cannot store
+	 */
+	static #invalid(column: string, problem: string) {
+		return new TypeError(`Table ${column}: ${problem}`);
 	}
 
 	/**
@@ -272,8 +285,9 @@ export class Table<
 					empty.data === undefined &&
 					def.item.parse(null).issues
 				)
-					throw new TypeError(
-						`Table ${column}: JSON stores undefined array items as null, allow null instead of undefined`,
+					throw Table.#invalid(
+						column,
+						`JSON stores undefined array items as null, allow null instead of undefined`,
 					);
 
 				return Table.#json(def.item.def, column);
@@ -302,8 +316,9 @@ export class Table<
 				return Table.#json(def.inner.def, column);
 		}
 
-		throw new TypeError(
-			`Table ${column}: ${def.type} schemas cannot be stored in JSON`,
+		throw Table.#invalid(
+			column,
+			`${def.type} schemas cannot be stored in JSON`,
 		);
 	}
 }

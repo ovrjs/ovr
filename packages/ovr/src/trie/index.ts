@@ -41,8 +41,8 @@ export class Trie {
 	/** Matched wildcard route */
 	wild: Route | undefined;
 
-	static readonly #paramMatch = /:.+?(?=\/|$)/g;
-	static readonly #paramSplit = /:.+?(?=\/|$)/;
+	/** A parameter, `split` ignores the global flag `match` needs */
+	static readonly #param = /:.+?(?=\/|$)/g;
 
 	/**
 	 * Create a new trie.
@@ -144,8 +144,8 @@ export class Trie {
 		const endsWithWildcard = pattern.endsWith("*");
 		if (endsWithWildcard) pattern = pattern.slice(0, -1);
 
-		const paramSegments = pattern.match(Trie.#paramMatch) ?? [];
-		const staticSegments = pattern.split(Trie.#paramSplit);
+		const paramSegments = pattern.match(Trie.#param) ?? [];
+		const staticSegments = pattern.split(Trie.#param);
 
 		// if the last segment is a param without a trailing slash
 		// then there will be an empty string, remove
