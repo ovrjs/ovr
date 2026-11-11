@@ -881,11 +881,19 @@ class FieldSchema<
 	// the overloads above are its types
 	multiple(): any {
 		const file = this.type === "file";
+		const { description, ...def } = this.def;
+		// each value is checked as this field checks one, and a description
+		// given before describes the field, not each value
+		const array = Schema.array(
+			(description === undefined
+				? this
+				: this.#copy({ def })) as Schema<unknown>,
+			file ? required : choose,
+		);
 
 		return new FieldSchema(
 			{ ...this.#config, props: { ...this.#config.props, multiple: true } },
-			// each value is checked as this field checks one
-			Schema.array(this as Schema<unknown>, file ? required : choose),
+			description === undefined ? array : { ...array.def, description },
 			file
 				? (data, name) => {
 						const files = data.getAll(name).filter(chosenFile);

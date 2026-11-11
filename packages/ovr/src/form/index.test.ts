@@ -1096,3 +1096,17 @@ describe("Form schema", () => {
 		expect(result.data).toEqual({ name: "ross" });
 	});
 });
+
+test("a description given before multiple() describes the field", async () => {
+	const tags = Field.select(["a", "b"]).describe("Pick some").multiple();
+	const form = new Form({ tags });
+
+	expect(tags.description).toBe("Pick some");
+	expect(Schema.object({ tags }).toJsonSchema().properties).toEqual({
+		tags: expect.objectContaining({
+			description: "Pick some",
+			items: { enum: ["a", "b"] },
+		}),
+	});
+	expect(await Markup.string(form.Fields())).toContain("Pick some");
+});

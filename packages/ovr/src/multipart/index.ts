@@ -250,6 +250,15 @@ export namespace Multipart {
 
 	/** Type for a `Part` of the multipart body */
 	export type Part = InstanceType<typeof Part>;
+
+	/** A body over a limit */
+	export type Limit = InstanceType<typeof Limit>;
+
+	/** Malformed form data */
+	export type Malformed = InstanceType<typeof Malformed>;
+
+	/** A content type other than multipart form data */
+	export type Unsupported = InstanceType<typeof Unsupported>;
 }
 
 /** Default most memory a request body takes while it is read, 4MB */

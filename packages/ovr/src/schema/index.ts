@@ -1983,12 +1983,27 @@ class ObjectSchema<
 	 *
 	 * @param shape Object shape
 	 * @param mode Object parsing mode
+	 * @param description Description from `describe()`
 	 */
-	constructor(shape: Shape, mode: Mode = "strip" as Mode) {
-		super({ type: "object", shape, mode });
+	constructor(
+		shape: Shape,
+		mode: Mode = "strip" as Mode,
+		description?: string,
+	) {
+		super({
+			type: "object",
+			shape,
+			mode,
+			...(description !== undefined && { description }),
+		});
 
 		this.shape = shape;
 		this.#mode = mode;
+	}
+
+	override describe(text: string) {
+		// still an object schema, which `derive` would not make
+		return new ObjectSchema(this.shape, this.#mode, text) as this;
 	}
 
 	/**
@@ -2018,6 +2033,7 @@ class ObjectSchema<
 				extra instanceof ObjectSchema ? extra.shape : extra,
 			),
 			this.#mode,
+			this.def.description,
 		);
 	}
 
@@ -2031,7 +2047,11 @@ class ObjectSchema<
 	pick<N extends ShapeUtil.Name<Shape>>(
 		names: readonly [N, ...N[]],
 	): Schema.Object<Pick<Shape, N>, Mode> {
-		return new ObjectSchema(ShapeUtil.pick(this.shape, names), this.#mode);
+		return new ObjectSchema(
+			ShapeUtil.pick(this.shape, names),
+			this.#mode,
+			this.def.description,
+		);
 	}
 
 	/**
@@ -2044,7 +2064,11 @@ class ObjectSchema<
 	omit<N extends ShapeUtil.Name<Shape>>(
 		names: readonly [N, ...N[]],
 	): Schema.Object<Omit<Shape, N>, Mode> {
-		return new ObjectSchema(ShapeUtil.omit(this.shape, names), this.#mode);
+		return new ObjectSchema(
+			ShapeUtil.omit(this.shape, names),
+			this.#mode,
+			this.def.description,
+		);
 	}
 
 	/**
@@ -2053,7 +2077,7 @@ class ObjectSchema<
 	 * @returns New object schema in strict mode
 	 */
 	strict(): Schema.Object<Shape, "strict"> {
-		return new ObjectSchema(this.shape, "strict");
+		return new ObjectSchema(this.shape, "strict", this.def.description);
 	}
 
 	/**
@@ -2062,6 +2086,6 @@ class ObjectSchema<
 	 * @returns New object schema in loose mode
 	 */
 	loose(): Schema.Object<Shape, "loose"> {
-		return new ObjectSchema(this.shape, "loose");
+		return new ObjectSchema(this.shape, "loose", this.def.description);
 	}
 }

@@ -914,3 +914,26 @@ describe("issue paths", () => {
 		expect(schema.parse({ a: [], c: 1 })).toEqual({ data: { a: [], c: 1 } });
 	});
 });
+
+describe("describe on object schemas", () => {
+	test("an object schema stays one, and keeps its description through its methods", () => {
+		const object = Schema.object({
+			a: Schema.string(),
+			b: Schema.number(),
+		}).describe("Pair");
+
+		expect(Object.keys(object.extend({ c: Schema.boolean() }).shape)).toEqual([
+			"a",
+			"b",
+			"c",
+		]);
+		for (const schema of [
+			object,
+			object.strict(),
+			object.loose(),
+			object.pick(["a"]),
+			object.omit(["a"]),
+		])
+			expect(schema.toJsonSchema().description).toBe("Pair");
+	});
+});

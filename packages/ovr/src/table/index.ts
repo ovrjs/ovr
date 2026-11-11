@@ -186,7 +186,14 @@ export class Table<
 					: unknown
 				: unknown),
 	) {
-		super({ type: "object", shape, mode: "strip" });
+		super({
+			type: "object",
+			shape,
+			mode: "strip",
+			...(Table.#description !== undefined && {
+				description: Table.#description,
+			}),
+		});
 
 		this.name = name;
 		this.shape = shape;
@@ -201,6 +208,24 @@ export class Table<
 		}
 
 		this.columns = columns as { readonly [K in keyof S]: Column };
+	}
+
+	/** Description of the table `describe()` is making, read by the constructor */
+	static #description: string | undefined;
+
+	override describe(text: string) {
+		// still a table, which `derive` would not make
+		Table.#description = text;
+		try {
+			// checked when this table was made
+			return new Table(
+				this.name as never,
+				this.shape as never,
+				this.options as never,
+			) as unknown as this;
+		} finally {
+			Table.#description = undefined;
+		}
 	}
 
 	/**

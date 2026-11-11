@@ -1,5 +1,5 @@
 import { Multipart } from "./index.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 /**
  * Creates a ReadableStream that yields the provided chunks.
@@ -1717,4 +1717,12 @@ it("a part keeps the request's URL and method, and its signal aborts with the re
 		expect(signal.aborted).toBe(true);
 		expect(signal.reason).toEqual(new Error("gone"));
 	}
+});
+
+it("names its errors as types too", () => {
+	const limit = (error: unknown) => error instanceof Multipart.Limit;
+	const error: unknown = new Multipart.Limit("Too Many Parts");
+
+	if (limit(error)) expectTypeOf(error).toEqualTypeOf<Multipart.Limit>();
+	expectTypeOf<Multipart.Unsupported>().toExtend<Multipart.Malformed>();
 });

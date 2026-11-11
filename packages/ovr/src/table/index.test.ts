@@ -224,3 +224,12 @@ describe("Table", () => {
 		expect(result.issues?.map((issue) => issue.path)).toEqual([["title"]]);
 	});
 });
+
+test("a described table is still the table", () => {
+	const users = new Table("users", { id: Schema.string() }).describe("People");
+
+	expect(users).toBeInstanceOf(Table);
+	expect(users.name).toBe("users");
+	expect(Object.keys(users.columns)).toEqual(["id"]);
+	expect(users.description).toBe("People");
+});

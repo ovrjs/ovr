@@ -206,6 +206,9 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	}
 }
 
+/** Internal protocol for a render, to read the element a `Markup` renders. */
+const source = Symbol("source");
+
 /** One step of a render: a chunk, a wait before the next step, or nothing once it is done */
 export type Step = Chunk | Promise<unknown> | undefined;
 
@@ -320,6 +323,13 @@ export class Render {
 						}
 
 						return new Tag(tag, props, closed);
+					}
+
+					if (element instanceof Markup) {
+						// its element, which its strings would be escaped as text
+						this.#element = element[source];
+						this.#next = 1;
+						continue;
 					}
 
 					if (Symbol.asyncIterator in element) {
@@ -750,6 +760,11 @@ export class Markup {
 	constructor(element: JSX.Element, options?: Markup.Options) {
 		this.#element = element;
 		this.#options = options;
+	}
+
+	/** @returns The element, rendered in place where a `Markup` is a child */
+	get [source]() {
+		return this.#element;
 	}
 
 	/** @yields Markup as the `Element` resolves */

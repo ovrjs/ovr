@@ -53,6 +53,14 @@ test("Markup yields markup as strings", async () => {
 	expect(chunks).toStrictEqual(["<p>", "&lt;b>", "</p>"]);
 });
 
+test("a Markup child renders its element in place", async () => {
+	const child = new Markup(jsx("b", { children: "x & y" }));
+
+	expect(await Markup.string(jsx("div", { children: child }))).toBe(
+		"<div><b>x &amp; y</b></div>",
+	);
+});
+
 test("parallel children render in source order", async () => {
 	const first = deferred();
 	const second = deferred();
