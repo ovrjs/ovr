@@ -20,7 +20,8 @@ ovr is open source with the MIT license. Feel free to create an issue on GitHub 
 - `npm run test` - Run all tests
 - `npm run test:dev` - Run tests in watch mode
 - Run a single test: `npm test -- <test-file>` (e.g., `npm test -- packages/ovr/src/app/index.test.ts`)
-- The tests include the official [MCP conformance suite](https://github.com/modelcontextprotocol/conformance), run against a small app in `packages/ovr/src/mcp/conformance.test.ts`. The checks ovr does not pass are listed with their reasons in `conformance.<revision>.yml` beside it; a new failure, or a listed check that starts to pass, fails the test. The same file connects the official client libraries, for the current and the earlier protocol, and has them list, call, and read through the endpoint.
+- The tests include the official [MCP conformance suite](https://github.com/modelcontextprotocol/conformance), run against a small app in `packages/ovr/src/mcp/conformance.test.ts`. The checks ovr does not pass are listed with their reasons in `conformance.<revision>.yml` beside it; a new failure, or a listed check that starts to pass, fails the test. The same file connects the official client libraries, for the current and the earlier protocol, and has them list, call, and read through the endpoint. The suite is pinned to a pre-release, `@modelcontextprotocol/conformance@0.2.0-alpha.12`, since its stable releases, up to 0.1.16, test only the 2025 protocol versions; move to a stable release once one covers 2026-07-28, and expect its exception lists to change when it does.
+- The tests that need a real Postgres skip without one. To run them, start a disposable database and set `OVR_TEST_DATABASE_URL`, for example `OVR_TEST_DATABASE_URL=postgres://localhost:5432/ovr_test npm test`. They drop and create tables, so never point it at a database you keep.
 
 ## Conventions
 

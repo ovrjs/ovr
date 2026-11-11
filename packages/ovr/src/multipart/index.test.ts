@@ -1079,12 +1079,11 @@ describe("MultipartParser", () => {
 			expect(count).toBeLessThan(numParts);
 		});
 
-		it.skip(
+		it(
 			"handles boundary search spanning buffer resizes",
 			{ timeout: 10000 },
 			async () => {
 				// Large part where boundary search starts near end of buffer, triggers resize during #find
-				console.log("starting");
 				const largeContent = new Uint8Array(3 * ONE_MB - 1000); // Close to memory limit
 				for (let i = 0; i < largeContent.length; i++) largeContent[i] = i % 256;
 
@@ -1125,8 +1124,6 @@ describe("MultipartParser", () => {
 					expect(bytes.byteLength).toBe(largeContent.length);
 					expect(new Uint8Array(bytes)).toEqual(largeContent);
 				}
-
-				console.log("done");
 			},
 		);
 	});
