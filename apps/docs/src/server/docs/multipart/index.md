@@ -68,7 +68,7 @@ const data = await mp.data(); // FormData
 
 ## Options
 
-Options are available for the maximum `memory` allocation, max total `payload` size, and max number of `parts`, to prevent attackers from sending massive requests.
+Options are available for the maximum `memory` allocation, max total `payload` size, and max number of `parts`, to prevent attackers from sending massive requests. `memory` bounds what the parser holds while it reads. `Multipart.data` and `c.data()` keep every value, uploaded files included, so what they hold is bounded by `payload`; stream large files with `c.form()` instead.
 
 ```ts
 const options: Multipart.Options = {

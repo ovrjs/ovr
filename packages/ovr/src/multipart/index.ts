@@ -190,12 +190,17 @@ export namespace Multipart {
 	/** Multipart options */
 	export type Options = {
 		/**
-		 * Maximum memory allocation for request body processing (default 4MB)
+		 * Most memory the parser holds at once as it reads the body (default 4MB)
 		 *
 		 * Even for large files, the parser does not hold the entire file in memory,
 		 * it processes each chunk of the request body as it arrives.
 		 * Set to a larger number if for example clients are sending all the
 		 * data in a massive chunk instead of broken into smaller packets.
+		 *
+		 * It bounds the parser, not what is read from it: `data()`, and
+		 * `c.data()` in a route, keep each value, a file's included, so they are
+		 * bounded by `payload`. An app's `form.memory` is also the largest request
+		 * its MCP endpoint reads.
 		 *
 		 * @default 4 * 1024 * 1024
 		 * @example
