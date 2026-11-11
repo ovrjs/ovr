@@ -1,5 +1,138 @@
 # ovr
 
+## 7.0.0-next.0
+
+### Major Changes
+
+- fc30a95: Routes are defined with a chain. `Route.get(pattern)`, `Route.post(pattern)` and `new Route(method, pattern)` take no middleware; add it with `route.use(...middleware)`, and form fields with `route.fields(shape)`:
+
+  ```ts
+  // before
+  const create = Route.post("/posts", { title }, handler);
+
+  // after
+  const create = Route.post("/posts").fields({ title }).use(handler);
+  ```
+
+  - **Chain:** each step returns the route. `route.params(schemas)` checks and converts pattern parameters before the middleware runs, types `c.params` with the converted values, and responds 404 when one fails. `route.describe(text)` describes the route for AI agents; undescribed routes are never served to them. `Route.post(pattern)` requires a pattern, and the generated hash patterns are removed.
+  - **Middleware on its own:** a `Middleware` written outside a route fits any route, including one with fields or converted parameters, where it was a type error on a route with fields. Its `c.params` values are `unknown`, and `c.data()` is the route's parsed fields or `null`.
+  - **Mounting:** `route.middleware` is a read-only copy; add middleware with `use`. Once `app.use()` mounts a route, it is final, and configuring it throws.
+  - **URLs:** `route.pathname()` is removed: `route.url({ params })` builds the path, typed exactly when it has no `search` or `hash`. It fills parameters and wildcards anywhere in a segment, such as `/file-:id` and `/files-*`, and takes a parameter as a string, a number, or a bigint, as a `params` schema may have converted it, as do `Anchor`, `Form`, and `Button`. It throws for a parameter that would leave its segment, be empty, `.`, or `..`, and when a value would make the path start with `//`, which browsers read as another host.
+  - **Encoding:** `url()` and the route components encode parameter values, so a value such as `a/b?c` stays in its own segment, and a wildcard keeps its slashes. Matched parameters are decoded for handlers and `params` schemas: `/api/a%20b` gives `"a b"`. A wildcard keeps an encoded `/` or `\`, so a request cannot add segments to its path, and a malformed escape is left as sent. Apps that decode parameters themselves should stop.
+  - **Wildcards:** a wildcard param never starts with `/`: `/files//etc/passwd` gives `"etc/passwd"`, so joining it to a folder cannot leave the folder.
+  - **Trailing slash:** a request no route matches is redirected only when the other spelling of its path matches a route. A matched route always answers, so its handler no longer runs and is then replaced by a redirect.
+  - **Request data:** `c.data()` reads a route's fields from the request body for every method except GET and HEAD, which read the URL. PUT, PATCH, and DELETE routes with fields read the URL before.
+  - **Responses:** a returned `Response` keeps each of its `Set-Cookie` headers, added to cookies already set. Content returned with a `Content-Type` such as `Text/HTML` or `text/html ; charset=utf-8` is escaped as markup, since media types ignore case and spaces. Parameter names in `Content-Type` and `Content-Disposition`, such as `Boundary`, match in any case.
+  - **Runtimes:** ovr uses native Base64 and WebAuthn JSON APIs, such as `Uint8Array.toBase64` for form state, and supports only the latest Node.js LTS release and current browsers. The runtime support policy is documented, without a package `engines` restriction.
+  - **CSRF:** the app allows requests with neither `Sec-Fetch-Site` nor `Origin` and without cookies. Browsers always send at least one of the headers, so non-browser clients, such as an agent submitting a form, can post.
+
+- fc30a95: Forms are a route's fields, set up by chaining, like a field's rules and like a route:
+
+  ```ts
+  Field.url()
+  	.label("URL")
+  	.describe("An http or https address")
+  	.control({ placeholder: "https://" })
+  	.max(300);
+  ```
+
+  - **Fields from a shape:** `route.fields(shape)` is the one way to give a route fields, and `Form` is internal. A route renders them with `Field`, `Fields`, and `component`, and no longer has the form's `parse`, `shape`, `names`, `parts`, `extend`, `pick`, and `omit`. To share fields, reuse the shape object, typed `Field.Shape`. The types of what fields parse and keep are `Field.Parse`, `Field.Value`, and `Field.State`. `Form.from()` and `Route.Schema` are removed, and a field's own `render()` and `component()` are no longer part of the API.
+  - **Label, description, and attributes:** `label()` names the field, and the `label` property is removed. `describe()` says how to fill it in: people see it in a paragraph under the control, which the control names in `aria-describedby`, and `component()` has a `Description` part to place it in a custom layout. `control()` gives the control its attributes. The object each field took is removed: `Field.text({ placeholder: "Name" })` becomes `Field.text().control({ placeholder: "Name" })`, and `Field.select(options, attributes)` becomes `Field.select(options).control(attributes)`. Each of the old forms is a type error. A table's field carries all three into every form and tool that uses it.
+  - **Choices:** a field's choices are its `options`, as the `<option>` elements they render, so `values` means only a record's values: `field.options`, and `options` on a select's, a radio group's, or a checkbox group's components.
+  - **Many values:** `multiple()` takes more than one value, chained like a field's other rules: `Field.file().multiple()` and `Field.select(options).multiple()` replace `Field.files()` and `Field.multiselect(options)`. `Field.checkboxes()` and `Field.radio()` stay, since each is a group of controls.
+  - **Editing a record:** route forms and fields accept `values`, under any values restored from an invalid submission. Valid `c.data()` results add `invalid(messages)` to put issues found after parsing, such as a database constraint, on fields. Cleared persisted fields stay empty in invalid form state, so they stay cleared over initial values.
+  - **Submit button:** a route's `Form` renders its fields, if any, and a submit button labelled with `submit`, so one without fields, such as a delete, is no longer empty; children replace both.
+  - **Filling from the URL:** only a GET route's form fills its fields from search params of the same name. Other forms restore just the values they persisted in `_form`, so a link such as `/account/edit?role=admin` can no longer fill in a form, its hidden and password fields included, over the `values` passed to it.
+  - **Required:** generated controls are `required` when leaving them empty fails validation, except checkboxes, so browsers, screen readers, and agents reading Markdown know before submitting. Pass `required={false}` to leave it out.
+  - **Messages:** radio, select, and checkbox fields say "Select an option" when nothing or an option that is not offered is sent, instead of "Required field". Field names such as `constructor` are unexpected fields, not inherited properties.
+  - **Numbers:** `Field.number()` and `Field.range()` reject integers beyond `Number.MAX_SAFE_INTEGER` instead of rounding them.
+
+- fc30a95: Schemas describe themselves as JSON Schema, and parse about twice as fast.
+
+  - **JSON Schema:** `schema.toJsonSchema()` and Standard JSON Schema support through `~standard.jsonSchema`, targeting draft 2020-12 or draft-07. A field's label is its `title`, and a `Field.checkbox()` is optional in input schemas, with a default of `false`, as an unchecked box is left out of a form.
+  - **Descriptions:** `describe()` is a method of every schema: `Schema.string().uuid().describe("The bookmark's ID")` is that value's `description` in its JSON Schema, so a route's `params` describe a tool's arguments to agents. A field inherits it, and also shows the text under its control. `schema.description` reads it back, through what wraps it, such as `optional()`.
+  - **New schemas:** `Schema.date()` and `.uuid()`. Schemas keep the definition they were built from in `schema.def`.
+  - **Issue types:** declaration files name `Schema.Issue` and `Schema.AggregateIssue`, where they copied their members.
+  - **Construction:** `new Schema(def)` and `schema.derive()` are protected, so a schema is made with `Schema`'s static methods.
+  - **Strings:** `min` and `max` count Unicode characters instead of UTF-16 code units, matching JSON Schema and Postgres, so an emoji counts as one character.
+  - **Speed:** nested schemas share one issue path, copied only into issues, and build one `Schema.AggregateIssue`.
+  - **Fixes:** a `__proto__` key is kept as data, in an object's shape, passed through by `loose()`, or named by `pick` or `omit`, instead of changing the parsed object's prototype, and is an own property in JSON Schema. Unions and arrays with very many issues no longer overflow the stack. The published types compile without Node's types.
+
+  The unused `Schema.Parse.Constructor` type is removed.
+
+- fc30a95: Elements render to markup with `Markup` and to Markdown with `Markdown`, several times faster.
+
+  - **`Render` is `Markup`:** it renders HTML and other markup such as XML. `Render.html` is `Markup.raw`, `Render.Options` is `Markup.Options`, and `Render.Chunk` is `Markup.Chunk`. The `safe` option is `raw`, like `Markup.raw`. `Markup.string(element)` is static, like `Markup.stream`, and declaration files name `Markup.Chunk`.
+  - **Strings:** `Markup` yields strings of markup, as `Markdown` yields strings of Markdown, instead of chunks to call `toString()` on.
+  - **JSX:** `JSX` is exported as a type only. The JSX runtime is `ovr/jsx-runtime`, which TypeScript and bundlers load from `jsxImportSource`. A class is a type error as a JSX tag, where it compiled and failed when rendered. SVG `<linearGradient>` and `<radialGradient>` accept their `<stop>` children.
+  - **Markdown:** `Markdown` renders any element to Markdown, as an async iterable, `Markdown.stream`, or `Markdown.string`, written from the rendered elements as they stream, without parsing HTML. Requests that prefer `Accept: text/markdown` receive pages as Markdown, and `c.md(source)` responds with a page's own Markdown, such as a post's source, when it is asked for. HTML responses include `Vary: Accept`. Only the page's `<main>` is written when there is one, found inside any wrapper, and HTML from `Markup.raw` is written as it is.
+  - **Markdown forms:** forms are written with their fields, values, and errors, and say how to encode their body, such as `POST https://example.com/todos` as `multipart/form-data`. A form in a table's cell is kept: one that is only a button, such as a delete in each row, is written in the cell, and one with fields after the table. A form around a table keeps the table and its links, with each control named in its cell. A button with a `formaction` says where it submits, and a `<pre>`, a link, and raw markup in a form are kept as they are.
+  - **Markdown structure:** an inline element that holds blocks, such as a custom element around a card, is read as a container, so its headings, lists, code, and forms are kept. A code block in a `<dd>` or `<figcaption>` keeps its lines. Raw markup is its own block only when it starts with a block element, so `Markup.raw("&euro;")` stays in its sentence. A list keeps items inside a wrapper element and a list placed directly in a list, and paragraphs in one item stay apart.
+  - **Markdown escapes:** text loose in a form, a backtick in a form's action, a run of `~`, a `>` or a line of `=` at the start of a line, and a character reference such as `&amp;` are escaped. An ordered list marker in text is escaped after its number (`1\.`), where the escape works.
+  - **Speed:** a page renders to HTML about 9 times faster and to Markdown about 5 times faster: the renderer walks the tree with its own stack and only awaits what has to be awaited. A request for a small page through `App.fetch` goes from about 4,700 to 37,000 a second. A streamed response sends what is ready together, up to 2 KB for each read, where each element was a chunk of its own. The bytes and their order are the same, and nothing is held back for something that is still loading.
+  - **Fixes:** a chunk rendered while an earlier sibling is still rendering is no longer changed, so a `Markup.raw()` value used in more than one place renders the same each time. `Markup.raw("")` in a streamed page is skipped, where it ended the stream with an error. A long table read as Markdown holds less than half of the memory it did until the table ends.
+
+- fc30a95: The multipart parser is named `multipart` wherever it appears, so "form" means a route's fields and the `<form>` they render: `c.form()` is `c.multipart()`, and `new App({ form })` is `new App({ multipart })`.
+
+  - **Errors:** the errors are `Multipart.Limit`, `Multipart.Malformed`, and `Multipart.Unsupported`, so a route that catches them can tell them apart from its own errors. They and `Multipart.Part` are types too, which declaration files name, so an app that exports a function returning a part or checking an error builds its declarations. A body the client got wrong is answered instead of thrown out of `app.fetch` when the route does not catch it: 413 for a body over a limit, 415 for a content type other than multipart form data, and 400 for malformed form data. Global middleware that catches errors sees the answer and not the error, so an error page is not shown for a client's mistake, and the answer keeps the headers middleware set, such as for CORS.
+  - **Not a `Request`:** `Multipart` no longer extends `Request`, since it reads the request's body and every body method it inherited threw. It is the async iterable of a request's parts, with `data()`; read the request's headers and URL from the request. Each `Multipart.Part` is still a `Request`, whose body is the part's.
+  - **Other servers:** form submissions work on servers that pass their own request object, such as srvx. The parser copied the request with the platform's constructor, which only accepts its own requests, so `c.data()` threw on every POST there.
+  - **Parsing:** the parser skips the rest of a part its reader stopped reading, so a file's bytes are never parsed as further fields. A part that ends without its boundary, a body without the closing delimiter, and one without an opening boundary are malformed; a form without fields, only the closing delimiter, still parses. Only a delimiter starting the body or a line opens the first part, a line in a part that starts with the boundary rejects the body, as RFC 2046 does not allow it, and nothing after the closing delimiter is parsed. Spaces and tabs after a delimiter are ignored, as RFC 2046 requires of receivers.
+  - **Boundaries:** boundaries must be 1 to 70 RFC 2046 characters; a boundary of 252 or more characters made parsing loop forever. Boundary searches are linear whatever boundary the client chooses.
+  - **Headers:** quoted header parameters can contain `;` and escaped quotes, and decode only `%22`, `%0D`, and `%0A`, the escapes browsers write in filenames, so a file named `100%41.txt` keeps its name. Field names and filenames keep the UTF-8 browsers send, such as `レポート.pdf`, and a part header that is not UTF-8 is malformed.
+  - **Memory:** a request or response body read whole is no longer held twice as it is joined.
+
+- fc30a95: Mistakes in your own code are type errors instead of runtime checks, so they are found while you write the code and cost nothing at runtime:
+
+  - `new Auth()` needs `Auth.tables` and its users table in its database, a users table with an `id` and without the `credential`, `ceremony`, or `bootstrap` fields passkey forms send.
+  - `new Limiter()` needs `Limiter.table` in its database.
+  - `c.redirect(route)` needs a route without parameters; use `route.url({ params })`.
+  - `new Table()` needs a name, and `default` lists its own columns. An empty table, column, or schema name, or one with a NUL character, is a type error too, as is a column that may be left out, with `optional()` or `nullish()`; use `nullable()` or the `default` option.
+  - A route pattern written out must start with `/`, and cannot hold a query, a fragment, or whitespace, and an MCP endpoint `path` must be a fixed path of the app's own.
+  - `params()` or `fields()` called after `use()`. `use()` returns the route with neither, since its middleware is typed by them.
+  - An Auth `page`, `redirect`, or `consent` path that is not a local path of the app's own, such as `https://example.com`, `/login?next=1`, or `/login/`, and a `page` that is one of Auth's endpoints. A path that is not written out, such as one read from the environment, is taken as it is.
+  - A route pattern cannot run a parameter into the wildcard, as in `/:id*`, since nothing tells where one ends and the other starts; use `/:id/*`.
+  - `route.describe()` needs text that is not blank, whatever whitespace it holds, and a pattern without both a `:wildcard` parameter and a `*` wildcard, which would both be the tool's `wildcard` argument.
+
+  Checks stay at runtime where a type cannot see the value: options often read from the environment, such as Auth's origin and secret; values from requests, files, or the database; what else is mounted; and mistakes that would open a hole for an attacker, such as calling `sql` with a string instead of a template.
+
+  Numbers in options are not checked, such as a `Limiter`'s `limit` and `interval` or Auth's session times, so a value read from the environment needs to be a number that makes sense.
+
+### Minor Changes
+
+- fc30a95: Apps are usable by AI agents, through MCP, WebMCP, and pages read as Markdown.
+
+  - **MCP:** `app.use(new Mcp({ instructions }))` serves a Model Context Protocol endpoint at `/mcp`, implementing the 2026-07-28 Streamable HTTP transport, and the earlier 2025-11-25 and 2025-06-18 versions clients such as ChatGPT's start with `initialize`, all without sessions. It is tested with the official MCP conformance suite. Requests from another `Origin` are rejected, as is a browser request that reaches the endpoint from the same machine for a host that is not local, when the server passes the client's `ip` to `app.fetch`. Request IDs are strings or integers, and `Mcp-Method` and `Mcp-Name` headers must match the request. A request missing `protocolVersion` or `clientCapabilities` in `_meta` is an invalid params error (-32602) with status 400, a version header that differs from the body is a header mismatch, and `ping` and `initialize`, which 2026-07-28 removed, are not found on that version.
+  - **Tools and resources:** only described routes are served, so adding a route or page never lets agents call or read it. A route becomes a tool, with an input schema from its parameters and fields, and described GET routes are Markdown resources. `route.tool` is the name, description, and hints agents call it with. A tool call runs the route's handlers as a request: arguments become form data or search parameters, and parameters fill the path anywhere in a segment.
+  - **Input schemas:** a form's tool takes no other arguments, and one it does not have is an issue naming it. A number field lists with its type and rules, such as `integer` with a `minimum`, and as required when it is. A date, time, month, week, or color field describes the format its picker sends, such as `YYYY-MM-DD`. A file field's argument is the file's `name`, an optional media `type`, and its contents as `text`, or as `base64` when it is not text, and the route receives it as a `File` like one a browser uploads. A request to the endpoint is limited by the app's `multipart.memory`, 4 MB by default.
+  - **Results:** form issues, and parameters a route's `params` schema rejects, are returned to the agent as issues. Redirects to described pages are followed; a redirect to another page of the app returns only that it redirected, keeping its address private, and one to another site returns its URL. A write that redirects is done: when the page it redirects to cannot be read, such as on a rate limit, the result says so without being an error, so an agent does not repeat the write. A refused request's `Retry-After` is included. A route that answers with a file returns an image or audio as its own content, and any other type, such as a PDF, as an embedded resource, or a `blob` from `resources/read`. A route that answers with an event stream returns the stream's address as a resource link, for the agent to open and close itself.
+  - **Errors:** an answer with a status of 500 or more is a JSON-RPC internal error (-32603), and an error nothing in the app catches still leaves `app.fetch`, as from any route. A resource read the app refuses, such as with a 403, is an error about the request (-32602) with its status, and a missing resource is an invalid params error that names its URI.
+  - **Pages for agents:** a page an agent reads through MCP gives each form as the call to its tool, with the arguments the form's address holds and the form's current values, including hidden ones, and messages: ``Delete ovr: tool `post_bookmarks_id_delete`, `id`: `0b8f5d0a` ``. A single checkbox's value is `true` or `false`. A form that submits to a route that is not described is left out, since the agent has no tool to submit it with. Pages read as Markdown over HTTP give the form's address instead. `resources/read` results carry `ttlMs` and `cacheScope`, private when agents sign in.
+  - **Language:** an MCP client's language preference reaches the route a tool or resource runs as `Accept-Language`, from the request's `_meta` or its header, and the route's `Content-Language` is reported in the result's `_meta` and the response header.
+  - **Outside middleware:** the endpoint runs outside the app's global middleware, and the request it makes to a route for each tool call or resource read passes through global middleware once, as the agent's user, so a `Limiter` passed to `app.use` counts each call once. The endpoints an agent signs in through run outside global middleware too: both metadata documents, `/oauth/authorize`, and `/oauth/token`, each still refusing a request for another host. The protected resource metadata names the endpoint at Auth's configured origin, where it named whatever host the request used.
+  - **WebMCP:** a route's `Form` adds the declarative WebMCP attributes, `toolname`, `tooldescription`, and, for GET forms only, `toolautosubmit`, so agents in the browser call it as the same tool and the user submits forms that change data. Forms of routes with parameters and of undescribed routes are not annotated.
+  - **Agent sign in:** with `new Mcp({ auth })` and a consent page, `/connect` by default, agents sign in through OAuth 2.1 with PKCE: the user approves the agent with their passkey, asked for again on Allow, where the browser offers only that user's passkeys, so a script driving a signed-in browser cannot approve it, and the agent's tool calls act as that user through `c.session()`. Authorization errors are answered with a 400 page, never redirected to the agent, and browser preflights for the OAuth endpoints are answered. With `auth`, a page's resource name is `page://host/path`, since the specification keeps `https` names for what an agent can fetch itself; `resources/read` takes either form.
+  - **Agent identity:** agents identify themselves with client ID metadata documents, written exactly as their URL and fetched only from public addresses, which requires Node.js or Bun. A document that declares token endpoint authentication other than `none`, or grant or response types other than `authorization_code` and `code`, is not accepted, and a token request that authenticates its client is refused with `invalid_client`. Downloads are limited per IP, per document host, and at once, two per IP, with IPv6 counted per /64; requests for the same agent share one download, found agents are kept for 5 minutes, and a client ID without a valid document is remembered for a minute. When a download is refused, or fails in a way that may pass, an agent found in the last hour is served from its last document.
+  - **Tokens:** Auth stores hashed tokens, bound to the exact MCP endpoint, in a table Auth's migration creates. A connection ends 30 days after approval, however often its tokens are refreshed. A used code or refresh token is kept until its tokens expire, so using it again revokes them. The code exchange needs `redirect_uri` when the authorization request named it. `auth.consent(c)` returns the request, whose `client` has the agent's `id`, its metadata document URL, and `name`, and `auth.disconnect(c, client)` revokes an agent's tokens, including ones a refresh is issuing at the same time.
+  - **Memory:** a tool call builds only the tool it calls, about 0.1 MB and 0.1 ms for an app with 1,000 tools. A file sent to a tool is held once inside the route, and the request's bytes are let go before its JSON is parsed.
+
+- fc30a95: Passkey authentication and rate limiting, stored in the application's Postgres database.
+
+  - **Auth:** mounted with `app.use(auth)`, with registration, login, logout, revocable sessions read with `c.session()` that renew while used, up to their `lifetime`, and customizable forms whose message parts are `Register.Issue` and `Login.Issue`, as a field's is its `Issue`. Accounts are created in the application's users table, and Auth's own tables come from `Auth.tables`, whose versioned migrations `database.migrate` applies before the application's. `/login` is the default combined login and account creation page.
+  - **Ceremonies:** registration fields are bound to stored challenges, and outstanding ceremonies are limited per browser. Browsers without WebAuthn's JSON helpers are told passkeys are unavailable before any challenge is requested. Signing secrets rotate, and a signature is accepted only in the spelling it was issued in.
+  - **Limits:** sign-in is limited per client with fixed limits. `Limiter` rate limits your own routes, each limiter named by its first argument, with buckets stored under a hash of their name, policy, scope, and identity. `Limiter.Context` includes `session`, so a `key` can count each signed-in user. An unavailable limiter throws to the app instead of admitting the request.
+  - **Client IP:** `App.fetch` takes the trusted client IP from the server.
+
+- fc30a95: Add `Table` and `Database` for Postgres:
+
+  - **Tables** are defined with schemas or form fields. Dates inside JSON columns are stored as ISO strings and read back as dates, in union branches too.
+  - **Queries:** `database.sql` queries with bound parameters and validated rows. `Database.unique(error, constraint)` recognizes unique violations, for example to show them as form errors.
+  - **Transactions:** pass `database.sql` a callback. Queries the callback did not wait for finish before the commit, so one that fails rolls the transaction back.
+  - **Migrations:** SQL migrations with checksums and locking, each committed with its history record in one transaction, so `BEGIN`, `COMMIT`, and `ROLLBACK` are not allowed in them. The migrations of library tables such as `Auth.tables` are applied first, in the order each library lists them.
+  - **Checks:** `database.check()` is a basic compatibility check of the live database's columns, and of the foreign keys library tables need, such as Auth's to the users table.
+
+  Applications supply a pg-compatible pool.
+
 ## 6.2.5
 
 ### Patch Changes

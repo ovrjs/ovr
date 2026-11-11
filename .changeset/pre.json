@@ -1,0 +1,20 @@
+{
+  "mode": "pre",
+  "tag": "next",
+  "initialVersions": {
+    "docs": "0.0.0",
+    "ovr": "6.2.5",
+    "@ovrjs/size": "0.0.1"
+  },
+  "changesets": [
+    "1-routes",
+    "2-forms",
+    "3-schema",
+    "4-rendering",
+    "5-multipart",
+    "6-type-errors",
+    "7-agents",
+    "8-auth",
+    "9-database"
+  ]
+}
