@@ -330,15 +330,26 @@ app.use(new Mcp({ auth }), connect);
 
 Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint given `auth` have none of these endpoints.
 
-| Endpoint                                  | Purpose                                                     |
-| ----------------------------------------- | ----------------------------------------------------------- |
-| `/.well-known/oauth-authorization-server` | Metadata agents discover the endpoints with                 |
-| `/oauth/authorize`                        | Signs the user in if needed, then shows your `consent` page |
-| `/oauth/approve`                          | Allows the agent, confirmed with the user's passkey         |
-| `/oauth/deny`                             | Denies the agent                                            |
-| `/oauth/token`                            | Exchanges codes for tokens, and refreshes them              |
+| Endpoint                                    | Purpose                                                                                  |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `/.well-known/oauth-authorization-server`   | Metadata agents discover the endpoints with                                              |
+| `/oauth/authorize`                          | Signs the user in if needed, then shows your `consent` page                              |
+| `/oauth/approve`                            | Allows the agent, confirmed with the user's passkey                                      |
+| `/_passkey/options/approve`                 | Starts the passkey prompt that confirms allowing the agent                               |
+| `/oauth/deny`                               | Denies the agent                                                                         |
+| `/oauth/token`                              | Exchanges codes for tokens, and refreshes them                                           |
+| `/.well-known/oauth-protected-resource/mcp` | Metadata naming the MCP endpoint's authorization server, served by `Mcp` at its own path |
 
 An agent's client ID is the HTTPS URL of its [client ID metadata document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#client-id-metadata-documents), a JSON file with its name and the addresses to return the user to. Auth fetches it when the user connects, so the name shown on the consent page is tied to the agent's website, and there is nothing to register or store. The fetch never follows redirects, reads at most 5 KB, and refuses private and other special-use addresses. The address is checked when the connection looks the name up, so a domain cannot pass the check and then point at your network. Node.js and Bun can check the connection, so mounting `new Mcp({ auth })` throws in other runtimes. Agents are public clients: a document that declares only another way to authenticate, such as `private_key_jwt`, or only other grant or response types, is not accepted, and a token request that authenticates its client is refused.
+
+A client ID and its document are accepted when:
+
+- the client ID is an `https` URL with a path, without credentials or a fragment, written exactly as it parses;
+- the document's `client_id` is that URL, and its `client_name`, if any, is shown trimmed to 100 characters, or the host when it is blank;
+- `redirect_uris` lists at least one address, each `https`, `http` on a loopback address, where any port matches, or an app's own scheme, and none `javascript:`, `data:`, `file:`, `blob:`, `vbscript:`, or `about:`;
+- it declares no sign-in method but `none`, and no grant or response types without `authorization_code` and `code`.
+
+A download that fails for now, such as a timeout, a 5xx, or a 429, is tried again later, and a document that is invalid or too large is refused.
 
 Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute and download 10 documents per minute from one host, a host serves at most 300 downloads per minute in all, and an instance downloads at most 16 documents at once, 2 for one IP. Requests for the same agent share one download, a found agent is kept for 5 minutes, and a client ID without a valid document is remembered for a minute. When a download is refused, or fails in a way that may pass, such as a timeout or a 5xx response, an agent found in the last hour is served from its last document, so floods of made-up client IDs or a short outage cannot lock out agents users already connect. A final answer, such as a 404 or an invalid document, forgets the agent at once. Errors in an authorization request are answered with a 400 page, not redirected to the agent, since anyone can publish a document naming any callback.
 

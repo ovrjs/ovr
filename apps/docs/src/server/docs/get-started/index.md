@@ -28,7 +28,6 @@ To utilize JSX, add the following options to your `tsconfig.json` to enable the 
 Or you can use a comment if you are using ovr in conjunction with another framework to specify the import source for a specific module where you are using ovr.
 
 ```tsx
-/** @jsx jsx */
 /** @jsxImportSource ovr */
 ```
 

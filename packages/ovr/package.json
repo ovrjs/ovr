@@ -40,7 +40,7 @@
 	"scripts": {
 		"check": "tsc",
 		"dev": "node scripts/client.js --watch",
-		"build": "node scripts/client.js && tsc -p tsconfig.build.json && cp ../../LICENSE.md dist"
+		"build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && node scripts/client.js && tsc -p tsconfig.build.json && cp ../../LICENSE.md dist"
 	},
 	"dependencies": {
 		"@standard-schema/spec": "^1.1.0"

@@ -15,7 +15,7 @@ import { Route } from "ovr";
 const route = new Route("GET", "/").use(() => "html");
 ```
 
-Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`, which throws otherwise. Once `app.use()` mounts a route, it is final: changing it throws, so its tool and middleware stay as they were mounted.
+Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`: `use` returns a `Route.Used`, on which calling either is a type error. Once `app.use()` mounts a route, it is final: changing it throws, so its tool and middleware stay as they were mounted.
 
 ```ts
 const update = Route.post("/posts/:id")
@@ -238,7 +238,7 @@ page.pattern; // "/hello/:name"
 
 ### URL
 
-The `url` method creates a _relative_ URL (without the `origin`) for the route. It inserts params into the pattern, encoded so a value stays in its own segment: `{ name: "a/b" }` gives `/hello/a%2Fb`, and the route decodes it back to `"a/b"`. A wildcard keeps its slashes.
+The `url` method creates a _relative_ URL (without the `origin`) for the route. It inserts params into the pattern, encoded so a value stays in its own segment, and throws a `TypeError` for a value that is empty, `.`, or `..`, or a URL that would start with `//`, since each would point somewhere else: `{ name: "a/b" }` gives `/hello/a%2Fb`, and the route decodes it back to `"a/b"`. A wildcard keeps its slashes.
 
 Given the pattern `/hello/:name`, the `name` param is required, and the result is typed by the path it builds:
 

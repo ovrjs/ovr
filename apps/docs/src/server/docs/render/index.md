@@ -161,7 +161,7 @@ new Markup(element, { raw: true });
 
 Turn an element into a `ReadableStream` using `Markup.stream`.
 
-This stream is optimized for generating markup---it ensures backpressure is properly handled for slower clients and generation stops if the client aborts the request.
+This stream is optimized for generating markup---it ensures backpressure is properly handled for slower clients and generation stops if the client aborts the request. Each read sends everything that is ready, up to about 2KB, and nothing waits for what is still loading.
 
 ```tsx
 import { Markup } from "ovr";
@@ -213,7 +213,7 @@ Use it for markup you trust, such as HTML from a Markdown processor or an SVG fi
 
 ## Markdown
 
-`Markdown` renders the same elements to Markdown, with the same ways in: an async iterable, a stream, and a string. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use `Markdown` to render it yourself, such as to write files or answer with part of a page.
+`Markdown` renders the same elements to Markdown, with the same ways in: an async iterable, a stream, and a string. Text is escaped, so a page's content, such as a user's comment, cannot write Markdown of its own. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use `Markdown` to render it yourself, such as to write files or answer with part of a page.
 
 ```tsx
 import { Markdown } from "ovr";

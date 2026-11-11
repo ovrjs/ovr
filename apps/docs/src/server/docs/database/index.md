@@ -7,7 +7,7 @@ description: Postgres tables, queries, transactions, and migrations with ovr sch
 
 ## Define tables
 
-Columns are ordinary schemas. A table describes the data your application reads and writes; keys, constraints, indexes, and default expressions belong in [migrations](#migrate).
+Columns are ordinary schemas. A table describes the data your application reads and writes; keys, constraints, indexes, and default expressions belong in [migrations](#migrate). An empty table, column, or schema name, or one with a NUL character, is a type error.
 
 ```ts
 import { Database, Schema, Table } from "ovr";

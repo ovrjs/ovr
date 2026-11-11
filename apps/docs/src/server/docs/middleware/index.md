@@ -25,7 +25,7 @@ There are two levels of middleware in an ovr application:
 1. **Global** - any middleware passed directly to `App.use`
 2. **Route** - middleware added to a specific `Route`
 
-For each request, ovr creates an array containing the **global** middleware, then the **matched route**'s middleware (if there is a match). An [MCP endpoint](/agents#mcp) is the exception, with the endpoints agents [sign in](/agents#sign-in) through: they are the way in for agents and not pages of your app, so they run without global middleware, and the request the MCP endpoint makes to a route for an agent passes through them. What must cover every request, such as an IP blocklist or a maintenance page, belongs in front of the app, at your server or proxy.
+For each request, ovr creates an array containing the **global** middleware, then the **matched route**'s middleware (if there is a match). An [MCP endpoint](/agents#mcp) is the exception, with the endpoints agents [sign in](/agents#sign-in) through, its OAuth metadata documents, `/oauth/authorize`, and `/oauth/token`: they are the way in for agents and not pages of your app, so they run without global middleware, and the request the MCP endpoint makes to a route for an agent passes through them. What must cover every request, such as an IP blocklist or a maintenance page, belongs in front of the app, at your server or proxy.
 
 The first middleware in the array will be called, then you can dispatch the `next` middleware within the first by calling `await next()` or returning `next()`.
 
@@ -100,7 +100,7 @@ Route.get("/api/:id").use((c) => {
 	c.html(body, status); // HTML
 	c.text(body, status); // plain text
 	c.json(data, status); // JSON
-	c.redirect(location, status); // redirect to a location or route
+	c.redirect(location, status); // redirect to a location, or a route without parameters
 
 	c.cookie.set(name, value, options); // set cookie
 

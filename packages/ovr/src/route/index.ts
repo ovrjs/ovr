@@ -481,7 +481,8 @@ export class Route<
 	/** Route middleware stack, runs after global middleware */
 	get middleware(): Middleware<any, any>[] {
 		const schemas = this.paramSchemas;
-		if (!schemas) return this.#stack;
+		// a copy, so a mounted route's middleware cannot be changed through it
+		if (!schemas) return [...this.#stack];
 
 		return [
 			(c, next) => {

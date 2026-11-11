@@ -125,7 +125,7 @@ export class Context<
 	/** Contains the arguments to used create the final `Response` */
 	readonly res = new PreparedResponse();
 
-	/** Get, set, and delete cookies. */
+	/** Get and set cookies, a cookie set with `maxAge: 0` is deleted. */
 	readonly cookie = new Cookie(this);
 
 	/** Forwarded app options */

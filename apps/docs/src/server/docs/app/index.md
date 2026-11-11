@@ -37,7 +37,7 @@ new App({ csrf: false }); // disables the built-in protection
 
 ### Form
 
-[Multipart form data options](/multipart#options).
+[Multipart form data options](/multipart#options): `memory`, 4MB by default, is the most the parser holds at once, and also the largest request the [MCP endpoint](/agents#tools) reads; `payload`, 16MB by default, is the largest body; and `parts` has no limit unless you set one.
 
 ```ts
 new App({

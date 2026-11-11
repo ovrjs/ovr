@@ -385,14 +385,17 @@ export class Auth<
 	}
 
 	/** Establish a session for an already-authorized user with a non-blank ID of at most 1024 UTF-8 bytes. Built-in passkey handlers do this automatically. */
-	login(c: Pick<Auth.Context, "url" | "cookie" | "res">, user: string) {
+	readonly login = (
+		c: Pick<Auth.Context, "url" | "cookie" | "res">,
+		user: string,
+	) => {
 		return this.#state(c).login(user);
-	}
+	};
 
 	/** Revoke the current session and expire its cookie. Always await this method. */
-	logout(c: Pick<Auth.Context, "url" | "cookie" | "res">) {
+	readonly logout = (c: Pick<Auth.Context, "url" | "cookie" | "res">) => {
 		return this.#state(c).logout();
-	}
+	};
 
 	/**
 	 * Disconnect one of the signed-in user's agents. Once it resolves, the
@@ -403,12 +406,12 @@ export class Auth<
 	 * @param client Agent's client ID, from `auth_tokens`
 	 * @throws When nobody is signed in
 	 */
-	async disconnect(
+	readonly disconnect = async (
 		c: Pick<Auth.Context, "url" | "cookie" | "res">,
 		client: string,
-	) {
+	) => {
 		const session = await this.#state(c).session();
 		if (!session) throw new Error("Sign in to disconnect an agent");
 		await this.#storage.tokens.revoke(session.user, client);
-	}
+	};
 }

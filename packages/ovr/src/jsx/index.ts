@@ -36,6 +36,13 @@ export namespace JSX {
 
 	/** Unknown component props */
 	export type Props = Record<string, JSX.Element>;
+
+	/**
+	 * What a tag can be: an element's name, or a component, which is a
+	 * function. A class is not one, so `<Form />` with the `Form` class is a
+	 * type error instead of failing as it renders.
+	 */
+	export type ElementType = string | ((props: any) => unknown);
 }
 
 /** ovr JSX */

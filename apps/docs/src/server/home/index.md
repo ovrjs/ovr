@@ -87,6 +87,7 @@ The form also names its tool for [WebMCP](/agents#webmcp), so an agent in the br
 # Todos
 
 - Buy milk
+
   **Form:** `POST https://example.com/todos/1/done` as `multipart/form-data`
 
   Submit: Done

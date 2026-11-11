@@ -7,7 +7,7 @@ ovr's `Schema` API is modeled after [Zod](https://zod.dev/) and implements [Stan
 
 ## Parse
 
-`Schema.parse` safely parses an `unknown` into a `Schema.Parse.Result`.
+A schema's `parse` safely parses an `unknown` into a `Schema.Parse.Result`.
 
 ```ts
 import { Schema } from "ovr";

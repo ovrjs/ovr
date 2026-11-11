@@ -423,6 +423,94 @@ export class ShapeUtil {
 	}
 }
 
+// named classes, so their published types are written by name and do not
+// spell out what `Error` has in each runtime, such as Node's
+
+/** Validation issue produced during parsing. */
+class Issue extends Error {
+	/** Expected type/value. */
+	readonly expected: string;
+
+	/** Path to the invalid value. */
+	readonly path: Schema.Issue.Path;
+
+	/**
+	 * @param expected Expected value
+	 * @param path Path to the invalid value
+	 * @param message Issue message
+	 */
+	constructor(expected: unknown, path: Schema.Issue.Path, message?: string) {
+		const exp = String(expected);
+
+		super(message ?? `Expected ${exp}`);
+
+		this.name = "Schema.Issue";
+		this.expected = exp;
+		this.path = path;
+	}
+
+	/**
+	 * @returns `Schema.Issue(path): message`
+	 */
+	override toString() {
+		let path = "";
+
+		for (const segment of this.path) {
+			path +=
+				typeof segment === "number"
+					? `[${segment}]`
+					: `${path ? "." : path}${segment}`;
+		}
+
+		return `${this.name}${path ? `(${path})` : ""}: ${this.message}`;
+	}
+
+	toJSON() {
+		return { ...this, message: this.message };
+	}
+}
+
+/** AggregateIssue containing at least one Schema.Issue */
+class AggregateIssue extends AggregateError {
+	/** Non-empty tuple of issues */
+	readonly issues: Schema.Issue.List;
+
+	/** User submitted / sanitized values */
+	readonly values: Form.Value.Map | undefined;
+
+	/**
+	 * Create a new AggregateIssue.
+	 *
+	 * Coerces issues into a non-empty tuple.
+	 *
+	 * @param issues Issues
+	 * @param values Received values
+	 */
+	constructor([first, ...rest]: Schema.Issue[], values?: Form.Value.Map) {
+		if (!first) throw new TypeError("AggregateIssue must have an issue.");
+
+		const issues: Schema.Issue.List = [first, ...rest];
+		const name = "Schema.AggregateIssue";
+		const count = issues.length;
+
+		super(issues, `${name}(${count})\n${issues.join("\n")}`);
+
+		this.name = name;
+		this.issues = issues;
+		this.values = values;
+	}
+
+	override toString() {
+		// prevents name being in the default twice since it's
+		// already in the message
+		return this.message;
+	}
+
+	toJSON() {
+		return { ...this, message: this.message };
+	}
+}
+
 /**
  * Minimal schema validator geared around parsing form data like
  * multipart `FormData` and `URLSearchParams`.
@@ -452,89 +540,10 @@ export class Schema<Output>
 	};
 
 	/** Validation issue produced during parsing. */
-	static readonly Issue = class Issue extends Error {
-		/** Expected type/value. */
-		readonly expected: string;
-
-		/** Path to the invalid value. */
-		readonly path: Schema.Issue.Path;
-
-		/**
-		 * @param expected Expected value
-		 * @param path Path to the invalid value
-		 * @param message Issue message
-		 */
-		constructor(expected: unknown, path: Schema.Issue.Path, message?: string) {
-			const exp = String(expected);
-
-			super(message ?? `Expected ${exp}`);
-
-			this.name = "Schema.Issue";
-			this.expected = exp;
-			this.path = path;
-		}
-
-		/**
-		 * @returns `Schema.Issue(path): message`
-		 */
-		override toString() {
-			let path = "";
-
-			for (const segment of this.path) {
-				path +=
-					typeof segment === "number"
-						? `[${segment}]`
-						: `${path ? "." : path}${segment}`;
-			}
-
-			return `${this.name}${path ? `(${path})` : ""}: ${this.message}`;
-		}
-
-		toJSON() {
-			return { ...this, message: this.message };
-		}
-	};
+	static readonly Issue = Issue;
 
 	/** AggregateIssue containing at least one Schema.Issue */
-	static readonly AggregateIssue = class AggregateIssue extends AggregateError {
-		/** Non-empty tuple of issues */
-		readonly issues: Schema.Issue.List;
-
-		/** User submitted / sanitized values */
-		readonly values: Form.Value.Map | undefined;
-
-		/**
-		 * Create a new AggregateIssue.
-		 *
-		 * Coerces issues into a non-empty tuple.
-		 *
-		 * @param issues Issues
-		 * @param values Received values
-		 */
-		constructor([first, ...rest]: Schema.Issue[], values?: Form.Value.Map) {
-			if (!first) throw new TypeError("AggregateIssue must have an issue.");
-
-			const issues: Schema.Issue.List = [first, ...rest];
-			const name = "Schema.AggregateIssue";
-			const count = issues.length;
-
-			super(issues, `${name}(${count})\n${issues.join("\n")}`);
-
-			this.name = name;
-			this.issues = issues;
-			this.values = values;
-		}
-
-		override toString() {
-			// prevents name being in the default twice since it's
-			// already in the message
-			return this.message;
-		}
-
-		toJSON() {
-			return { ...this, message: this.message };
-		}
-	};
+	static readonly AggregateIssue = AggregateIssue;
 
 	readonly "~standard": StandardSchemaV1.Props<unknown, Output> &
 		StandardJSONSchemaV1.Props<unknown, Output> = {
