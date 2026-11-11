@@ -15,6 +15,7 @@
     "6-type-errors",
     "7-agents",
     "8-auth",
-    "9-database"
+    "9-database",
+    "json-tool-arguments"
   ]
 }

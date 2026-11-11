@@ -1,7 +1,7 @@
 {
 	"name": "ovr",
 	"description": "Web apps anyone can use. Each route serves people a page and agents Markdown and MCP tools, with forms, Postgres, and passkey sign-in built in.",
-	"version": "7.0.0-next.0",
+	"version": "7.0.0-next.1",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
