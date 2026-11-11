@@ -451,6 +451,8 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	}: // partial because name is not required
 	Partial<Field.Component.Props<Shape>> & {
 		values?: Field.Value.Initial<Shape> | undefined;
+		/** Each field's own: give them to its `Field` or `component` */
+		options?: never;
 	} = {}) => {
 		const state = this.#decode(props.state, values); // pulled out to not call each map iteration
 
@@ -771,7 +773,7 @@ class FieldSchema<
 						return files.length ? files : undefined;
 					}
 				: readMany,
-			file ? Infinity : this.options!.length,
+			file ? Infinity : this.options!.length || Infinity,
 			this.streaming,
 			this.#persist,
 		);
@@ -809,6 +811,16 @@ class FieldSchema<
 	}
 
 	/**
+	 * @param given Options given as the form renders
+	 * @returns The field's own choices, those given for a field made from a
+	 * schema, or `undefined` for a field without choices
+	 */
+	#options(given: readonly string[] | undefined) {
+		const { options } = this;
+		return options && (options.length ? options : (given ?? []));
+	}
+
+	/**
 	 * @template S Form shape type
 	 * @param props Field control props
 	 * @returns Field component with sub-components
@@ -818,8 +830,10 @@ class FieldSchema<
 	): Field.Component<this>;
 	[component]<S extends Field.Shape>({
 		state,
+		options: given,
 		...props
 	}: Field.Component.Props<S, false>): unknown {
+		const options = this.#options(given);
 		const value = state?.values?.[props.name];
 		const issue = state?.issues?.find((i) => i.path[0] === props.name);
 		const issueId = issue && `${props.name}-issue`;
@@ -868,7 +882,7 @@ class FieldSchema<
 				...data,
 			});
 
-		if (this.options && this.tag !== "select") {
+		if (options && this.tag !== "select") {
 			// radio/checkboxes
 			// make multiple ids for the group so all don't have the same id
 			const groupId = (value: string) =>
@@ -881,7 +895,7 @@ class FieldSchema<
 					...control,
 					id: groupId(data.value),
 					// autofocus only the first input in the group
-					autofocus: control.autofocus && data.value === this.options?.[0],
+					autofocus: control.autofocus && data.value === options[0],
 					checked: chosen(data.value),
 					...data,
 				});
@@ -909,6 +923,7 @@ class FieldSchema<
 				Legend: (data: Field.Component.Legend = {}) =>
 					jsx("legend", { children: label, ...data }),
 				...this,
+				options,
 			};
 		}
 
@@ -938,7 +953,7 @@ class FieldSchema<
 			},
 			Option:
 				// select
-				this.options &&
+				options &&
 				((data: Field.Component.Option<Field.Options>) =>
 					jsx("option", {
 						children: data.value,
@@ -946,6 +961,7 @@ class FieldSchema<
 						...data,
 					})),
 			...this,
+			options,
 		};
 	}
 
@@ -962,7 +978,7 @@ class FieldSchema<
 			Legend: (props?: Field.Component.Legend) => JSX.Element;
 			Option: (props: Field.Component.Option<Field.Options>) => JSX.Element;
 		};
-		const { options } = this;
+		const options = this.#options(props.options);
 
 		return c.Root({
 			children: [
@@ -1234,6 +1250,14 @@ export namespace Field {
 		export type Props<S extends Field.Shape, I extends boolean = true> = {
 			/** Field name attribute */
 			readonly name: ShapeUtil.Name<S>;
+
+			/**
+			 * Choices of a checkbox group, radio group, or select made from a
+			 * schema, such as `Field.checkboxes(Schema.string().uuid())`, known
+			 * as the form renders. Each is shown as its value unless a custom
+			 * layout labels it.
+			 */
+			readonly options?: readonly string[] | undefined;
 
 			/** Form state */
 			readonly state?: (I extends true ? URL : Field.State<S>) | undefined;
@@ -1668,32 +1692,58 @@ export class Field {
 	}
 
 	/**
+	 * @param options The choices, or a schema that checks each one when they
+	 * are only known as the form renders, such as a record's own IDs
+	 * @returns Fixed choices, and the schema that checks one, when given a list
+	 */
+	static #choices<V extends string>(
+		options: readonly [V, ...V[]] | Schema<V>,
+	): [options: readonly V[], choice: Schema<V>] {
+		return options instanceof Schema
+			? // given to `Field` or `component` as the form renders
+				[[], options]
+			: [options, Schema.enum(options, choose)];
+	}
+
+	/**
+	 * A group of checkboxes, of fixed choices or of choices a schema checks,
+	 * which are given as the form renders:
+	 *
+	 * ```tsx
+	 * Field.checkboxes(["fall", "winter"]);
+	 * Field.checkboxes(Schema.string().uuid()); // <form.Field name="photos" options={ids} />
+	 * ```
+	 *
 	 * @template V Value type
-	 * @param options Checkbox options
+	 * @param options Checkbox options, or a schema for each one
 	 * @returns Checkbox group input field
 	 */
 	static checkboxes<const V extends string>(
-		options: readonly [V, ...V[]],
+		options: readonly [V, ...V[]] | Schema<V>,
 	): Field.Instance<V[], "input", "checkbox", readonly [V, ...V[]]> {
+		const [values, choice] = Field.#choices(options);
+
 		return new FieldSchema(
-			{ options, props: { type: "checkbox" } },
-			Schema.array(Schema.enum(options, choose), choose),
+			{ options: values as readonly [V, ...V[]], props: { type: "checkbox" } },
+			Schema.array(choice, choose),
 			readMany,
-			options.length,
+			values.length || Infinity,
 		);
 	}
 
 	/**
 	 * @template V Value type
-	 * @param options Radio button options
+	 * @param options Radio button options, or a schema for the one chosen
 	 * @returns Radio group input field
 	 */
 	static radio<const V extends string>(
-		options: readonly [V, ...V[]],
+		options: readonly [V, ...V[]] | Schema<V>,
 	): Field.Instance<V, "input", "radio", readonly [V, ...V[]]> {
+		const [values, choice] = Field.#choices(options);
+
 		return new FieldSchema(
-			{ options, props: { type: "radio" } },
-			Schema.enum(options, choose),
+			{ options: values as readonly [V, ...V[]], props: { type: "radio" } },
+			choice,
 		);
 	}
 
@@ -1706,15 +1756,17 @@ export class Field {
 
 	/**
 	 * @template V Value type
-	 * @param options Select options
+	 * @param options Select options, or a schema for the one chosen
 	 * @returns Select field
 	 */
 	static select<const V extends string>(
-		options: readonly [V, ...V[]],
+		options: readonly [V, ...V[]] | Schema<V>,
 	): Field.Instance<V, "select", Field.Type, readonly [V, ...V[]]> {
+		const [values, choice] = Field.#choices(options);
+
 		return new FieldSchema(
-			{ tag: "select", options },
-			Schema.enum(options, choose),
+			{ tag: "select", options: values as readonly [V, ...V[]] },
+			choice,
 		);
 	}
 }

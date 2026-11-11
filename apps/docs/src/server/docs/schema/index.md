@@ -157,6 +157,34 @@ const signup = Route.post("/signup")
 	});
 ```
 
+### Choices
+
+`Field.checkboxes()`, `Field.radio()`, and `Field.select()` take their options, and the value must be one of them:
+
+```tsx
+const recipe = Route.post("/recipes/:id")
+	.fields({
+		season: Field.radio(["fall", "winter"]),
+		tags: Field.checkboxes(["easy", "crockpot"]),
+	})
+	.use(handler);
+```
+
+When the options are only known as the page renders, such as which of a recipe's own photos to publish, give a schema that checks each value instead, and pass the options to the field as it renders. Each is labelled with its value unless you label it with `component`. The schema only checks the form of a value, so check that each one is the user's own in the handler.
+
+```tsx
+const publish = Route.post("/recipes/:id/publish")
+	.fields({ photos: Field.checkboxes(Schema.string().uuid()) })
+	.use(handler);
+
+<publish.Form params={{ id }}>
+	<publish.Field name="photos" options={photos.map((photo) => photo.id)} />
+	<button>Publish</button>
+</publish.Form>;
+```
+
+Agents see these as an array of the schema's values, such as UUIDs, without a fixed list.
+
 ## Input normalization
 
 ovr also normalizes a few common HTML form quirks before validation:
@@ -249,7 +277,7 @@ const submit = Route.post("/submit")
 
 ## Protections
 
-- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()` has no limit.
+- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()` or a group made from a schema has no limit.
 - You can still override the parser per request with `Context.data({ parts, memory, payload })`.
 - A body over a limit, such as more parts than the form has fields, throws a `Multipart.Limit`, one that is not multipart form data a `Multipart.Unsupported`, and malformed form data a `Multipart.Malformed`. Browsers submitting your form never send any of these. Left uncaught by the route, ovr answers them itself: 413 for a body over a limit, 415 for another content type, and 400 for malformed form data. Catch them in the route's own [middleware](/middleware) to answer differently; global middleware that [catches errors](/middleware#not-found-and-errors) sees the answer, not the error.
 - App-wide multipart defaults can be set with `new App({ multipart: { memory, payload, parts } })`.

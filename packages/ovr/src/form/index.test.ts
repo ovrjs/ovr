@@ -3,7 +3,7 @@ import { Multipart } from "../multipart/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
 import { Field, Form, query } from "./index.js";
-import { describe, expect, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 
 type FormValid<S extends Field.Shape> = Extract<
 	Field.Parse.Result<S>,
@@ -1109,4 +1109,79 @@ test("a description given before multiple() describes the field", async () => {
 		}),
 	});
 	expect(await Markup.string(form.Fields())).toContain("Pick some");
+});
+
+describe("choices a schema checks", () => {
+	const a = "0b8f5d0a-6f0e-4d1f-9a8e-2f2b5c1d3e4f";
+	const b = "1c9e6e1b-7a1f-4e2a-8b9f-3a3c6d2e4f50";
+	const id = Schema.string().uuid();
+
+	test("parse each value with the schema", async () => {
+		const form = new Form({
+			photos: Field.checkboxes(id),
+			cover: Field.radio(id),
+			recipes: Field.select(id).multiple(),
+			first: Field.select(id).optional(),
+		});
+		const data = new FormData();
+		data.append("photos", a);
+		data.append("photos", b);
+		data.set("cover", a);
+		data.append("recipes", b);
+
+		const result = formValid(await form.parse(data));
+		expectTypeOf(result.data.photos).toEqualTypeOf<string[]>();
+		expect(result.data).toEqual({ photos: [a, b], cover: a, recipes: [b] });
+
+		const wrong = new FormData();
+		wrong.append("photos", "not-an-id");
+		wrong.set("cover", a);
+		wrong.append("recipes", a);
+		const issues = formInvalid(await form.parse(wrong)).issues;
+		expect(issues.map((issue) => issue.path)).toEqual([["photos", 0]]);
+	});
+
+	test("render the options given as the form renders", async () => {
+		const form = new Form({
+			photos: Field.checkboxes(id),
+			recipe: Field.select(id),
+			tags: Field.checkboxes(["fall", "winter"]),
+		});
+
+		const group = await Markup.string(
+			form.Field({ name: "photos", options: [a, b] }),
+		);
+		expect(group).toContain(`type="checkbox" name="photos" value="${a}"`);
+		expect(group).toContain(`value="${b}"`);
+
+		const select = await Markup.string(
+			form.Field({ name: "recipe", options: [a] }),
+		);
+		expect(select).toContain(`<option value="${a}">${a}</option>`);
+
+		// a field of fixed choices keeps its own
+		const tags = await Markup.string(
+			form.Field({ name: "tags", options: ["spring"] }),
+		);
+		expect(tags).toContain('value="fall"');
+		expect(tags).not.toContain("spring");
+
+		// a custom layout labels each choice
+		const Photos = form.component({ name: "photos", options: [a] });
+		expect(Photos.options).toEqual([a]);
+		expect(
+			await Markup.string(Photos.Label({ value: a, children: "Card front" })),
+		).toBe(`<label for="photos-${a}">Card front</label>`);
+	});
+
+	test("describe each value to agents with the schema, without a fixed list", () => {
+		const schema = Schema.object({ photos: Field.checkboxes(id) }).toJsonSchema(
+			{ io: "input" },
+		);
+
+		expect(schema.properties).toMatchObject({
+			photos: { type: "array", items: { type: "string", format: "uuid" } },
+		});
+		expect(JSON.stringify(schema)).not.toContain("enum");
+	});
 });
