@@ -1,5 +1,17 @@
 # ovr
 
+## 7.0.0-next.2
+
+### Minor Changes
+
+- 2aef12e: - `Field.checkboxes()`, `Field.radio()`, and `Field.select()` take a schema that checks each value, such as `Schema.string().uuid()`, as well as a list of options. The options are given as the page renders, as `options` on the field's `Field` or `component`, for choices such as a record's own photos.
+  - `auth.forms(c)` reads `_return` from the login page's URL, so `/login?_return=/recipes/1` brings the user back there after they register or log in. Only a path of the app's own origin is followed.
+  - `Markdown.raw(markdown, html)` renders the HTML on pages and the Markdown source for agents reading the page as Markdown.
+
+### Patch Changes
+
+- 9970bef: A file field's `describe()` text reaches agents in its tool's input schema, before how to send the file, where the file guidance replaced it. A tool call over the app's `multipart.memory` says the limit, in the message and as `data.limit`, so an agent knows how far to shrink a file.
+
 ## 7.0.0-next.1
 
 ### Patch Changes
