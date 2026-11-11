@@ -46,22 +46,6 @@ describe("Route schema helpers", () => {
 		expect(canceled).toBe(true);
 	});
 
-	test("later parameter conversion cannot change the type seen by earlier middleware", async () => {
-		const route = Route.get("/items/:id").use((c) =>
-			c.text(c.params.id.toUpperCase()),
-		);
-		try {
-			route.params({ id: Schema.number().preprocess(Number) });
-		} catch (error) {
-			// Rejecting this order at setup also prevents a request-time type error.
-			if (!(error instanceof TypeError)) throw error;
-		}
-		const response = await new App()
-			.use(route)
-			.fetch("http://localhost/items/42");
-		expect(await response.text()).toBe("42");
-	});
-
 	test("Route.get parses query params with shape schema via c.data()", async () => {
 		const search = Route.get("/search")
 			.fields({
@@ -508,6 +492,24 @@ describe("Route schema helpers", () => {
 			expect(await res.text()).toBe(message);
 		},
 	);
+
+	test("params and fields after use are a type error, since middleware is typed by them", () => {
+		const route = Route.get("/items/:id").use((c) => c.text(c.params.id));
+		void (() => {
+			// @ts-expect-error - call .params() before .use()
+			route.params({ id: Schema.string() });
+			// @ts-expect-error - call .fields() before .use()
+			route.fields({ q: Field.search() });
+		});
+
+		// more middleware, and a description, may still follow
+		const more = route.use((_, next) => next()).describe("An item");
+		expect(more.description).toBe("An item");
+
+		// a route after use is still a route the app mounts
+		const app = new App().use(more);
+		expect(app).toBeInstanceOf(App);
+	});
 
 	test("c.data returns null on routes without a schema", async () => {
 		const noSchema = Route.get("/no-schema").use(async (c) => {

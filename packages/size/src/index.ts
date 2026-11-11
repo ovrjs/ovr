@@ -1,11 +1,11 @@
-export const bytes = 124203;
-export const kb = 124.2;
+export const bytes = 123696;
+export const kb = 123.7;
 
-export const App = { bytes: 52482, kb: 52.48 } as const;
+export const App = { bytes: 52422, kb: 52.42 } as const;
 
-export const Auth = { bytes: 87195, kb: 87.2 } as const;
+export const Auth = { bytes: 86689, kb: 86.69 } as const;
 
-export const Database = { bytes: 23741, kb: 23.74 } as const;
+export const Database = { bytes: 23653, kb: 23.65 } as const;
 
 export const Field = { bytes: 21550, kb: 21.55 } as const;
 
@@ -19,11 +19,11 @@ export const Markdown = { bytes: 17855, kb: 17.86 } as const;
 
 export const Markup = { bytes: 5872, kb: 5.87 } as const;
 
-export const Mcp = { bytes: 40122, kb: 40.12 } as const;
+export const Mcp = { bytes: 40062, kb: 40.06 } as const;
 
 export const Multipart = { bytes: 7867, kb: 7.87 } as const;
 
-export const Route = { bytes: 26291, kb: 26.29 } as const;
+export const Route = { bytes: 26231, kb: 26.23 } as const;
 
 export const Schema = { bytes: 10590, kb: 10.59 } as const;
 

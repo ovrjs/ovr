@@ -97,11 +97,68 @@ export namespace Auth {
 	};
 
 	/**
+	 * A character or sequence a path of the app's own cannot hold: a query,
+	 * a fragment, a scheme, a pattern, whitespace, or a segment that resolves
+	 * to another path
+	 */
+	type Unsafe =
+		"\\" | "?" | "#" | ":" | "*" | " " | "\t" | "\n" | "//" | "/./" | "/../";
+
+	/**
+	 * A path of the app's own, such as `/login`, checked as it is written. A
+	 * path that is not written out, such as one read from the environment, is
+	 * taken as it is.
+	 *
+	 * @template P Path
+	 */
+	export type Path<P extends string> = string extends P
+		? P
+		: P extends `/${string}`
+			? P extends `${string}${Unsafe}${string}` | `${string}/.` | `${string}/..`
+				? Path.Invalid
+				: P extends "/"
+					? P
+					: P extends `${string}/`
+						? Path.Invalid
+						: P
+			: Path.Invalid;
+
+	export namespace Path {
+		/** Shown in place of a path that is not one of the app's own */
+		export type Invalid =
+			"Auth paths are local paths, such as /login, without a query or a trailing slash";
+
+		/** Auth's own endpoints, which its page cannot be */
+		export type Endpoint =
+			| "/auth/register"
+			| "/auth/login"
+			| "/auth/logout"
+			| "/_passkey/options/register"
+			| "/_passkey/options/login"
+			| "/_passkey/client.js";
+
+		/**
+		 * @template P Page path
+		 */
+		export type Page<P extends string> = P extends Endpoint
+			? "Auth's page cannot be one of its endpoints"
+			: Path<P>;
+	}
+
+	/**
 	 * Authentication configuration; all instances share the database.
 	 *
 	 * @template U Users table
+	 * @template P Page path
+	 * @template R Redirect path
+	 * @template C Consent page path
 	 */
-	export interface Options<U extends Users = Users> {
+	export interface Options<
+		U extends Users = Users,
+		P extends string = string,
+		R extends string = string,
+		C extends string = string,
+	> {
 		/** Signing secret(s), each at least 32 UTF-8 bytes. Seal with the first; accept all during rotation. */
 		readonly secret: string | readonly [string, ...string[]];
 		/** Trusted HTTPS origin, for example `https://example.com`. */
@@ -136,15 +193,15 @@ export namespace Auth {
 				? unknown
 				: `Give the users table's ${Unfilled<U>} column a default`);
 		/** Authentication page, also used for generic failure redirects. Defaults to /login. */
-		readonly page?: string;
+		readonly page?: Path.Page<P>;
 		/** Destination after registration or login. Defaults to /. */
-		readonly redirect?: string;
+		readonly redirect?: Path<R>;
 		/**
 		 * Page where users approve agents, which sign in when an MCP endpoint is
 		 * given this `auth`. The page calls `auth.consent(c)` for the request and
 		 * its form. Defaults to /connect.
 		 */
-		readonly consent?: string;
+		readonly consent?: Path<C>;
 	}
 
 	/** An agent's request to act for the user, shown on the consent page. */
@@ -184,7 +241,12 @@ export namespace Auth {
  *
  * @template U Users table, whose form fields are the registration form
  */
-export class Auth<U extends Auth.Users = Auth.Users> {
+export class Auth<
+	U extends Auth.Users = Auth.Users,
+	P extends string = string,
+	R extends string = string,
+	C extends string = string,
+> {
 	/**
 	 * Tables Auth stores its data in, include them in the database's tables.
 	 * `database.migrate` then creates them, and `database.check` checks them.
@@ -220,7 +282,7 @@ export class Auth<U extends Auth.Users = Auth.Users> {
 	) => Auth.Forms<Auth.Fields<U>>;
 
 	/** Configure passkeys, session helpers, and automatic authentication rate limits. */
-	constructor(options: Auth.Options<U>) {
+	constructor(options: Auth.Options<U, P, R, C>) {
 		const origin = new URL(options.origin);
 		if (origin.protocol !== "https:" || origin.origin !== options.origin)
 			throw new TypeError("Auth origin must be an HTTPS origin without a path");

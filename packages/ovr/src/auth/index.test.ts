@@ -1401,13 +1401,36 @@ describe("configured passkey callbacks", () => {
 		).toBe(429);
 	});
 
-	test("rejects invalid pages at startup", () => {
-		expect(() => managed(setup(), { page: "https://evil.example" })).toThrow(
-			"local paths",
-		);
-		expect(() => managed(setup(), { page: "/auth/login" })).toThrow(
-			"endpoints",
-		);
+	test("a path option that is not a local path of the app's own is a type error", () => {
+		const { settings } = setup();
+		void (() => {
+			// @ts-expect-error - another site
+			new Auth({ ...settings, page: "https://evil.example" });
+			// @ts-expect-error - one of Auth's own endpoints
+			new Auth({ ...settings, page: "/auth/login" });
+			// @ts-expect-error - a query
+			new Auth({ ...settings, redirect: "/account?tab=1" });
+			// @ts-expect-error - a trailing slash
+			new Auth({ ...settings, consent: "/connect/" });
+			// @ts-expect-error - another host, by a protocol-relative path
+			new Auth({ ...settings, page: "//evil.example" });
+			// @ts-expect-error - a segment that resolves elsewhere
+			new Auth({ ...settings, redirect: "/a/../b" });
+			// @ts-expect-error - a pattern
+			new Auth({ ...settings, consent: "/connect/*" });
+		});
+
+		// local paths, and one that is not written out
+		const fromEnvironment: string = "/welcome";
+		expect(
+			() =>
+				new Auth({
+					...settings,
+					page: "/sign-in",
+					redirect: fromEnvironment,
+					consent: "/agents/connect",
+				}),
+		).not.toThrow();
 	});
 });
 

@@ -31,6 +31,16 @@ export namespace Table {
 	export type Any = Table<string, any, any>;
 
 	/**
+	 * A name Postgres can quote: not empty and without a NUL character.
+	 *
+	 * @template N Table, schema, or column name
+	 */
+	export type Identifier<N extends string> = N extends
+		"" | `${string}\0${string}`
+		? never
+		: N;
+
+	/**
 	 * Row returned from the table.
 	 *
 	 * @template S Table shape
@@ -144,9 +154,20 @@ export class Table<
 	 * @param options Postgres schema and the columns the database supplies
 	 */
 	constructor(
-		name: Name extends "" ? never : Name,
-		shape: S,
-		options = {} as O,
+		name: Table.Identifier<Name>,
+		// every column's name is quoted as an identifier too
+		shape: S &
+			([Extract<keyof S, string>] extends [
+				Table.Identifier<Extract<keyof S, string>>,
+			]
+				? unknown
+				: "Column names cannot be empty or hold a NUL character"),
+		options = {} as O &
+			(O["schema"] extends string
+				? [Table.Identifier<O["schema"]>] extends [never]
+					? "A schema name cannot be empty or hold a NUL character"
+					: unknown
+				: unknown),
 	) {
 		super({ type: "object", shape, mode: "strip" });
 

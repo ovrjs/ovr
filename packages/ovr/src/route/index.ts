@@ -187,9 +187,10 @@ export namespace Route {
 	 * Form method subset attached to route helper types.
 	 *
 	 * Omits `component` so schema-specific `component` signatures are not widened when a
-	 * concrete `Form<S>` is intersected onto the route type.
+	 * concrete `Form<S>` is intersected onto the route type, and the form's internal
+	 * `query` method, which a route does not offer.
 	 */
-	type FormMethods = Omit<Route.Schema<any>, "component">;
+	type FormMethods = Omit<Route.Schema<any>, "component" | typeof query>;
 
 	/**
 	 * Optional form helper methods available when a route may have a schema.
@@ -272,6 +273,21 @@ export namespace Route {
 
 	/** Parameters passed to middleware, strings unless a schema converts them */
 	export type ParamsBase = Record<string, unknown>;
+
+	/**
+	 * A route after `use()`: its middleware is typed by the params and fields
+	 * set before it, so they cannot change, and calling `params()` or
+	 * `fields()` is a type error.
+	 *
+	 * @template R Route
+	 */
+	export type Used<R> = R & {
+		/** Call `.params()` before `.use()` */
+		readonly params: never;
+
+		/** Call `.fields()` before `.use()` */
+		readonly fields: never;
+	};
 
 	/**
 	 * Schema helper type attached to routes that have a form schema.
@@ -552,7 +568,7 @@ export class Route<
 		// a name the pattern does not have is a type error
 		schemas: P,
 	): Route.Of<Kind, Pattern, Route.Converted<Params, P>, Shape> {
-		this.#configure("params", true);
+		this.#configure("params");
 
 		this.#paramSchemas = { ...this.#paramSchemas, ...schemas } as Record<
 			string,
@@ -573,7 +589,7 @@ export class Route<
 	fields<S extends FormSchema.Shape>(
 		fields: S | FormSchema<S>,
 	): Route.Of<Kind, Pattern, Params, S> {
-		this.#configure("fields", true);
+		this.#configure("fields");
 		const form = fields instanceof FormSchema ? fields : new FormSchema(fields);
 
 		return Object.assign(
@@ -585,22 +601,15 @@ export class Route<
 
 	/**
 	 * A mounted route is final, so the app's tools and middleware stay as
-	 * they were when it was mounted. Middleware is typed by the params and
-	 * fields set before it, so they cannot change after it is added.
+	 * they were when it was mounted. Changing the types middleware is given
+	 * after `use()` is a type error instead, see `Route.Used`.
 	 *
 	 * @param method Method that changes the route
-	 * @param typed If the method changes the types middleware is given
 	 */
-	#configure(method: string, typed = false) {
-		const before = this.#frozen
-			? "app.use()"
-			: typed && this.#stack.length
-				? ".use()"
-				: undefined;
-
-		if (before)
+	#configure(method: string) {
+		if (this.#frozen)
 			throw new TypeError(
-				`Call .${method}() before ${before} on route "${this.pattern}".`,
+				`Call .${method}() before app.use() on route "${this.pattern}".`,
 			);
 	}
 
@@ -615,10 +624,14 @@ export class Route<
 	 * @param middleware Route middleware
 	 * @returns The route
 	 */
-	use(...middleware: Middleware<Params, Shape>[]) {
+	use(
+		...middleware: Middleware<Params, Shape>[]
+	): Route.Used<Route.Of<Kind, Pattern, Params, Shape>> {
 		this.#configure("use");
 		this.#stack.push(...middleware);
-		return this;
+		// a named type, not `this`, so an app's own routes can be named in
+		// its declarations
+		return this as any;
 	}
 
 	/**

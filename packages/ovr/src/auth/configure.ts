@@ -55,19 +55,6 @@ export function configure<U extends Auth.Users>(
 	};
 	const page = options.page ?? "/login";
 	const redirect = options.redirect ?? "/";
-	// Auth's own paths are fixed, only these come from options
-	for (const path of [page, redirect, options.consent ?? "/connect"]) {
-		if (
-			!path.startsWith("/") ||
-			path.startsWith("//") ||
-			/[\\?#:*\s]/.test(path) ||
-			(path.length > 1 && path.endsWith("/")) ||
-			new URL(path, options.origin).pathname !== path
-		)
-			throw new TypeError(
-				"Auth paths must be literal local paths without queries or trailing slashes",
-			);
-	}
 	const fields = new Form(shape);
 
 	/** @returns The first field, such as an email, or the host, naming the passkey */
@@ -238,8 +225,6 @@ export function configure<U extends Auth.Users>(
 		assertion,
 		Passkey.client,
 	];
-	if (routes.some((route) => route.pattern === page))
-		throw new TypeError("Auth's page cannot be one of its endpoints");
 	return {
 		routes,
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */

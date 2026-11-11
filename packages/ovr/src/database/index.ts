@@ -130,9 +130,7 @@ class Identifier {
 	 * @returns Quoted identifier
 	 */
 	static quote(name: string) {
-		if (!name || name.includes("\0"))
-			throw new TypeError(`Invalid SQL identifier: ${JSON.stringify(name)}`);
-
+		// an empty name or a NUL in one is a type error, see `Table.Identifier`
 		return `"${name.replaceAll('"', '""')}"`;
 	}
 

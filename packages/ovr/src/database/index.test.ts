@@ -126,8 +126,31 @@ describe("sql", () => {
 			text: "SELECT $1",
 			values: [evil],
 		});
-		const nul = new Table("a\0b", { n: Schema.bigint() });
-		expect(() => db.sql`SELECT * FROM ${nul}`.toQuery()).toThrow(TypeError);
+	});
+
+	test("a name Postgres cannot quote is a type error", () => {
+		void (() => {
+			// @ts-expect-error - a NUL in the table name
+			new Table("a\0b", { n: Schema.bigint() });
+			// @ts-expect-error - an empty table name
+			new Table("", { n: Schema.bigint() });
+			// @ts-expect-error - an empty column name
+			new Table("t", { "": Schema.bigint() });
+			// @ts-expect-error - a NUL in a column name
+			new Table("t", { "a\0b": Schema.bigint() });
+			// @ts-expect-error - an empty schema name
+			new Table("t", { n: Schema.bigint() }, { schema: "" });
+		});
+
+		// a quote inside a name is escaped by doubling it
+		const quoted = new Table(
+			'my "t"',
+			{ 'a"b': Schema.bigint() },
+			{ schema: "s" },
+		);
+		expect(
+			db.sql`SELECT ${quoted.columns['a"b']!} FROM ${quoted}`.toQuery().text,
+		).toBe('SELECT "s"."my ""t"""."a""b" FROM "s"."my ""t"""');
 	});
 
 	test("values validates rows and uses DEFAULT for omitted columns", () => {

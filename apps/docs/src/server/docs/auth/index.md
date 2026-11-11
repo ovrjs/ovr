@@ -295,7 +295,7 @@ Each browser can have 10 sign-in ceremonies outstanding; when they are used up, 
 | `lifetime` | 30 days    | Time from sign-in a session lasts, at most.       |
 | `consent`  | `/connect` | Page where users approve [agents](#agents).       |
 
-`page` and `redirect` must be local paths. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
+`page`, `redirect`, and `consent` must be local paths of the app's own, such as `/login`, without a query or a trailing slash, and `page` cannot be one of Auth's endpoints: a path written in the options that is not one is a type error. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
 
 Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Failures the client caused, such as an expired challenge, an invalid passkey, or an account that already exists, return to the form with a generic message, with guidance to log in if registration already completed. Anything else, such as an unavailable database, is thrown to your app like an error from your own handler. Auth doesn't log. Rate-limit denials include a retry hint, and the client waits before retrying.
 
