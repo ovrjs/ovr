@@ -45,7 +45,7 @@ async function fetch(req: Request) {
 }
 ```
 
-> If you are using the parser within ovr app [middleware](/middleware#properties), `Context.form` creates the multipart async iterable with the current request.
+> If you are using the parser within ovr app [middleware](/middleware#properties), `c.multipart()` creates the multipart async iterable with the current request.
 
 ```ts
 import { Route } from "ovr";
@@ -81,9 +81,9 @@ const options: Multipart.Options = {
 new Multipart(request, options);
 
 // set options for the entire app
-new App({ form: options });
+new App({ multipart: options });
 
-// Context.form sets the options for the current request
+// c.multipart() sets the options for the current request
 c.multipart(options);
 ```
 

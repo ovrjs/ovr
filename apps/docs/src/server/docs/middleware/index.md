@@ -5,7 +5,7 @@ description: Understand how ovr handles each request.
 
 ## Create
 
-Middleware are functions that are composed together to handle requests. Most middleware will be created inline as an argument when creating a route. Middleware can also be created on it's own to be used globally or to apply to routes.
+Middleware are functions that are composed together to handle requests. Most middleware is written inline, passed to a route's `use`. Middleware can also be created on it's own to be used globally or to apply to routes.
 
 ```ts
 import type { Middleware } from "ovr";
@@ -69,11 +69,11 @@ Route.get("/api/:id").use((c) => {
 	c.session(); // signed-in session, with app.use(auth)
 	c.cookie.get(name); // get cookie
 	c.multipart(); // multipart form data, part by part
-	c.data(); // route schema data
+	c.data(); // the route's fields, parsed
 });
 ```
 
-> On [routes with a schema](/schema#post-forms), `Context.data` parses typed form data from the request body. On [GET routes](/schema#get-forms) it parses typed search params. Routes without a schema return `null`.
+> On [routes with fields](/schema#post-forms), `Context.data` parses typed form data from the request body. On [GET routes](/schema#get-forms) it parses typed search params. Routes without fields return `null`.
 
 ## Response
 

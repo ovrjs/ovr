@@ -251,7 +251,7 @@ Using incorrect params results in a type error:
 
 ```ts
 page.url({ params: { id: "world" } });
-// Error: 'id' does not exist in type '{ name: string; }'
+// Error: property 'name' is missing in type '{ id: string; }'
 ```
 
 > You can create a list of exact paths for given params:
