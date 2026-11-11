@@ -164,12 +164,25 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 		return !this.#taken && (this.#taken = true);
 	}
 
-	/** Generator of the element's chunks, empty if it was already rendered */
+	/**
+	 * Generator of the element's chunks, empty if it was already rendered.
+	 * Chunks, not strings, so a render it is part of keeps its tags and what
+	 * is already escaped.
+	 */
 	get #generator(): AsyncGenerator<Chunk, void, unknown> {
-		return (this.#chunks ??= new Markup(
+		return (this.#chunks ??= (async function* (element) {
+			const render = new Render(element, undefined);
+
+			try {
+				for (let result: Step; (result = render.step());) {
+					if (result instanceof Chunk) yield result;
+					else await result;
+				}
+			} finally {
+				await render.close();
+			}
 			// a copy the render can take, since this one now counts as rendered
-			this.take() ? new Element(this.tag, this.props) : null,
-		)[Symbol.asyncIterator]());
+		})(this.take() ? new Element(this.tag, this.props) : null));
 	}
 
 	next() {
@@ -709,7 +722,7 @@ export namespace Markup {
 
 /**
  * Renders an element to markup, such as HTML, SVG, or XML, as an
- * `AsyncIterable` of chunks, a stream, or a string. `Markdown` renders the
+ * `AsyncIterable` of strings, a stream, or a string. `Markdown` renders the
  * same elements to Markdown.
  */
 export class Markup {
@@ -739,13 +752,13 @@ export class Markup {
 		this.#options = options;
 	}
 
-	/** @yields `Chunk`s as the `Element` resolves */
-	async *[Symbol.asyncIterator](): AsyncGenerator<Chunk, void, unknown> {
+	/** @yields Markup as the `Element` resolves */
+	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
 		const render = new Render(this.#element, this.#options?.raw);
 
 		try {
 			for (let result: Step; (result = render.step());) {
-				if (result instanceof Chunk) yield result;
+				if (result instanceof Chunk) yield result.toString();
 				else await result;
 			}
 		} finally {

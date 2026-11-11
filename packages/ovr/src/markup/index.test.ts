@@ -1,6 +1,6 @@
 import { JSX } from "../jsx/index.js";
 import { Markup } from "./index.js";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
 const deferred = () => {
 	let resolve!: (value: string) => void;
@@ -42,6 +42,15 @@ test("generators preserve trusted HTML and escape ordinary children", async () =
 			"<b>trusted</b>&lt;&amp;",
 		);
 	}
+});
+
+test("Markup yields markup as strings", async () => {
+	const chunks = await Array.fromAsync(
+		new Markup(jsx("p", { children: "<b>" })),
+	);
+
+	expectTypeOf(chunks).toEqualTypeOf<string[]>();
+	expect(chunks).toStrictEqual(["<p>", "&lt;b>", "</p>"]);
 });
 
 test("parallel children render in source order", async () => {

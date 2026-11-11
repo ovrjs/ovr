@@ -8,3 +8,4 @@
 - A field's choices are its `options`, as the `<option>` elements they render, so `values` means only a record's values: `field.options`, and `options` on a select's, a radio group's, or a checkbox group's components.
 - `multiple()` takes more than one value, chained like a field's other rules: `Field.file().multiple()` and `Field.select(options).multiple()` replace `Field.files()` and `Field.multiselect(options)`. `Field.checkboxes()` and `Field.radio()` stay, since each is a group of controls.
 - Auth form message parts are `Register.Issue` and `Login.Issue`, as a field's is its `Issue`, instead of `Register.Error` and `Login.Error`.
+- `Markup` yields strings of markup, as `Markdown` yields strings of Markdown, instead of chunk objects to call `toString()` on.

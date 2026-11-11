@@ -117,7 +117,7 @@ To render any element on its own (for example, if you aren't returning it from `
 
 ### Async iterable
 
-Create a new `Markup` async iterable that yields escaped `Chunk`s of markup.
+Create a new `Markup` async iterable that yields strings of markup as the element renders.
 
 ```tsx
 import { Markup } from "ovr";
@@ -128,8 +128,8 @@ function Component() {
 
 const markup = new Markup(<Component />);
 
-for await (const chunk of markup) {
-	console.log(chunk.toString()); // markup string
+for await (const html of markup) {
+	console.log(html); // <p>element</p>
 }
 ```
 
@@ -146,8 +146,8 @@ const markup = new Markup([
 	],
 ]);
 
-for await (const chunk of markup) {
-	console.log(chunk.toString());
+for await (const html of markup) {
+	console.log(html);
 }
 ```
 
