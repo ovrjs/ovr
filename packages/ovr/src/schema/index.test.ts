@@ -3,8 +3,8 @@ import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 type FormValid<S extends Field.Shape> = Extract<
-	Form.Parse.Result<S>,
-	{ data: Form.Parse.Data<S> }
+	Field.Parse.Result<S>,
+	{ data: Field.Parse.Data<S> }
 >;
 
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -21,7 +21,7 @@ const invalid = <T>(result: Schema.Parse.Result<T>) => {
 	return result.issues;
 };
 
-const formValid = <S extends Field.Shape>(result: Form.Parse.Result<S>) => {
+const formValid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 	if (result.issues) throw new Error("Expected no issues");
 	return result as FormValid<S>;
 };

@@ -11,135 +11,6 @@ import {
 } from "../schema/index.js";
 import { Checksum, Codec, Size } from "../util/index.js";
 
-export namespace Form {
-	/** Form field shape. */
-	export type Shape = Field.Shape;
-
-	/** Persisted form value */
-	export type Value = string | number | boolean | string[];
-
-	export namespace Value {
-		/**
-		 * Value map by field name.
-		 *
-		 * @template S Shape type
-		 */
-		export type Map<S extends Shape = Shape> = Partial<
-			Record<ShapeUtil.Name<S>, Value>
-		>;
-
-		/**
-		 * Initial values by field name, for example a record being edited.
-		 * Values a field cannot render, such as dates and `null`, are skipped.
-		 *
-		 * @template S Shape type
-		 */
-		export type Initial<S extends Shape = Shape> = {
-			readonly [K in ShapeUtil.Name<S>]?: unknown;
-		};
-	}
-
-	/**
-	 * Encoded form state.
-	 *
-	 * @template S Shape type to infer value keys from
-	 */
-	export interface State<S extends Shape = Shape> {
-		/** Form id generated using the field names */
-		readonly id: string;
-
-		/** Non-empty list of validation issues */
-		readonly issues?: Schema.Issue.List;
-
-		/** Map of field names to possible values */
-		readonly values?: Value.Map<S>;
-	}
-
-	export namespace Parse {
-		/**
-		 * Field names that are not marked to stream as multipart parts.
-		 *
-		 * @template S Form shape
-		 */
-		type NonStreamNames<S extends Shape> = {
-			[K in keyof S]-?: S[K] extends Field.Instance<any, any, any, any, infer P>
-				? P extends true
-					? never
-					: K
-				: never;
-		}[keyof S];
-
-		/**
-		 * Parsed data shape with streamed `stream()` fields removed.
-		 *
-		 * @template S Form shape
-		 */
-		type NonStreamShape<S extends Shape> = Pick<S, NonStreamNames<S>>;
-
-		/**
-		 * Parsed form data output.
-		 *
-		 * @template S Form shape
-		 */
-		export type Data<S extends Shape> = Schema.Infer<NonStreamShape<S>>;
-
-		/**
-		 * Form parse result.
-		 *
-		 * @template S Form shape
-		 * @template M Extra invalid result metadata
-		 */
-		export type Result<
-			S extends Shape,
-			M extends object = {},
-		> = Schema.Parse.Result<
-			Data<S>,
-			Result.Invalid<M>,
-			{
-				/** Rest of the multipart parts to stream */
-				readonly stream?: AsyncGenerator<Multipart.Part> | undefined;
-
-				/**
-				 * Create an invalid result for issues found after parsing, for
-				 * example a database constraint, keeping persisted values.
-				 *
-				 * @param messages Issue message by field name
-				 */
-				readonly invalid: (
-					messages: Messages<S>,
-				) => Schema.Parse.Invalid & Result.Invalid<M>;
-			}
-		>;
-
-		/**
-		 * Issue messages by field name.
-		 *
-		 * @template S Form shape
-		 */
-		export type Messages<S extends Shape> = {
-			readonly [K in ShapeUtil.Name<S>]?: string;
-		};
-
-		export namespace Result {
-			/** Form search params iterable */
-			export type Search = [[(typeof Form.params)[1], string]] | undefined;
-
-			/**
-			 * Invalid result metadata.
-			 *
-			 * @template M Extra invalid result metadata
-			 */
-			export type Invalid<M extends object = {}> = {
-				/** Encoded URL search param field state */
-				readonly search: Search;
-
-				/** Invalid parses do not expose remaining multipart parts */
-				readonly stream?: never;
-			} & M;
-		}
-	}
-}
-
 /** Internal protocol for a GET route, to make the form its fields render. */
 export const query = Symbol("query");
 
@@ -168,7 +39,7 @@ const maxStateBytes = 4 * Size.kb;
  *
  * @template Shape Form field shape type
  */
-export class Form<Shape extends Form.Shape = Form.Shape> {
+export class Form<Shape extends Field.Shape = Field.Shape> {
 	/** Query param keys ordered as `[return, form]`. */
 	static readonly params = ["_return", "_form"] as const;
 
@@ -176,7 +47,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	static readonly #maxValueChars = 512;
 
 	/** Schema used to validate persisted form values, see `#value`. */
-	static #valueSchema?: Schema<Form.Value>;
+	static #valueSchema?: Schema<Field.Value>;
 
 	/** Form id. */
 	readonly #id: string;
@@ -263,7 +134,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 * @returns Sanitized values
 	 */
 	#sanitize(values?: Record<string, unknown>, persist = true, limit = true) {
-		const sanitized: Form.Value.Map<Shape> = {};
+		const sanitized: Field.Value.Map<Shape> = {};
 
 		if (values) {
 			for (const [name, value] of Object.entries(values)) {
@@ -299,8 +170,8 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 */
 	#decode(
 		stateInput?: URL,
-		initial?: Form.Value.Initial<Shape>,
-	): Form.State<Shape> | undefined {
+		initial?: Field.Value.Initial<Shape>,
+	): Field.State<Shape> | undefined {
 		const state = this.#restore(stateInput);
 		// initial values come from the server, not the URL, so no size limit
 		const values = this.#sanitize(initial, false, false);
@@ -315,7 +186,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	 *
 	 * @param stateInput Current page URL
 	 */
-	#restore(stateInput?: URL): Form.State<Shape> | undefined {
+	#restore(stateInput?: URL): Field.State<Shape> | undefined {
 		if (stateInput) {
 			const { searchParams } = stateInput;
 			const values = this.#sanitize(
@@ -379,7 +250,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 						return {
 							...result.data,
 							values: (values || current) && { ...values, ...current },
-						} as unknown as Form.State<Shape>;
+						} as unknown as Field.State<Shape>;
 					}
 				} catch {}
 			}
@@ -399,7 +270,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	#invalid(issues: Schema.Issue[], values: Record<string, unknown>) {
 		const result = new Schema.AggregateIssue(issues, this.#sanitize(values));
 		const persisted = result.values;
-		let search: Form.Parse.Result.Search;
+		let search: Field.Parse.Result.Search;
 
 		// encode everything first, then trim persisted values until the state fits
 		for (let i = this.names.length; ; i--) {
@@ -411,7 +282,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 					...(persisted && Object.keys(persisted).length
 						? { values: persisted }
 						: {}),
-				} satisfies Form.State),
+				} satisfies Field.State),
 			);
 
 			if (state.byteLength <= maxStateBytes) {
@@ -437,7 +308,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	parse = async (
 		source: FormData | URLSearchParams | Multipart,
 		path: Schema.Issue.Path = [],
-	): Promise<Form.Parse.Result<Shape>> => {
+	): Promise<Field.Parse.Result<Shape>> => {
 		const data: Record<string, unknown> = {};
 		const issues: Schema.Issue[] = [];
 		const values: Record<string, unknown> = {};
@@ -529,9 +400,9 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		}
 
 		return {
-			data: data as Form.Parse.Data<Shape>,
+			data: data as Field.Parse.Data<Shape>,
 			stream,
-			invalid: (messages: Form.Parse.Messages<Shape>) =>
+			invalid: (messages: Field.Parse.Messages<Shape>) =>
 				this.#invalid(
 					Object.entries(messages).flatMap(([name, message]) =>
 						typeof message === "string"
@@ -557,7 +428,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		values,
 		...props
 	}: Field.Component.Props<Shape> & {
-		values?: Form.Value.Initial<Shape> | undefined;
+		values?: Field.Value.Initial<Shape> | undefined;
 	}) =>
 		this.shape[props.name]![render]({
 			...props,
@@ -579,7 +450,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		...props
 	}: // partial because name is not required
 	Partial<Field.Component.Props<Shape>> & {
-		values?: Form.Value.Initial<Shape> | undefined;
+		values?: Field.Value.Initial<Shape> | undefined;
 	} = {}) => {
 		const state = this.#decode(props.state, values); // pulled out to not call each map iteration
 
@@ -606,7 +477,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		values,
 		...props
 	}: { name: N } & Field.Component.Props<Shape> & {
-			values?: Form.Value.Initial<Shape> | undefined;
+			values?: Field.Value.Initial<Shape> | undefined;
 		}): Field.Component<Shape[N]> =>
 		this.shape[props.name]![component]({
 			...props,
@@ -942,10 +813,10 @@ class FieldSchema<
 	 * @param props Field control props
 	 * @returns Field component with sub-components
 	 */
-	[component]<S extends Form.Shape>(
+	[component]<S extends Field.Shape>(
 		props: Field.Component.Props<S, false>,
 	): Field.Component<this>;
-	[component]<S extends Form.Shape>({
+	[component]<S extends Field.Shape>({
 		state,
 		...props
 	}: Field.Component.Props<S, false>): unknown {
@@ -1083,7 +954,7 @@ class FieldSchema<
 	 * @param props Field control props including `name` of the field to render
 	 * @returns Component that renders the HTML field with default structure
 	 */
-	[render]<S extends Form.Shape>(props: Field.Component.Props<S, false>) {
+	[render]<S extends Field.Shape>(props: Field.Component.Props<S, false>) {
 		// the sub-components of each kind of field, told apart by `options` and `tag` below
 		const c = this[component](
 			props,
@@ -1139,6 +1010,130 @@ export const field = (value: unknown): value is Field.Any =>
 export namespace Field {
 	/** Fields by name, as a route's `fields` takes them. */
 	export type Shape = Record<string, Field.Any>;
+
+	/** Persisted form value */
+	export type Value = string | number | boolean | string[];
+
+	export namespace Value {
+		/**
+		 * Value map by field name.
+		 *
+		 * @template S Shape type
+		 */
+		export type Map<S extends Shape = Shape> = Partial<
+			Record<ShapeUtil.Name<S>, Value>
+		>;
+
+		/**
+		 * Initial values by field name, for example a record being edited.
+		 * Values a field cannot render, such as dates and `null`, are skipped.
+		 *
+		 * @template S Shape type
+		 */
+		export type Initial<S extends Shape = Shape> = {
+			readonly [K in ShapeUtil.Name<S>]?: unknown;
+		};
+	}
+
+	/**
+	 * Encoded form state.
+	 *
+	 * @template S Shape type to infer value keys from
+	 */
+	export interface State<S extends Shape = Shape> {
+		/** Form id generated using the field names */
+		readonly id: string;
+
+		/** Non-empty list of validation issues */
+		readonly issues?: Schema.Issue.List;
+
+		/** Map of field names to possible values */
+		readonly values?: Value.Map<S>;
+	}
+
+	export namespace Parse {
+		/**
+		 * Field names that are not marked to stream as multipart parts.
+		 *
+		 * @template S Form shape
+		 */
+		type NonStreamNames<S extends Shape> = {
+			[K in keyof S]-?: S[K] extends Field.Instance<any, any, any, any, infer P>
+				? P extends true
+					? never
+					: K
+				: never;
+		}[keyof S];
+
+		/**
+		 * Parsed data shape with streamed `stream()` fields removed.
+		 *
+		 * @template S Form shape
+		 */
+		type NonStreamShape<S extends Shape> = Pick<S, NonStreamNames<S>>;
+
+		/**
+		 * Parsed form data output.
+		 *
+		 * @template S Form shape
+		 */
+		export type Data<S extends Shape> = Schema.Infer<NonStreamShape<S>>;
+
+		/**
+		 * Form parse result.
+		 *
+		 * @template S Form shape
+		 * @template M Extra invalid result metadata
+		 */
+		export type Result<
+			S extends Shape,
+			M extends object = {},
+		> = Schema.Parse.Result<
+			Data<S>,
+			Result.Invalid<M>,
+			{
+				/** Rest of the multipart parts to stream */
+				readonly stream?: AsyncGenerator<Multipart.Part> | undefined;
+
+				/**
+				 * Create an invalid result for issues found after parsing, for
+				 * example a database constraint, keeping persisted values.
+				 *
+				 * @param messages Issue message by field name
+				 */
+				readonly invalid: (
+					messages: Messages<S>,
+				) => Schema.Parse.Invalid & Result.Invalid<M>;
+			}
+		>;
+
+		/**
+		 * Issue messages by field name.
+		 *
+		 * @template S Form shape
+		 */
+		export type Messages<S extends Shape> = {
+			readonly [K in ShapeUtil.Name<S>]?: string;
+		};
+
+		export namespace Result {
+			/** Form search params iterable */
+			export type Search = [["_form", string]] | undefined;
+
+			/**
+			 * Invalid result metadata.
+			 *
+			 * @template M Extra invalid result metadata
+			 */
+			export type Invalid<M extends object = {}> = {
+				/** Encoded URL search param field state */
+				readonly search: Search;
+
+				/** Invalid parses do not expose remaining multipart parts */
+				readonly stream?: never;
+			} & M;
+		}
+	}
 
 	/**
 	 * Base options to create a Field.
@@ -1236,12 +1231,12 @@ export namespace Field {
 		 * @template S Form shape type
 		 * @template I `true` the state is a `URL`, `false` is just `State`
 		 */
-		export type Props<S extends Form.Shape, I extends boolean = true> = {
+		export type Props<S extends Field.Shape, I extends boolean = true> = {
 			/** Field name attribute */
 			readonly name: ShapeUtil.Name<S>;
 
 			/** Form state */
-			readonly state?: (I extends true ? URL : Form.State<S>) | undefined;
+			readonly state?: (I extends true ? URL : Field.State<S>) | undefined;
 		} & Field.Props;
 
 		/** Root element for the Field component */

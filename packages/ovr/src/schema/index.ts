@@ -1,4 +1,4 @@
-import type { Field, Form } from "../form/index.js";
+import type { Field } from "../form/index.js";
 import type {
 	StandardJSONSchemaV1,
 	StandardSchemaV1,
@@ -480,7 +480,7 @@ class AggregateIssue extends AggregateError {
 	readonly issues: Schema.Issue.List;
 
 	/** User submitted / sanitized values */
-	readonly values: Form.Value.Map | undefined;
+	readonly values: Field.Value.Map | undefined;
 
 	/**
 	 * Create a new AggregateIssue.
@@ -490,7 +490,7 @@ class AggregateIssue extends AggregateError {
 	 * @param issues Issues
 	 * @param values Received values
 	 */
-	constructor([first, ...rest]: Schema.Issue[], values?: Form.Value.Map) {
+	constructor([first, ...rest]: Schema.Issue[], values?: Field.Value.Map) {
 		if (!first) throw new TypeError("AggregateIssue must have an issue.");
 
 		const issues: Schema.Issue.List = [first, ...rest];

@@ -16,7 +16,7 @@ const mw: Middleware = async (c, next) => {
 };
 ```
 
-> Middleware are just functions, use the `Middleware` type helper to easily type the parameters if you are creating them outside of a route.
+> Middleware are just functions, use the `Middleware` type helper to easily type the parameters if you are creating them outside of a route. A `Middleware` fits any route and the app: it doesn't know the route's parameters, which a [`params`](/route#parameters) schema may have converted, so `c.params` values are `unknown`, and `c.data()` is the route's parsed fields or `null`. Give it types, such as `Middleware<{ id: number }>`, to use it only on routes that have them.
 
 ## Composition
 

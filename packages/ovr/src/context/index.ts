@@ -6,7 +6,6 @@ import { Markup } from "../markup/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Route } from "../route/index.js";
-import type { Trie } from "../trie/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
 /**
@@ -69,23 +68,31 @@ export namespace Context {
 	}
 
 	/**
-	 * Context.data return type.
+	 * Context.data return type: `null` for a route without fields, and either
+	 * where the fields are not known, such as in middleware written on its own.
 	 *
-	 * Routes without a schema return `null`.
+	 * @template S Form shape, `any` where it is not known
+	 */
+	export type Result<S extends Field.Shape> = 0 extends 1 & S
+		? Parsed<Field.Shape> | null
+		: [Field.Shape] extends [S]
+			? null
+			: Parsed<S>;
+
+	/**
+	 * Parsed fields, with the URL to return to when they are invalid.
 	 *
 	 * @template S Form shape
 	 */
-	export type Result<S extends Field.Shape> = [Field.Shape] extends [S]
-		? null
-		: Util.Prettify<
-				FormSchema.Parse.Result<
-					S,
-					{
-						/** URL with invalid field values encoded into a search parameter. */
-						readonly url: URL;
-					}
-				>
-			>;
+	type Parsed<S extends Field.Shape> = Util.Prettify<
+		Field.Parse.Result<
+			S,
+			{
+				/** URL with invalid field values encoded into a search parameter. */
+				readonly url: URL;
+			}
+		>
+	>;
 }
 
 /**
@@ -95,8 +102,9 @@ export namespace Context {
  * @template Shape Parsed form data shape
  */
 export class Context<
-	Params extends Record<string, unknown> = Trie.Params,
-	Shape extends Field.Shape = Field.Shape,
+	Params extends Record<string, unknown> = Record<string, unknown>,
+	// any, so middleware written on its own fits a route with fields
+	Shape extends Field.Shape = any,
 > {
 	/**
 	 * Incoming `Request` to the server.
@@ -340,7 +348,7 @@ export class Context<
 			 *
 			 * @template R Parse result, with its search parameters
 			 */
-			const invalid = <R extends { search: FormSchema.Parse.Result.Search }>(
+			const invalid = <R extends { search: Field.Parse.Result.Search }>(
 				result: R,
 			) => {
 				let url = new URL(this.url);
@@ -374,7 +382,7 @@ export class Context<
 			const create = result.invalid;
 
 			return Object.assign(result, {
-				invalid: (messages: FormSchema.Parse.Messages<Field.Shape>) => {
+				invalid: (messages: Field.Parse.Messages<Field.Shape>) => {
 					const result = create(messages);
 					this.#agentIssues(result.issues);
 					return invalid(result);
@@ -407,7 +415,7 @@ export class Context<
 	 * @param i current middleware index (default `0`)
 	 * @returns return value of `middleware[i]`
 	 */
-	async #run(middleware: Middleware<Params, Shape>[], i = 0) {
+	async #run(middleware: Middleware<any, any>[], i = 0) {
 		const mw = middleware[i];
 
 		if (!mw) return; // end of stack

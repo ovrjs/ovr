@@ -58,7 +58,7 @@ export function configure<U extends Auth.Users>(
 	const fields = new Form(shape);
 
 	/** @returns The first field, such as an email, or the host, naming the passkey */
-	const name = (data: Form.Parse.Data<Shape>) => {
+	const name = (data: Field.Parse.Data<Shape>) => {
 		const value = fields.names[0] && Reflect.get(data, fields.names[0]);
 		return (
 			typeof value === "string" && value.trim()
@@ -71,7 +71,7 @@ export function configure<U extends Auth.Users>(
 		// Both routes validate this application shape before selecting its transformed values.
 		return Object.fromEntries(
 			fields.names.map((name) => [name, Reflect.get(data, name)]),
-		) as Form.Parse.Data<Shape>;
+		) as Field.Parse.Data<Shape>;
 	};
 
 	const back = (c: Pick<Context, "redirect">, method: string, retry = 0) => {
@@ -148,7 +148,7 @@ export function configure<U extends Auth.Users>(
 		.fields({ ...shape, ...Passkey.shape })
 		.use(guard("register"), async (c) => {
 			// the users table's fields, only known at runtime
-			const input = (await Issue.data(c)) as Form.Parse.Result<Shape> | null;
+			const input = (await Issue.data(c)) as Field.Parse.Result<Shape> | null;
 			if (!input || input.issues) throw new Issue("registration fields");
 			const data = values(input.data);
 			const credential = await new Passkey(c, state(c)).register(
@@ -194,7 +194,9 @@ export function configure<U extends Auth.Users>(
 			}
 			if (!(await admit(c, "register", true))) return;
 			// The reserved bootstrap field is added to the validated application shape above.
-			const data = input.data as Form.Parse.Data<Shape> & { bootstrap: string };
+			const data = input.data as Field.Parse.Data<Shape> & {
+				bootstrap: string;
+			};
 			const application = values(data);
 			await Passkey.issue(c, state(c), data.bootstrap, {
 				method: "register",

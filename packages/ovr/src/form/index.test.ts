@@ -5,13 +5,13 @@ import { Codec } from "../util/index.js";
 import { Field, Form, query } from "./index.js";
 import { describe, expect, test } from "vitest";
 
-type FormValid<S extends Form.Shape> = Extract<
-	Form.Parse.Result<S>,
-	{ data: Form.Parse.Data<S> }
+type FormValid<S extends Field.Shape> = Extract<
+	Field.Parse.Result<S>,
+	{ data: Field.Parse.Data<S> }
 >;
 
-type FormInvalid<S extends Form.Shape> = Exclude<
-	Form.Parse.Result<S>,
+type FormInvalid<S extends Field.Shape> = Exclude<
+	Field.Parse.Result<S>,
 	FormValid<S>
 >;
 
@@ -20,24 +20,24 @@ const valid = <T>(result: Schema.Parse.Result<T>): T => {
 	return result.data;
 };
 
-const formValid = <S extends Form.Shape>(result: Form.Parse.Result<S>) => {
+const formValid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 	if (result.issues) throw new Error("Expected no issues");
 	return result as FormValid<S>;
 };
 
-const formInvalid = <S extends Form.Shape>(result: Form.Parse.Result<S>) => {
+const formInvalid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 	if (!result.issues) throw new Error("Expected issues");
 	return result as FormInvalid<S>;
 };
 
-const decodeState = <S extends Form.Shape>(
-	search: Form.Parse.Result.Search,
+const decodeState = <S extends Field.Shape>(
+	search: Field.Parse.Result.Search,
 ) => {
 	if (!search) throw new Error("Expected _form search state");
 
 	return JSON.parse(
 		Codec.decode(Codec.Base64Url.decode(search[0][1])),
-	) as Form.State<S>;
+	) as Field.State<S>;
 };
 
 describe("Form schema", () => {
@@ -867,7 +867,7 @@ describe("Form schema", () => {
 							email: "ross@example.com",
 							password: "secret",
 						},
-					} satisfies Form.State),
+					} satisfies Field.State),
 				),
 			),
 		);
