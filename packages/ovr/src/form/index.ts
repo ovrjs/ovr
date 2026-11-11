@@ -143,6 +143,10 @@ export namespace Form {
 /** Internal protocol for a GET route, to make the form its fields render. */
 export const query = Symbol("query");
 
+/** A field's components and render, which a route's form reads */
+const component = Symbol("component");
+const render = Symbol("render");
+
 /**
  * Each route's form, kept apart from the route so its parsing is not part of
  * the route's API.
@@ -555,7 +559,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	}: Field.Component.Props<Shape> & {
 		values?: Form.Value.Initial<Shape> | undefined;
 	}) =>
-		this.shape[props.name]!.render({
+		this.shape[props.name]![render]({
 			...props,
 			state: this.#decode(props.state, values),
 		});
@@ -580,7 +584,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		const state = this.#decode(props.state, values); // pulled out to not call each map iteration
 
 		return this.names.map((name) =>
-			this.shape[name]!.render({ ...props, name, state }),
+			this.shape[name]![render]({ ...props, name, state }),
 		);
 	};
 
@@ -604,7 +608,7 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 	}: { name: N } & Field.Component.Props<Shape> & {
 			values?: Form.Value.Initial<Shape> | undefined;
 		}): Field.Component<Shape[N]> =>
-		this.shape[props.name]!.component({
+		this.shape[props.name]![component]({
 			...props,
 			state: this.#decode(props.state, values),
 		});
@@ -919,7 +923,7 @@ class FieldSchema<
 	 * @param def Definition of the new Field
 	 * @returns New `Field` instance
 	 */
-	override derive<O>(
+	protected override derive<O>(
 		def: Schema.Def,
 	): Field.Instance<O, Tag, Type, Values, Stream> {
 		return this.#copy<O>({ def });
@@ -930,10 +934,10 @@ class FieldSchema<
 	 * @param props Field control props
 	 * @returns Field component with sub-components
 	 */
-	component<S extends Form.Shape>(
+	[component]<S extends Form.Shape>(
 		props: Field.Component.Props<S, false>,
 	): Field.Component<this>;
-	component<S extends Form.Shape>({
+	[component]<S extends Form.Shape>({
 		state,
 		...props
 	}: Field.Component.Props<S, false>): unknown {
@@ -1071,9 +1075,11 @@ class FieldSchema<
 	 * @param props Field control props including `name` of the field to render
 	 * @returns Component that renders the HTML field with default structure
 	 */
-	render<S extends Form.Shape>(props: Field.Component.Props<S, false>) {
+	[render]<S extends Form.Shape>(props: Field.Component.Props<S, false>) {
 		// the sub-components of each kind of field, told apart by `options` and `tag` below
-		const c = this.component(props) as unknown as Field.Component<Field.Any> & {
+		const c = this[component](
+			props,
+		) as unknown as Field.Component<Field.Any> & {
 			Legend: (props?: Field.Component.Legend) => JSX.Element;
 			Option: (props: Field.Component.Option<Field.Options>) => JSX.Element;
 		};

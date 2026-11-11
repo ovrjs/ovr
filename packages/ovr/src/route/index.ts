@@ -16,6 +16,9 @@ export const freeze = Symbol("freeze");
  */
 export const parameters = /:([^/]+?)(?=\/|\*?$)|\*$/g;
 
+/** Internal protocol for the MCP endpoint, to read a route's parameter schemas. */
+export const schemas = Symbol("schemas");
+
 /**
  * Helper type to extract the route params (`:slug`) into a record.
  *
@@ -513,7 +516,7 @@ export class Route<
 	}
 
 	/** Schemas that check and convert pattern parameters */
-	get paramSchemas() {
+	get [schemas]() {
 		return this.#paramSchemas;
 	}
 
@@ -524,14 +527,14 @@ export class Route<
 
 	/** Route middleware stack, runs after global middleware */
 	get middleware(): Middleware<any, any>[] {
-		const schemas = this.paramSchemas;
+		const params = this.#paramSchemas;
 		// a copy, so a mounted route's middleware cannot be changed through it
-		if (!schemas) return [...this.#stack];
+		if (!params) return [...this.#stack];
 
 		return [
 			(c, next) => {
-				for (const name in schemas) {
-					const result = schemas[name]!.parse(c.params[name]);
+				for (const name in params) {
+					const result = params[name]!.parse(c.params[name]);
 
 					// a parameter that does not match is a resource that does not exist
 					if (result.issues) return void (c.res.status = 404);

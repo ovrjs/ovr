@@ -3,7 +3,7 @@ import { Field } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Markup } from "../markup/index.js";
 import { Route } from "../route/index.js";
-import { Markdown } from "./index.js";
+import { Markdown, tools } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 const md = Markdown.string;
@@ -622,7 +622,7 @@ describe("Markdown", () => {
 				),
 				{
 					base: "https://example.com/",
-					tool: () => ({ name: "x_post", args: {} }),
+					[tools]: () => ({ name: "x_post", args: {} }),
 				},
 			),
 		).toBe(
@@ -652,7 +652,7 @@ describe("Markdown", () => {
 		expect(
 			await md(form(), {
 				base: "https://example.com/",
-				tool: () => ({ name: "x_post", args: {} }),
+				[tools]: () => ({ name: "x_post", args: {} }),
 			}),
 		).toBe(
 			[
@@ -690,7 +690,7 @@ describe("Markdown", () => {
 				),
 				{
 					base: "https://example.com/",
-					tool: () => ({ name: "x_post", args: {} }),
+					[tools]: () => ({ name: "x_post", args: {} }),
 				},
 			),
 		).toBe(

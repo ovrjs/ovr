@@ -1,7 +1,7 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { type Field, Form as FormSchema, forms } from "../form/index.js";
-import { Markdown } from "../markdown/index.js";
+import { Markdown, tools } from "../markdown/index.js";
 import { Markup } from "../markup/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -436,7 +436,7 @@ export class Context<
 				if (this.#markdown()) {
 					res.body = Markdown.stream(r, {
 						base: this.url,
-						tool: agent.get(this.req)?.tool,
+						[tools]: agent.get(this.req)?.tool,
 					});
 					res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
 					return;

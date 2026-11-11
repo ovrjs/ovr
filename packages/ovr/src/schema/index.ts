@@ -586,7 +586,7 @@ export class Schema<Output>
 	 *
 	 * @param def Schema definition
 	 */
-	constructor(def: Schema.Def) {
+	protected constructor(def: Schema.Def) {
 		const run = Schema.#compile(def);
 
 		this.def = def;
@@ -606,13 +606,13 @@ export class Schema<Output>
 	}
 
 	/**
-	 * @internal Required for Field to override and return a `Field` instance
+	 * Required for Field to override and return a `Field` instance
 	 * from the chained methods instead of a `Schema`
 	 * @template O Output type of the new schema
 	 * @param def Definition of the new schema
 	 * @returns New schema instance based on the current instance
 	 */
-	derive<O>(def: Schema.Def) {
+	protected derive<O>(def: Schema.Def) {
 		return new Schema<O>(def);
 	}
 

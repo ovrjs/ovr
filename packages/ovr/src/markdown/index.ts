@@ -40,6 +40,9 @@ type Field = {
 	lone?: boolean;
 };
 
+/** Internal protocol for the MCP endpoint, to write a form as its tool's call. */
+export const tools = Symbol("tools");
+
 export namespace Markdown {
 	/** Markdown conversion options */
 	export type Options = {
@@ -47,7 +50,7 @@ export namespace Markdown {
 		readonly base?: string | URL | undefined;
 
 		/**
-		 * @internal Finds the tool that submits a form, if there is one, set by
+		 * Finds the tool that submits a form, if there is one, set by
 		 * an MCP endpoint. A form is then written as the call to its tool, with
 		 * the arguments its address holds, its values, and its messages. A form
 		 * without a tool is left out: the agent has no way to submit it.
@@ -56,7 +59,7 @@ export namespace Markdown {
 		 * @param action Resolved form action
 		 * @returns The tool's name, and the arguments from the address's parameters
 		 */
-		readonly tool?:
+		readonly [tools]?:
 			| ((
 					method: string,
 					action: URL,
@@ -385,7 +388,7 @@ class Writer {
 					// a list, or a tool's call on one line, follows what it belongs to
 					Writer.#lists.has(child.tag) ||
 						(child.tag === "form" &&
-							this.#options.tool &&
+							this.#options[tools] &&
 							!block.includes("\n"))
 						? list
 						: separator,
@@ -605,9 +608,9 @@ class Writer {
 		const method = (node.attrs.method ?? "GET").toUpperCase();
 		// an unsafe action is described as the page itself
 		const action = this.#url(node.attrs.action ?? "") ?? this.#url("")!;
-		const tool = this.#options.tool?.(method, action);
+		const tool = this.#options[tools]?.(method, action);
 		// read through an MCP endpoint, only what the agent can call is a form
-		if (this.#options.tool && !tool) return "";
+		if (this.#options[tools] && !tool) return "";
 		const labels = new Map<string, string>();
 		const fields: Field[] = [];
 		const byName = new Map<string, Field>();
@@ -742,7 +745,7 @@ class Writer {
 								child.attrs.formaction && this.#url(child.attrs.formaction);
 							if (to) {
 								const by = (child.attrs.formmethod ?? method).toUpperCase();
-								const other = this.#options.tool?.(by, to);
+								const other = this.#options[tools]?.(by, to);
 								submit += other
 									? ` (${Writer.#call(other)})`
 									: ` (${Writer.#code(`${by} ${this.#href(to)}`)})`;

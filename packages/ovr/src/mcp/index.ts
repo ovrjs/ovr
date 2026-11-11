@@ -2,7 +2,7 @@ import { type App, agents, direct, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
 import { forms } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Route, parameters } from "../route/index.js";
+import { Route, parameters, schemas } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec, Header, Method, Mime, Size, noStore } from "../util/index.js";
 
@@ -677,7 +677,7 @@ export class Mcp<P extends string = string> {
 			}
 
 			for (const [param, key] of Mcp.#params(route)) {
-				const schema = route.paramSchemas?.[key];
+				const schema = route[schemas]?.[key];
 				properties[param] = schema ? Mcp.#json(schema) : { type: "string" };
 				required.add(param);
 			}
@@ -803,7 +803,7 @@ export class Mcp<P extends string = string> {
 			const value = args[param];
 			for (const { message } of typeof value === "string" ||
 			typeof value === "number"
-				? (route.paramSchemas?.[key]?.parse(String(value)).issues ?? [])
+				? (route[schemas]?.[key]?.parse(String(value)).issues ?? [])
 				: [{ message: "Required field" }])
 				issues.push({ path: param, message });
 		}

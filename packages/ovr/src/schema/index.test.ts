@@ -479,7 +479,7 @@ describe("Preprocess schemas", () => {
 		const field = Field.text().email();
 
 		expect(valid(field.parse("person@example.com"))).toBe("person@example.com");
-		expect("component" in field).toBe(true);
+		expect("label" in field).toBe(true);
 	});
 
 	test("field min and max chains preserve Field behavior", () => {
@@ -487,7 +487,7 @@ describe("Preprocess schemas", () => {
 
 		expect(valid(field.parse("ab"))).toBe("ab");
 		expect(invalid(field.parse("a"))[0]?.expected).toBe("refine");
-		expect("component" in field).toBe(true);
+		expect("label" in field).toBe(true);
 	});
 
 	test("field number treats blank input as missing", () => {
