@@ -51,7 +51,7 @@ describe("Route schema helpers", () => {
 		const search = Route.get("/search")
 			.fields({
 				query: Field.text(),
-				tags: Field.multiselect(["a", "b", "c"]),
+				tags: Field.select(["a", "b", "c"]).multiple(),
 				active: Field.checkbox(),
 			})
 			.use(async (c) => {
@@ -767,7 +767,7 @@ describe("editing records", () => {
 		async (failure) => {
 			const form = new Form({
 				title: Field.text().optional().persist(),
-				tags: Field.multiselect(["a", "b"]).optional().persist(),
+				tags: Field.select(["a", "b"]).multiple().optional().persist(),
 				email: Field.email().persist(),
 			});
 			const input = new FormData();

@@ -164,7 +164,7 @@ ovr also normalizes a few common HTML form quirks before validation:
 - Single-value text-like inputs read blank values as missing during form parsing, so optional fields are omitted from the parsed output and `.default(...)` still applies like you would expect.
 - `Field.number()` and `Field.range()` coerce submitted strings into numbers, while blank submissions still count as missing instead of becoming `0`. Integers beyond `Number.MAX_SAFE_INTEGER` fail validation instead of being rounded.
 - `Field.checkbox()` reads presence as a boolean, so omitted checkboxes become `false`.
-- `Field.file()` and `Field.files()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.
+- `Field.file()` and `Field.file().multiple()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.
 
 ## Persisted form state
 
@@ -249,7 +249,7 @@ const submit = Route.post("/submit")
 
 ## Protections
 
-- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and multiselects count by their max cardinality, and `Field.files()` uses `Infinity`.
+- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()` has no limit.
 - You can still override the parser per request with `Context.data({ parts, memory, payload })`.
 - A body over a limit, such as more parts than the form has fields, throws a `Multipart.Limit`, one that is not multipart form data a `Multipart.Unsupported`, and malformed form data a `Multipart.Malformed`. Browsers submitting your form never send either. Left uncaught by the route, ovr answers them itself: 413 for a body over a limit, 415 for another content type, and 400 for malformed form data. Catch them in the route's own [middleware](/middleware) to answer differently; global middleware that [catches errors](/middleware#not-found-and-errors) sees the answer, not the error.
 - App-wide multipart defaults can be set with `new App({ multipart: { memory, payload, parts } })`.

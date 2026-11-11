@@ -740,7 +740,7 @@ describe("Mcp", () => {
 			.describe("Upload a photo")
 			.fields({
 				photo: Field.file().label("Photo"),
-				extras: Field.files().optional(),
+				extras: Field.file().multiple().optional(),
 			})
 			.use(async (c) => {
 				const result = await c.data();

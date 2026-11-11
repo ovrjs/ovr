@@ -1234,7 +1234,7 @@ export class Schema<Output>
 	optional<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 	): Field.Instance<Output | undefined, T, U, V>;
@@ -1255,7 +1255,7 @@ export class Schema<Output>
 	nullable<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 	): Field.Instance<Output | null, T, U, V>;
@@ -1276,7 +1276,7 @@ export class Schema<Output>
 	nullish<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 	): Field.Instance<Output | null | undefined, T, U, V>;
@@ -1301,7 +1301,7 @@ export class Schema<Output>
 	default<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 		value: Output,
@@ -1325,7 +1325,7 @@ export class Schema<Output>
 	preprocess<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 		fn: (value: unknown) => unknown,
@@ -1354,7 +1354,7 @@ export class Schema<Output>
 		O,
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 		fn: (value: Output) => O,
@@ -1381,7 +1381,7 @@ export class Schema<Output>
 		O,
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 		next: Schema<O>,
@@ -1411,7 +1411,7 @@ export class Schema<Output>
 		O,
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<string, T, U, V>,
 		schema: Schema<O>,
@@ -1443,7 +1443,7 @@ export class Schema<Output>
 	email<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<string, T, U, V>,
 		message?: string,
@@ -1472,7 +1472,7 @@ export class Schema<Output>
 	uuid<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<string, T, U, V>,
 		message?: string,
@@ -1500,7 +1500,7 @@ export class Schema<Output>
 	url<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<string, T, U, V>,
 		message?: string,
@@ -1528,7 +1528,7 @@ export class Schema<Output>
 	int<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<number, T, U, V>,
 		message?: string,
@@ -1560,7 +1560,7 @@ export class Schema<Output>
 	min<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<string, T, U, V>,
 		value: number,
@@ -1579,7 +1579,7 @@ export class Schema<Output>
 	min<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<number, T, U, V>,
 		value: number,
@@ -1598,7 +1598,7 @@ export class Schema<Output>
 	min<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<bigint, T, U, V>,
 		value: bigint,
@@ -1655,7 +1655,7 @@ export class Schema<Output>
 	max<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<string, T, U, V>,
 		value: number,
@@ -1674,7 +1674,7 @@ export class Schema<Output>
 	max<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<number, T, U, V>,
 		value: number,
@@ -1693,7 +1693,7 @@ export class Schema<Output>
 	max<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<bigint, T, U, V>,
 		value: bigint,
@@ -1745,7 +1745,7 @@ export class Schema<Output>
 	refine<
 		T extends Field.Tag,
 		U extends Field.Type,
-		V extends Field.Values | undefined,
+		V extends Field.Options | undefined,
 	>(
 		this: Field.Instance<Output, T, U, V>,
 		check: (value: Output) => boolean,

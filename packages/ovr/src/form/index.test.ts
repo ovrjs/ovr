@@ -49,7 +49,7 @@ describe("Form schema", () => {
 			date: Field.date(),
 			roles: Field.checkboxes(["reader", "admin"]),
 			level: Field.radio(["junior", "senior"]),
-			tags: Field.multiselect(["a", "b", "c"]),
+			tags: Field.select(["a", "b", "c"]).multiple(),
 			bio: Field.textarea(),
 		});
 		const data = new FormData();
@@ -84,7 +84,7 @@ describe("Form schema", () => {
 			active: Field.checkbox(),
 			roles: Field.checkboxes(["reader", "admin"]),
 			level: Field.radio(["junior", "senior"]),
-			tags: Field.multiselect(["a", "b", "c"]),
+			tags: Field.select(["a", "b", "c"]).multiple(),
 		});
 		const params = new URLSearchParams();
 
@@ -133,7 +133,7 @@ describe("Form schema", () => {
 	test("empty file inputs are treated as missing during form parsing", async () => {
 		const form = new Form({
 			license: Field.file().optional(),
-			uploads: Field.files().optional(),
+			uploads: Field.file().multiple().optional(),
 		});
 		const data = new FormData();
 		const empty = new File([""], "", { type: "application/octet-stream" });
@@ -162,8 +162,8 @@ describe("Form schema", () => {
 	test("missing multi-value fields are invalid by default", async () => {
 		const form = new Form({
 			roles: Field.checkboxes(["reader", "admin"]),
-			tags: Field.multiselect(["a", "b", "c"]),
-			uploads: Field.files(),
+			tags: Field.select(["a", "b", "c"]).multiple(),
+			uploads: Field.file().multiple(),
 		});
 		const result = formInvalid(await form.parse(new FormData()));
 
@@ -187,8 +187,8 @@ describe("Form schema", () => {
 	test("missing multi-value fields respect optional and default", async () => {
 		const form = new Form({
 			roles: Field.checkboxes(["reader", "admin"]).optional(),
-			tags: Field.multiselect(["a", "b", "c"]).default(["a"]),
-			uploads: Field.files().optional(),
+			tags: Field.select(["a", "b", "c"]).multiple().default(["a"]),
+			uploads: Field.file().multiple().optional(),
 		});
 
 		expect(valid(await form.parse(new FormData()))).toEqual({ tags: ["a"] });
@@ -340,7 +340,7 @@ describe("Form schema", () => {
 			role: Field.radio(["reader", "admin"]),
 			sort: Field.select(["relevance", "newest"]),
 			roles: Field.checkboxes(["reader", "admin"]),
-			tags: Field.multiselect(["a", "b"]),
+			tags: Field.select(["a", "b"]).multiple(),
 		});
 		const data = new FormData();
 
@@ -607,7 +607,7 @@ describe("Form schema", () => {
 			agree: Field.checkbox(),
 			tags: Field.checkboxes(["a", "b"]),
 			size: Field.radio(["s", "m"]),
-			kinds: Field.multiselect(["a", "b"]),
+			kinds: Field.select(["a", "b"]).multiple(),
 			token: Field.hidden(),
 		});
 		const html = await Markup.string(form.Fields());
@@ -747,6 +747,36 @@ describe("Form schema", () => {
 		).toBe(
 			'<div><label for="note">note</label><textarea id="note" required rows="8" class="wide" name="note"></textarea></div>',
 		);
+	});
+
+	test("multiple() takes more than one file or option, and only from a field that takes one", async () => {
+		const form = new Form({
+			photos: Field.file().multiple(),
+			colors: Field.select(["red", "green", "blue"]).multiple().optional(),
+		});
+		const data = new FormData();
+		data.append("photos", new File(["a"], "a.txt"));
+		data.append("photos", new File(["b"], "b.txt"));
+		data.append("colors", "red");
+		data.append("colors", "blue");
+		const result = await form.parse(data);
+
+		expect(result.issues).toBeUndefined();
+		expect(result.data?.colors).toEqual(["red", "blue"]);
+		expect(result.data?.photos.map((file) => file.name)).toEqual([
+			"a.txt",
+			"b.txt",
+		]);
+		expect(await Markup.string(form.Field({ name: "colors" }))).toContain(
+			'<select id="colors" multiple name="colors">',
+		);
+
+		void (() => {
+			// @ts-expect-error - one value per field, as text
+			Field.text().multiple();
+			// @ts-expect-error - optional applies to the values, so it comes after
+			Field.select(["a", "b"]).optional().multiple();
+		});
 	});
 
 	test("field label metadata renders text without leaking to controls", async () => {
@@ -968,7 +998,7 @@ describe("Form schema", () => {
 
 	test("file and files fields parse file values", async () => {
 		const single = new Form({ upload: Field.file() });
-		const many = new Form({ uploads: Field.files() });
+		const many = new Form({ uploads: Field.file().multiple() });
 		const one = new File(["one"], "one.txt", { type: "text/plain" });
 		const two = new File(["two"], "two.txt", { type: "text/plain" });
 		const oneData = new FormData();
@@ -993,8 +1023,8 @@ describe("Form schema", () => {
 		expect(Field.checkbox().parts).toBe(1);
 		expect(Field.file().stream().parts).toBe(1);
 		expect(Field.checkboxes(["a", "b", "c"]).parts).toBe(3);
-		expect(Field.multiselect(["a", "b"]).parts).toBe(2);
-		expect(Field.files().parts).toBe(Infinity);
+		expect(Field.select(["a", "b"]).multiple().parts).toBe(2);
+		expect(Field.file().multiple().parts).toBe(Infinity);
 	});
 
 	test("form parts sums field cardinality and preserves infinity", () => {
@@ -1002,13 +1032,13 @@ describe("Form schema", () => {
 			new Form({
 				name: Field.text(),
 				roles: Field.checkboxes(["reader", "admin"]),
-				tags: Field.multiselect(["a", "b", "c"]),
+				tags: Field.select(["a", "b", "c"]).multiple(),
 				license: Field.file().stream(),
 			}).parts,
 		).toBe(7);
-		expect(new Form({ name: Field.text(), uploads: Field.files() }).parts).toBe(
-			Infinity,
-		);
+		expect(
+			new Form({ name: Field.text(), uploads: Field.file().multiple() }).parts,
+		).toBe(Infinity);
 	});
 
 	test("multipart parse returns validated data and streamed parts together", async () => {

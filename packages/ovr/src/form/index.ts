@@ -640,6 +640,30 @@ export class Form<Shape extends Form.Shape = Form.Shape> {
 		});
 }
 
+/** Default message for a required field */
+const required = "Required field";
+
+/** Default message for a choice that is not one of the options */
+const choose = "Select an option";
+
+/**
+ * @param value Form data entry
+ * @returns `true` for a file a person chose, a browser sends an empty one otherwise
+ */
+const chosenFile = (value: FormDataEntryValue | null): value is File =>
+	value instanceof File && (value.name !== "" || value.size > 0);
+
+/**
+ * @param data Form data
+ * @param name HTML name attribute
+ * @returns Every value of the name, or `undefined` when there is none
+ */
+const readMany = (data: FormData | URLSearchParams, name: string) => {
+	const value = data.getAll(name);
+
+	return value.length ? value : undefined;
+};
+
 /**
  * Represents a form field with parsing logic and rendering metadata.
  *
@@ -653,7 +677,7 @@ class FieldSchema<
 	Output = unknown,
 	Tag extends Field.Tag = "input",
 	Type extends Field.Type = Field.Type,
-	Values extends Field.Values | undefined = undefined,
+	Values extends Field.Options | undefined = undefined,
 	Stream extends boolean | undefined = undefined,
 > extends Schema<Output> {
 	/** Read the value from form data */
@@ -662,13 +686,13 @@ class FieldSchema<
 	/** Field type */
 	readonly type: Type;
 
-	// tag and values are public so emitted .d.ts preserves
+	// tag and options are public so emitted .d.ts preserves
 	// field discriminants for correct types
 	/** Field tag */
 	readonly tag: Tag;
 
-	/** Field values */
-	readonly values: Values;
+	/** Choices of a select, radio, or checkbox group */
+	readonly options: Values;
 
 	/** Maximum expected multipart part count for this field name. */
 	readonly parts: number;
@@ -680,7 +704,7 @@ class FieldSchema<
 	readonly #persist: boolean;
 
 	/** Field options */
-	readonly #options: Field.Options<Values, Tag>;
+	readonly #config: Field.Config<Values, Tag>;
 
 	/** If the control can't be left empty, found on first render */
 	#requires?: boolean;
@@ -696,7 +720,7 @@ class FieldSchema<
 	 * @param persist If this field should persist invalid state values
 	 */
 	constructor(
-		options: Field.Options<Values, Tag>,
+		config: Field.Config<Values, Tag>,
 		schema: Schema<Output> | Schema.Def,
 		// default to a single value, treating blank as missing
 		read: Field.Read = (data, name) => data.get(name) || undefined,
@@ -706,11 +730,11 @@ class FieldSchema<
 	) {
 		super(schema instanceof Schema ? schema.def : schema);
 
-		this.#options = options;
-		this.tag = (options.tag ?? "input") as Tag;
-		this.values = options.values as Values;
+		this.#config = config;
+		this.tag = (config.tag ?? "input") as Tag;
+		this.options = config.options as Values;
 		this.#read = read;
-		this.type = options.props?.type as Type;
+		this.type = config.props?.type as Type;
 		this.parts = parts;
 		this.streaming = stream;
 		this.#persist = persist;
@@ -745,7 +769,7 @@ class FieldSchema<
 	 * @returns Keywords added to the property's JSON Schema
 	 */
 	override [annotate](io: "input" | "output") {
-		const { label, description } = this.#options;
+		const { label, description } = this.#config;
 		// what a browser's picker sends, which a string alone does not say
 		const format = FieldSchema.#formats[this.type as string];
 		const described = [description?.replace(/\.$/, ""), format]
@@ -760,7 +784,7 @@ class FieldSchema<
 			// input, such as an agent's, may leave it out too
 			...(io === "input" &&
 				this.type === "checkbox" &&
-				!this.values && { default: false }),
+				!this.options && { default: false }),
 		};
 	}
 
@@ -839,16 +863,16 @@ class FieldSchema<
 					Field.Props.Input & { readonly type?: never },
 	): Field.Instance<Output, Tag, Type, Values, Stream> {
 		return this.#with({
-			props: { ...this.#options.props, ...attributes } as Field.Props,
+			props: { ...this.#config.props, ...attributes } as Field.Props,
 		});
 	}
 
 	/**
-	 * @param options Options to change
+	 * @param changes What to change
 	 * @returns The same field with them
 	 */
-	#with(options: Pick<Field.Options, "label" | "description" | "props">) {
-		return this.#copy({ options: { ...this.#options, ...options } });
+	#with(changes: Pick<Field.Config, "label" | "description" | "props">) {
+		return this.#copy({ config: { ...this.#config, ...changes } });
 	}
 
 	/**
@@ -858,23 +882,60 @@ class FieldSchema<
 	 * @returns A copy of this field
 	 */
 	#copy<O = Output, S extends boolean | undefined = Stream>({
-		options = this.#options,
+		config = this.#config,
 		def = this.def,
 		stream = this.streaming as S,
 		persist = this.#persist,
 	}: {
-		options?: Field.Options<Values, Tag>;
+		config?: Field.Config<Values, Tag>;
 		def?: Schema.Def;
 		stream?: S;
 		persist?: boolean;
 	}) {
 		return new FieldSchema<O, Tag, Type, Values, S>(
-			options,
+			config,
 			def,
 			this.#read,
 			this.parts,
 			stream,
 			persist,
+		);
+	}
+
+	/**
+	 * Take more than one value: files, or options of a select. The value is
+	 * an array, required to have one unless the field is made optional after.
+	 *
+	 * ```ts
+	 * Field.file().multiple();
+	 * Field.select(["red", "green", "blue"]).multiple();
+	 * ```
+	 *
+	 * @returns Field whose value is an array
+	 */
+	multiple(
+		this: Field.Instance<File, "input", "file", Values, Stream>,
+	): Field.Instance<File[], "input", "file", Values, Stream>;
+	multiple<V extends string>(
+		this: Field.Instance<V, "select", Type, readonly [V, ...V[]], Stream>,
+	): Field.Instance<V[], "select", Type, readonly [V, ...V[]], Stream>;
+	// the overloads above are its types
+	multiple(): any {
+		const file = this.type === "file";
+
+		return new FieldSchema(
+			{ ...this.#config, props: { ...this.#config.props, multiple: true } },
+			// each value is checked as this field checks one
+			Schema.array(this as Schema<unknown>, file ? required : choose),
+			file
+				? (data, name) => {
+						const files = data.getAll(name).filter(chosenFile);
+						return files.length ? files : undefined;
+					}
+				: readMany,
+			file ? Infinity : this.options!.length,
+			this.streaming,
+			this.#persist,
 		);
 	}
 
@@ -925,7 +986,7 @@ class FieldSchema<
 		const issue = state?.issues?.find((i) => i.path[0] === props.name);
 		const issueId = issue && `${props.name}-issue`;
 		const hidden = this.type === "hidden";
-		const { label = props.name, description } = this.#options;
+		const { label = props.name, description } = this.#config;
 		const descriptionId =
 			description && !hidden ? `${props.name}-description` : undefined;
 		const control = {
@@ -936,7 +997,7 @@ class FieldSchema<
 			// read with the control: its description, then what is wrong with it
 			"aria-describedby":
 				[descriptionId, issueId].filter(Boolean).join(" ") || undefined,
-			...this.#options.props,
+			...this.#config.props,
 			...props,
 		};
 
@@ -968,20 +1029,20 @@ class FieldSchema<
 				...data,
 			});
 
-		if (this.values && this.tag !== "select") {
+		if (this.options && this.tag !== "select") {
 			// radio/checkboxes
 			// make multiple ids for the group so all don't have the same id
 			const groupId = (value: string) =>
 				`${control.name}-${value}`.toLowerCase();
 
 			const Control = (
-				data: Field.Component.Control.Group<"input", Field.Values>,
+				data: Field.Component.Control.Group<"input", Field.Options>,
 			) =>
 				jsx(this.tag, {
 					...control,
 					id: groupId(data.value),
 					// autofocus only the first input in the group
-					autofocus: control.autofocus && data.value === this.values?.[0],
+					autofocus: control.autofocus && data.value === this.options?.[0],
 					checked: chosen(data.value),
 					...data,
 				});
@@ -989,7 +1050,7 @@ class FieldSchema<
 			const Label = ({
 				value,
 				...rest
-			}: Field.Component.Label.Group<Field.Values>) =>
+			}: Field.Component.Label.Group<Field.Options>) =>
 				jsx("label", { for: groupId(value), children: value, ...rest });
 
 			return {
@@ -1001,7 +1062,7 @@ class FieldSchema<
 				Option: ({
 					value,
 					...rest
-				}: Field.Component.Option.Input<Field.Values>) =>
+				}: Field.Component.Option.Input<Field.Options>) =>
 					jsx("div", {
 						children: [Control({ value }), Label({ value })],
 						...rest,
@@ -1038,8 +1099,8 @@ class FieldSchema<
 			},
 			Option:
 				// select
-				this.values &&
-				((data: Field.Component.Option<Field.Values>) =>
+				this.options &&
+				((data: Field.Component.Option<Field.Options>) =>
 					jsx("option", {
 						children: data.value,
 						selected: chosen(data.value),
@@ -1055,20 +1116,20 @@ class FieldSchema<
 	 * @returns Component that renders the HTML field with default structure
 	 */
 	render<S extends Form.Shape>(props: Field.Component.Props<S, false>) {
-		// the sub-components of each kind of field, told apart by `values` and `tag` below
+		// the sub-components of each kind of field, told apart by `options` and `tag` below
 		const c = this.component(props) as unknown as Field.Component<Field.Any> & {
 			Legend: (props?: Field.Component.Legend) => JSX.Element;
-			Option: (props: Field.Component.Option<Field.Values>) => JSX.Element;
+			Option: (props: Field.Component.Option<Field.Options>) => JSX.Element;
 		};
-		const { values } = this;
+		const { options } = this;
 
 		return c.Root({
 			children: [
-				values && this.tag !== "select"
+				options && this.tag !== "select"
 					? // radio/checkboxes, a group with a legend, each value labelled
 						[
 							c.Legend(),
-							values.map((value) =>
+							options.map((value) =>
 								jsx("div", {
 									children: [c.Control({ value }), c.Label({ value })],
 								}),
@@ -1078,8 +1139,8 @@ class FieldSchema<
 							c.Label(),
 							// a select has an option for each value
 							c.Control(
-								values && {
-									children: values.map((value) => c.Option({ value })),
+								options && {
+									children: options.map((value) => c.Option({ value })),
 								},
 							),
 						],
@@ -1109,11 +1170,11 @@ export namespace Field {
 	/**
 	 * Base options to create a Field.
 	 *
-	 * @template V Type of the values for group inputs
+	 * @template V Choices of a select, radio, or checkbox group
 	 * @template T Tag name
 	 */
-	export interface Options<
-		V extends Values | undefined = undefined,
+	export interface Config<
+		V extends Options | undefined = undefined,
 		T extends Tag = Tag,
 	> {
 		/**
@@ -1123,8 +1184,8 @@ export namespace Field {
 		 */
 		readonly tag?: T;
 
-		/** Values are used for group inputs */
-		readonly values?: V;
+		/** Choices of a select, radio, or checkbox group */
+		readonly options?: V;
 
 		/** What people call the field, set with `label()` */
 		readonly label?: string;
@@ -1159,7 +1220,7 @@ export namespace Field {
 	export type Type = JSX.IntrinsicElements["input"]["type"];
 
 	/** Value type for select and radio options */
-	export type Values = readonly [string, ...string[]];
+	export type Options = readonly [string, ...string[]];
 
 	/**
 	 * Field instance type
@@ -1174,7 +1235,7 @@ export namespace Field {
 		Output = unknown,
 		Tag extends Field.Tag = "input",
 		Type extends Field.Type = Field.Type,
-		Values extends Field.Values | undefined = undefined,
+		Values extends Field.Options | undefined = undefined,
 		Stream extends boolean | undefined = undefined,
 	> = FieldSchema<Output, Tag, Type, Values, Stream>;
 
@@ -1183,7 +1244,7 @@ export namespace Field {
 		any,
 		Tag,
 		Type,
-		Values | undefined,
+		Options | undefined,
 		boolean | undefined
 	>;
 
@@ -1193,7 +1254,7 @@ export namespace Field {
 	 * @template F Field
 	 */
 	export type TagOf<F extends Any> =
-		F extends Instance<any, infer T, Field.Type, Field.Values | undefined>
+		F extends Instance<any, infer T, Field.Type, Field.Options | undefined>
 			? T
 			: Tag;
 
@@ -1248,7 +1309,7 @@ export namespace Field {
 			 * @template T Tag name
 			 * @template V Option values
 			 */
-			export type Group<T extends Tag, V extends Values> = Control<T> & {
+			export type Group<T extends Tag, V extends Options> = Control<T> & {
 				readonly value: V[number];
 			};
 		}
@@ -1262,7 +1323,7 @@ export namespace Field {
 			 *
 			 * @template V Option values
 			 */
-			export type Group<V extends Values> = Label & {
+			export type Group<V extends Options> = Label & {
 				readonly value: V[number];
 			};
 		}
@@ -1270,9 +1331,9 @@ export namespace Field {
 		/**
 		 * `<Field.Option />` select component props
 		 *
-		 * @template V Values
+		 * @template V Options
 		 */
-		export type Option<V extends Values> = JSX.IntrinsicElements["option"] & {
+		export type Option<V extends Options> = JSX.IntrinsicElements["option"] & {
 			/** Option value */
 			readonly value: V[number];
 		};
@@ -1283,9 +1344,9 @@ export namespace Field {
 			 *
 			 * Wrapper for both the `<Label />` and `<Input />` components.
 			 *
-			 * @template V Values
+			 * @template V Options
 			 */
-			export type Input<V extends Values> = JSX.IntrinsicElements["div"] & {
+			export type Input<V extends Options> = JSX.IntrinsicElements["div"] & {
 				/** Option value */
 				readonly value: V[number];
 			};
@@ -1312,11 +1373,11 @@ export namespace Field {
 			 */
 			Issue: (props?: Component.Issue) => JSX.Element;
 		} & (F extends Instance<any, "select", Field.Type, infer V>
-			? V extends Values
+			? V extends Options
 				? // select
 					{
-						/** Select option values */
-						values: V;
+						/** The select's options */
+						options: V;
 
 						/**
 						 * @param props Root props
@@ -1344,11 +1405,11 @@ export namespace Field {
 					}
 				: never
 			: F extends Instance<any, "input", Field.Type, infer V>
-				? V extends Values
+				? V extends Options
 					? // radio/checkboxes
 						{
-							/** Input group values */
-							values: V;
+							/** The group's options */
+							options: V;
 
 							/**
 							 * @param props Root props
@@ -1456,32 +1517,6 @@ export namespace Field {
 export class Field {
 	// this is used instead of the defaults for example "Expected string"
 	// since "string" doesn't make sense to end users
-	/** Default message for required field values. */
-	static readonly #required = "Required field";
-	/**
-	 * Message for choices, whether none or one not offered was sent, such as
-	 * by an agent, where "Required field" would be wrong.
-	 */
-	static readonly #choose = "Select an option";
-
-	/**
-	 * @param value Raw form entry
-	 * @returns `true` when the file input contains a real file value
-	 */
-	static #nonEmptyFile(value: FormDataEntryValue | null) {
-		return value instanceof File && (value.name !== "" || value.size > 0);
-	}
-
-	/**
-	 * @param data Form data
-	 * @param name HTML name attribute
-	 * @returns Field values or `undefined` when missing
-	 */
-	static #readMany(data: FormData | URLSearchParams, name: string) {
-		const value = data.getAll(name);
-
-		return value.length ? value : undefined;
-	}
 
 	/**
 	 * @template T Input type
@@ -1491,7 +1526,7 @@ export class Field {
 	static #input<T extends Field.Type>(
 		props: Field.Props.Input & { type: T },
 	): Field.Instance<string, "input", T> {
-		return new FieldSchema({ props }, Schema.string(Field.#required));
+		return new FieldSchema({ props }, Schema.string(required));
 	}
 
 	/**
@@ -1605,7 +1640,7 @@ export class Field {
 
 		return new FieldSchema(
 			{ props },
-			Schema.number(Field.#required).preprocess(Field.#toNumber),
+			Schema.number(required).preprocess(Field.#toNumber),
 		);
 	}
 
@@ -1658,58 +1693,42 @@ export class Field {
 	static file(): Field.Instance<File, "input", "file"> {
 		return new FieldSchema(
 			{ props: { type: "file" } },
-			Schema.instance(File, Field.#required),
+			Schema.instance(File, required),
 			(data, name) => {
 				const value = data.get(name);
 
-				return (Field.#nonEmptyFile(value) && value) || undefined;
+				return (chosenFile(value) && value) || undefined;
 			},
-		);
-	}
-
-	/**
-	 * @returns Multiple file input field
-	 */
-	static files(): Field.Instance<File[], "input", "file"> {
-		return new FieldSchema(
-			{ props: { type: "file", multiple: true } },
-			Schema.array(Schema.instance(File, Field.#required), Field.#required),
-			(data, name) => {
-				const value = data.getAll(name).filter(Field.#nonEmptyFile);
-
-				return value.length ? value : undefined;
-			},
-			Infinity,
 		);
 	}
 
 	/**
 	 * @template V Value type
-	 * @param values Checkbox values
+	 * @param options Checkbox options
 	 * @returns Checkbox group input field
 	 */
 	static checkboxes<const V extends string>(
-		values: readonly [V, ...V[]],
+		options: readonly [V, ...V[]],
 	): Field.Instance<V[], "input", "checkbox", readonly [V, ...V[]]> {
 		return new FieldSchema(
-			{ values, props: { type: "checkbox" } },
-			Schema.array(Schema.enum(values, Field.#choose), Field.#choose),
-			Field.#readMany,
-			values.length,
+			{ options, props: { type: "checkbox" } },
+			Schema.array(Schema.enum(options, choose), choose),
+			readMany,
+			options.length,
 		);
 	}
 
 	/**
 	 * @template V Value type
-	 * @param values Radio button values
+	 * @param options Radio button options
 	 * @returns Radio group input field
 	 */
 	static radio<const V extends string>(
-		values: readonly [V, ...V[]],
+		options: readonly [V, ...V[]],
 	): Field.Instance<V, "input", "radio", readonly [V, ...V[]]> {
 		return new FieldSchema(
-			{ values, props: { type: "radio" } },
-			Schema.enum(values, Field.#choose),
+			{ options, props: { type: "radio" } },
+			Schema.enum(options, choose),
 		);
 	}
 
@@ -1717,36 +1736,20 @@ export class Field {
 	 * @returns Textarea field
 	 */
 	static textarea(): Field.Instance<string, "textarea"> {
-		return new FieldSchema({ tag: "textarea" }, Schema.string(Field.#required));
+		return new FieldSchema({ tag: "textarea" }, Schema.string(required));
 	}
 
 	/**
 	 * @template V Value type
-	 * @param values Select options
+	 * @param options Select options
 	 * @returns Select field
 	 */
 	static select<const V extends string>(
-		values: readonly [V, ...V[]],
+		options: readonly [V, ...V[]],
 	): Field.Instance<V, "select", Field.Type, readonly [V, ...V[]]> {
 		return new FieldSchema(
-			{ tag: "select", values },
-			Schema.enum(values, Field.#choose),
-		);
-	}
-
-	/**
-	 * @template V Value type
-	 * @param values Select options
-	 * @returns Multi-select field
-	 */
-	static multiselect<const V extends string>(
-		values: readonly [V, ...V[]],
-	): Field.Instance<V[], "select", Field.Type, readonly [V, ...V[]]> {
-		return new FieldSchema(
-			{ tag: "select", values, props: { multiple: true } },
-			Schema.array(Schema.enum(values, Field.#choose), Field.#choose),
-			Field.#readMany,
-			values.length,
+			{ tag: "select", options },
+			Schema.enum(options, choose),
 		);
 	}
 }
