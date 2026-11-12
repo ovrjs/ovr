@@ -19,6 +19,7 @@
     "agent-limits",
     "choices-for-agents",
     "choices-return-source",
+    "groups",
     "hints",
     "joined-descriptions",
     "json-tool-arguments",
