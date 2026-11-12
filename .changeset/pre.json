@@ -32,6 +32,7 @@
     "option-labels",
     "optional-select",
     "passkey-details",
+    "picked-values",
     "registration-messages",
     "taken-fields",
     "textarea-lines"
