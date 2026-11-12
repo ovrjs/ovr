@@ -282,7 +282,8 @@ export class Auth<
 	 *
 	 * Anyone who has the link is the user until it is used or expires, so
 	 * make one only for a user your code has already identified, and send it
-	 * the way you would a password.
+	 * the way you would a password. It is best kept to a script or an admin
+	 * page, not a form any signed-in user can use in production.
 	 *
 	 * @param user ID of the user it signs in
 	 * @param options The origin it is opened at, this one by default, and how

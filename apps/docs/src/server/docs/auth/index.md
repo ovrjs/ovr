@@ -208,6 +208,8 @@ const { Login, Link } = auth.forms(c);
 
 A link works once, only at the origin it was made for, and only its hash is stored, in `auth_links`. A link that is used, expired, or for another origin returns to the page, where `Link.Issue` says so. Anyone who has the link is the user until then: make one only for a user your code has already identified, and send it the way you would a password.
 
+A link signs in without a passkey, so it is the weakest way into an account. Keep it for yourself: make links from a script or an admin page, such as to move your own account from `localhost` to production, or to let someone back in after you have checked who they are. A form that lets any signed-in user make one is probably not worth having in production, since whoever takes over a session there can make a way in that outlasts it.
+
 ### Customization
 
 Supply children to control the markup and styling:
