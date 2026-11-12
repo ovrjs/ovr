@@ -303,7 +303,10 @@ export function configure<U extends Auth.Users>(
 			const input = await Issue.data(c);
 			if (!input || input.issues) throw new Issue("passkey request");
 			const session = await state(c).session();
-			if (!session) return c.text("Sign in to add a passkey.", 401);
+			// a passkey outlasts the session that adds it, so only a person
+			// who has just signed in adds one, not whoever holds an old session
+			if (!session || !(await state(c).recent(10 * Time.minute)))
+				return c.text("Sign in again to add a passkey.", 401);
 			const [[account], exclude] = await Promise.all([
 				options.database
 					.sql`SELECT * FROM ${users} WHERE ${users.columns.id!} = ${session.user}`,

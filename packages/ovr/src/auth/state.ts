@@ -113,8 +113,10 @@ export class State {
 			session.id === id &&
 			session.expiration > now &&
 			session.started + this.options.lifetime > now
-		)
+		) {
+			this.#started = session.started;
 			return this.#renew(session, now);
+		}
 		this.#clear();
 		return null;
 	}
@@ -144,6 +146,19 @@ export class State {
 	/** Read a non-expired, non-revoked session, renewing it while it is used. */
 	session() {
 		return (this.#session ??= this.#read());
+	}
+
+	/** When the browser's session signed in, once it is read */
+	#started: number | undefined;
+
+	/**
+	 * @param within Milliseconds
+	 * @returns `true` when the person signed in that recently, in this
+	 * browser: what a session taken over later cannot say
+	 */
+	async recent(within: number) {
+		await this.session();
+		return this.#started !== undefined && Date.now() - this.#started <= within;
 	}
 
 	/**

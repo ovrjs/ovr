@@ -1486,6 +1486,13 @@ describe("configured passkey callbacks", () => {
 			registered.headers.getSetCookie().at(-1)!.split(";")[0];
 		const account = (await state.storage.record(id))!.user;
 
+		// a session that signed in a while ago is asked to sign in again
+		await db.sql`UPDATE ${db.auth_sessions} SET started = ${Date.now() - 11 * Time.minute}`;
+		const stale = await begin(cookie);
+		expect(stale.response.status).toBe(401);
+		expect(await stale.response.text()).toBe("Sign in again to add a passkey.");
+		await db.sql`UPDATE ${db.auth_sessions} SET started = ${Date.now() - 9 * Time.minute}`;
+
 		const adding = await begin(cookie);
 		const json: {
 			ceremony: string;

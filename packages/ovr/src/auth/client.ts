@@ -114,6 +114,9 @@ export function listen(
 			}
 			if (res.status === 410)
 				throw new Error("This page has expired. Reload and try again.");
+			// adding a passkey asks for a recent sign-in
+			if (res.status === 401)
+				throw new Error("Sign in again, then add the passkey.");
 			if (!res.ok)
 				throw new Error("Could not start the passkey request. Try again.");
 

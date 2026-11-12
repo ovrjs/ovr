@@ -166,7 +166,7 @@ app.use(
 );
 ```
 
-The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `Add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. Without a session, the passkey prompt is refused with a 401.
+The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `Add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. A passkey outlasts the session that adds it, so adding one asks for a recent sign-in: within ten minutes, in that browser. After that, or without a session, the prompt is refused with a 401, and the form says to sign in again.
 
 Each passkey has what tells it apart in a list: its `name`, if it was added with one, `created`, a time in milliseconds, and the `origin` it was made at.
 
