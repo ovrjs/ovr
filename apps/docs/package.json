@@ -12,13 +12,13 @@
 	"dependencies": {
 		"@fontsource-variable/geist": "^5.3.0",
 		"@fontsource-variable/geist-mono": "^5.3.0",
-		"@ovrjs/size": "0.0.2-next.3",
+		"@ovrjs/size": "0.0.2-next.4",
 		"@robino/md": "^6.0.1",
 		"clsx": "^2.1.1",
 		"dotenv": "^17.4.2",
 		"drab": "^8.0.0",
 		"openai": "^7.1.0",
-		"ovr": "7.0.0-next.3",
+		"ovr": "7.0.0-next.4",
 		"uico": "^0.12.0"
 	},
 	"devDependencies": {

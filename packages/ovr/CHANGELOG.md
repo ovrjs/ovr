@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.4
+
+### Patch Changes
+
+- 554b09d: A field's description joined with more, such as a date's format, always ends as a sentence, whether or not the description has its own period.
+
 ## 7.0.0-next.3
 
 ### Patch Changes
