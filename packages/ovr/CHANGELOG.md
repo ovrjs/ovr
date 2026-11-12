@@ -1,5 +1,16 @@
 # ovr
 
+## 7.0.0-next.5
+
+### Minor Changes
+
+- 6cdc44e: `Field.taken(message)` is what to say when a user already has a public value no two users share, such as a username. Registration checks a users table's `taken()` fields before the passkey prompt and shows the message on the field. Other conflicts, such as an email's, stay generic.
+
+### Patch Changes
+
+- 8f8e748: - A registration field that fails its schema shows its own message, such as a `refine()`'s, in place of "Check this field." The registration options endpoint answers 422 with `{ fields: { name: message } }`.
+  - The agents docs give both codes for a missing resource: -32602, and -32002 for clients of the 2025 versions.
+
 ## 7.0.0-next.4
 
 ### Patch Changes

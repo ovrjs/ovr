@@ -20,6 +20,8 @@
     "choices-for-agents",
     "choices-return-source",
     "joined-descriptions",
-    "json-tool-arguments"
+    "json-tool-arguments",
+    "registration-messages",
+    "taken-fields"
   ]
 }
