@@ -308,6 +308,7 @@ ovr also normalizes a few common HTML form quirks before validation:
 - Single-value text-like inputs read blank values as missing during form parsing, so optional fields are omitted from the parsed output and `.default(...)` still applies like you would expect.
 - `Field.number()` and `Field.range()` coerce submitted strings into numbers, while blank submissions still count as missing instead of becoming `0`. Text that is not a number, which only something other than a browser sends, is answered with "Enter a number". Integers beyond `Number.MAX_SAFE_INTEGER` fail validation instead of being rounded.
 - `Field.checkbox()` reads presence as a boolean, so omitted checkboxes become `false`.
+- `Field.date()`, `Field.datetime()`, `Field.month()`, `Field.week()`, `Field.time()`, and `Field.color()` check that the value is in the format a browser's picker sends, and that a date is a day of the calendar. A browser sends nothing else, but an agent or a script may, and gets an issue such as "Enter a date as YYYY-MM-DD".
 - `Field.file()` and `Field.file().multiple()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.
 
 ## Persisted form state

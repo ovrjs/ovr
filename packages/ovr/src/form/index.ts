@@ -2288,6 +2288,41 @@ export class Field {
 		return new FieldSchema({ props }, Schema.string(required));
 	}
 
+	/** A time as a browser's picker sends it, with seconds when it has them */
+	static readonly #clock = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d{1,3})?)?$/;
+
+	/**
+	 * @param value Text
+	 * @returns `true` for a day of the calendar as YYYY-MM-DD
+	 */
+	static #day(value: string) {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+		const date = new Date(`${value}T00:00:00Z`);
+		// a day that is not one, such as the 31st of June, becomes another
+		return (
+			!Number.isNaN(date.getTime()) && date.toISOString().startsWith(value)
+		);
+	}
+
+	/**
+	 * A browser's picker only sends its own format, but an agent, or any
+	 * other client, sends what it likes, so the value is checked.
+	 *
+	 * @template T Input type
+	 * @param type Input type of the picker
+	 * @param message Issue message for a value in another format
+	 * @param valid Checks the value
+	 * @returns Input field for a picker's value
+	 */
+	static #picked<T extends NonNullable<Field.Type>>(
+		type: T,
+		message: string,
+		valid: (value: string) => boolean,
+	): Field.Instance<string, "input", T> {
+		return Field.#input({ type }).refine(valid, message);
+	}
+
 	/**
 	 * @returns Text input field
 	 */
@@ -2320,7 +2355,9 @@ export class Field {
 	 * @returns Color input field
 	 */
 	static color(): Field.Instance<string, "input", "color"> {
-		return Field.#input({ type: "color" });
+		return Field.#picked("color", "Enter a color as #rrggbb", (value) =>
+			/^#[0-9a-f]{6}$/i.test(value),
+		);
 	}
 
 	/**
@@ -2334,35 +2371,54 @@ export class Field {
 	 * @returns Date input field
 	 */
 	static date(): Field.Instance<string, "input", "date"> {
-		return Field.#input({ type: "date" });
+		return Field.#picked("date", "Enter a date as YYYY-MM-DD", (value) =>
+			Field.#day(value),
+		);
 	}
 
 	/**
 	 * @returns Datetime input field
 	 */
 	static datetime(): Field.Instance<string, "input", "datetime-local"> {
-		return Field.#input({ type: "datetime-local" });
+		return Field.#picked(
+			"datetime-local",
+			"Enter a date and time as YYYY-MM-DDTHH:mm",
+			(value) => {
+				const [day, time, more] = value.split("T");
+				return (
+					more === undefined &&
+					Field.#day(day!) &&
+					Field.#clock.test(time ?? "")
+				);
+			},
+		);
 	}
 
 	/**
 	 * @returns Month input field
 	 */
 	static month(): Field.Instance<string, "input", "month"> {
-		return Field.#input({ type: "month" });
+		return Field.#picked("month", "Enter a month as YYYY-MM", (value) =>
+			/^\d{4}-(0[1-9]|1[0-2])$/.test(value),
+		);
 	}
 
 	/**
 	 * @returns Week input field
 	 */
 	static week(): Field.Instance<string, "input", "week"> {
-		return Field.#input({ type: "week" });
+		return Field.#picked("week", "Enter a week as YYYY-Www", (value) =>
+			/^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/.test(value),
+		);
 	}
 
 	/**
 	 * @returns Time input field
 	 */
 	static time(): Field.Instance<string, "input", "time"> {
-		return Field.#input({ type: "time" });
+		return Field.#picked("time", "Enter a time as HH:mm", (value) =>
+			Field.#clock.test(value),
+		);
 	}
 
 	/**

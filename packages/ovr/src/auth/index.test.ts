@@ -1645,7 +1645,19 @@ describe("configured passkey callbacks", () => {
 			await state.service.link(account, { origin: "https://other.example" }),
 		);
 		expect(other.origin).toBe("https://other.example");
-		const late = new URL(await state.service.link(account, { minutes: 1 }));
+		const made = Date.now();
+		const late = new URL(await state.service.link(account));
+		// five minutes, with no way to make it longer
+		const [stored] =
+			(await db.sql`SELECT expiration FROM ${db.auth_links} WHERE origin = ${origin}`) as {
+				expiration: string;
+			}[];
+		expect(Number(stored!.expiration) - made).toBeGreaterThanOrEqual(
+			5 * Time.minute,
+		);
+		expect(Number(stored!.expiration) - made).toBeLessThan(6 * Time.minute);
+		// @ts-expect-error a link's time is not an option
+		void (() => state.service.link(account, { minutes: 60 }));
 		await db.sql`UPDATE ${db.auth_links} SET expiration = 1 WHERE origin = ${origin}`;
 		for (const link of [other, late]) {
 			const data = new FormData();
@@ -1658,9 +1670,6 @@ describe("configured passkey callbacks", () => {
 		await expect(
 			state.service.link(account, { origin: "http://example.com" }),
 		).rejects.toThrow("HTTPS origin");
-		await expect(state.service.link(account, { minutes: 61 })).rejects.toThrow(
-			"at most 60 minutes",
-		);
 	});
 
 	test("renders customizable fields and errors with external nonce-bearing scripts", async () => {

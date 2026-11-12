@@ -342,22 +342,19 @@ export function configure<U extends Auth.Users>(
 		/** Make a link that signs a user in once, see `Auth.link`. */
 		async link(
 			user: string,
-			{
-				origin = options.origin,
-				minutes = 10,
-			}: { origin?: string; minutes?: number } = {},
+			{ origin = options.origin }: { origin?: string } = {},
 		) {
 			const target = new URL(page, origin);
 			if (target.protocol !== "https:" || target.origin !== origin)
 				throw new TypeError("A link's origin must be an HTTPS origin");
-			if (!(minutes > 0 && minutes <= 60))
-				throw new TypeError("A link lasts at most 60 minutes");
 
 			const token = Token.random();
 			await storage.links.set(token, {
 				user,
 				origin,
-				expiration: Date.now() + minutes * Time.minute,
+				// long enough to copy and open, and no longer: it signs in
+				// without a passkey
+				expiration: Date.now() + 5 * Time.minute,
 			});
 			target.searchParams.set(linked, token);
 			return target.href;

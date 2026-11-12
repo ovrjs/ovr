@@ -286,13 +286,12 @@ export class Auth<
 	 * page, not a form any signed-in user can use in production.
 	 *
 	 * @param user ID of the user it signs in
-	 * @param options The origin it is opened at, this one by default, and how
-	 * many minutes it lasts, 10 by default and at most 60
-	 * @returns The link
+	 * @param options The origin it is opened at, this one by default
+	 * @returns The link, which lasts 5 minutes
 	 */
 	readonly link: (
 		user: string,
-		options?: { origin?: string; minutes?: number },
+		options?: { origin?: string },
 	) => Promise<string>;
 
 	/** Configure passkeys, session helpers, and automatic authentication rate limits. */

@@ -42,7 +42,7 @@ const decodeState = <S extends Field.Shape>(
 };
 
 describe("Form schema", () => {
-	test("parses mixed field types and leaves date strings unvalidated", async () => {
+	test("parses mixed field types", async () => {
 		const form = new Form({
 			name: Field.text(),
 			age: Field.number(),
@@ -58,7 +58,7 @@ describe("Form schema", () => {
 		data.set("name", "ross");
 		data.set("age", "31");
 		data.set("active", "on");
-		data.set("date", "not-a-date");
+		data.set("date", "2026-11-12");
 		data.append("roles", "reader");
 		data.append("roles", "admin");
 		data.set("level", "senior");
@@ -70,7 +70,7 @@ describe("Form schema", () => {
 			name: "ross",
 			age: 31,
 			active: true,
-			date: "not-a-date",
+			date: "2026-11-12",
 			roles: ["reader", "admin"],
 			level: "senior",
 			tags: ["a", "c"],
@@ -1501,6 +1501,64 @@ test("each line of a long text is kept, where one long value is not", async () =
 	expect(decodeState<typeof form.shape>(long.search).values).not.toHaveProperty(
 		"steps",
 	);
+});
+
+test("a picker's value is checked, since an agent sends what it likes", async () => {
+	const form = new Form({
+		day: Field.date().optional(),
+		at: Field.datetime().optional(),
+		month: Field.month().optional(),
+		week: Field.week().optional(),
+		time: Field.time().optional(),
+		color: Field.color().optional(),
+	});
+	const parse = (values: Record<string, string>) =>
+		form.parse(new URLSearchParams(values));
+
+	// what browsers send, with seconds when the picker has them
+	for (const values of [
+		{ day: "2024-02-29", at: "2026-11-12T08:05", month: "2026-01" },
+		{ at: "2026-11-12T23:59:59.999", week: "2026-W53", time: "00:00" },
+		{ time: "23:59:30", color: "#A1b2c3" },
+		{},
+	])
+		expect(formValid(await parse(values)).data).toEqual(values);
+
+	const wrong = {
+		day: "2026-13-45",
+		at: "2026-11-12 08:05",
+		month: "2026-13",
+		week: "2026-W54",
+		time: "24:00",
+		color: "red",
+	};
+	expect(
+		formInvalid(await parse(wrong)).issues.map((issue) => [
+			issue.path[0],
+			issue.message,
+		]),
+	).toEqual([
+		["day", "Enter a date as YYYY-MM-DD"],
+		["at", "Enter a date and time as YYYY-MM-DDTHH:mm"],
+		["month", "Enter a month as YYYY-MM"],
+		["week", "Enter a week as YYYY-Www"],
+		["time", "Enter a time as HH:mm"],
+		["color", "Enter a color as #rrggbb"],
+	]);
+
+	// in another order, a day the month does not have, or not a date at all
+	for (const day of ["11/12/2026", "2026-02-30", "2026-06-31", "tomorrow"])
+		expect(formInvalid(await parse({ day })).issues).toHaveLength(1);
+	for (const at of ["2026-02-30T10:00", "2026-11-12T10:00T10:00", "2026-11-12"])
+		expect(formInvalid(await parse({ at })).issues).toHaveLength(1);
+
+	// still a string with its format, to agents
+	expect(
+		Schema.object(form.shape).toJsonSchema({ io: "input" }).properties,
+	).toMatchObject({
+		day: { type: "string", format: "date", description: "Date as YYYY-MM-DD." },
+		time: { type: "string", description: "Time as HH:mm." },
+	});
 });
 
 describe("lines", () => {
