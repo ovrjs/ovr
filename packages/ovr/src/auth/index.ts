@@ -117,8 +117,13 @@ export namespace Auth {
 		| "/auth/register"
 		| "/auth/login"
 		| "/auth/logout"
+		| "/auth/passkey"
+		| "/auth/link"
+		| "/auth/confirm"
 		| "/_passkey/options/register"
 		| "/_passkey/options/login"
+		| "/_passkey/options/add"
+		| "/_passkey/options/confirm"
 		| "/_passkey/client.js";
 
 	/**

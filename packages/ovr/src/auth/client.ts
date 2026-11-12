@@ -4,6 +4,8 @@ export function listen(
 	bootstrap: string,
 	endpoint: string,
 	method: "register" | "login",
+	/** Confirms the person with a passkey they have, when the form asks */
+	confirm?: { bootstrap: string; endpoint: string; action: string },
 ) {
 	const script = document.getElementById(id);
 	const form = script?.closest("form");
@@ -114,9 +116,41 @@ export function listen(
 			}
 			if (res.status === 410)
 				throw new Error("This page has expired. Reload and try again.");
-			// adding a passkey asks for a recent sign-in
-			if (res.status === 401)
-				throw new Error("Sign in again, then add the passkey.");
+			// adding a passkey asks for a recent sign-in, or for a passkey the
+			// person already has
+			if (res.status === 401) {
+				if (!confirm) throw new Error("Sign in again, then try once more.");
+				const send = (url: string, body: FormData) =>
+					fetch(url, {
+						method: "POST",
+						body,
+						credentials: "same-origin",
+						cache: "no-store",
+						redirect: "manual",
+					});
+				const ask = new FormData();
+				ask.set("bootstrap", confirm.bootstrap);
+				const asked = await send(confirm.endpoint, ask);
+				if (asked.status === 410)
+					throw new Error("This page has expired. Reload and try again.");
+				if (!asked.ok) throw new Error("Sign in again, then try once more.");
+				const proof: { ceremony: string; options: unknown } =
+					await asked.json();
+				const mine = await navigator.credentials.get({
+					publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(
+						proof.options as PublicKeyCredentialRequestOptionsJSON,
+					),
+				});
+				if (!(mine instanceof PublicKeyCredential))
+					throw new Error("No passkey was returned. Try again.");
+				const answer = new FormData();
+				answer.set("credential", JSON.stringify(mine));
+				answer.set("ceremony", proof.ceremony);
+				if ((await send(confirm.action, answer)).status !== 204)
+					throw new Error("Could not confirm your passkey. Try again.");
+				// a browser asks for a new press before its next passkey prompt
+				throw new Error("Confirmed. Press the button again to finish.");
+			}
 			if (!res.ok)
 				throw new Error("Could not start the passkey request. Try again.");
 
@@ -191,6 +225,13 @@ const scan = () => {
 				script.dataset.bootstrap ?? "",
 				script.dataset.endpoint ?? "",
 				method,
+				script.dataset.confirm
+					? {
+							bootstrap: script.dataset.confirm,
+							endpoint: script.dataset.confirmEndpoint ?? "",
+							action: script.dataset.confirmAction ?? "",
+						}
+					: undefined,
 			);
 			if (reset) attached.set(script, reset);
 		}

@@ -46,6 +46,12 @@ export namespace Passkey {
 		readonly fields?: string;
 		/** Text of the form's own button, in place of the method's. */
 		readonly submit?: string;
+		/**
+		 * Where the form confirms the person with a passkey they have, when
+		 * its ceremony asks for a recent sign-in: the options endpoint, and the
+		 * path the confirmation is sent to.
+		 */
+		readonly confirm?: { readonly endpoint: string; readonly action: string };
 	}
 	/** The ceremony a signed form may start. */
 	export type Expected = {
@@ -136,6 +142,21 @@ export class Passkey {
 		const browser = this.#auth.browser(true);
 		const user = method === "register" ? crypto.randomUUID() : undefined;
 		noStore(this.#c.res.headers);
+		/** A signed start of a ceremony this page may make */
+		const seal = (method: "register" | "login", action: string) =>
+			Token.seal(
+				this.#auth.options.secret,
+				"passkey",
+				JSON.stringify({
+					method,
+					action,
+					origin: this.#auth.options.origin,
+					browser,
+					expiration: Date.now() + Time.hour,
+					user: method === "register" ? user : undefined,
+					fields: options.fields,
+				}),
+			);
 		const Form: Passkey.Component<Pattern> = Object.assign(
 			(props: Parameters<Route.Form<Pattern>>[0]) =>
 				route.Form({
@@ -159,20 +180,16 @@ export class Passkey {
 								nonce: options.nonce,
 								"data-passkey": method,
 								"data-endpoint": options.endpoint,
-								"data-bootstrap": await Token.seal(
-									this.#auth.options.secret,
-									"passkey",
-									JSON.stringify({
-										method,
-										// the form's own params, checked by its props type
-										action: route.url({ params: props.params } as never),
-										origin: this.#auth.options.origin,
-										browser,
-										expiration: Date.now() + Time.hour,
-										user,
-										fields: options.fields,
-									}),
+								"data-bootstrap": await seal(
+									method,
+									// the form's own params, checked by its props type
+									route.url({ params: props.params } as never),
 								),
+								...(options.confirm && {
+									"data-confirm": await seal("login", options.confirm.action),
+									"data-confirm-endpoint": options.confirm.endpoint,
+									"data-confirm-action": options.confirm.action,
+								}),
 							}),
 						jsx("noscript", {
 							children: "JavaScript is required for authentication.",

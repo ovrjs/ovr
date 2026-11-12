@@ -166,7 +166,7 @@ app.use(
 );
 ```
 
-The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `Add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. A passkey outlasts the session that adds it, so adding one asks for a recent sign-in: within ten minutes, in that browser. After that, or without a session, the prompt is refused with a 401, and the form says to sign in again.
+The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `Add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. A passkey outlasts the session that adds it, so adding one asks for a recent sign-in: within ten minutes, in that browser. After that, the form first asks for a passkey the person already has, which starts their session again, and they press the button once more to add the new one. They do not sign out. Without a session the prompt is refused with a 401.
 
 Each passkey has what tells it apart in a list: its `name`, if it was added with one, `created`, a time in milliseconds, and the `origin` it was made at.
 
@@ -380,7 +380,7 @@ Each browser can have 10 sign-in ceremonies outstanding; when they are used up, 
 | `lifetime` | 30 days    | Time from sign-in a session lasts, at most.       |
 | `consent`  | `/connect` | Page where users approve [agents](#agents).       |
 
-`page`, `redirect`, and `consent` must be local paths of the app's own, such as `/login`, without a query or a trailing slash, and `page` cannot be one of Auth's endpoints: a path written in the options that is not one is a type error. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/passkey`, and `/auth/link`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
+`page`, `redirect`, and `consent` must be local paths of the app's own, such as `/login`, without a query or a trailing slash, and `page` cannot be one of Auth's endpoints: a path written in the options that is not one is a type error. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/passkey`, `/auth/confirm`, and `/auth/link`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
 
 Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Failures the client caused, such as an expired challenge, an invalid passkey, or an account that already exists, return to the form with a generic message, with guidance to log in if registration already completed. Anything else, such as an unavailable database, is thrown to your app like an error from your own handler. Auth doesn't log. Rate-limit denials include a retry hint, and the client waits before retrying.
 

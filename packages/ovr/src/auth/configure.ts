@@ -54,6 +54,7 @@ export function configure<U extends Auth.Users>(
 		login: "/auth/login",
 		logout: "/auth/logout",
 		passkey: "/auth/passkey",
+		confirm: "/auth/confirm",
 		link: "/auth/link",
 		options: "/_passkey/options",
 	} as const;
@@ -304,9 +305,10 @@ export function configure<U extends Auth.Users>(
 			if (!input || input.issues) throw new Issue("passkey request");
 			const session = await state(c).session();
 			// a passkey outlasts the session that adds it, so only a person
-			// who has just signed in adds one, not whoever holds an old session
+			// who has just signed in adds one, not whoever holds an old session.
+			// The form then confirms them with a passkey they have.
 			if (!session || !(await state(c).recent(10 * Time.minute)))
-				return c.text("Sign in again to add a passkey.", 401);
+				return c.text("Confirm your passkey to add another.", 401);
 			const [[account], exclude] = await Promise.all([
 				options.database
 					.sql`SELECT * FROM ${users} WHERE ${users.columns.id!} = ${session.user}`,
@@ -319,6 +321,39 @@ export function configure<U extends Auth.Users>(
 				user: session.user,
 				exclude,
 			});
+		});
+	// Confirms the person signed in with a passkey of theirs, which starts
+	// their session again: what adding a passkey asks for after a while
+	const confirming = Route.post(`${paths.options}/confirm`)
+		.fields({ bootstrap: Field.hidden() })
+		.use(guard("login", true), async (c) => {
+			const input = await Issue.data(c);
+			if (!input || input.issues) throw new Issue("confirm request");
+			const session = await state(c).session();
+			if (!session) return c.text("Sign in to add a passkey.", 401);
+			await Passkey.issue(c, state(c), input.data.bootstrap, {
+				method: "login",
+				action: paths.confirm,
+				// only their own, so the picker offers no other account's
+				allow: await storage.credentials.list(session.user),
+			});
+		});
+	const confirm = Route.post(paths.confirm)
+		.fields(Passkey.shape)
+		.use(guard("login"), async (c) => {
+			if (!(await Issue.data(c))) throw new Issue("confirm request");
+			const session = await state(c).session();
+			if (!session) throw new Issue("session");
+			const credential = await new Passkey(c, state(c)).login(
+				storage.credentials,
+				undefined,
+				session.user,
+			);
+			if (credential.user !== session.user) throw new Issue("user");
+			// a session that starts now, in place of the old one
+			await state(c).login(session.user);
+			c.res.status = 204;
+			c.res.body = null;
 		});
 	/** The parameter of the authentication page a link's token is in */
 	const linked = "_link";
@@ -338,6 +373,8 @@ export function configure<U extends Auth.Users>(
 		logout,
 		add,
 		link,
+		confirm,
+		confirming,
 		registration,
 		assertion,
 		adding,
@@ -413,6 +450,7 @@ export function configure<U extends Auth.Users>(
 				...props,
 				endpoint: adding.url(),
 				submit: "Add passkey",
+				confirm: { endpoint: confirming.url(), action: paths.confirm },
 			});
 			Register.Issue = error("register", Register.Issue);
 			Login.Issue = error("login", Login.Issue);

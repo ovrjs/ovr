@@ -1476,11 +1476,12 @@ describe("configured passkey callbacks", () => {
 		expect(stranger.response.status).toBe(401);
 
 		const start = await state.start("register");
+		const first_keys = await pair();
 		const registered = await state.submit(
 			start,
-			await registration(start.options.challenge, await pair()),
+			await registration(start.options.challenge, first_keys),
 		);
-		const cookie =
+		let cookie =
 			start.cookie +
 			"; " +
 			registered.headers.getSetCookie().at(-1)!.split(";")[0];
@@ -1490,8 +1491,54 @@ describe("configured passkey callbacks", () => {
 		await db.sql`UPDATE ${db.auth_sessions} SET started = ${Date.now() - 11 * Time.minute}`;
 		const stale = await begin(cookie);
 		expect(stale.response.status).toBe(401);
-		expect(await stale.response.text()).toBe("Sign in again to add a passkey.");
-		await db.sql`UPDATE ${db.auth_sessions} SET started = ${Date.now() - 9 * Time.minute}`;
+
+		// so the form confirms them with the passkey they have, which starts
+		// their session again
+		const script = stale.html.match(/<script[^>]+>/)![0];
+		expect(script).toContain('data-confirm-action="/auth/confirm"');
+		const ask = new FormData();
+		ask.set(
+			"bootstrap",
+			script.match(/data-confirm="([^"]+)"/)![1]!.replaceAll("&quot;", '"'),
+		);
+		const asked = await state.post(
+			script.match(/data-confirm-endpoint="([^"]+)"/)![1]!,
+			ask,
+			cookie,
+		);
+		const proof: {
+			ceremony: string;
+			options: PublicKeyCredentialRequestOptionsJSON;
+		} = await asked.json();
+		// only their own passkeys are offered
+		expect(proof.options.allowCredentials).toEqual([
+			{ type: "public-key", id },
+		]);
+		const answer = new FormData();
+		answer.set(
+			"credential",
+			JSON.stringify(
+				await assertion(proof.options.challenge, first_keys, {
+					handle: account,
+				}),
+			),
+		);
+		answer.set("ceremony", proof.ceremony);
+		const confirmed = await state.post("/auth/confirm", answer, cookie);
+		expect(confirmed.status).toBe(204);
+		const previous = cookie;
+		cookie =
+			start.cookie +
+			"; " +
+			confirmed.headers.getSetCookie().at(-1)!.split(";")[0];
+		expect(cookie).not.toBe(previous);
+		// the old session is gone, and the new one is the same account's
+		const who = async (cookie: string) =>
+			(
+				await state.app.fetch(origin + "/whoami", { headers: { cookie } })
+			).json() as Promise<Auth.Session | null>;
+		expect(await who(previous)).toBeNull();
+		expect((await who(cookie))?.user).toBe(account);
 
 		const adding = await begin(cookie);
 		const json: {

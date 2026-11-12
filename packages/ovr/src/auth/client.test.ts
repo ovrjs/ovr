@@ -272,6 +272,57 @@ describe("passkey browser runtime", () => {
 		expect(state.fetcher).toHaveBeenCalledTimes(2);
 	});
 
+	test("confirms with a passkey the person has when the form asks, then finishes on the next press", async () => {
+		const state = setup();
+		const refused = () => new Response("Confirm your passkey", { status: 401 });
+		state.fetcher.mockResolvedValueOnce(refused());
+		const confirm = {
+			bootstrap: "confirm-bootstrap",
+			endpoint: "/options/confirm",
+			action: "/auth/confirm",
+		};
+		state.init("first", "bootstrap", "/options/add", "register", confirm);
+		await state.first.fire();
+
+		// asked for the confirmation, prompted with it, and sent the answer
+		const calls = state.fetcher.mock.calls;
+		expect(calls.map(([url]) => url)).toEqual([
+			"/options/add",
+			"/options/confirm",
+			"/auth/confirm",
+		]);
+		expect((calls[1]![1].body as FormData).get("bootstrap")).toBe(
+			"confirm-bootstrap",
+		);
+		expect(state.get).toHaveBeenCalledOnce();
+		expect(state.create).not.toHaveBeenCalled();
+		expect((calls[2]![1].body as FormData).get("ceremony")).toBe("ceremony");
+		expect(calls[2]![1].redirect).toBe("manual");
+		// the answer here is not a 204, so it says it could not confirm
+		expect(state.status[0]?.textContent).toContain("Could not confirm");
+		expect(state.first.submissions).toHaveLength(0);
+
+		// confirmed: the next press is the new passkey's
+		state.fetcher
+			.mockResolvedValueOnce(refused())
+			.mockResolvedValueOnce(
+				Response.json({ ceremony: "c", options: { challenge: "AQ" } }),
+			)
+			.mockResolvedValueOnce(new Response(null, { status: 204 }));
+		await state.first.fire();
+		expect(state.status[0]?.textContent).toContain("Press the button again");
+		await state.first.fire();
+		expect(state.create).toHaveBeenCalledOnce();
+		expect(state.first.submissions).toHaveLength(1);
+
+		// a form with nothing to confirm with says to sign in again
+		const plain = setup();
+		plain.fetcher.mockResolvedValueOnce(refused());
+		plain.init("first", "bootstrap", "/options/add", "register");
+		await plain.first.fire();
+		expect(plain.status[0]?.textContent).toContain("Sign in again");
+	});
+
 	test("blocks duplicate submissions while the browser prompt is pending", async () => {
 		const state = setup();
 		let finish: ((value: Credential) => void) | undefined;
