@@ -162,7 +162,17 @@ Supply children to control the markup and styling:
 
 The browser script updates this status element and hides the default fallback when you supply your own. With custom form children, it also adds missing protocol inputs, so you only need to render your application fields and submit button.
 
-Use field schemas for format checks. Enforce uniqueness with database constraints, where errors stay generic. `Field.email()` checks syntax; it does not verify ownership of an email address. The first field, here the email, labels the passkey in the user's password manager; it is not a verified identity.
+Use field schemas for format checks: a field that fails one shows its own message, before the passkey prompt. Enforce uniqueness with database constraints, where errors stay generic, so registering with an email that has an account does not reveal it. A value anyone can see, such as a username, can say it is taken instead. Mark its field `unique()` with the message, and registration checks it before the passkey prompt:
+
+```ts
+const users = new Table("users", {
+	id: Schema.string(),
+	email: Field.email(),
+	username: Field.text().unique("Someone already has this username"),
+});
+```
+
+The constraint is still the table's, in a migration. Two people registering the same username at once get the generic error, from the constraint. `Field.email()` checks syntax; it does not verify ownership of an email address. The first field, here the email, labels the passkey in the user's password manager; it is not a verified identity.
 
 ## Sessions
 

@@ -14,6 +14,9 @@ import { Checksum, Codec, Prose, Size } from "../util/index.js";
 /** Internal protocol for a GET route, to make the form its fields render. */
 export const query = Symbol("query");
 
+/** Internal protocol for Auth, the message a `unique()` field shows when taken */
+export const unique = Symbol("unique");
+
 /** A field's components and render, which a route's form reads */
 const component = Symbol("component");
 const render = Symbol("render");
@@ -674,6 +677,36 @@ class FieldSchema<
 	}
 
 	/**
+	 * A value no two rows of its table share and that anyone may see, such as
+	 * a username. Registration checks it before the passkey prompt and shows
+	 * `message` on the field when it is taken. Leave it off a private value,
+	 * such as an email, so a conflict does not reveal who has an account. The
+	 * constraint itself is the table's, in a migration.
+	 *
+	 * ```ts
+	 * Field.text().unique("Someone already has this username");
+	 * ```
+	 *
+	 * @template U Input type, one people read: not a password or file
+	 * @param message What to show when the value is taken
+	 * @returns Field with the message
+	 */
+	unique<
+		U extends (Tag extends "input" ? Exclude<Type, "password" | "file"> : Type),
+	>(
+		this: Field.Instance<Output, Tag, U, Values, Stream>,
+		message: string,
+	): Field.Instance<Output, Tag, U, Values, Stream>;
+	unique(message: string) {
+		return this.#with({ unique: message });
+	}
+
+	/** @internal The message `unique()` set */
+	get [unique]() {
+		return this.#config.unique;
+	}
+
+	/**
 	 * Attributes for the field's control wherever it renders, such as a
 	 * placeholder. Those for one form are passed when it renders.
 	 *
@@ -701,7 +734,7 @@ class FieldSchema<
 	 * @param changes What to change
 	 * @returns The same field with them
 	 */
-	#with(changes: Pick<Field.Config, "label" | "props">) {
+	#with(changes: Pick<Field.Config, "label" | "unique" | "props">) {
 		return this.#copy({ config: { ...this.#config, ...changes } });
 	}
 
@@ -1171,6 +1204,9 @@ export namespace Field {
 
 		/** What people call the field, set with `label()` */
 		readonly label?: string;
+
+		/** What registration says when the value is taken, set with `unique()` */
+		readonly unique?: string;
 
 		/** Field props */
 		readonly props?: Props | undefined;

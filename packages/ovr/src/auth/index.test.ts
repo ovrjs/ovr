@@ -1244,6 +1244,61 @@ describe("configured passkey callbacks", () => {
 		},
 	);
 
+	test("a unique() field already used is said before the passkey prompt, a private one is not", async () => {
+		const accounts = new Table("unique_accounts", {
+			id: Schema.string(),
+			email: Field.email(),
+			username: Field.text().unique("Someone already has this username"),
+		});
+		const database = new Database(
+			{ query: run, connect: async () => ({ query: run, release() {} }) },
+			[accounts, ...Auth.tables],
+		);
+		const auth = new Auth({ ...setup().settings, database, users: accounts });
+		const app = new App().use(
+			auth,
+			Route.get("/login").use((c) => auth.forms(c).Register({})),
+		);
+		const page = await app.fetch(`${origin}/login`);
+		const html = await page.text();
+		const cookie = page.headers
+			.getSetCookie()
+			.map((v) => v.split(";")[0])
+			.join("; ");
+		const bootstrap = /data-bootstrap="([^"]+)"/
+			.exec(html)![1]!
+			.replaceAll("&quot;", '"')
+			.replaceAll("&amp;", "&");
+		const start = (email: string, username: string) => {
+			const body = new FormData();
+			body.set("email", email);
+			body.set("username", username);
+			body.set("bootstrap", bootstrap);
+			return app.fetch(origin + "/_passkey/options/register", {
+				method: "POST",
+				headers: { origin, cookie },
+				ip: "192.0.2.1",
+				body,
+			});
+		};
+		await engine.exec(
+			"CREATE TABLE unique_accounts (id text PRIMARY KEY, email text NOT NULL UNIQUE, username text NOT NULL UNIQUE)",
+		);
+		try {
+			await database.sql`INSERT INTO ${accounts} ${database.sql.values(accounts, { id: "1", email: "ross@example.com", username: "ross" })}`;
+			const taken = await start("cook@example.com", "ross");
+			expect(taken.status).toBe(422);
+			expect(await taken.json()).toEqual({
+				fields: { username: "Someone already has this username" },
+			});
+			// an email is private, so its conflict waits for the generic message
+			expect((await start("ross@example.com", "cook")).ok).toBe(true);
+			expect((await start("cook@example.com", "cook")).ok).toBe(true);
+		} finally {
+			await engine.exec("DROP TABLE unique_accounts");
+		}
+	});
+
 	test("public signup cannot override a server-default role used by an admin edit form", async () => {
 		const accounts = new Table(
 			"signup_accounts",
