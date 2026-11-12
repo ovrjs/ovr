@@ -105,10 +105,10 @@ export function listen(
 			}
 			if (res.status === 422) {
 				const result: { fields?: unknown } = await res.json();
-				if (Array.isArray(result.fields))
-					for (const name of result.fields)
-						if (typeof name === "string")
-							validity(form.elements.namedItem(name), "Check this field.");
+				if (result.fields && typeof result.fields === "object")
+					for (const [name, message] of Object.entries(result.fields))
+						if (typeof message === "string")
+							validity(form.elements.namedItem(name), message);
 				form.reportValidity();
 				throw new Error("Check your registration details and try again.");
 			}

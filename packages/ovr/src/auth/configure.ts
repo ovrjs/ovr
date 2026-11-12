@@ -186,10 +186,15 @@ export function configure<U extends Auth.Users>(
 			const input = await Issue.data(c);
 			if (!input) throw new Issue("registration request");
 			if (input.issues) {
-				const invalid = fields.names.filter((name) =>
-					input.issues.some((issue) => issue.path[0] === name),
-				);
-				if (!invalid.length) throw new Issue("registration request");
+				// each field's own message: checks of what the person typed,
+				// which say nothing about other accounts
+				const invalid: Record<string, string> = {};
+				for (const name of fields.names) {
+					const issue = input.issues.find((issue) => issue.path[0] === name);
+					if (issue) invalid[name] = issue.message;
+				}
+				if (!Object.keys(invalid).length)
+					throw new Issue("registration request");
 				return c.json({ fields: invalid }, 422);
 			}
 			if (!(await admit(c, "register", true))) return;

@@ -593,20 +593,20 @@ test.each([undefined, "junk"])(
 	},
 );
 
-test("marks invalid application fields without echoing server messages or requiring a reload", async () => {
+test("marks invalid application fields with their own messages, without echoing others or requiring a reload", async () => {
 	const state = setup();
 	const email = new Input();
 	email.name = "email";
 	state.first.append(email);
 	state.fetcher.mockResolvedValueOnce(
 		Response.json(
-			{ fields: ["email"], message: "private details" },
+			{ fields: { email: "Use your work email" }, message: "private details" },
 			{ status: 422 },
 		),
 	);
 	state.init("first", "bootstrap", "/options", "register");
 	await state.first.fire();
-	expect(email.validation).toBe("Check this field.");
+	expect(email.validation).toBe("Use your work email");
 	expect(state.first.reportValidity).toHaveBeenCalledOnce();
 	expect(state.create).not.toHaveBeenCalled();
 	expect(state.status[0]?.textContent).toContain(

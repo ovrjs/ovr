@@ -1439,7 +1439,10 @@ describe("configured passkey callbacks", () => {
 		invalid.set("email", "invalid");
 		const response = await state.post(start.endpoint, invalid, start.cookie);
 		expect(response.status).toBe(422);
-		expect(await response.json()).toEqual({ fields: ["email"] });
+		// the field's own message, for the browser to show on it
+		expect(await response.json()).toEqual({
+			fields: { email: expect.any(String) },
+		});
 		expect(set).not.toHaveBeenCalled();
 		expect(check).toHaveBeenCalledOnce();
 		check.mockResolvedValue(new Date(Date.now() + 60000));
