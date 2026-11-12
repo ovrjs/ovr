@@ -972,6 +972,20 @@ export class Schema<Output>
 	}
 
 	/**
+	 * @param value Bound of `min()` or `max()`
+	 * @returns The bound as people read it in a message: a string's is a
+	 * number of characters, a number's or an array's stands alone
+	 */
+	#amount(value: number | bigint) {
+		let def: Schema.Def = this.def;
+		while ("inner" in def) def = def.inner.def;
+
+		return def.type === "string"
+			? `${value} character${Number(value) === 1 ? "" : "s"}`
+			: String(value);
+	}
+
+	/**
 	 * @param value String
 	 * @returns Number of Unicode code points, a surrogate pair counts once
 	 */
@@ -1781,7 +1795,7 @@ export class Schema<Output>
 	min(
 		this: Schema<string | number | bigint | unknown[]>,
 		value: number | bigint,
-		message = `Expected minimum ${value}`,
+		message = `At least ${this.#amount(value)}`,
 	) {
 		return this.#check({ name: "min", value, message });
 	}
@@ -1918,7 +1932,7 @@ export class Schema<Output>
 	max(
 		this: Schema<string | number | bigint | unknown[]>,
 		value: number | bigint,
-		message = `Expected maximum ${value}`,
+		message = `At most ${this.#amount(value)}`,
 	) {
 		return this.#check({ name: "max", value, message });
 	}

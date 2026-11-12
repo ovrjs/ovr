@@ -176,6 +176,9 @@ class Writer {
 	/** Writing a form's table, where a control in a cell is named */
 	#controls = false;
 
+	/** The array fields of the tool whose form's table is being written */
+	#arrays: ReadonlySet<string> | undefined;
+
 	/** Reader mode: before, inside, or after `<main>` */
 	#main: "before" | "inside" | "after" = "before";
 
@@ -792,11 +795,23 @@ class Writer {
 						// its controls are fields, and the table is kept, with each
 						// control named in its cell, a row's button included
 						const before = submits.length;
+						const from = fields.length;
 						visit(child, label, true);
 						submits.length = before;
+						// a table of a list's rows alone is left out: the tool's
+						// form lists its items as the array an agent sends
+						const within = fields.slice(from);
+						if (
+							tool &&
+							within.length &&
+							within.every((f) => Writer.#cell(f.name, tool.lists))
+						)
+							break;
 						this.#controls = true;
+						this.#arrays = tool?.lists;
 						block(this.#table(child));
 						this.#controls = false;
+						this.#arrays = undefined;
 						break;
 					}
 					case "pre":
@@ -912,6 +927,39 @@ class Writer {
 	}
 
 	/**
+	 * @param name A control's name
+	 * @param lists The fields a tool takes as an array
+	 * @returns The list, place, and field of the row the control is in, named
+	 * `steps.0` or `ingredients.0.amount`, `undefined` for any other control
+	 */
+	static #cell(
+		name: string,
+		lists: ReadonlySet<string>,
+	): [list: string, place: number, key: string | undefined] | undefined {
+		for (const list of lists) {
+			if (!name.startsWith(`${list}.`)) continue;
+			const [, place, key] =
+				/^(\d+)(?:\.(.+))?$/s.exec(name.slice(list.length + 1)) ?? [];
+			if (place !== undefined) return [list, Number(place), key];
+		}
+	}
+
+	/**
+	 * @param select `<select>` element
+	 * @returns The value of its selected option, `undefined` without one
+	 */
+	static #chosen(select: Node): string | undefined {
+		for (const child of select.children) {
+			if (typeof child === "string") continue;
+			if (child.tag !== "option") {
+				const chosen = Writer.#chosen(child);
+				if (chosen !== undefined) return chosen;
+			} else if ("selected" in child.attrs)
+				return child.attrs.value ?? Writer.#plain(child);
+		}
+	}
+
+	/**
 	 * @param fields A tool's form's fields, one for each control
 	 * @param lists The fields the tool takes as an array
 	 * @returns The fields as the tool takes them: a list's rows together, and
@@ -955,16 +1003,7 @@ class Writer {
 				continue;
 			}
 
-			// a row's control is named by its list and place, `steps.0` or
-			// `ingredients.0.amount`
-			let cell:
-				[list: string, place: number, key: string | undefined] | undefined;
-			for (const list of lists) {
-				if (!f.name.startsWith(`${list}.`)) continue;
-				const [, place, key] =
-					/^(\d+)(?:\.(.+))?$/s.exec(f.name.slice(list.length + 1)) ?? [];
-				if (place !== undefined) cell = [list, Number(place), key];
-			}
+			const cell = Writer.#cell(f.name, lists);
 			if (!cell) {
 				gathered.push(f);
 				continue;
@@ -1130,11 +1169,22 @@ class Writer {
 					if (!this.#controls) break;
 					const { name, value, type } = child.attrs;
 					if (child.tag === "button") out += inner();
+					// a list's row, whose items its tool's form lists
+					if (name && this.#arrays && Writer.#cell(name, this.#arrays)) break;
 					if (name && type !== "hidden") {
-						// a box sends "on" without a value, others what is typed
-						const sent =
-							value ?? (type === "checkbox" || type === "radio" ? "on" : "");
-						out += ` ${Writer.#code(sent ? `${name}=${sent}` : name)} `;
+						const box = type === "checkbox" || type === "radio";
+						const checked = "checked" in child.attrs;
+						// what it holds now: a box with a value names its row and
+						// says if it is checked, one without is "on" when it is, and
+						// a select is the option chosen
+						const sent = box
+							? (value ?? (checked ? "on" : ""))
+							: child.tag === "select"
+								? (Writer.#chosen(child) ?? "")
+								: (value ?? "");
+						out += ` ${Writer.#code(sent ? `${name}=${sent}` : name)}${
+							box && value !== undefined && checked ? " (checked)" : ""
+						} `;
 					}
 					break;
 				}

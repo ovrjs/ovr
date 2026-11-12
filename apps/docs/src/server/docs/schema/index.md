@@ -220,7 +220,9 @@ Set how many rows a list shows with `control`, wherever it renders, or pass `row
 
 Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. `values` takes the items as an array, as the route gets them.
 
-`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`. Each row is its field's component, or its fields' components by name, to lay out as a table or to label each choice:
+Mark a list [`.persist()`](#persisted-form-state) so an invalid submission shows its rows again, with each issue on its cell. Without it the rows that were sent are gone, as any field's value is, so the issue is shown under the list and says where it was, such as "Row 2, name: Required field". The same happens when the rows are too many to keep in the URL.
+
+`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`. Each row is its field's component, or its fields' components by name, to lay out as a table or to label each choice. A row's control is read with its `Issue`, and not with its `Description`, which a table says once in its header rather than in every row:
 
 ```tsx
 const Sides = save.component({ name: "sides", rows: 3, values, state: c.url });

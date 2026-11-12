@@ -607,7 +607,17 @@ describe("toJsonSchema", () => {
 
 		expect(valid(schema.parse(["a"])) satisfies string[]).toEqual(["a"]);
 		expect(valid(schema.parse(["a", "b"]))).toEqual(["a", "b"]);
-		expect(invalid(schema.parse([]))[0]?.message).toBe("Expected minimum 1");
+		expect(invalid(schema.parse([]))[0]?.message).toBe("At least 1");
+		// a string's bound is a number of characters, a number's stands alone
+		expect(invalid(Schema.string().min(2).parse("a"))[0]?.message).toBe(
+			"At least 2 characters",
+		);
+		expect(invalid(Schema.string().min(1).max(1).parse("ab"))[0]?.message).toBe(
+			"At most 1 character",
+		);
+		expect(invalid(Schema.number().max(9).parse(10))[0]?.message).toBe(
+			"At most 9",
+		);
 		expect(invalid(schema.parse(["a", "b", "c"]))[0]?.message).toBe("Two");
 		// each item is still its own schema's
 		expect(invalid(schema.parse(["long"]))[0]?.path).toEqual([0]);

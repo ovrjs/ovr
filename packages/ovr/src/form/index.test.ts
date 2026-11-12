@@ -1347,7 +1347,7 @@ describe("lines", () => {
 			).issues.map((issue) => [issue.path, issue.message]),
 		).toEqual([
 			[["tags"], "At most 3 tags"],
-			[["boxes"], "Expected maximum 2"],
+			[["boxes"], "At most 2"],
 		]);
 		expect(
 			Schema.object(few.shape).toJsonSchema({ io: "input" }).properties,
@@ -1605,6 +1605,79 @@ describe("a list", () => {
 		Ingredients.Control;
 	});
 
+	test("a row laid out by hand is not read with a description it may not render", async () => {
+		const described = new Form({
+			items: Field.list({ name: Field.text().describe("What to buy") }),
+		});
+
+		// the default layout renders each cell's description, and says so
+		expect(await Markup.string(described.Field({ name: "items" }))).toContain(
+			'<input id="items.0.name" aria-describedby="items.0.name-description" type="text" name="items.0.name"><p id="items.0.name-description" data-description>What to buy</p>',
+		);
+
+		const [row] = described.component({ name: "items" }).rows;
+		expect(await Markup.string(row!.name.Control())).toBe(
+			'<input id="items.0.name" type="text" name="items.0.name">',
+		);
+		// its issue is still read with it
+		const persisted = new Form({
+			items: Field.list({
+				name: Field.text().describe("What to buy"),
+				note: Field.text().optional(),
+			}).persist(),
+		});
+		const sent = new FormData();
+		sent.set("items.0.note", "ripe");
+		const invalid = formInvalid(await persisted.parse(sent));
+		const [again] = persisted.component({
+			name: "items",
+			state: new URL(
+				`http://localhost/?${new URLSearchParams(invalid.search)}`,
+			),
+		}).rows;
+		expect(await Markup.string(again!.name.Control())).toContain(
+			'aria-describedby="items.0.name-issue"',
+		);
+	});
+
+	test("an issue of a row that is not shown again is the list's, and says where", async () => {
+		const plain = new Form({
+			title: Field.text(),
+			items: Field.list({
+				amount: Field.text().optional(),
+				name: Field.text(),
+			}),
+			ids: Field.list(Field.text().uuid("Not an ID")).optional(),
+		});
+		const data = new FormData();
+		data.set("items.0.name", "onion");
+		data.set("items.1.amount", "2");
+		data.set("ids.0", "x");
+
+		const invalid = formInvalid(await plain.parse(data));
+		// agents and the handler get each issue by its place
+		expect(invalid.issues.map((issue) => issue.path)).toEqual([
+			["title"],
+			["items", 1, "name"],
+			["ids", 0],
+		]);
+
+		const state = new URL(
+			`http://localhost/?${new URLSearchParams(invalid.search)}`,
+		);
+		const items = await Markup.string(plain.Field({ name: "items", state }));
+		expect(items).toContain(
+			'<p id="items-issue" data-issue="1">Row 2, name: Required field</p>',
+		);
+		// no row has it, since the rows that were sent are gone
+		expect(items.match(/data-issue/g)).toHaveLength(1);
+		expect(items).not.toContain("aria-invalid");
+
+		expect(await Markup.string(plain.Field({ name: "ids", state }))).toContain(
+			'<p id="ids-issue" data-issue="2">Row 1: Not an ID</p>',
+		);
+	});
+
 	test("is an array of its items to agents", () => {
 		const schema = Schema.object(form.shape).toJsonSchema({ io: "input" });
 
@@ -1685,7 +1758,7 @@ describe("a list", () => {
 			]),
 		).toEqual([
 			[["dinners"], "Plan two dinners"],
-			[["tags"], "Expected maximum 2"],
+			[["tags"], "At most 2"],
 		]);
 
 		expect(

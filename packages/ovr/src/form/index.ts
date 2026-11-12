@@ -216,6 +216,35 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	}
 
 	/**
+	 * An issue by place means nothing without the rows it was found in, and a
+	 * list's rows are only shown again when it persists and they fit the state.
+	 *
+	 * @param state Restored state
+	 * @returns The state, where an issue of a cell whose list's rows were not
+	 * restored is the list's own, and says which row and field it is about
+	 */
+	#unplaced(state?: Field.State<Shape>): Field.State<Shape> | undefined {
+		if (!state?.issues || !this.#lists.length) return state;
+
+		return {
+			...state,
+			issues: state.issues.map((issue) => {
+				const [name, place, key] = issue.path;
+
+				return typeof place === "number" &&
+					this.#lists.includes(name as ShapeUtil.Name<Shape>) &&
+					state.values?.[name as ShapeUtil.Name<Shape>] === undefined
+					? new Schema.Issue(
+							issue.expected,
+							[name!],
+							`Row ${place + 1}${typeof key === "string" ? `, ${key}` : ""}: ${issue.message}`,
+						)
+					: issue;
+			}) as unknown as Schema.Issue.List,
+		};
+	}
+
+	/**
 	 * Decode form state, over the initial values.
 	 *
 	 * @param stateInput Current page URL
@@ -225,7 +254,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 		stateInput?: URL,
 		initial?: Field.Value.Initial<Shape>,
 	): Field.State<Shape> | undefined {
-		const state = this.#restore(stateInput);
+		const state = this.#unplaced(this.#restore(stateInput));
 		// initial values come from the server, not the URL, so no size limit
 		const values = this.#sanitize(initial, false, false);
 
@@ -1042,11 +1071,15 @@ class FieldSchema<
 	[component]<S extends Field.Shape>(
 		props: Field.Component.Props<S, false>,
 		named?: string,
+		described?: boolean,
 	): Field.Component<this>;
 	[component]<S extends Field.Shape>(
 		{ state, options: given, ...props }: Field.Component.Props<S, false>,
 		// what a list calls its cell, which is named by its place
 		named: string = props.name,
+		// if the control is read with its description. A row laid out by
+		// hand, such as in a table, seldom renders each cell's.
+		described = true,
 	): unknown {
 		const options = this.#options(given);
 		const value = state?.values?.[props.name];
@@ -1069,7 +1102,8 @@ class FieldSchema<
 			"aria-invalid": issue && "true",
 			// read with the control: its description, then what is wrong with it
 			"aria-describedby":
-				[descriptionId, issueId].filter(Boolean).join(" ") || undefined,
+				[described && descriptionId, issueId].filter(Boolean).join(" ") ||
+				undefined,
 			...this.#config.props,
 			...props,
 		};
@@ -1116,11 +1150,11 @@ class FieldSchema<
 				get rows() {
 					return cells().map((row) =>
 						Array.isArray(row)
-							? row[0][component](row[1], row[2])
+							? row[0][component](row[1], row[2], false)
 							: Object.fromEntries(
 									Object.entries(row).map(([key, cell]) => [
 										key,
-										cell[0][component](cell[1], cell[2]),
+										cell[0][component](cell[1], cell[2], false),
 									]),
 								),
 					);

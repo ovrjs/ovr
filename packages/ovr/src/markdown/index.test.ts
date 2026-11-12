@@ -713,6 +713,111 @@ describe("Markdown", () => {
 		);
 	});
 
+	test("a table of a list's rows is left out of its tool's form, and a control in a table says what it holds", async () => {
+		const row = (place: number, name: string, aisle: string, on: boolean) =>
+			h(
+				"tr",
+				null,
+				h("td", null, h("input", { name: `items.${place}.name`, value: name })),
+				h(
+					"td",
+					null,
+					h(
+						"select",
+						{ name: `items.${place}.aisle` },
+						h("option", { value: "" }),
+						h("option", { value: "Produce", selected: aisle === "Produce" }),
+						h("option", { value: "Frozen" }),
+					),
+				),
+				h(
+					"td",
+					null,
+					h("input", {
+						type: "checkbox",
+						name: `items.${place}.optional`,
+						checked: on,
+					}),
+				),
+			);
+		const list = () =>
+			h(
+				"form",
+				{ method: "post", action: "/x" },
+				h(
+					"table",
+					null,
+					h("tr", null, h("th", null, "Name"), h("th", null, "Aisle")),
+					row(0, "lentils", "Produce", false),
+					row(1, "", "", false),
+				),
+				h("button", null, "Save"),
+			);
+		const tool = () => ({
+			name: "x_post",
+			args: {},
+			choices: new Set<string>(),
+			lists: new Set(["items"]),
+		});
+
+		expect(
+			await md(list(), { base: "https://example.com/", [tools]: tool }),
+		).toBe(
+			[
+				"**Tool:** `x_post`",
+				"",
+				'- `items`: `[{"name":"lentils","aisle":"Produce"}]`',
+				"",
+				"Submit: Save",
+				"",
+			].join("\n"),
+		);
+
+		// a form an agent submits itself keeps the table, each control as it is
+		const raw = await md(list(), { base: "https://example.com/" });
+		expect(raw).toContain(
+			"| `items.0.name=lentils` | `items.0.aisle=Produce` | `items.0.optional` |",
+		);
+		expect(raw).toContain(
+			"| `items.1.name` | `items.1.aisle` | `items.1.optional` |",
+		);
+
+		// a table with other controls is kept, without the list's
+		const mixed = await md(
+			h(
+				"form",
+				{ method: "post", action: "/x" },
+				h(
+					"table",
+					null,
+					h(
+						"tr",
+						null,
+						h("td", null, "Soup"),
+						h("td", null, h("input", { name: "items.0.name", value: "x" })),
+						h(
+							"td",
+							null,
+							h("input", {
+								type: "checkbox",
+								name: "pick",
+								value: "soup",
+								checked: true,
+							}),
+						),
+						h(
+							"td",
+							null,
+							h("input", { type: "checkbox", name: "done", checked: true }),
+						),
+					),
+				),
+			),
+			{ base: "https://example.com/", [tools]: tool },
+		);
+		expect(mixed).toContain("| Soup |  | `pick=soup` (checked) | `done=on` |");
+	});
+
 	test("a tool's form shows its hidden values, other forms do not", async () => {
 		const form = () =>
 			h(
