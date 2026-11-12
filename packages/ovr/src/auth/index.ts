@@ -44,6 +44,14 @@ export namespace Auth {
 		Add: Route.Form<string> & {
 			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
+		/**
+		 * Signs in with a link from `auth.link`, on the authentication `page`
+		 * the link opens. It is a button, so only a person uses the link, and
+		 * renders nothing on a page opened without one.
+		 */
+		Link: ((props: JSX.IntrinsicElements["form"]) => JSX.Element) & {
+			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+		};
 		Logout: Route.Form<string>;
 	}
 
@@ -210,6 +218,12 @@ export namespace Auth {
 		eligible: boolean;
 		/** Current backup state, which may change. */
 		backedUp: boolean;
+		/** When it was made, in milliseconds. */
+		created: number;
+		/** Origin it was made at, the only one it signs in at. */
+		origin: string;
+		/** What the person called it when adding it, such as "Laptop". */
+		name: string | null;
 	}
 }
 
@@ -234,6 +248,7 @@ export class Auth<
 		Storage.challenges,
 		Limiter.table,
 		Storage.tokens,
+		Storage.links,
 	] as const;
 
 	readonly #options: State.Options;
@@ -257,6 +272,27 @@ export class Auth<
 		c: Auth.Context,
 		props?: { nonce?: string },
 	) => Auth.Forms<Auth.Fields<U>>;
+
+	/**
+	 * Make a link that signs a user in once, for when they have no passkey
+	 * where they need one: at another origin that shares the users table,
+	 * such as production after registering on `localhost`, or after losing
+	 * their device. It opens the authentication `page`, where `<Link />` from
+	 * `auth.forms(c)` signs them in, and they add a passkey.
+	 *
+	 * Anyone who has the link is the user until it is used or expires, so
+	 * make one only for a user your code has already identified, and send it
+	 * the way you would a password.
+	 *
+	 * @param user ID of the user it signs in
+	 * @param options The origin it is opened at, this one by default, and how
+	 * many minutes it lasts, 10 by default and at most 60
+	 * @returns The link
+	 */
+	readonly link: (
+		user: string,
+		options?: { origin?: string; minutes?: number },
+	) => Promise<string>;
 
 	/** Configure passkeys, session helpers, and automatic authentication rate limits. */
 	constructor(options: Auth.Options<U, P, R, C>) {
@@ -298,6 +334,7 @@ export class Auth<
 		const signin = oauth(options, storage, (c) => this.#state(c), resources);
 		this.#routes = service.routes;
 		this.forms = service.forms;
+		this.link = service.link;
 		this.consent = signin.consent;
 		this[agents] = {
 			origin: options.origin,

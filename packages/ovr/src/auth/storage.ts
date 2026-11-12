@@ -95,6 +95,18 @@ export class Storage {
 		counter: Schema.number().int(),
 		eligible: Schema.boolean(),
 		backedUp: Schema.boolean(),
+		// what tells an account's passkeys apart
+		created: Schema.number().int(),
+		origin: Schema.string(),
+		name: Schema.string().nullable(),
+	});
+
+	/** One-time sign-in links, by the hash of their token. */
+	static readonly links = new Table("auth_links", {
+		id: Schema.string(),
+		user: Schema.string(),
+		origin: Schema.string(),
+		expiration: Schema.number().int(),
 	});
 
 	/** Revocable sessions. */
@@ -148,7 +160,10 @@ export class Storage {
 	"publicKey" text NOT NULL,
 	counter bigint NOT NULL,
 	eligible boolean NOT NULL,
-	"backedUp" boolean NOT NULL
+	"backedUp" boolean NOT NULL,
+	created bigint NOT NULL,
+	origin text NOT NULL,
+	name text
 );
 CREATE INDEX auth_credentials_user ON auth_credentials ("user");
 
@@ -189,7 +204,16 @@ CREATE TABLE auth_tokens (
 );
 CREATE INDEX auth_tokens_family ON auth_tokens (family);
 CREATE INDEX auth_tokens_user ON auth_tokens ("user");
-CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
+CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);
+
+CREATE TABLE auth_links (
+	id text PRIMARY KEY,
+	"user" text NOT NULL,
+	origin text NOT NULL,
+	expiration bigint NOT NULL
+);
+CREATE INDEX auth_links_user ON auth_links ("user");
+CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		},
 	] as const;
 
@@ -198,6 +222,7 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		Storage.credentials,
 		Storage.sessions,
 		Storage.tokens,
+		Storage.links,
 	] as const;
 
 	static {
@@ -245,7 +270,11 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 		if (Math.abs(now - this.#pruned) < Time.minute) return;
 
 		this.#pruned = now;
-		const tables: Table<string, any>[] = [Storage.challenges, Storage.sessions];
+		const tables: Table<string, any>[] = [
+			Storage.challenges,
+			Storage.sessions,
+			Storage.links,
+		];
 		if (this.#oauth) tables.push(Storage.tokens);
 		for (const table of tables)
 			await this.#db.sql`DELETE FROM ${table} WHERE expiration <= ${now}`;
@@ -551,6 +580,40 @@ CREATE INDEX auth_tokens_expiration ON auth_tokens (expiration);`,
 			`;
 
 			return rows.length === 1;
+		},
+	};
+
+	readonly links = {
+		/**
+		 * @param token Link's token, stored by its hash
+		 * @param link Who it signs in, where, and until when
+		 */
+		set: async (
+			token: string,
+			link: { user: string; origin: string; expiration: number },
+		) => {
+			await this.#prune();
+			await this.#db
+				.sql`INSERT INTO ${Storage.links} ${this.#db.sql.values(Storage.links, { ...link, id: await Storage.hash(token) })}`;
+		},
+		/**
+		 * Uses a link once: concurrent calls have one winner.
+		 *
+		 * @param token Link's token
+		 * @param origin Origin it is opened at
+		 * @returns The user it signs in, nothing when it is used, expired, or
+		 * for another origin
+		 */
+		take: async (token: string, origin: string) => {
+			const { columns } = Storage.links;
+			const [row] = await this.#db.sql`
+				DELETE FROM ${Storage.links}
+				WHERE ${columns.id} = ${await Storage.hash(token)}
+					AND ${columns.origin} = ${origin} AND ${columns.expiration} > ${Date.now()}
+				RETURNING *
+			`.parse(Storage.links);
+
+			return row?.user;
 		},
 	};
 

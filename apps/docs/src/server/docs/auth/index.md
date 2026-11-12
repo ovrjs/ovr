@@ -166,7 +166,9 @@ app.use(
 );
 ```
 
-The form's button is "Add passkey", and its children and `Add.Issue` are customized as the others are. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. Nobody signed in gets no ceremony.
+The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its children and `Add.Issue` are customized as the others are. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. Nobody signed in gets no ceremony.
+
+Each passkey has what tells it apart in a list: its `name`, if it was added with one, `created`, a time in milliseconds, and the `origin` it was made at.
 
 To remove a passkey, delete its row, and keep the account's last one, since nothing else signs in as it:
 
@@ -181,7 +183,30 @@ await database.sql`
 `;
 ```
 
-A passkey belongs to the site it was made on, so an account made at one origin, such as `localhost`, has none at another, such as the production domain, and cannot sign in there to add one. Sign the user in once another way, with `auth.login(c, user)`, and they add a passkey there. A link is one way: while signed in at the first origin, or from an admin script, store a random token with the user's ID and a short expiration, and give the user a link to the other origin with it. The route it opens takes the token, once, calls `auth.login`, and redirects to the page with `<Add />`. Treat the link as you would a password: anyone who has it is the user.
+### Sign-in link
+
+A passkey belongs to the site it was made on. An account made at one origin, such as `localhost`, has none at another that shares its users table, such as the production domain, and someone who lost their only device has none at all. `auth.link` makes a link that signs a user in once, so they can add a passkey:
+
+```tsx
+// signed in at the first origin, or in an admin script
+const link = await auth.link(session.user, {
+	origin: "https://example.com", // where it is opened, this origin by default
+	minutes: 10, // how long it lasts, 10 by default and at most 60
+});
+```
+
+The link opens your authentication `page` at that origin. Render `<Link />` there, from `auth.forms(c)`: it is a "Sign in" button, so opening the link signs nobody in, and a preview or a prefetch cannot use it up. On a page opened without a link it renders nothing.
+
+```tsx
+const { Login, Link } = auth.forms(c);
+
+<>
+	<Link />
+	<Login />
+</>;
+```
+
+A link works once, only at the origin it was made for, and only its hash is stored, in `auth_links`. A link that is used, expired, or for another origin returns to the page, where `Link.Issue` says so. Anyone who has the link is the user until then: make one only for a user your code has already identified, and send it the way you would a password.
 
 ### Customization
 
@@ -293,17 +318,19 @@ A version's SQL never changes, so its checksum stays valid. Changes ship as a ne
 | `auth_challenges`  | Outstanding ceremonies, each used once                        |
 | `rate_limits`      | [Rate limit](/middleware#rate-limiting) buckets               |
 | `auth_tokens`      | Agents' authorization codes and tokens, stored as hashes      |
+| `auth_links`       | One-time [sign-in links](#sign-in-link), stored as hashes     |
 
-Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. Give your `users` table a `text` ID and reference it from all three of Auth's tables that belong to a user, in your own migration:
+Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. Give your `users` table a `text` ID and reference it from each of Auth's tables that belong to a user, in your own migration:
 
 ```sql
 -- migrations/0003_auth_users.sql
 ALTER TABLE auth_credentials ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 ALTER TABLE auth_sessions ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 ALTER TABLE auth_tokens ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
+ALTER TABLE auth_links ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;
 ```
 
-Then deleting the account deletes everything that signs in as it, whichever code deletes it: its passkeys, browser sessions, and agents' codes, access tokens, and refresh tokens. An agent refreshing its token at that moment cannot keep it.
+Then deleting the account deletes everything that signs in as it, whichever code deletes it: its passkeys, browser sessions, sign-in links, and agents' codes, access tokens, and refresh tokens. An agent refreshing its token at that moment cannot keep it.
 
 [`database.check()`](/database#check) verifies these keys: each from the table's `user` column to your users table's `id`, cascading deletes, validated and enforced. It needs to know which table is your users table, so create `Auth` with the database before checking, for example by importing your auth module in the migration script; until then, `check` reports that it needs `Auth`.
 
@@ -350,7 +377,7 @@ Each browser can have 10 sign-in ceremonies outstanding; when they are used up, 
 | `lifetime` | 30 days    | Time from sign-in a session lasts, at most.       |
 | `consent`  | `/connect` | Page where users approve [agents](#agents).       |
 
-`page`, `redirect`, and `consent` must be local paths of the app's own, such as `/login`, without a query or a trailing slash, and `page` cannot be one of Auth's endpoints: a path written in the options that is not one is a type error. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, and `/auth/logout`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
+`page`, `redirect`, and `consent` must be local paths of the app's own, such as `/login`, without a query or a trailing slash, and `page` cannot be one of Auth's endpoints: a path written in the options that is not one is a type error. `app.use(auth)` mounts the endpoints at fixed paths: `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/passkey`, and `/auth/link`, with the passkey options endpoints and browser module under `/_passkey/`. The relying-party name shown by the browser comes from your origin's hostname.
 
 Validation failures mark the affected fields. Expired or browser-mismatched form bootstraps return 410 and ask the user to reload. Failures the client caused, such as an expired challenge, an invalid passkey, or an account that already exists, return to the form with a generic message, with guidance to log in if registration already completed. Anything else, such as an unavailable database, is thrown to your app like an error from your own handler. Auth doesn't log. Rate-limit denials include a retry hint, and the client waits before retrying.
 

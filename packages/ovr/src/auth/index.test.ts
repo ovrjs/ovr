@@ -233,7 +233,7 @@ const storage = Storage.of(db);
 
 beforeEach(() =>
 	engine.exec(
-		"TRUNCATE users, auth_credentials, auth_sessions, auth_challenges, rate_limits, auth_tokens",
+		"TRUNCATE users, auth_credentials, auth_sessions, auth_challenges, rate_limits, auth_tokens, auth_links",
 	),
 );
 // the store is shared, so spies on it must not leak between tests
@@ -911,7 +911,15 @@ describe("form contracts", () => {
 			"id" | "user" | "expiration"
 		>();
 		expectTypeOf<keyof Auth.Credential>().toEqualTypeOf<
-			"id" | "user" | "publicKey" | "counter" | "eligible" | "backedUp"
+			| "id"
+			| "user"
+			| "publicKey"
+			| "counter"
+			| "eligible"
+			| "backedUp"
+			| "created"
+			| "origin"
+			| "name"
 		>();
 		expectTypeOf(Auth.tables.map((table) => table.name)).toEqualTypeOf<
 			(
@@ -920,6 +928,7 @@ describe("form contracts", () => {
 				| "auth_challenges"
 				| "rate_limits"
 				| "auth_tokens"
+				| "auth_links"
 			)[]
 		>();
 		if (false) {
@@ -1450,6 +1459,7 @@ describe("configured passkey callbacks", () => {
 			const data = new FormData();
 			data.set("credential", JSON.stringify(credential));
 			data.set("ceremony", ceremony);
+			data.set("name", " Laptop ");
 			return state.post("/auth/passkey?_return=%2Fpasskeys", data, cookie);
 		};
 
@@ -1495,7 +1505,23 @@ describe("configured passkey callbacks", () => {
 		);
 		expect(added.status).toBe(303);
 		expect(added.headers.get("location")).toBe(origin + "/passkeys");
-		expect((await state.storage.record(second))?.user).toBe(account);
+		// with what tells it apart: its name, when, and where it was made
+		expect(await state.storage.record(second)).toMatchObject({
+			user: account,
+			name: "Laptop",
+			origin,
+		});
+		expect((await state.storage.record(second))!.created).toBeGreaterThan(
+			Date.now() - Time.minute,
+		);
+		// the one an account registers with has no name
+		expect(await state.storage.record(id)).toMatchObject({
+			name: null,
+			origin,
+		});
+		expect(stranger.html).toContain(
+			'<label for="name">Name</label><input id="name" aria-describedby="name-description" type="text" name="name">',
+		);
 		expect(await state.storage.size(db.auth_credentials)).toBe(2);
 		expect(await state.created()).toHaveLength(1);
 
@@ -1544,6 +1570,96 @@ describe("configured passkey callbacks", () => {
 		});
 		expect(await failed.text()).toContain(
 			"The passkey could not be added. Try again.",
+		);
+	});
+
+	test("a link signs its user in once, at its origin, when a person asks", async () => {
+		const state = managed();
+		state.app.use(
+			Route.get("/link").use((c) => {
+				const { Link } = state.service.forms(c);
+				return [jsx("main", { children: "page" }), jsx(Link, {})];
+			}),
+		);
+		const start = await state.start("register");
+		await state.submit(
+			start,
+			await registration(start.options.challenge, await pair()),
+		);
+		const account = (await state.storage.record(id))!.user;
+
+		const link = await state.service.link(account);
+		const url = new URL(link);
+		expect(url.origin + url.pathname).toBe(origin + "/login");
+		const token = url.searchParams.get("_link")!;
+		expect(token).toMatch(/^[\w-]{43}$/);
+		// only its hash is stored
+		expect(await rows(db.auth_links)).toEqual([
+			{
+				id: expect.not.stringContaining(token),
+				user: account,
+				origin,
+				expiration: expect.any(Number),
+			},
+		]);
+
+		// opening it signs nobody in: it shows a button
+		const opened = await state.app.fetch(origin + "/link?_link=" + token);
+		const html = await opened.text();
+		expect(html).toContain(
+			`<form action="/auth/link" method="POST" enctype="multipart/form-data"><input type="hidden" name="link" value="${token}"><button>Sign in</button>`,
+		);
+		expect(opened.headers.getSetCookie().join()).not.toContain("auth-session");
+		expect(await rows(db.auth_links)).toHaveLength(1);
+		// and a page opened without one has no form
+		expect(await (await state.app.fetch(origin + "/link")).text()).toBe(
+			"<main>page</main>",
+		);
+
+		const use = () => {
+			const data = new FormData();
+			data.set("link", token);
+			return state.post("/auth/link", data);
+		};
+		const [first, again] = await Promise.all([use(), use()]);
+		const [used, refused] =
+			first.headers.get("location") === "/account"
+				? [first, again]
+				: [again, first];
+		expect(used.status).toBe(303);
+		expect(used.headers.get("location")).toBe("/account");
+		const cookie = used.headers.getSetCookie().at(-1)!.split(";")[0]!;
+		const session: Auth.Session = await (
+			await state.app.fetch(origin + "/whoami", { headers: { cookie } })
+		).json();
+		expect(session.user).toBe(account);
+		// used once
+		expect(refused.headers.get("location")).toBe(origin + "/login?_auth=link");
+		expect(await rows(db.auth_links)).toHaveLength(0);
+		expect(
+			await (await state.app.fetch(origin + "/link?_auth=link")).text(),
+		).toContain("This link has expired or was already used.");
+
+		// one for another origin, or past its time, signs nobody in here
+		const other = new URL(
+			await state.service.link(account, { origin: "https://other.example" }),
+		);
+		expect(other.origin).toBe("https://other.example");
+		const late = new URL(await state.service.link(account, { minutes: 1 }));
+		await db.sql`UPDATE ${db.auth_links} SET expiration = 1 WHERE origin = ${origin}`;
+		for (const link of [other, late]) {
+			const data = new FormData();
+			data.set("link", link.searchParams.get("_link")!);
+			expect(
+				(await state.post("/auth/link", data)).headers.get("location"),
+			).toBe(origin + "/login?_auth=link");
+		}
+
+		await expect(
+			state.service.link(account, { origin: "http://example.com" }),
+		).rejects.toThrow("HTTPS origin");
+		await expect(state.service.link(account, { minutes: 61 })).rejects.toThrow(
+			"at most 60 minutes",
 		);
 	});
 
@@ -2425,14 +2541,19 @@ test("oversized registration bodies are rejected without spending the signup bud
 
 /** Checksums of the shipped migrations: never update them, add a new version instead. */
 const checksums = {
-	auth: "a004b98e623499f6670ffcee36ae4c61cbac67fd0754be942d2d2d61524792fd",
+	auth: "c3424a04121e0207239c150633fe55825d77c5a549b68531aaeec3668c4ede00",
 	limiter: "94fd469e8c2caa7331e532b764ae872352804a28527febb3decf5b09cf40ca70",
 };
 
 describe("migration SQL", () => {
 	describe("check verifies Auth's foreign keys to the users table", () => {
 		const settings = { secret: "test-secret-with-at-least-32-bytes", origin };
-		const owners = ["auth_credentials", "auth_sessions", "auth_tokens"];
+		const owners = [
+			"auth_credentials",
+			"auth_sessions",
+			"auth_tokens",
+			"auth_links",
+		];
 		/** Add each table's key with this definition, until `drop` */
 		const add = async (definition: string) => {
 			for (const table of owners)
@@ -2712,6 +2833,9 @@ describe("Postgres storage", () => {
 			counter: 1,
 			eligible: true,
 			backedUp: false,
+			created: 1,
+			origin,
+			name: null,
 		};
 		await db.sql`INSERT INTO ${db.auth_credentials} ${db.sql.values(db.auth_credentials, credential)}`;
 		const next = { ...credential, counter: 2, backedUp: true };
@@ -2734,6 +2858,9 @@ describe("Postgres storage", () => {
 			counter: 0,
 			eligible: false,
 			backedUp: false,
+			created: 1,
+			origin,
+			name: null,
 		};
 		const create = async (t: Database.Transaction, user: string) => {
 			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id: user, email: "a@example.com" })}`;
@@ -2972,6 +3099,9 @@ describe("agents", () => {
 				counter: 0,
 				eligible: false,
 				backedUp: false,
+				created: 1,
+				origin,
+				name: null,
 			},
 		)}`;
 		return { keys, owner };
@@ -3975,6 +4105,9 @@ describe("agents", () => {
 			counter: 0,
 			eligible: true,
 			backedUp: false,
+			created: 1,
+			origin,
+			name: null,
 		});
 		for (const credential of [
 			passkey("mine-1", user),

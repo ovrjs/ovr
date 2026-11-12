@@ -500,6 +500,10 @@ export class Passkey {
 			counter: data.counter,
 			eligible: Boolean(data.flags & 8),
 			backedUp: Boolean(data.flags & 16),
+			created: Date.now(),
+			origin: this.#auth.options.origin,
+			// what a person calls one they add
+			name: null as string | null,
 		};
 	}
 

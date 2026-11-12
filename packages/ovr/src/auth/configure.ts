@@ -11,6 +11,7 @@ import { Issue } from "./issue.js";
 import { Passkey } from "./passkey.js";
 import type { State } from "./state.js";
 import type { Storage } from "./storage.js";
+import { Token } from "./token.js";
 
 /**
  * Construct startup-complete handlers and request-scoped UI components.
@@ -53,6 +54,7 @@ export function configure<U extends Auth.Users>(
 		login: "/auth/login",
 		logout: "/auth/logout",
 		passkey: "/auth/passkey",
+		link: "/auth/link",
 		options: "/_passkey/options",
 	} as const;
 	const page = options.page ?? "/login";
@@ -119,10 +121,11 @@ export function configure<U extends Auth.Users>(
 
 	const admit = async (
 		c: Limiter.Context & Pick<Context, "text" | "redirect" | "url">,
-		method: "register" | "login" | "add",
+		method: "register" | "login" | "add" | "link",
 		prompt: boolean,
 	) => {
-		const admission = await limits[method].check(
+		// a link signs in, so it shares a login's limit
+		const admission = await limits[method === "link" ? "login" : method].check(
 			c,
 			prompt ? "options" : "verify",
 		);
@@ -148,7 +151,10 @@ export function configure<U extends Auth.Users>(
 		c.redirect(state(c).resume(redirect), 303);
 	};
 	const guard =
-		(method: "register" | "login" | "logout" | "add", prompt = false) =>
+		(
+			method: "register" | "login" | "logout" | "add" | "link",
+			prompt = false,
+		) =>
 		async (
 			c: Limiter.Context & Pick<Context, "text" | "redirect" | "url">,
 			next: Middleware.Next,
@@ -260,17 +266,29 @@ export function configure<U extends Auth.Users>(
 				action: paths.login,
 			});
 		});
+	/** What a person calls a passkey they add, such as "Laptop" */
+	const naming = {
+		name: Field.text()
+			.max(64)
+			.optional()
+			.label("Name")
+			.hint("Such as the device it is on"),
+	};
 	const add = Route.post(paths.passkey)
-		.fields(Passkey.shape)
+		.fields({ ...naming, ...Passkey.shape })
 		.use(guard("add"), async (c) => {
-			if (!(await Issue.data(c))) throw new Issue("passkey request");
+			const input = await Issue.data(c);
+			if (!input || input.issues) throw new Issue("passkey request");
 			const session = await state(c).session();
 			if (!session) throw new Issue("session");
 			const credential = await new Passkey(c, state(c)).register();
 			// the account that started the ceremony is still the one signed in
 			if (credential.user !== session.user) throw new Issue("user");
 			await storage
-				.register(() => {}, credential)
+				.register(() => {}, {
+					...credential,
+					name: input.data.name?.trim() || null,
+				})
 				.catch((error: unknown) => {
 					// a passkey that is already an account's
 					if (Database.unique(error)) throw new Issue("passkey");
@@ -279,7 +297,8 @@ export function configure<U extends Auth.Users>(
 			c.redirect(returning(c), 303);
 		});
 	const adding = Route.post(`${paths.options}/add`)
-		.fields({ bootstrap: Field.hidden() })
+		// the form's own field is sent with it, and saved when it submits
+		.fields({ ...naming, bootstrap: Field.hidden() })
 		.use(guard("add", true), async (c) => {
 			const input = await Issue.data(c);
 			if (!input || input.issues) throw new Issue("passkey request");
@@ -295,11 +314,24 @@ export function configure<U extends Auth.Users>(
 				exclude: await storage.credentials.list(session.user),
 			});
 		});
+	/** The parameter of the authentication page a link's token is in */
+	const linked = "_link";
+	const link = Route.post(paths.link)
+		.fields({ link: Field.hidden() })
+		.use(guard("link"), async (c) => {
+			const input = await Issue.data(c);
+			if (!input || input.issues) throw new Issue("link request");
+			// once, and only at the origin it was made for
+			const user = await storage.links.take(input.data.link, options.origin);
+			if (!user) throw new Issue("link");
+			await enter(c, user);
+		});
 	const routes = [
 		register,
 		login,
 		logout,
 		add,
+		link,
 		registration,
 		assertion,
 		adding,
@@ -307,6 +339,29 @@ export function configure<U extends Auth.Users>(
 	];
 	return {
 		routes,
+		/** Make a link that signs a user in once, see `Auth.link`. */
+		async link(
+			user: string,
+			{
+				origin = options.origin,
+				minutes = 10,
+			}: { origin?: string; minutes?: number } = {},
+		) {
+			const target = new URL(page, origin);
+			if (target.protocol !== "https:" || target.origin !== origin)
+				throw new TypeError("A link's origin must be an HTTPS origin");
+			if (!(minutes > 0 && minutes <= 60))
+				throw new TypeError("A link lasts at most 60 minutes");
+
+			const token = Token.random();
+			await storage.links.set(token, {
+				user,
+				origin,
+				expiration: Date.now() + minutes * Time.minute,
+			});
+			target.searchParams.set(linked, token);
+			return target.href;
+		},
 		/** Create forms in the handler before returning JSX, so ovr can set the binding cookie. */
 		forms(
 			c: Auth.Context,
@@ -345,7 +400,9 @@ export function configure<U extends Auth.Users>(
 										? "Registration could not be completed. If you already registered, sign in; otherwise try again."
 										: method === "add"
 											? "The passkey could not be added. Try again."
-											: "Authentication failed. Try again."
+											: method === "link"
+												? "This link has expired or was already used."
+												: "Authentication failed. Try again."
 								: undefined),
 					});
 			// another passkey for the account signed in, such as on a new device
@@ -357,6 +414,27 @@ export function configure<U extends Auth.Users>(
 			Register.Issue = error("register", Register.Issue);
 			Login.Issue = error("login", Login.Issue);
 			Add.Issue = error("add", Add.Issue);
+			// a link's token, from the address the link opened
+			const token = c.url.searchParams.get(linked);
+			const Link = Object.assign(
+				(props: Parameters<typeof link.Form>[0]) =>
+					(token || failure === "link") &&
+					jsx(link.Form, {
+						...props,
+						children: [
+							token && [
+								jsx("input", { type: "hidden", name: "link", value: token }),
+								props.children ?? jsx("button", { children: "Sign in" }),
+							],
+							Link.Issue({}),
+						],
+					}),
+				{
+					Issue: error("link", (props: Parameters<typeof Add.Issue>[0]) =>
+						jsx("p", { role: "status", "aria-live": "polite", ...props }),
+					),
+				},
+			);
 			return {
 				Register: Object.assign(Register, {
 					Field: fields.Field,
@@ -364,6 +442,7 @@ export function configure<U extends Auth.Users>(
 				}),
 				Login,
 				Add,
+				Link,
 				Logout: (props: Parameters<typeof logout.Form>[0]) =>
 					jsx(logout.Form, {
 						...props,
