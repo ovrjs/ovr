@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.21
+
+### Patch Changes
+
+- cdfc7de: Adding a passkey asks for a sign-in within the last ten minutes, in that browser. A passkey outlasts the session that adds it, so a session taken over later cannot make itself a permanent way in. The form says to sign in again.
+
 ## 7.0.0-next.20
 
 ### Patch Changes
