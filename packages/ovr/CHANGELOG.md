@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.12
+
+### Patch Changes
+
+- 55bf74e: A list's table is in a `<div>` of its own, so a wide table can scroll sideways alone, with `overflow-x: auto` on it, and the text around it keeps the fieldset's width.
+
 ## 7.0.0-next.11
 
 ### Patch Changes
