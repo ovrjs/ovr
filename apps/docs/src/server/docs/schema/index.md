@@ -120,6 +120,8 @@ The `state` prop for each component takes the current page `c.url`. The URL cont
 
 > To share fields between routes, reuse the shape object, such as `.fields({ ...shape, note: Field.textarea() })`.
 
+Routes that share fields can share the component that lays them out. Give it the route, typed as either one, such as `route: typeof create | typeof update`, and render `<route.Field name="title" />` for the fields both have. Render each route's own `Form` around it, since one may need `params` the other does not take.
+
 ### Edit a record
 
 Pass `values` to fill the fields with a record's current values. Values restored from an invalid submission take precedence, and values a field can't render, such as dates and `null`, are skipped. `Fields`, `Field`, and `component` accept `values` too.
