@@ -65,8 +65,9 @@ export namespace Markdown {
 		 * @param method Form method
 		 * @param action Resolved form action
 		 * @returns The tool's name, the arguments from the address's parameters,
-		 * and the fields whose choices are given as the form renders, which its
-		 * input schema can't list
+		 * the fields whose choices are given as the form renders, which its
+		 * input schema can't list, and the fields it takes as an array, which
+		 * the form shows as rows or lines
 		 */
 		readonly [tools]?:
 			| ((
@@ -77,6 +78,7 @@ export namespace Markdown {
 							name: string;
 							args: Record<string, string>;
 							choices: ReadonlySet<string>;
+							lists: ReadonlySet<string>;
 					  }
 					| undefined)
 			| undefined;
@@ -718,6 +720,8 @@ class Writer {
 						if (child.tag === "option") {
 							const text = Writer.#plain(child);
 							const value = child.attrs.value ?? text;
+							// the empty choice of a select that may be left empty
+							if (!value) continue;
 							entry.options.push(
 								`${value}${text && text !== value ? ` (${text})` : ""}`,
 							);
@@ -859,7 +863,7 @@ class Writer {
 			? // the tool's input schema describes the fields, so only what the
 				// page adds: current values, such as an edit form's, choices
 				// known only as it renders, such as a record's own IDs, and messages
-				fields
+				Writer.#gather(fields, tool.lists)
 					.map((f) => ({
 						// a single checkbox is a boolean argument, unchecked included
 						...(f.lone ? { ...f, value: [String(f.value.length > 0)] } : f),
@@ -905,6 +909,125 @@ class Writer {
 			...(notes.length ? ["", ...notes] : []),
 			...(submits.length ? ["", `Submit: ${submit}`] : []),
 		].join("\n");
+	}
+
+	/**
+	 * @param fields A tool's form's fields, one for each control
+	 * @param lists The fields the tool takes as an array
+	 * @returns The fields as the tool takes them: a list's rows together, and
+	 * lines apart, each as the array an agent sends
+	 */
+	static #gather(fields: Field[], lists: ReadonlySet<string>) {
+		if (!lists.size) return fields;
+
+		const gathered: Field[] = [];
+		const found = new Map<
+			string,
+			{ entry: Field; rows: Map<number, { value: unknown; filled: boolean }> }
+		>();
+
+		/** A control's value, as its argument's type */
+		const typed = (f: Field): unknown => {
+			if (f.lone) return f.value.length > 0 || undefined;
+			if (f.type === "checkbox" || f.type === "select multiple")
+				return f.value.length ? f.value : undefined;
+
+			const [value] = f.value;
+			if (!value) return;
+
+			return (f.type === "number" || f.type === "range") &&
+				Number.isFinite(Number(value))
+				? Number(value)
+				: value;
+		};
+
+		for (const f of fields) {
+			if (lists.has(f.name)) {
+				// lines, one on each line of a textarea
+				const lines = (f.value[0] ?? "")
+					.split(/\r?\n/)
+					.map((line) => line.trim())
+					.filter(Boolean);
+				gathered.push({
+					...f,
+					value: lines.length ? [JSON.stringify(lines)] : [],
+				});
+				continue;
+			}
+
+			// a row's control is named by its list and place, `steps.0` or
+			// `ingredients.0.amount`
+			let cell:
+				[list: string, place: number, key: string | undefined] | undefined;
+			for (const list of lists) {
+				if (!f.name.startsWith(`${list}.`)) continue;
+				const [, place, key] =
+					/^(\d+)(?:\.(.+))?$/s.exec(f.name.slice(list.length + 1)) ?? [];
+				if (place !== undefined) cell = [list, Number(place), key];
+			}
+			if (!cell) {
+				gathered.push(f);
+				continue;
+			}
+
+			const [list, place, key] = cell;
+			let group = found.get(list);
+			if (!group) {
+				group = {
+					entry: {
+						...f,
+						label: list,
+						name: list,
+						value: [],
+						notes: [],
+						lone: false,
+					},
+					rows: new Map(),
+				};
+				// one row's choices are every row's
+				if (key !== undefined) group.entry.options = [];
+				found.set(list, group);
+				gathered.push(group.entry);
+			}
+			group.entry.notes.push(...f.notes);
+
+			let row = group.rows.get(place);
+			if (!row) {
+				row = { value: key === undefined ? undefined : {}, filled: false };
+				group.rows.set(place, row);
+			}
+
+			const value = typed(f);
+			if (key === undefined) row.value = value;
+			else if (value !== undefined)
+				(row.value as Record<string, unknown>)[key] = value;
+			// a hidden value, such as a row's ID, is in an empty row too
+			if (value !== undefined && f.type !== "hidden") row.filled = true;
+
+			// a column's choices, given once
+			const column = `${list}.${key}`;
+			if (key !== undefined && f.options.length && !found.has(column)) {
+				const entry = {
+					...f,
+					label: column,
+					name: column,
+					value: [],
+					notes: [],
+					lone: false,
+				};
+				found.set(column, { entry, rows: new Map() });
+				gathered.push(entry);
+			}
+		}
+
+		for (const { entry, rows } of found.values()) {
+			const items = [...rows]
+				.sort(([a], [b]) => a - b)
+				.flatMap(([, row]) => (row.filled ? [row.value] : []));
+			if (items.length) entry.value = [JSON.stringify(items)];
+		}
+
+		return gathered;
 	}
 
 	/**

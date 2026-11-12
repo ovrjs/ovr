@@ -188,6 +188,12 @@ export namespace Schema {
 		| {
 				readonly type: "string" | "boolean" | "number" | "bigint" | "date";
 				readonly message?: string | undefined;
+				/**
+				 * A number's message when there is no value, where `message` is
+				 * for a value that is not a number. A number field sets it, since
+				 * text sent to it is not a field left empty.
+				 */
+				readonly missing?: string | undefined;
 		  }
 		| {
 				readonly type: "literal";
@@ -747,7 +753,11 @@ export class Schema<Output>
 				return (v, path) =>
 					Number.isFinite(v) // isFinite checks type
 						? { data: v }
-						: Schema.#issue("number", path, def.message);
+						: Schema.#issue(
+								"number",
+								path,
+								(v === undefined && def.missing) || def.message,
+							);
 			case "date":
 				return (v, path) =>
 					v instanceof Date && !Number.isNaN(v.getTime())
@@ -1291,15 +1301,17 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @returns Optional field
 	 */
 	optional<
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
-	): Field.Instance<Output | undefined, T, U, V>;
+		this: Field.Instance<Output, T, U, V, undefined, I>,
+	): Field.Instance<Output | undefined, T, U, V, undefined, I>;
 	/**
 	 * @returns Optional schema
 	 */
@@ -1312,15 +1324,17 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @returns Nullable field
 	 */
 	nullable<
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
-	): Field.Instance<Output | null, T, U, V>;
+		this: Field.Instance<Output, T, U, V, undefined, I>,
+	): Field.Instance<Output | null, T, U, V, undefined, I>;
 	/**
 	 * @returns Nullable schema
 	 */
@@ -1333,15 +1347,17 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @returns Nullish field
 	 */
 	nullish<
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
-	): Field.Instance<Output | null | undefined, T, U, V>;
+		this: Field.Instance<Output, T, U, V, undefined, I>,
+	): Field.Instance<Output | null | undefined, T, U, V, undefined, I>;
 	/**
 	 * @returns Nullish schema
 	 */
@@ -1357,6 +1373,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param value Default value to use when input is undefined
 	 * @returns Field with default
 	 */
@@ -1364,10 +1381,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
+		this: Field.Instance<Output, T, U, V, undefined, I>,
 		value: Output,
-	): Field.Instance<Output, T, U, V>;
+	): Field.Instance<Output, T, U, V, undefined, I>;
 	/**
 	 * @param value Default value to use when input is undefined
 	 * @returns Schema with default
@@ -1381,6 +1399,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param fn Preprocess function to run before parsing
 	 * @returns Schema that preprocesses input before parsing
 	 */
@@ -1388,10 +1407,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
+		this: Field.Instance<Output, T, U, V, undefined, I>,
 		fn: (value: unknown) => unknown,
-	): Field.Instance<Output, T, U, V>;
+	): Field.Instance<Output, T, U, V, undefined, I>;
 	/**
 	 * @param fn Preprocess function to run before parsing
 	 * @returns Schema that preprocesses input before parsing
@@ -1409,6 +1429,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param fn Transform function to apply to parsed output
 	 * @returns Transformed field
 	 */
@@ -1417,10 +1438,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
+		this: Field.Instance<Output, T, U, V, undefined, I>,
 		fn: (value: Output) => O,
-	): Field.Instance<O, T, U, V>;
+	): Field.Instance<O, T, U, V, undefined, I>;
 	/**
 	 * @template O Output type after transformation
 	 * @param fn Transform function to apply to parsed output
@@ -1436,6 +1458,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param next Schema to validate the result with
 	 * @returns Piped field
 	 */
@@ -1444,10 +1467,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
+		this: Field.Instance<Output, T, U, V, undefined, I>,
 		next: Schema<O>,
-	): Field.Instance<O, T, U, V>;
+	): Field.Instance<O, T, U, V, undefined, I>;
 	/**
 	 * @template O Output type after pipe
 	 * @param next Schema to validate the result with
@@ -1465,6 +1489,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param schema Schema to validate the parsed JSON value with
 	 * @param message Issue message when invalid
 	 * @returns Parsed JSON field
@@ -1474,11 +1499,12 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<string, T, U, V>,
+		this: Field.Instance<string, T, U, V, undefined, I>,
 		schema: Schema<O>,
 		message?: string,
-	): Field.Instance<O, T, U, V>;
+	): Field.Instance<O, T, U, V, undefined, I>;
 	/**
 	 * Parse a JSON string and validate the parsed value with the provided schema.
 	 *
@@ -1499,6 +1525,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param message Issue message when invalid
 	 * @returns Email field
 	 */
@@ -1506,10 +1533,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<string, T, U, V>,
+		this: Field.Instance<string, T, U, V, undefined, I>,
 		message?: string,
-	): Field.Instance<string, T, U, V>;
+	): Field.Instance<string, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is a valid email string using
 	 * [Reasonable Email Regex by Colin McDonnell](https://colinhacks.com/essays/reasonable-email-regex).
@@ -1528,6 +1556,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param message Issue message when invalid
 	 * @returns UUID field
 	 */
@@ -1535,10 +1564,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<string, T, U, V>,
+		this: Field.Instance<string, T, U, V, undefined, I>,
 		message?: string,
-	): Field.Instance<string, T, U, V>;
+	): Field.Instance<string, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is a UUID string of any version.
 	 *
@@ -1556,6 +1586,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param message Issue message when invalid
 	 * @returns URL field
 	 */
@@ -1563,10 +1594,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<string, T, U, V>,
+		this: Field.Instance<string, T, U, V, undefined, I>,
 		message?: string,
-	): Field.Instance<string, T, U, V>;
+	): Field.Instance<string, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is a valid URL string.
 	 *
@@ -1584,6 +1616,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param message Issue message when invalid
 	 * @returns Integer field
 	 */
@@ -1591,10 +1624,11 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<number, T, U, V>,
+		this: Field.Instance<number, T, U, V, undefined, I>,
 		message?: string,
-	): Field.Instance<number, T, U, V>;
+	): Field.Instance<number, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is a safe integer.
 	 *
@@ -1615,6 +1649,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param value Minimum value or length
 	 * @param message Issue message when invalid
 	 * @returns Refined field
@@ -1623,17 +1658,19 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<string, T, U, V>,
+		this: Field.Instance<string, T, U, V, undefined, I>,
 		value: number,
 		message?: string,
-	): Field.Instance<string, T, U, V>;
+	): Field.Instance<string, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param value Minimum value
 	 * @param message Issue message when invalid
 	 * @returns Refined field
@@ -1642,17 +1679,19 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<number, T, U, V>,
+		this: Field.Instance<number, T, U, V, undefined, I>,
 		value: number,
 		message?: string,
-	): Field.Instance<number, T, U, V>;
+	): Field.Instance<number, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param value Minimum value
 	 * @param message Issue message when invalid
 	 * @returns Refined field
@@ -1661,11 +1700,12 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<bigint, T, U, V>,
+		this: Field.Instance<bigint, T, U, V, undefined, I>,
 		value: bigint,
 		message?: string,
-	): Field.Instance<bigint, T, U, V>;
+	): Field.Instance<bigint, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
@@ -1710,6 +1750,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param value Maximum value or length
 	 * @param message Issue message when invalid
 	 * @returns Refined field
@@ -1718,17 +1759,19 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<string, T, U, V>,
+		this: Field.Instance<string, T, U, V, undefined, I>,
 		value: number,
 		message?: string,
-	): Field.Instance<string, T, U, V>;
+	): Field.Instance<string, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param value Maximum value
 	 * @param message Issue message when invalid
 	 * @returns Refined field
@@ -1737,17 +1780,19 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<number, T, U, V>,
+		this: Field.Instance<number, T, U, V, undefined, I>,
 		value: number,
 		message?: string,
-	): Field.Instance<number, T, U, V>;
+	): Field.Instance<number, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param value Maximum value
 	 * @param message Issue message when invalid
 	 * @returns Refined field
@@ -1756,11 +1801,12 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<bigint, T, U, V>,
+		this: Field.Instance<bigint, T, U, V, undefined, I>,
 		value: bigint,
 		message?: string,
-	): Field.Instance<bigint, T, U, V>;
+	): Field.Instance<bigint, T, U, V, undefined, I>;
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
@@ -1800,6 +1846,7 @@ export class Schema<Output>
 	 * @template T Field tag name
 	 * @template U Field input type attribute
 	 * @template V Field option values
+	 * @template I What each item of a list field is
 	 * @param check Validation function that returns `false` to fail
 	 * @param message Issue message when invalid
 	 * @returns Refined field
@@ -1808,11 +1855,12 @@ export class Schema<Output>
 		T extends Field.Tag,
 		U extends Field.Type,
 		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
 	>(
-		this: Field.Instance<Output, T, U, V>,
+		this: Field.Instance<Output, T, U, V, undefined, I>,
 		check: (value: Output) => boolean,
 		message: string,
-	): Field.Instance<Output, T, U, V>;
+	): Field.Instance<Output, T, U, V, undefined, I>;
 	/**
 	 * @param check Validation function that returns `false` to fail
 	 * @param message Issue message when invalid

@@ -622,7 +622,12 @@ describe("Markdown", () => {
 				),
 				{
 					base: "https://example.com/",
-					[tools]: () => ({ name: "x_post", args: {}, choices: new Set() }),
+					[tools]: () => ({
+						name: "x_post",
+						args: {},
+						choices: new Set(),
+						lists: new Set(),
+					}),
 				},
 			),
 		).toBe(
@@ -640,6 +645,74 @@ describe("Markdown", () => {
 		);
 	});
 
+	test("a list's rows are an array for its tool, and controls for a form an agent submits itself", async () => {
+		const form = () =>
+			h(
+				"form",
+				{ method: "post", action: "/x" },
+				h("textarea", { name: "steps" }, "Chop\n\nFry"),
+				h(
+					"select",
+					{ name: "dinners.0" },
+					h("option", { value: "" }),
+					h("option", { value: "a", selected: true }, "Soup"),
+					h("option", { value: "b" }, "Stew"),
+				),
+				h(
+					"select",
+					{ name: "dinners.1" },
+					h("option", { value: "" }),
+					h("option", { value: "a" }, "Soup"),
+					h("option", { value: "b" }, "Stew"),
+				),
+				h("input", { type: "number", name: "rows.0.amount", value: "2" }),
+				h("input", { name: "rows.0.name", value: "flour" }),
+				h("input", { type: "checkbox", name: "rows.0.organic", checked: true }),
+				h("p", null, "Use a whole number"),
+				h("input", { type: "hidden", name: "rows.1.id", value: "9" }),
+				h("input", { type: "number", name: "rows.1.amount" }),
+				h("input", { name: "rows.1.name" }),
+				h("input", { type: "checkbox", name: "rows.1.organic" }),
+				// not a row: no list has its name
+				h("input", { name: "other.0", value: "kept" }),
+				h("button", null, "Save"),
+			);
+
+		expect(
+			await md(form(), {
+				base: "https://example.com/",
+				[tools]: () => ({
+					name: "x_post",
+					args: {},
+					choices: new Set(["dinners"]),
+					lists: new Set(["steps", "dinners", "rows"]),
+				}),
+			}),
+		).toBe(
+			[
+				"**Tool:** `x_post`",
+				"",
+				'- `steps`: `["Chop","Fry"]`',
+				'- `dinners`: `["a"]`, options: `a (Soup)`, `b (Stew)`',
+				'- `rows`: `[{"amount":2,"name":"flour","organic":true}]`',
+				"  - Use a whole number",
+				"- `other.0`: `kept`",
+				"",
+				"Submit: Save",
+				"",
+			].join("\n"),
+		);
+
+		// without a tool, each control is sent by its own name
+		const raw = await md(form(), { base: "https://example.com/" });
+		expect(raw).toContain(
+			"- dinners.0 `dinners.0` (select), options: `a (Soup)`, `b (Stew)`, value: `a`",
+		);
+		expect(raw).toContain(
+			"- rows.0.amount `rows.0.amount` (number), value: `2`",
+		);
+	});
+
 	test("a tool's form shows its hidden values, other forms do not", async () => {
 		const form = () =>
 			h(
@@ -652,7 +725,12 @@ describe("Markdown", () => {
 		expect(
 			await md(form(), {
 				base: "https://example.com/",
-				[tools]: () => ({ name: "x_post", args: {}, choices: new Set() }),
+				[tools]: () => ({
+					name: "x_post",
+					args: {},
+					choices: new Set(),
+					lists: new Set(),
+				}),
 			}),
 		).toBe(
 			[
@@ -690,7 +768,12 @@ describe("Markdown", () => {
 				),
 				{
 					base: "https://example.com/",
-					[tools]: () => ({ name: "x_post", args: {}, choices: new Set() }),
+					[tools]: () => ({
+						name: "x_post",
+						args: {},
+						choices: new Set(),
+						lists: new Set(),
+					}),
 				},
 			),
 		).toBe(

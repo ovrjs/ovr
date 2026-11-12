@@ -1,6 +1,6 @@
 import { type App, agents, direct, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
-import { type Field, forms } from "../form/index.js";
+import { type Field, forms, field as isField } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters, schemas } from "../route/index.js";
 import { Schema } from "../schema/index.js";
@@ -680,34 +680,11 @@ export class Mcp<P extends string = string> {
 				Object.assign(properties, schema.properties);
 				for (const field of (schema.required ?? []) as string[])
 					required.add(field);
-				// a tool's arguments are JSON, so a file is sent as its contents,
-				// and a JSON field as the value it parses, not a string of it
-				for (const name in shape) {
-					const field = shape[name]!;
-					const property = properties[name] as Json;
-					if (field.type === "file")
-						properties[name] =
-							field.parts > 1
-								? { ...property, items: Mcp.#file }
-								: {
-										...property,
-										...Mcp.#file,
-										// the field's own, such as a size limit, then how to send it
-										description: Prose.join(
-											property.description as string | undefined,
-											Mcp.#file.description,
-										),
-									};
-					else if (Mcp.#whole(field)) {
-						const {
-							type: _,
-							contentMediaType: __,
-							contentSchema,
-							...keywords
-						} = properties[name] as Json;
-						properties[name] = { ...(contentSchema as Json), ...keywords };
-					}
-				}
+				for (const name in shape)
+					properties[name] = Mcp.#property(
+						shape[name]!,
+						properties[name] as Json,
+					);
 			}
 
 			for (const [param, key] of Mcp.#params(route)) {
@@ -734,6 +711,56 @@ export class Mcp<P extends string = string> {
 		}
 
 		return tools;
+	}
+
+	/**
+	 * A tool's arguments are JSON, so a file is sent as its contents, and a
+	 * JSON field as the value it parses, not a string of it.
+	 *
+	 * @param field Form field
+	 * @param property The field's JSON Schema
+	 * @returns The JSON Schema of the argument an agent sends for it
+	 */
+	static #property(field: Field.Any, property: Json): Json {
+		const { item } = field;
+
+		if (item) {
+			// each item of a list, as its own fields are sent
+			const items = property.items as Json | undefined;
+			if (!items) return property;
+			if (isField(item))
+				return { ...property, items: Mcp.#property(item, items) };
+
+			const cells = { ...(items.properties as Json) };
+			for (const key of Object.keys(item))
+				cells[key] = Mcp.#property(item[key]!, cells[key] as Json);
+			return { ...property, items: { ...items, properties: cells } };
+		}
+
+		if (field.type === "file")
+			return field.parts > 1
+				? { ...property, items: Mcp.#file }
+				: {
+						...property,
+						...Mcp.#file,
+						// the field's own, such as a size limit, then how to send it
+						description: Prose.join(
+							property.description as string | undefined,
+							Mcp.#file.description,
+						),
+					};
+
+		if (Mcp.#whole(field)) {
+			const {
+				type: _,
+				contentMediaType: __,
+				contentSchema,
+				...keywords
+			} = property;
+			return { ...(contentSchema as Json), ...keywords };
+		}
+
+		return property;
 	}
 
 	/**
@@ -783,6 +810,19 @@ export class Mcp<P extends string = string> {
 		while (def && def.type !== "json")
 			def = "inner" in def ? def.inner.def : undefined;
 		return Boolean(def);
+	}
+
+	/**
+	 * @param field Form field
+	 * @returns `true` for a field of lines, `Field.lines()`, also when made
+	 * optional
+	 */
+	static #lines(field: Field.Any) {
+		if (field.tag !== "textarea") return false;
+
+		let def: Schema.Def = field.def;
+		while ("inner" in def) def = def.inner.def;
+		return def.type === "array";
 	}
 
 	/**
@@ -910,36 +950,54 @@ export class Mcp<P extends string = string> {
 					true,
 				);
 		}
-		for (const [name, value] of Object.entries(args)) {
-			const field =
-				shape && Object.hasOwn(shape, name) ? shape[name] : undefined;
-			// a parameter is in the path, and also sent when a field has its name
-			if (pathParams.has(name) && !field) continue;
+		/**
+		 * @param field The field the argument is for, if there is one
+		 * @param name Form data name
+		 * @param value The argument
+		 * @returns The name of a file field whose argument is not a file
+		 */
+		const send = (
+			field: Field.Any | undefined,
+			name: string,
+			value: unknown,
+		): string | undefined => {
+			const item = field?.item;
+			if (item) {
+				// each item's fields are named by its place, as a row's are
+				let place = 0;
+				for (const row of Array.isArray(value) ? value : []) {
+					const at = `${name}.${place++}`;
+					if (isField(item)) {
+						const failed = send(item, at, row);
+						if (failed) return failed;
+					} else if (row && typeof row === "object") {
+						for (const key of Object.keys(item)) {
+							const failed = send(
+								item[key],
+								`${at}.${key}`,
+								(row as Json)[key],
+							);
+							if (failed) return failed;
+						}
+					}
+				}
+				return;
+			}
+
 			const upload = !read && field?.type === "file";
 			// a JSON field reads one value, so an array is sent whole, as its
 			// input schema describes it
-			const whole = field && Mcp.#whole(field);
-			if (whole && value != null) {
+			if (field && Mcp.#whole(field) && value != null) {
 				const text = JSON.stringify(value);
 				if (read) url.searchParams.append(name, text);
 				else body.append(name, text);
-				continue;
+				return;
 			}
 			for (const item of Array.isArray(value) ? value : [value]) {
 				if (item == null || item === false) continue;
 				if (upload) {
 					const file = Mcp.#upload(item);
-					if (!file)
-						return Mcp.#result(
-							Mcp.#issues([
-								{
-									path: name,
-									message:
-										"Expected a file: its name, and its contents as text or base64",
-								},
-							]),
-							true,
-						);
+					if (!file) return name;
 					body.append(name, file);
 					continue;
 				}
@@ -952,6 +1010,26 @@ export class Mcp<P extends string = string> {
 				if (read) url.searchParams.append(name, text);
 				else body.append(name, text);
 			}
+		};
+
+		for (const [name, value] of Object.entries(args)) {
+			const field =
+				shape && Object.hasOwn(shape, name) ? shape[name] : undefined;
+			// a parameter is in the path, and also sent when a field has its name
+			if (pathParams.has(name) && !field) continue;
+
+			const path = send(field, name, value);
+			if (path)
+				return Mcp.#result(
+					Mcp.#issues([
+						{
+							path,
+							message:
+								"Expected a file: its name, and its contents as text or base64",
+						},
+					]),
+					true,
+				);
 		}
 
 		return this.#fetch(
@@ -1075,13 +1153,33 @@ export class Mcp<P extends string = string> {
 			for (const param in match.params)
 				args[param === "*" ? "wildcard" : param] = match.params[param]!;
 
-			// choices from a schema, given as the form renders
+			// choices from a schema, given as the form renders, and the fields
+			// an agent sends as an array, which the page shows as rows or lines
 			const choices = new Set<string>();
+			const lists = new Set<string>();
 			const shape = forms.get(match.route)?.shape;
-			for (const field in shape)
-				if (shape[field]!.options?.length === 0) choices.add(field);
+			const rendered = (field: Field.Any) => field.options?.length === 0;
 
-			return { name, args, choices };
+			for (const name in shape) {
+				const field = shape[name]!;
+				const { item } = field;
+
+				if (!item) {
+					if (rendered(field)) choices.add(name);
+					if (Mcp.#lines(field)) lists.add(name);
+					continue;
+				}
+
+				lists.add(name);
+				if (isField(item)) {
+					if (rendered(item)) choices.add(name);
+				} else {
+					for (const key of Object.keys(item))
+						if (rendered(item[key]!)) choices.add(`${name}.${key}`);
+				}
+			}
+
+			return { name, args, choices, lists };
 		};
 	}
 

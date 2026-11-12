@@ -9,7 +9,7 @@ import {
 	normalizers,
 	own,
 } from "../schema/index.js";
-import { Checksum, Codec, Prose, Size } from "../util/index.js";
+import { Checksum, Codec, Prose, Size, type Util } from "../util/index.js";
 
 /** Internal protocol for a GET route, to make the form its fields render. */
 export const query = Symbol("query");
@@ -50,7 +50,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	static readonly #maxValueChars = 512;
 
 	/** Schema used to validate persisted form values, see `#value`. */
-	static #valueSchema?: Schema<Field.Value>;
+	static #valueSchema?: Schema<Field.Value.Cell>;
 
 	/** Form id. */
 	readonly #id: string;
@@ -67,6 +67,9 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	/** Field names in definition order. */
 	readonly names: ShapeUtil.Name<Shape>[];
 
+	/** Names of the lists, whose cells are named by them. */
+	readonly #lists: ShapeUtil.Name<Shape>[];
+
 	/** Maximum expected multipart parts derived from field cardinality. */
 	readonly parts: number;
 
@@ -78,6 +81,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	constructor(shape: Shape) {
 		this.shape = shape;
 		this.names = Object.keys(this.shape) as ShapeUtil.Name<Shape>[];
+		this.#lists = this.names.filter((name) => this.shape[name]!.item);
 		this.#id = Checksum.djb2(this.names.join());
 		this.parts = Object.values(this.shape).reduce(
 			(sum, field) => sum + field.parts,
@@ -109,10 +113,48 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 
 	/**
 	 * @param name Form data name
-	 * @returns The field, own fields only, so a name such as "constructor" has none
+	 * @returns The field, own fields only, so a name such as "constructor" has
+	 * none. A list's cell, such as `steps.0`, is its list's.
 	 */
 	#field(name: string) {
-		return Object.hasOwn(this.shape, name) ? this.shape[name] : undefined;
+		if (Object.hasOwn(this.shape, name)) return this.shape[name];
+
+		for (const list of this.#lists) {
+			const field = this.shape[list]!;
+			if (FieldSchema.place(field.item!, list, name) !== undefined)
+				return field;
+		}
+	}
+
+	/**
+	 * @param item What each item of a list is
+	 * @param value Candidate items
+	 * @returns The items a list can render, without what a cell cannot
+	 */
+	static #items(item: Field.Item, value: unknown) {
+		if (!Array.isArray(value)) return;
+
+		const cell = (field: Field.Cell, value: unknown) => {
+			if (field.type === "file" || field.type === "password" || value == null)
+				return;
+
+			const result = Form.#value().parse(value);
+			if (!result.issues) return result.data;
+		};
+
+		return value.map((row: unknown) => {
+			// a place is kept, so the items after it stay where they were
+			if (field(item)) return cell(item, row) ?? "";
+
+			const cells: Record<string, Field.Value.Cell> = {};
+			if (row && typeof row === "object") {
+				for (const key of Object.keys(item)) {
+					const value = cell(item[key]!, (row as Record<string, unknown>)[key]);
+					if (value !== undefined) own(cells, key, value);
+				}
+			}
+			return cells;
+		});
 	}
 
 	/**
@@ -149,6 +191,14 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 					(!persist || FieldSchema.persisted(field)) &&
 					value != null
 				) {
+					if (field.item) {
+						// a cleared list is recorded empty, and no list has a size of
+						// its own: the state's limit holds them all
+						const items = value === "" ? [] : Form.#items(field.item, value);
+						if (items) own(sanitized, name, items);
+						continue;
+					}
+
 					const result = Form.#value().parse(value);
 
 					if (
@@ -195,7 +245,8 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 			const values = this.#sanitize(
 				(this.#query ? this.names : []).reduce<Record<string, unknown>>(
 					(data, name) => {
-						if (searchParams.has(name)) {
+						// a list's cells are named by it, so its own name is not there
+						if (searchParams.has(name) || this.shape[name]!.item) {
 							const value = FieldSchema.read(
 								this.shape[name]!,
 								searchParams,
@@ -237,7 +288,14 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 								).optional(),
 								values: Schema.object(
 									this.names.reduce<Schema.Object.Shape>((shape, name) => {
-										own(shape, name, Form.#value().optional());
+										own(
+											shape,
+											name,
+											// a list's items are checked as they are sanitized
+											this.shape[name]!.item
+												? Schema.unknown()
+												: Form.#value().optional(),
+										);
 
 										return shape;
 									}, {}),
@@ -496,6 +554,9 @@ const required = "Required field";
 /** Default message for a choice that is not one of the options */
 const choose = "Select an option";
 
+/** Default message for a number field sent a value that is not a number */
+const numeric = "Enter a number";
+
 /**
  * @param value Form data entry
  * @returns `true` for a file a person chose, a browser sends an empty one otherwise
@@ -522,6 +583,7 @@ const readMany = (data: FormData | URLSearchParams, name: string) => {
  * @template Type Input type
  * @template Values Persisted field value type
  * @template Stream If the field should be streamed as a part
+ * @template Item What each item of a list is
  */
 class FieldSchema<
 	Output = unknown,
@@ -529,6 +591,7 @@ class FieldSchema<
 	Type extends Field.Type = Field.Type,
 	Values extends Field.Options | undefined = undefined,
 	Stream extends boolean | undefined = undefined,
+	Item extends Field.Item | undefined = undefined,
 > extends Schema<Output> {
 	/** Read the value from form data */
 	readonly #read: Field.Read;
@@ -543,6 +606,9 @@ class FieldSchema<
 
 	/** Choices of a select, radio, or checkbox group */
 	readonly options: Values;
+
+	/** What each item of a list is: a field, or fields by name */
+	readonly item: Item;
 
 	/** Maximum expected multipart part count for this field name. */
 	readonly parts: number;
@@ -583,6 +649,7 @@ class FieldSchema<
 		this.#config = config;
 		this.tag = (config.tag ?? "input") as Tag;
 		this.options = config.options as Values;
+		this.item = config.item as Item;
 		this.#read = read;
 		this.type = config.props?.type as Type;
 		this.parts = parts;
@@ -602,14 +669,14 @@ class FieldSchema<
 			Boolean(this.parse(this.#read(new URLSearchParams(), "")).issues));
 	}
 
-	/** How each picker writes its value */
+	/** How each picker writes its value, a sentence so it reads alone too */
 	static readonly #formats: Record<string, string | undefined> = {
-		date: "Date as YYYY-MM-DD",
-		"datetime-local": "Date and time as YYYY-MM-DDTHH:mm",
-		month: "Month as YYYY-MM",
-		week: "Week as YYYY-Www, such as 2026-W46",
-		time: "Time as HH:mm",
-		color: "Color as #rrggbb",
+		date: "Date as YYYY-MM-DD.",
+		"datetime-local": "Date and time as YYYY-MM-DDTHH:mm.",
+		month: "Month as YYYY-MM.",
+		week: "Week as YYYY-Www, such as 2026-W46.",
+		time: "Time as HH:mm.",
+		color: "Color as #rrggbb.",
 	};
 
 	/**
@@ -652,11 +719,76 @@ class FieldSchema<
 	}
 
 	/**
+	 * @param item What each item of the list is
+	 * @param list The list's name
+	 * @param name Form data name
+	 * @returns The place of the item the name is a cell of, such as 2 for
+	 * `steps.2` or `ingredients.2.amount`, `undefined` for any other name
+	 */
+	static place(item: Field.Item, list: string, name: string) {
+		if (!name.startsWith(`${list}.`)) return;
+
+		const [, place, key] =
+			/^(0|[1-9]\d{0,8})(?:\.(.+))?$/s.exec(name.slice(list.length + 1)) ?? [];
+
+		if (
+			place === undefined ||
+			(item instanceof FieldSchema
+				? key !== undefined
+				: key === undefined || !Object.hasOwn(item, key))
+		)
+			return;
+
+		return Number(place);
+	}
+
+	/**
+	 * @param item What each item of the list is
+	 * @returns How the list reads its items, in the order of their places. An
+	 * item left empty is left out, so a person clears a row to remove it.
+	 */
+	static items(item: Field.Item): Field.Read {
+		// a hidden cell, such as a row's ID, is sent with an empty row too
+		const filled = (cell: Field.Cell, value: Field.Input) =>
+			value !== undefined && value !== false && cell.type !== "hidden";
+
+		return (data, name) => {
+			const places = new Set<number>();
+			for (const key of data.keys()) {
+				const place = FieldSchema.place(item, name, key);
+				if (place !== undefined) places.add(place);
+			}
+
+			const items: Field.Input.Cell[] | Record<string, Field.Input.Cell>[] = [];
+			for (const place of [...places].sort((a, b) => a - b)) {
+				const at = `${name}.${place}`;
+
+				if (item instanceof FieldSchema) {
+					const value = item.#read(data, at) as Field.Input.Cell;
+					if (filled(item, value)) (items as Field.Input.Cell[]).push(value);
+					continue;
+				}
+
+				const row: Record<string, Field.Input.Cell> = {};
+				let any = false;
+				for (const [key, cell] of Object.entries(item)) {
+					const value = cell.#read(data, `${at}.${key}`) as Field.Input.Cell;
+					if (filled(cell, value)) any = true;
+					own(row, key, value);
+				}
+				if (any) (items as Record<string, Field.Input.Cell>[]).push(row);
+			}
+
+			return items.length ? items : undefined;
+		};
+	}
+
+	/**
 	 * Stream this field as a multipart request `Part`.
 	 *
 	 * @returns Part field
 	 */
-	stream(): Field.Instance<Output, Tag, Type, Values, true> {
+	stream(): Field.Instance<Output, Tag, Type, Values, true, Item> {
 		return this.#copy({ stream: true });
 	}
 
@@ -672,7 +804,7 @@ class FieldSchema<
 	 * @param text Label
 	 * @returns Field with the label
 	 */
-	label(text: string): Field.Instance<Output, Tag, Type, Values, Stream> {
+	label(text: string): Field.Instance<Output, Tag, Type, Values, Stream, Item> {
 		return this.#with({ label: text });
 	}
 
@@ -694,9 +826,9 @@ class FieldSchema<
 	taken<
 		U extends (Tag extends "input" ? Exclude<Type, "password" | "file"> : Type),
 	>(
-		this: Field.Instance<Output, Tag, U, Values, Stream>,
+		this: Field.Instance<Output, Tag, U, Values, Stream, Item>,
 		message: string,
-	): Field.Instance<Output, Tag, U, Values, Stream>;
+	): Field.Instance<Output, Tag, U, Values, Stream, Item>;
 	taken(message: string) {
 		return this.#with({ taken: message });
 	}
@@ -722,9 +854,12 @@ class FieldSchema<
 			? Field.Props.Select
 			: Tag extends "textarea"
 				? Field.Props.Textarea
-				: // the field is its type
-					Field.Props.Input & { readonly type?: never },
-	): Field.Instance<Output, Tag, Type, Values, Stream> {
+				: Tag extends "fieldset"
+					? // a list has no control of its own, each of its fields has one
+						never
+					: // the field is its type
+						Field.Props.Input & { readonly type?: never },
+	): Field.Instance<Output, Tag, Type, Values, Stream, Item> {
 		return this.#with({
 			props: { ...this.#config.props, ...attributes } as Field.Props,
 		});
@@ -755,7 +890,7 @@ class FieldSchema<
 		stream?: S;
 		persist?: boolean;
 	}) {
-		return new FieldSchema<O, Tag, Type, Values, S>(
+		return new FieldSchema<O, Tag, Type, Values, S, Item>(
 			config,
 			def,
 			this.#read,
@@ -822,8 +957,8 @@ class FieldSchema<
 	persist<
 		U extends (Tag extends "input" ? Exclude<Type, "password" | "file"> : Type),
 	>(
-		this: Field.Instance<Output, Tag, U, Values, Stream>,
-	): Field.Instance<Output, Tag, U, Values, Stream>;
+		this: Field.Instance<Output, Tag, U, Values, Stream, Item>,
+	): Field.Instance<Output, Tag, U, Values, Stream, Item>;
 	persist() {
 		return this.#copy({ persist: true });
 	}
@@ -837,7 +972,7 @@ class FieldSchema<
 	 */
 	protected override derive<O>(
 		def: Schema.Def,
-	): Field.Instance<O, Tag, Type, Values, Stream> {
+	): Field.Instance<O, Tag, Type, Values, Stream, Item> {
 		return this.#copy<O>({ def });
 	}
 
@@ -858,18 +993,24 @@ class FieldSchema<
 	 */
 	[component]<S extends Field.Shape>(
 		props: Field.Component.Props<S, false>,
+		named?: string,
 	): Field.Component<this>;
-	[component]<S extends Field.Shape>({
-		state,
-		options: given,
-		...props
-	}: Field.Component.Props<S, false>): unknown {
+	[component]<S extends Field.Shape>(
+		{ state, options: given, ...props }: Field.Component.Props<S, false>,
+		// what a list calls its cell, which is named by its place
+		named: string = props.name,
+	): unknown {
 		const options = this.#options(given);
 		const value = state?.values?.[props.name];
-		const issue = state?.issues?.find((i) => i.path[0] === props.name);
+		const issue = state?.issues?.find(
+			(i) =>
+				i.path[0] === props.name &&
+				// a list's own, each of its cells shows its own
+				(!this.item || i.path.length === 1),
+		);
 		const issueId = issue && `${props.name}-issue`;
 		const hidden = this.type === "hidden";
-		const { label = props.name } = this.#config;
+		const { label = named } = this.#config;
 		const { description } = this;
 		const descriptionId =
 			description && !hidden ? `${props.name}-description` : undefined;
@@ -891,7 +1032,7 @@ class FieldSchema<
 		 */
 		const chosen = (option: string) =>
 			Array.isArray(value)
-				? value.includes(option) // checkboxes and multiselect
+				? (value as readonly unknown[]).includes(option) // checkboxes and multiselect
 				: value === option; // radio and select
 
 		const Description = (data: Field.Component.Description = {}) =>
@@ -912,6 +1053,32 @@ class FieldSchema<
 				"data-issue": issue && state!.issues!.indexOf(issue), // issue index starting from 0
 				...data,
 			});
+
+		if (this.item) {
+			const cells = () => this.#cells({ state, options: given, ...props });
+
+			return {
+				Description,
+				Issue,
+				Root: (data: Field.Component.Root.Group = {}) => jsx("fieldset", data),
+				Legend: (data: Field.Component.Legend = {}) =>
+					jsx("legend", { children: label, ...data }),
+				...this,
+				// built when read, the default layout renders each cell itself
+				get rows() {
+					return cells().map((row) =>
+						Array.isArray(row)
+							? row[0][component](row[1], row[2])
+							: Object.fromEntries(
+									Object.entries(row).map(([key, cell]) => [
+										key,
+										cell[0][component](cell[1], cell[2]),
+									]),
+								),
+					);
+				},
+			};
+		}
 
 		if (options && this.tag !== "select") {
 			// radio/checkboxes
@@ -970,7 +1137,8 @@ class FieldSchema<
 
 				if (value !== undefined) {
 					if (this.tag === "textarea") {
-						attrs.children = value;
+						// each of `lines()` on its own line
+						attrs.children = Array.isArray(value) ? value.join("\n") : value;
 					} else if (this.tag === "input") {
 						if (this.type === "checkbox") {
 							attrs.checked = value;
@@ -1001,11 +1169,15 @@ class FieldSchema<
 	 * @param props Field control props including `name` of the field to render
 	 * @returns Component that renders the HTML field with default structure
 	 */
-	[render]<S extends Field.Shape>(props: Field.Component.Props<S, false>) {
+	[render]<S extends Field.Shape>(
+		props: Field.Component.Props<S, false>,
+		named?: string,
+	): JSX.Element {
 		// the sub-components of each kind of field, told apart by `options` and `tag` below
 		const c = this[component](
 			props,
-		) as unknown as Field.Component<Field.Any> & {
+			named,
+		) as unknown as Field.Component<Field.Cell> & {
 			Legend: (props?: Field.Component.Legend) => JSX.Element;
 			Option: (props: Field.Component.Option<Field.Options>) => JSX.Element;
 		};
@@ -1013,29 +1185,124 @@ class FieldSchema<
 
 		return c.Root({
 			children: [
-				options && this.tag !== "select"
-					? // radio/checkboxes, a group with a legend, each value labelled
+				this.item
+					? // a list, a group with a legend, each item's fields together
 						[
 							c.Legend(),
-							options.map((value) =>
-								jsx("div", {
-									children: [c.Control({ value }), c.Label({ value })],
-								}),
+							this.#cells(props).map((row) =>
+								Array.isArray(row)
+									? row[0][render](row[1], row[2])
+									: jsx("div", {
+											children: Object.values(row).map((cell) =>
+												cell[0][render](cell[1], cell[2]),
+											),
+										}),
 							),
 						]
-					: [
-							c.Label(),
-							// a select has an option for each value
-							c.Control(
-								options && {
-									children: options.map((value) => c.Option({ value })),
-								},
-							),
-						],
+					: options && this.tag !== "select"
+						? // radio/checkboxes, a group with a legend, each value labelled
+							[
+								c.Legend(),
+								options.map((value) =>
+									jsx("div", {
+										children: [c.Control({ value }), c.Label({ value })],
+									}),
+								),
+							]
+						: [
+								c.Label(),
+								// a select has an option for each value
+								c.Control(
+									options && {
+										children: [
+											// a browser chooses a select's first option, so one
+											// that may be left empty starts with an empty choice
+											!(props.required ?? this.#required()) &&
+												!this.#config.props?.multiple &&
+												jsx("option", { value: "" }),
+											options.map((value) => c.Option({ value })),
+										],
+									},
+								),
+							],
 				c.Description(),
 				c.Issue(),
 			],
 		});
+	}
+
+	/**
+	 * @template S Form shape type
+	 * @param props The list's props
+	 * @returns Each row of the list: its filled items, then empty ones. A row is
+	 * its cell, or its cells by name, each as the field, the props that render
+	 * it, and what it is called.
+	 */
+	#cells<S extends Field.Shape>({
+		state,
+		rows,
+		...props
+	}: Field.Component.Props<S, false>) {
+		const item = this.item as Field.Item;
+		const { name } = props;
+		const value = state?.values?.[name];
+		const filled: unknown[] = Array.isArray(value) ? value : [];
+		const values: Record<string, unknown> = {};
+
+		filled.forEach((row, place) => {
+			if (item instanceof FieldSchema) values[`${name}.${place}`] = row;
+			else if (row && typeof row === "object")
+				for (const key of Object.keys(item))
+					values[`${name}.${place}.${key}`] = (row as Record<string, unknown>)[
+						key
+					];
+		});
+
+		// each cell finds its value and its issue by its own name
+		const depth = item instanceof FieldSchema ? 2 : 3;
+		const cells = {
+			id: state?.id ?? "",
+			values,
+			issues: state?.issues?.map((issue) =>
+				issue.path[0] === name && issue.path.length > 1
+					? new Schema.Issue(
+							issue.expected,
+							[
+								issue.path.slice(0, depth).join("."),
+								...issue.path.slice(depth),
+							],
+							issue.message,
+						)
+					: issue,
+			),
+		} as unknown as Field.State<Field.Shape>;
+
+		const cell = (field: Field.Cell, name: string, named: string) =>
+			[
+				field,
+				// never required: a row left empty is left out
+				{ ...props, name, state: cells, required: false },
+				named,
+			] as const;
+
+		return Array.from(
+			{
+				// every filled row, and one more unless told how many to show
+				length:
+					rows === undefined
+						? filled.length + 1
+						: Math.max(Number(rows), filled.length),
+			},
+			(_, place) =>
+				item instanceof FieldSchema
+					? cell(item, `${name}.${place}`, String(place + 1))
+					: Object.fromEntries(
+							Object.entries(item).map(([key, field]) => [
+								key,
+								cell(field, `${name}.${place}.${key}`, key),
+							]),
+						),
+		);
 	}
 
 	/**
@@ -1058,10 +1325,13 @@ export namespace Field {
 	/** Fields by name, as a route's `fields` takes them. */
 	export type Shape = Record<string, Field.Any>;
 
-	/** Persisted form value */
-	export type Value = string | number | boolean | string[];
+	/** Persisted form value, a list's is its items */
+	export type Value = Value.Cell | Value.Cell[] | Record<string, Value.Cell>[];
 
 	export namespace Value {
+		/** Value of one control, or of a cell of a list */
+		export type Cell = string | number | boolean | string[];
+
 		/**
 		 * Value map by field name.
 		 *
@@ -1105,7 +1375,14 @@ export namespace Field {
 		 * @template S Form shape
 		 */
 		type NonStreamNames<S extends Shape> = {
-			[K in keyof S]-?: S[K] extends Field.Instance<any, any, any, any, infer P>
+			[K in keyof S]-?: S[K] extends Field.Instance<
+				any,
+				any,
+				any,
+				any,
+				infer P,
+				any
+			>
 				? P extends true
 					? never
 					: K
@@ -1208,6 +1485,9 @@ export namespace Field {
 		/** What registration says when a user already has the value, set with `taken()` */
 		readonly taken?: string;
 
+		/** What each item of a list is */
+		readonly item?: Item;
+
 		/** Field props */
 		readonly props?: Props | undefined;
 	}
@@ -1216,10 +1496,15 @@ export namespace Field {
 	 * Raw field value before schema parsing.
 	 *
 	 * Single-value fields read one entry, multi-value fields read all entries,
-	 * and checkboxes read presence.
+	 * checkboxes read presence, and lists read each item's cells.
 	 */
-	export type Input =
-		FormDataEntryValue | FormDataEntryValue[] | boolean | undefined;
+	export type Input = Input.Cell | Input.Cell[] | Record<string, Input.Cell>[];
+
+	export namespace Input {
+		/** Raw value of one field, or of a cell of a list */
+		export type Cell =
+			FormDataEntryValue | FormDataEntryValue[] | boolean | undefined;
+	}
 
 	/**
 	 * @param data FormData or URLSearchParams
@@ -1228,8 +1513,33 @@ export namespace Field {
 	 */
 	export type Read = (data: FormData | URLSearchParams, name: string) => Input;
 
-	/** Form field tag name */
-	export type Tag = "input" | "textarea" | "select";
+	/** Form field tag name, a list is a `fieldset` of its items */
+	export type Tag = "input" | "textarea" | "select" | "fieldset";
+
+	/** A field of a list's item: any but another list or a streamed field */
+	export type Cell = Instance<
+		any,
+		Exclude<Tag, "fieldset">,
+		Type,
+		Options | undefined
+	>;
+
+	/** What each item of a list is: a field, or fields by name */
+	export type Item = Cell | Readonly<Record<string, Cell>>;
+
+	export namespace Item {
+		/**
+		 * Parsed value of an item.
+		 *
+		 * @template I Item
+		 */
+		export type Output<I extends Item> =
+			I extends Schema<infer O>
+				? O
+				: I extends Schema.Object.Shape
+					? Util.Prettify<Schema.Infer<I>>
+					: never;
+	}
 
 	/** `<input type=...>` */
 	export type Type = JSX.IntrinsicElements["input"]["type"];
@@ -1245,6 +1555,7 @@ export namespace Field {
 	 * @template Type Input type
 	 * @template Values Options of a select, radio, or checkbox group
 	 * @template Stream Whether the field streams as a multipart part
+	 * @template Item What each item of a list is
 	 */
 	export type Instance<
 		Output = unknown,
@@ -1252,15 +1563,17 @@ export namespace Field {
 		Type extends Field.Type = Field.Type,
 		Values extends Field.Options | undefined = undefined,
 		Stream extends boolean | undefined = undefined,
-	> = FieldSchema<Output, Tag, Type, Values, Stream>;
+		Item extends Field.Item | undefined = undefined,
+	> = FieldSchema<Output, Tag, Type, Values, Stream, Item>;
 
-	/** Any field - `<input type=...>` / `<select>` / `<textarea>` */
+	/** Any field - `<input type=...>` / `<select>` / `<textarea>` / a list */
 	export type Any = Instance<
 		any,
 		Tag,
 		Type,
 		Options | undefined,
-		boolean | undefined
+		boolean | undefined,
+		Item | undefined
 	>;
 
 	/**
@@ -1292,6 +1605,12 @@ export namespace Field {
 			 * layout labels it.
 			 */
 			readonly options?: readonly string[] | undefined;
+
+			/**
+			 * How many rows a list shows. Without it, a list shows its items and
+			 * one empty row to add another. Every item is always shown.
+			 */
+			readonly rows?: number | undefined;
 
 			/** Form state */
 			readonly state?: (I extends true ? URL : Field.State<S>) | undefined;
@@ -1395,78 +1714,121 @@ export namespace Field {
 			 * @returns Issue container paragraph
 			 */
 			Issue: (props?: Component.Issue) => JSX.Element;
-		} & (F extends Instance<any, "select", Field.Type, infer V>
-			? V extends Options
-				? // select
-					{
-						/** The select's options */
-						options: V;
+		} & (F extends { readonly tag: "fieldset"; readonly item: infer I }
+			? // list
+				{
+					/**
+					 * @param props Root props
+					 * @returns Root container fieldset
+					 */
+					Root: (props?: Component.Root.Group) => JSX.Element;
 
-						/**
-						 * @param props Root props
-						 * @returns Root container div
-						 */
-						Root: (props?: Component.Root) => JSX.Element;
+					/**
+					 * @param props Legend element props
+					 * @returns Legend element
+					 */
+					Legend: (props?: Component.Legend) => JSX.Element;
 
-						/**
-						 * @param props Label props
-						 * @returns Label element
-						 */
-						Label: (props?: Component.Label) => JSX.Element;
-
-						/**
-						 * @param props Control props
-						 * @returns Control select element
-						 */
-						Control: (props?: Component.Control<"select">) => JSX.Element;
-
-						/**
-						 * @param props Option props
-						 * @returns Select option element
-						 */
-						Option: (props: Component.Option<V>) => JSX.Element;
-					}
-				: never
-			: F extends Instance<any, "input", Field.Type, infer V>
+					/**
+					 * The list's rows, its items and then the empty ones: each is
+					 * its field's component, or its fields' components by name
+					 */
+					rows: readonly (I extends Cell
+						? Component<I>
+						: { readonly [K in keyof I]: Component<Extract<I[K], Cell>> })[];
+				}
+			: F extends Instance<any, "select", Field.Type, infer V>
 				? V extends Options
-					? // radio/checkboxes
+					? // select
 						{
-							/** The group's options */
+							/** The select's options */
 							options: V;
 
 							/**
 							 * @param props Root props
-							 * @returns Root container fieldset
+							 * @returns Root container div
 							 */
-							Root: (props?: Component.Root.Group) => JSX.Element;
+							Root: (props?: Component.Root) => JSX.Element;
 
 							/**
-							 * @param props Legend element props
-							 * @returns Legend element
-							 */
-							Legend: (props?: Component.Legend) => JSX.Element;
-
-							/**
-							 * @param props Label props including `value`
+							 * @param props Label props
 							 * @returns Label element
 							 */
-							Label: (props: Component.Label.Group<V>) => JSX.Element;
+							Label: (props?: Component.Label) => JSX.Element;
 
 							/**
 							 * @param props Control props
-							 * @returns Control input element
+							 * @returns Control select element
 							 */
-							Control: (
-								props?: Component.Control.Group<"input", V>,
-							) => JSX.Element;
+							Control: (props?: Component.Control<"select">) => JSX.Element;
 
 							/**
 							 * @param props Option props
-							 * @returns Both label and input elements together
+							 * @returns Select option element
 							 */
-							Option: (props: Component.Option.Input<V>) => JSX.Element;
+							Option: (props: Component.Option<V>) => JSX.Element;
 						}
-					: // regular input
+					: never
+				: F extends Instance<any, "input", Field.Type, infer V>
+					? V extends Options
+						? // radio/checkboxes
+							{
+								/** The group's options */
+								options: V;
+
+								/**
+								 * @param props Root props
+								 * @returns Root container fieldset
+								 */
+								Root: (props?: Component.Root.Group) => JSX.Element;
+
+								/**
+								 * @param props Legend element props
+								 * @returns Legend element
+								 */
+								Legend: (props?: Component.Legend) => JSX.Element;
+
+								/**
+								 * @param props Label props including `value`
+								 * @returns Label element
+								 */
+								Label: (props: Component.Label.Group<V>) => JSX.Element;
+
+								/**
+								 * @param props Control props
+								 * @returns Control input element
+								 */
+								Control: (
+									props?: Component.Control.Group<"input", V>,
+								) => JSX.Element;
+
+								/**
+								 * @param props Option props
+								 * @returns Both label and input elements together
+								 */
+								Option: (props: Component.Option.Input<V>) => JSX.Element;
+							}
+						: // regular input
+							{
+								/**
+								 * @param props Root props
+								 * @returns Root container div
+								 */
+								Root: (props?: Component.Root) => JSX.Element;
+
+								/**
+								 * @param props Label props
+								 * @returns Label element
+								 */
+								Label: (props?: Component.Label) => JSX.Element;
+
+								/**
+								 * @param props Control props
+								 * @returns Control input element
+								 */
+								Control: (props?: Component.Control<"input">) => JSX.Element;
+							}
+					: // textarea
 						{
 							/**
 							 * @param props Root props
@@ -1482,30 +1844,10 @@ export namespace Field {
 
 							/**
 							 * @param props Control props
-							 * @returns Control input element
+							 * @returns Control textarea element
 							 */
-							Control: (props?: Component.Control<"input">) => JSX.Element;
-						}
-				: // textarea
-					{
-						/**
-						 * @param props Root props
-						 * @returns Root container div
-						 */
-						Root: (props?: Component.Root) => JSX.Element;
-
-						/**
-						 * @param props Label props
-						 * @returns Label element
-						 */
-						Label: (props?: Component.Label) => JSX.Element;
-
-						/**
-						 * @param props Control props
-						 * @returns Control textarea element
-						 */
-						Control: (props?: Component.Control<"textarea">) => JSX.Element;
-					})
+							Control: (props?: Component.Control<"textarea">) => JSX.Element;
+						})
 	>;
 
 	/** Any field props */
@@ -1661,10 +2003,11 @@ export class Field {
 		// that would keep `Field` in bundles that only use `Form`
 		normalizers.add(Field.#toNumber);
 
-		return new FieldSchema(
+		return new FieldSchema<number, "input", T>(
 			{ props },
-			Schema.number(required).preprocess(Field.#toNumber),
-		);
+			// text, such as an agent's, is not a field left empty
+			{ type: "number", message: numeric, missing: required },
+		).preprocess(Field.#toNumber);
 	}
 
 	/**
@@ -1786,6 +2129,75 @@ export class Field {
 	 */
 	static textarea(): Field.Instance<string, "textarea"> {
 		return new FieldSchema({ tag: "textarea" }, Schema.string(required));
+	}
+
+	/**
+	 * A list of text, such as steps or tags. People write one on each line of
+	 * a textarea, and agents send an array. Empty lines are left out, and the
+	 * list needs one line unless the field is made optional after.
+	 *
+	 * ```ts
+	 * Field.lines(); // "Chop\nFry" and ["Chop", "Fry"] are ["Chop", "Fry"]
+	 * ```
+	 *
+	 * @returns Textarea field whose value is its lines
+	 */
+	static lines(): Field.Instance<string[], "textarea"> {
+		return new FieldSchema(
+			{ tag: "textarea" },
+			Schema.array(Schema.string(), required),
+			(data, name) => {
+				// a person's one value is split, an agent's array has one each
+				const lines = data
+					.getAll(name)
+					.flatMap((value) =>
+						typeof value === "string" ? value.split(/\r?\n/) : [],
+					)
+					.map((line) => line.trim())
+					.filter(Boolean);
+
+				return lines.length ? lines : undefined;
+			},
+			Infinity,
+		);
+	}
+
+	/**
+	 * A list of items in order, where an item may repeat: each is one field,
+	 * or several by name. People fill a row for each item, and agents send an
+	 * array. A row left empty is left out, and the list needs one item unless
+	 * the field is made optional after.
+	 *
+	 * ```tsx
+	 * Field.list(Field.select(Schema.string().uuid())); // string[]
+	 * Field.list({ amount: Field.number(), name: Field.text() }); // { amount, name }[]
+	 * ```
+	 *
+	 * @template I Item type
+	 * @param item What each item is: a field, or fields by name
+	 * @returns List field whose value is an array of its items
+	 */
+	static list<I extends Field.Item>(
+		item: I,
+	): Field.Instance<
+		Field.Item.Output<I>[],
+		"fieldset",
+		Field.Type,
+		undefined,
+		undefined,
+		I
+	> {
+		return new FieldSchema(
+			{ tag: "fieldset", item },
+			Schema.array(
+				field(item)
+					? item
+					: Schema.object(item as Readonly<Record<string, Field.Cell>>),
+				required,
+			),
+			FieldSchema.items(item),
+			Infinity,
+		);
 	}
 
 	/**

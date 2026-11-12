@@ -185,12 +185,66 @@ const publish = Route.post("/recipes/:id/publish")
 
 Agents see these as an array of the schema's values, such as UUIDs, without a fixed list.
 
+A select that may be left empty, one made `.optional()`, starts with an empty choice, since a browser otherwise chooses its first option. Write that choice yourself in a layout made with `component`.
+
+### Lists
+
+`Field.lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Empty lines are left out.
+
+`Field.list()` is a list of items in order, where an item may repeat. Each item is one field, or several by name:
+
+```tsx
+const save = Route.post("/recipes/:id")
+	.fields({
+		steps: Field.lines(),
+		ingredients: Field.list({
+			amount: Field.number().optional(),
+			name: Field.text(),
+		}),
+		// choices known as the page renders, in the order they are chosen
+		sides: Field.list(Field.select(Schema.string().uuid())).optional(),
+	})
+	.use(async (c) => {
+		const result = await c.data();
+		if (result.issues) return c.redirect(result.url, 303);
+
+		result.data.steps; // ["Chop", "Fry"]
+		result.data.ingredients; // [{ amount: 2, name: "onion" }, { name: "salt" }]
+		result.data.sides; // ["0b8f…", "1c9e…"] | undefined
+	});
+```
+
+A list renders a `<fieldset>` with a row for each item, and one empty row to add another. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. Pass `rows` to show more, or a fixed number such as a week's seven dinners: `<save.Field name="sides" rows={7} options={ids} />`. Every item is always shown. A list needs one item unless it is made `.optional()`.
+
+Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. `values` takes the items as an array, as the route gets them.
+
+`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`. Each row is its field's component, or its fields' components by name, to lay out as a table or to label each choice:
+
+```tsx
+const Sides = save.component({ name: "sides", rows: 3, values, state: c.url });
+
+<Sides.Root>
+	<Sides.Legend />
+	{Sides.rows.map((Side) => (
+		<Side.Control aria-label="Side">
+			<option value=""></option>
+			{recipes.map((recipe) => (
+				<Side.Option value={recipe.id}>{recipe.title}</Side.Option>
+			))}
+		</Side.Control>
+	))}
+	<Sides.Issue />
+</Sides.Root>;
+```
+
+A list takes any field but another list or a [streamed](#streaming) file. `multiple()` is a different thing: one control that takes several of its own options or files, not rows.
+
 ## Input normalization
 
 ovr also normalizes a few common HTML form quirks before validation:
 
 - Single-value text-like inputs read blank values as missing during form parsing, so optional fields are omitted from the parsed output and `.default(...)` still applies like you would expect.
-- `Field.number()` and `Field.range()` coerce submitted strings into numbers, while blank submissions still count as missing instead of becoming `0`. Integers beyond `Number.MAX_SAFE_INTEGER` fail validation instead of being rounded.
+- `Field.number()` and `Field.range()` coerce submitted strings into numbers, while blank submissions still count as missing instead of becoming `0`. Text that is not a number, which only something other than a browser sends, is answered with "Enter a number". Integers beyond `Number.MAX_SAFE_INTEGER` fail validation instead of being rounded.
 - `Field.checkbox()` reads presence as a boolean, so omitted checkboxes become `false`.
 - `Field.file()` and `Field.file().multiple()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.
 
@@ -277,8 +331,8 @@ const submit = Route.post("/submit")
 
 ## Protections
 
-- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()` or a group made from a schema has no limit.
+- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()`, a group made from a schema, `Field.lines()`, or `Field.list()` has no limit.
 - You can still override the parser per request with `Context.data({ parts, memory, payload })`.
 - A body over a limit, such as more parts than the form has fields, throws a `Multipart.Limit`, one that is not multipart form data a `Multipart.Unsupported`, and malformed form data a `Multipart.Malformed`. Browsers submitting your form never send any of these. Left uncaught by the route, ovr answers them itself: 413 for a body over a limit, 415 for another content type, and 400 for malformed form data. Catch them in the route's own [middleware](/middleware) to answer differently; global middleware that [catches errors](/middleware#not-found-and-errors) sees the answer, not the error.
 - App-wide multipart defaults can be set with `new App({ multipart: { memory, payload, parts } })`.
-- Unexpected names in `FormData` or multipart requests become validation issues instead of being silently accepted.
+- Unexpected names in `FormData` or multipart requests become validation issues instead of being silently accepted. A list takes only the names of its own cells, such as `ingredients.0.amount`.

@@ -1199,3 +1199,376 @@ describe("choices a schema checks", () => {
 		expect(JSON.stringify(schema)).not.toContain("enum");
 	});
 });
+
+test("a select that may be left empty starts with an empty choice", async () => {
+	const form = new Form({
+		meal: Field.select(["dinner", "side"]).optional(),
+		course: Field.select(["dinner", "side"]),
+		tags: Field.select(["fall", "winter"]).multiple().optional(),
+	});
+
+	expect(await Markup.string(form.Field({ name: "meal" }))).toContain(
+		'<select id="meal" name="meal"><option value=""></option><option value="dinner">',
+	);
+	// a required one keeps the browser's choice of its first, and a
+	// multiple one is empty with nothing selected
+	expect(await Markup.string(form.Field({ name: "course" }))).not.toContain(
+		'value=""',
+	);
+	expect(await Markup.string(form.Field({ name: "tags" }))).not.toContain(
+		'value=""',
+	);
+
+	expect(
+		formValid(await form.parse(new URLSearchParams("meal=&course=side"))).data,
+	).toEqual({ course: "side" });
+});
+
+test("a number field sent text asks for a number, left empty it is required", async () => {
+	const form = new Form({
+		n: Field.number().optional(),
+		count: Field.number(),
+	});
+
+	const issues = formInvalid(
+		await form.parse(new URLSearchParams("n=Keep&count=")),
+	).issues;
+	expect(issues.map((issue) => [issue.path[0], issue.message])).toEqual([
+		["n", "Enter a number"],
+		["count", "Required field"],
+	]);
+});
+
+describe("lines", () => {
+	const form = new Form({
+		steps: Field.lines(),
+		tags: Field.lines().optional(),
+	});
+
+	test("a person's lines and an agent's values are the same array", async () => {
+		const typed = formValid(
+			await form.parse(
+				new URLSearchParams({
+					steps: "Chop\r\n\r\n  Fry  \nServe",
+					tags: " \n",
+				}),
+			),
+		);
+		expectTypeOf(typed.data.steps).toEqualTypeOf<string[]>();
+		expectTypeOf(typed.data.tags).toEqualTypeOf<string[] | undefined>();
+		expect(typed.data).toEqual({ steps: ["Chop", "Fry", "Serve"] });
+
+		const sent = new FormData();
+		sent.append("steps", "Chop");
+		sent.append("steps", "Fry");
+		expect(formValid(await form.parse(sent)).data).toEqual({
+			steps: ["Chop", "Fry"],
+		});
+
+		expect(
+			formInvalid(await form.parse(new FormData())).issues.map((issue) => [
+				issue.path,
+				issue.message,
+			]),
+		).toEqual([[["steps"], "Required field"]]);
+	});
+
+	test("render as a textarea with a line for each", async () => {
+		expect(
+			await Markup.string(
+				form.Field({ name: "steps", values: { steps: ["Chop", "Fry"] } }),
+			),
+		).toContain(
+			'<textarea id="steps" required name="steps">Chop\nFry</textarea>',
+		);
+	});
+
+	test("are an array of strings to agents", () => {
+		const schema = Schema.object(form.shape).toJsonSchema({ io: "input" });
+
+		expect(schema.properties).toEqual({
+			steps: { type: "array", items: { type: "string" } },
+			tags: { type: "array", items: { type: "string" } },
+		});
+		expect(schema.required).toEqual(["steps"]);
+	});
+});
+
+describe("a list", () => {
+	const id = Schema.string().uuid();
+	const a = "0b8f5d0a-6f0e-4d1f-9a8e-2f2b5c1d3e4f";
+	const b = "1c9e6e1b-7a1f-4e2a-8b9f-3a3c6d2e4f50";
+	const form = new Form({
+		dinners: Field.list(Field.select(id)).optional(),
+		ingredients: Field.list({
+			id: Field.hidden().optional(),
+			amount: Field.number().optional(),
+			name: Field.text(),
+			organic: Field.checkbox(),
+		})
+			.label("Ingredients")
+			.describe("What goes in")
+			.persist(),
+	});
+
+	test("reads its items in order, an item may repeat, and an empty row is left out", async () => {
+		const data = new FormData();
+		data.set("dinners.2", a);
+		data.set("dinners.0", b);
+		data.set("dinners.1", "");
+		data.set("dinners.3", b);
+		data.set("ingredients.0.amount", "2");
+		data.set("ingredients.0.name", "onion");
+		// cleared, with the ID its row was rendered with
+		data.set("ingredients.1.id", "7");
+		data.set("ingredients.1.amount", "");
+		data.set("ingredients.1.name", "");
+		data.set("ingredients.4.name", "salt");
+		data.set("ingredients.4.organic", "on");
+
+		const result = formValid(await form.parse(data));
+		expectTypeOf(result.data.dinners).toEqualTypeOf<string[] | undefined>();
+		expectTypeOf(result.data.ingredients).toEqualTypeOf<
+			{ name: string; organic: boolean; id?: string; amount?: number }[]
+		>();
+		expect(result.data).toEqual({
+			dinners: [b, a, b],
+			ingredients: [
+				{ amount: 2, name: "onion", organic: false },
+				{ name: "salt", organic: true },
+			],
+		});
+	});
+
+	test("needs an item unless it is optional, and each cell reports its own issue", async () => {
+		expect(
+			formInvalid(await form.parse(new FormData())).issues.map((issue) => [
+				issue.path,
+				issue.message,
+			]),
+		).toEqual([[["ingredients"], "Required field"]]);
+
+		const data = new FormData();
+		data.set("dinners.0", "not-an-id");
+		data.set("ingredients.0.name", "onion");
+		data.set("ingredients.1.amount", "some");
+		expect(
+			formInvalid(await form.parse(data)).issues.map((issue) => [
+				issue.path,
+				issue.message,
+			]),
+		).toEqual([
+			[["dinners", 0], "Expected UUID"],
+			[["ingredients", 1, "amount"], "Enter a number"],
+			[["ingredients", 1, "name"], "Required field"],
+		]);
+	});
+
+	test("takes only the names of its own cells", async () => {
+		for (const name of [
+			"ingredients.0",
+			"ingredients.0.price",
+			"ingredients.0.constructor",
+			"ingredients.x.name",
+			"ingredients.01.name",
+			"ingredients.name",
+			"dinners.0.id",
+			"dinners.",
+		]) {
+			const data = new FormData();
+			data.set("ingredients.0.name", "onion");
+			data.set(name, "x");
+			expect(
+				formInvalid(await form.parse(data)).issues.map((issue) => issue.path),
+				name,
+			).toEqual([[name]]);
+		}
+	});
+
+	test("renders a row for each item and an empty one, or as many as it is told", async () => {
+		const values = {
+			dinners: [a],
+			ingredients: [
+				{ id: 7, amount: 2, name: "onion", organic: true, added: new Date() },
+			],
+		};
+
+		const dinners = await Markup.string(
+			form.Field({ name: "dinners", values, options: [a, b] }),
+		);
+		expect(dinners).toBe(
+			"<fieldset><legend>dinners</legend>" +
+				`<div><label for="dinners.0">1</label><select id="dinners.0" name="dinners.0"><option value=""></option><option selected value="${a}">${a}</option><option value="${b}">${b}</option></select></div>` +
+				`<div><label for="dinners.1">2</label><select id="dinners.1" name="dinners.1"><option value=""></option><option value="${a}">${a}</option><option value="${b}">${b}</option></select></div>` +
+				"</fieldset>",
+		);
+
+		const week = await Markup.string(
+			form.Field({ name: "dinners", values, options: [a], rows: 7 }),
+		);
+		expect(week.match(/<select/g)).toHaveLength(7);
+		// every item is shown, however few rows are asked for
+		expect(
+			(
+				await Markup.string(
+					form.Field({ name: "dinners", values: { dinners: [a, b] }, rows: 1 }),
+				)
+			).match(/<select/g),
+		).toHaveLength(2);
+
+		const ingredients = await Markup.string(
+			form.Field({ name: "ingredients", values }),
+		);
+		expect(ingredients).toBe(
+			"<fieldset><legend>Ingredients</legend>" +
+				"<div>" +
+				'<input type="hidden" name="ingredients.0.id" value="7">' +
+				'<div><label for="ingredients.0.amount">amount</label><input id="ingredients.0.amount" type="number" name="ingredients.0.amount" value="2"></div>' +
+				'<div><label for="ingredients.0.name">name</label><input id="ingredients.0.name" type="text" name="ingredients.0.name" value="onion"></div>' +
+				'<div><label for="ingredients.0.organic">organic</label><input id="ingredients.0.organic" type="checkbox" name="ingredients.0.organic" checked></div>' +
+				"</div>" +
+				"<div>" +
+				'<input type="hidden" name="ingredients.1.id">' +
+				'<div><label for="ingredients.1.amount">amount</label><input id="ingredients.1.amount" type="number" name="ingredients.1.amount"></div>' +
+				'<div><label for="ingredients.1.name">name</label><input id="ingredients.1.name" type="text" name="ingredients.1.name"></div>' +
+				'<div><label for="ingredients.1.organic">organic</label><input id="ingredients.1.organic" type="checkbox" name="ingredients.1.organic"></div>' +
+				"</div>" +
+				'<p id="ingredients-description" data-description>What goes in</p>' +
+				"</fieldset>",
+		);
+	});
+
+	test("shows what was sent again, with each issue on its cell", async () => {
+		const data = new FormData();
+		data.set("ingredients.0.name", "onion");
+		data.set("ingredients.3.amount", "2");
+
+		const invalid = formInvalid(await form.parse(data));
+		expect(decodeState<typeof form.shape>(invalid.search).values).toEqual({
+			ingredients: [
+				{ name: "onion", organic: false },
+				{ amount: "2", organic: false },
+			],
+		});
+
+		const state = new URL(
+			`http://localhost/?${new URLSearchParams(invalid.search)}`,
+		);
+		const html = await Markup.string(
+			form.Field({ name: "ingredients", state }),
+		);
+		expect(html).toContain('name="ingredients.0.name" value="onion"');
+		expect(html).toContain(
+			'<input id="ingredients.1.name" autofocus aria-invalid="true" aria-describedby="ingredients.1.name-issue" type="text" name="ingredients.1.name"><p id="ingredients.1.name-issue" data-issue="0">Required field</p>',
+		);
+		// the list has no issue of its own
+		expect(html.match(/data-issue/g)).toHaveLength(1);
+		expect(html.match(/name="ingredients\.\d\.name"/g)).toHaveLength(3);
+
+		// a list cleared after it had items stays cleared
+		const cleared = formInvalid(await form.parse(new FormData()));
+		const again = await Markup.string(
+			form.Field({
+				name: "ingredients",
+				state: new URL(
+					`http://localhost/?${new URLSearchParams(cleared.search)}`,
+				),
+				values: { ingredients: [{ name: "onion" }] },
+			}),
+		);
+		expect(again).not.toContain("onion");
+		expect(again).toContain(
+			'<p id="ingredients-issue" data-issue="0">Required field</p>',
+		);
+	});
+
+	test("gives a custom layout each row's components", async () => {
+		const Dinners = form.component({
+			name: "dinners",
+			values: { dinners: [b] },
+			rows: 2,
+		});
+		expect(Dinners.rows).toHaveLength(2);
+		expect(
+			await Markup.string(
+				Dinners.rows[0]!.Control({
+					children: [
+						Dinners.rows[0]!.Option({ value: a, children: "Soup" }),
+						Dinners.rows[0]!.Option({ value: b, children: "Stew" }),
+					],
+				}),
+			),
+		).toBe(
+			`<select id="dinners.0" name="dinners.0"><option value="${a}">Soup</option><option selected value="${b}">Stew</option></select>`,
+		);
+		expect(await Markup.string(Dinners.Legend())).toBe(
+			"<legend>dinners</legend>",
+		);
+
+		const Ingredients = form.component({ name: "ingredients" });
+		const [row] = Ingredients.rows;
+		expect(
+			await Markup.string(row!.amount.Control({ "aria-label": "Amount" })),
+		).toBe(
+			'<input id="ingredients.0.amount" type="number" name="ingredients.0.amount" aria-label="Amount">',
+		);
+		expectTypeOf(row!.name.Label)
+			.parameter(0)
+			.toEqualTypeOf<Field.Component.Label | undefined>();
+		// @ts-expect-error a row has only the list's fields
+		row!.price;
+		// @ts-expect-error a list has no control of its own
+		Ingredients.Control;
+	});
+
+	test("is an array of its items to agents", () => {
+		const schema = Schema.object(form.shape).toJsonSchema({ io: "input" });
+
+		expect(schema.properties).toEqual({
+			dinners: { type: "array", items: { type: "string", format: "uuid" } },
+			ingredients: {
+				type: "array",
+				title: "Ingredients",
+				description: "What goes in",
+				items: {
+					type: "object",
+					properties: {
+						id: { type: "string" },
+						amount: { type: "number" },
+						name: { type: "string" },
+						organic: { type: "boolean", default: false },
+					},
+					required: ["name"],
+				},
+			},
+		});
+		expect(schema.required).toEqual(["ingredients"]);
+	});
+
+	test("fills a GET form from its cells in the URL", async () => {
+		const search = new Form({ tags: Field.list(Field.text()).optional() })[
+			query
+		]();
+
+		const html = await Markup.string(
+			search.Field({
+				name: "tags",
+				state: new URL("http://localhost/?tags.0=fall&tags.1=&tags.2=soup"),
+			}),
+		);
+		expect(html).toContain('name="tags.0" value="fall"');
+		expect(html).toContain('name="tags.1" value="soup"');
+		expect(html.match(/<input/g)).toHaveLength(3);
+	});
+
+	test("takes any number of parts, and only fields that are not lists or streamed", () => {
+		expect(form.parts).toBe(Infinity);
+
+		// @ts-expect-error a list of lists
+		Field.list(Field.list(Field.text()));
+		// @ts-expect-error a streamed file
+		Field.list({ photo: Field.file().stream() });
+		// @ts-expect-error a list has no control of its own
+		Field.list(Field.text()).control({ class: "wide" });
+	});
+});

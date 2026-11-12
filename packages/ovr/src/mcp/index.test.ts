@@ -554,8 +554,8 @@ describe("Mcp", () => {
 		);
 		expect(properties.plain.description).toBe("No period");
 		expect(properties.when.description).toBe("The day. Date as YYYY-MM-DD.");
-		// ovr's own guidance alone, as written
-		expect(properties.date.description).toBe("Date as YYYY-MM-DD");
+		// ovr's own guidance alone is a sentence too
+		expect(properties.date.description).toBe("Date as YYYY-MM-DD.");
 	});
 
 	test("choices given as the form renders are listed with its tool", async () => {
@@ -589,6 +589,164 @@ describe("Mcp", () => {
 		expect(text).toContain("**Tool:** `post_recipes_slug_publish`");
 		expect(text).toContain(`- \`photos\`, options: \`${a}\``);
 		// the tool's schema lists fixed choices
+		expect(text).not.toContain("`tags`");
+	});
+
+	test("a list and lines are arrays a tool takes, and a page shows as the arrays they are", async () => {
+		const { app, rpc } = setup();
+		const a = "3c0deb25-0b6e-4a8e-9f0e-6c1d2b3a4f5e";
+		const b = "4d1efc36-1c7f-4b9f-8a1f-7d2e3c4b5a6f";
+		const saved: unknown[] = [];
+		const save = Route.post("/recipes/:id")
+			.describe("Save a recipe")
+			.fields({
+				steps: Field.lines(),
+				tags: Field.lines().optional(),
+				dinners: Field.list(Field.select(Schema.string().uuid())).optional(),
+				ingredients: Field.list({
+					id: Field.hidden().optional(),
+					amount: Field.number().optional(),
+					unit: Field.select(Schema.string()).optional(),
+					name: Field.text(),
+					organic: Field.checkbox(),
+					photo: Field.file().optional(),
+				}),
+			})
+			.use(async (c) => {
+				const result = await c.data();
+				if (result.issues) return c.redirect(result.url, 303);
+				const { ingredients, ...rest } = result.data;
+				saved.push({
+					...rest,
+					ingredients: await Promise.all(
+						ingredients.map(async ({ photo, ...row }) => ({
+							...row,
+							...(photo && { photo: await photo.text() }),
+						})),
+					),
+				});
+				return "saved";
+			});
+		app.use(
+			save,
+			Route.get("/recipes/:id")
+				.describe("A recipe")
+				.use((c) =>
+					save.Form({
+						params: { id: c.params.id },
+						children: [
+							save.Field({ name: "steps", values: { steps: ["Chop", "Fry"] } }),
+							save.Field({ name: "tags" }),
+							save.Field({
+								name: "dinners",
+								options: [a, b],
+								values: { dinners: [b, a] },
+								rows: 4,
+							}),
+							save.Field({
+								name: "ingredients",
+								options: ["cup", "tsp"],
+								values: {
+									ingredients: [
+										{ id: "7", amount: 2, unit: "cup", name: "flour" },
+										{ id: "8", name: "salt", organic: true },
+									],
+								},
+							}),
+						],
+					}),
+				),
+		);
+
+		const { body: listed } = await rpc("tools/list");
+		const tool = listed.result.tools.find(
+			(tool: { name: string }) => tool.name === "post_recipes_id",
+		);
+		expect(tool.inputSchema.properties).toMatchObject({
+			steps: { type: "array", items: { type: "string" } },
+			dinners: { type: "array", items: { type: "string", format: "uuid" } },
+			ingredients: {
+				type: "array",
+				items: {
+					type: "object",
+					properties: {
+						amount: { type: "number" },
+						name: { type: "string" },
+						organic: { type: "boolean", default: false },
+						// a file in a row is sent as any file is
+						photo: { type: "object", required: ["name"] },
+					},
+					required: ["name"],
+				},
+			},
+		});
+		expect(tool.inputSchema.required).toEqual(["steps", "ingredients", "id"]);
+
+		const { body: called } = await rpc("tools/call", {
+			name: "post_recipes_id",
+			arguments: {
+				id: "soup",
+				steps: ["Chop", "Fry"],
+				dinners: [b, a, b],
+				ingredients: [
+					{ amount: 2, unit: "cup", name: "flour", organic: false },
+					{},
+					{
+						name: "salt",
+						organic: true,
+						photo: { name: "salt.txt", text: "white" },
+					},
+				],
+			},
+		});
+		expect(called.result).toMatchObject({ isError: false });
+		expect(saved).toEqual([
+			{
+				steps: ["Chop", "Fry"],
+				dinners: [b, a, b],
+				ingredients: [
+					{ amount: 2, unit: "cup", name: "flour", organic: false },
+					{ name: "salt", organic: true, photo: "white" },
+				],
+			},
+		]);
+
+		// an issue names the item and its field
+		const { body: wrong } = await rpc("tools/call", {
+			name: "post_recipes_id",
+			arguments: {
+				id: "soup",
+				steps: [],
+				ingredients: [{ name: "flour" }, { amount: "some" }],
+			},
+		});
+		expect(wrong.result.isError).toBe(true);
+		expect(wrong.result.content[0].text).toContain(
+			JSON.stringify({
+				issues: [
+					{ path: "steps", message: "Required field" },
+					{ path: "ingredients.1.amount", message: "Enter a number" },
+					{ path: "ingredients.1.name", message: "Required field" },
+				],
+			}),
+		);
+
+		const { body } = await rpc("resources/read", {
+			uri: "http://localhost/recipes/soup",
+		});
+		const text = body.result.contents[0].text;
+		expect(text).toContain("**Tool:** `post_recipes_id`");
+		expect(text).toContain('- `steps`: `["Chop","Fry"]`');
+		expect(text).toContain(
+			`- \`dinners\`: \`["${b}","${a}"]\`, options: \`${a}\`, \`${b}\``,
+		);
+		expect(text).toContain(
+			'- `ingredients`: `[{"id":"7","amount":2,"unit":"cup","name":"flour"},{"id":"8","name":"salt","organic":true}]`',
+		);
+		expect(text).toContain("- `ingredients.unit`, options: `cup`, `tsp`");
+		// rows are not listed apart, nor empty lines
+		expect(text).not.toContain("ingredients.0");
+		expect(text).not.toContain("dinners.0");
 		expect(text).not.toContain("`tags`");
 	});
 
@@ -1036,9 +1194,9 @@ describe("Mcp", () => {
 			day: {
 				type: "string",
 				format: "date",
-				description: "Date as YYYY-MM-DD",
+				description: "Date as YYYY-MM-DD.",
 			},
-			at: { type: "string", description: "Time as HH:mm" },
+			at: { type: "string", description: "Time as HH:mm." },
 		});
 	});
 
