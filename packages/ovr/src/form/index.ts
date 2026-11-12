@@ -1401,60 +1401,64 @@ class FieldSchema<
 			children: [
 				c.Legend(),
 				c.Description(),
-				jsx("table", {
-					children: [
-						jsx("thead", {
-							children: jsx("tr", {
-								children: columns.map(([key, field]) =>
-									// only the label, which names each cell of the column
-									jsx("th", {
-										id: id(key, "label"),
-										scope: "col",
-										children: field.#config.label ?? key,
-									}),
-								),
+				// an element of its own, so a wide table can scroll alone and the
+				// text around it keeps the fieldset's width
+				jsx("div", {
+					children: jsx("table", {
+						children: [
+							jsx("thead", {
+								children: jsx("tr", {
+									children: columns.map(([key, field]) =>
+										// only the label, which names each cell of the column
+										jsx("th", {
+											id: id(key, "label"),
+											scope: "col",
+											children: field.#config.label ?? key,
+										}),
+									),
+								}),
 							}),
-						}),
-						jsx("tbody", {
-							children: this.#cells(props).map((cells) => {
-								const row = cells as Readonly<Record<string, Placed>>;
+							jsx("tbody", {
+								children: this.#cells(props).map((cells) => {
+									const row = cells as Readonly<Record<string, Placed>>;
 
-								return jsx("tr", {
-									children: columns.map(([key, field], column) => {
-										const [, cell, named] = row[key]!;
-										const group = field.#grouped(cell);
-										const labelled = { "aria-labelledby": id(key, "label") };
-										const parts = field[component](
-											group ? cell : { ...cell, ...labelled },
-											named,
-											Boolean(field.description) && id(key, "description"),
-										) as unknown as Parts;
-										const body = field.#body(parts, cell);
+									return jsx("tr", {
+										children: columns.map(([key, field], column) => {
+											const [, cell, named] = row[key]!;
+											const group = field.#grouped(cell);
+											const labelled = { "aria-labelledby": id(key, "label") };
+											const parts = field[component](
+												group ? cell : { ...cell, ...labelled },
+												named,
+												Boolean(field.description) && id(key, "description"),
+											) as unknown as Parts;
+											const body = field.#body(parts, cell);
 
-										return jsx("td", {
-											children: [
-												// a row's hidden values, such as its ID
-												!column &&
-													fields.map(
-														([key, field]) =>
-															field.type === "hidden" &&
-															field[render](row[key]![1], row[key]![2]),
-													),
-												group
-													? jsx("div", {
-															role: "group",
-															...labelled,
-															children: body,
-														})
-													: body,
-												parts.Issue(),
-											],
-										});
-									}),
-								});
+											return jsx("td", {
+												children: [
+													// a row's hidden values, such as its ID
+													!column &&
+														fields.map(
+															([key, field]) =>
+																field.type === "hidden" &&
+																field[render](row[key]![1], row[key]![2]),
+														),
+													group
+														? jsx("div", {
+																role: "group",
+																...labelled,
+																children: body,
+															})
+														: body,
+													parts.Issue(),
+												],
+											});
+										}),
+									});
+								}),
 							}),
-						}),
-					],
+						],
+					}),
 				}),
 				// what each column is, once under the table: a heading has no
 				// room for it. Each cell of the column is read with its text.

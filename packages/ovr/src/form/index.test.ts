@@ -1629,7 +1629,7 @@ describe("a list", () => {
 			"<fieldset><legend>Ingredients</legend>" +
 				// before the rows it explains
 				'<p id="ingredients-description" data-description>What goes in</p>' +
-				"<table>" +
+				"<div><table>" +
 				"<thead><tr>" +
 				'<th id="ingredients.amount-label" scope="col">amount</th>' +
 				'<th id="ingredients.name-label" scope="col">name</th>' +
@@ -1643,7 +1643,7 @@ describe("a list", () => {
 				'<td><input type="hidden" name="ingredients.1.id"><input id="ingredients.1.amount" type="number" name="ingredients.1.amount" aria-labelledby="ingredients.amount-label"></td>' +
 				'<td><input id="ingredients.1.name" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"></td>' +
 				'<td><input id="ingredients.1.organic" type="checkbox" name="ingredients.1.organic" aria-labelledby="ingredients.organic-label"></td>' +
-				"</tr></tbody></table>" +
+				"</tr></tbody></table></div>" +
 				"</fieldset>",
 		);
 	});
@@ -1746,7 +1746,7 @@ describe("a list", () => {
 			'<input id="items.0.name" aria-describedby="items.name-description" type="text" name="items.0.name" aria-labelledby="items.name-label">',
 		);
 		expect(table).toContain(
-			'</table><p data-description><span>name</span>: <span id="items.name-description">What to buy</span></p></fieldset>',
+			'</table></div><p data-description><span>name</span>: <span id="items.name-description">What to buy</span></p></fieldset>',
 		);
 		expect(table.match(/What to buy/g)).toHaveLength(1);
 
@@ -1835,7 +1835,8 @@ describe("a list", () => {
 				styled.Field({ name: "items", class: "wide", disabled: true }),
 			),
 		).toContain(
-			'<fieldset class="wide" disabled><legend>items</legend><table>',
+			// the table in an element of its own, to scroll alone
+			'<fieldset class="wide" disabled><legend>items</legend><div><table>',
 		);
 		// a control of a row has none of them
 		expect(
