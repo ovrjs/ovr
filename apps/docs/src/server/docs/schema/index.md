@@ -295,7 +295,7 @@ A list has no script, so a person has the rows the page rendered, and saves to g
 </script>
 ```
 
-A list of one field has a `<div>` for each row in place of a `<tr>`, `:scope > div`, and each row's label is its number.
+A list of one field has a `<div>` for each row in place of a `<tr>`, `:scope > div`, and each row's label is its number. To write the script in JSX, keep its text in a string and render it with `<script type="module">{Markup.raw(text)}</script>`, so its quotes and angle brackets are not escaped.
 
 A list takes any field but another list or a [streamed](#streaming) file. `multiple()` is a different thing: one control that takes several of its own options or files, not rows.
 

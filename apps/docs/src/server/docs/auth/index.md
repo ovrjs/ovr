@@ -3,7 +3,7 @@ title: Auth
 description: Passkey authentication with customizable forms, stored in your Postgres database.
 ---
 
-`Auth` handles passkey registration, login, logout, and sessions. It stores its data in your Postgres [database](/database), and creates accounts in your users table. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
+`Auth` handles passkey registration, login, logout, and sessions, [adding a passkey](#add-a-passkey) to an account, and one-time [sign-in links](#sign-in-link). It stores its data in your Postgres [database](/database), and creates accounts in your users table. ovr supplies the verification, storage, rate limits, browser script, routes, and form components.
 
 ## Create
 
@@ -76,7 +76,7 @@ app.use(
 );
 ```
 
-`Register` includes your registration fields, a submit button, and an accessible error message. `Login` opens the passkey picker without asking for an email or password. Both establish a session and redirect after success.
+`Register` includes your registration fields, a submit button, and an accessible error message. `Login` opens the passkey picker without asking for an email or password. Both establish a session and redirect after success. `auth.forms(c)` also has `Add`, `Link`, and `Logout`, each described below.
 
 The forms automatically load a same-origin JavaScript module. It handles the passkey prompt, validation, errors, retries, and normal form submission, including forms arriving in a streamed response.
 
@@ -358,6 +358,8 @@ Auth limits sign-in for you, per client, in the `rate_limits` table. The limits 
 | ------------------- | ---------------- |
 | Registration        | 5 per 10 minutes |
 | Login               | 20 per minute    |
+| Adding a passkey    | 5 per 10 minutes |
+| Sign-in link        | Counts as login  |
 | Agent authorization | 30 per minute    |
 | Agent tokens        | 60 per minute    |
 
