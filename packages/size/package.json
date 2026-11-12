@@ -1,14 +1,14 @@
 {
 	"name": "@ovrjs/size",
 	"private": true,
-	"version": "0.0.2-next.12",
+	"version": "0.0.2-next.13",
 	"type": "module",
 	"scripts": {
 		"check": "tsc",
 		"build": "node build.js && tsc -p tsconfig.build.json"
 	},
 	"dependencies": {
-		"ovr": "7.0.0-next.12"
+		"ovr": "7.0.0-next.13"
 	},
 	"devDependencies": {
 		"@types/node": "^26.1.2",
