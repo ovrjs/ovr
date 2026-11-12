@@ -20,6 +20,7 @@
     "agent-limits",
     "choices-for-agents",
     "choices-return-source",
+    "confirm-passkey",
     "groups",
     "hints",
     "joined-descriptions",
