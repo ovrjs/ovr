@@ -37,6 +37,13 @@ export namespace Auth {
 		Login: Route.Form<string> & {
 			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
+		/**
+		 * Adds another passkey to the account signed in, such as on a new
+		 * device. Pass `state={c.url}` to return to the page it is on.
+		 */
+		Add: Route.Form<string> & {
+			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+		};
 		Logout: Route.Form<string>;
 	}
 

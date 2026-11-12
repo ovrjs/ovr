@@ -44,6 +44,8 @@ export namespace Passkey {
 		readonly nonce?: string;
 		/** Form fields the ceremony is for, from `Passkey.fields`, checked when it starts. */
 		readonly fields?: string;
+		/** Text of the form's own button, in place of the method's. */
+		readonly submit?: string;
 	}
 	/** The ceremony a signed form may start. */
 	export type Expected = {
@@ -56,6 +58,10 @@ export namespace Passkey {
 				method: "register";
 				/** Name of the new passkey, at most 256 characters, not blank */
 				name: string;
+				/** The account the passkey is added to, a new account without it */
+				user?: string;
+				/** Credential IDs the account has, which the authenticator skips */
+				exclude?: readonly string[];
 		  }
 		| {
 				method: "login";
@@ -138,7 +144,9 @@ export class Passkey {
 						props.children ?? [
 							route.Fields?.(),
 							jsx("button", {
-								children: method === "register" ? "Create account" : "Log in",
+								children:
+									options.submit ??
+									(method === "register" ? "Create account" : "Log in"),
 							}),
 						],
 						// A supplied Issue component takes precedence over this accessible fallback.
@@ -244,10 +252,9 @@ export class Passkey {
 			throw new Issue("bootstrap binding");
 		// the same method as the form's, checked above
 		const register = expected.method === "register";
-		if (
-			register &&
-			(!bootstrap.user || Codec.encode(bootstrap.user).length > 64)
-		)
+		// an account that is signed in, or the new one the form was made for
+		const user = (register && expected.user) || bootstrap.user;
+		if (register && (!user || Codec.encode(user).length > 64))
 			throw new Issue("user");
 		const rp = new URL(auth.options.origin).hostname;
 		const ceremony = crypto.randomUUID();
@@ -260,7 +267,7 @@ export class Passkey {
 				action: bootstrap.action,
 				origin: bootstrap.origin,
 				expiration: Date.now() + 2 * Time.minute,
-				...(bootstrap.user ? { user: bootstrap.user } : {}),
+				...(user ? { user } : {}),
 				...(expected.fields ? { fields: expected.fields } : {}),
 			})) === false
 		) {
@@ -274,11 +281,18 @@ export class Passkey {
 					challenge,
 					rp: { id: rp, name: rp },
 					user: {
-						id: Codec.Base64Url.encode(Codec.encode(bootstrap.user!)),
+						id: Codec.Base64Url.encode(Codec.encode(user!)),
 						name: expected.name,
 						displayName: expected.name,
 					},
 					pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+					// an authenticator that holds one of the account's makes no other
+					...(expected.exclude?.length && {
+						excludeCredentials: expected.exclude.map((id) => ({
+							type: "public-key" as const,
+							id,
+						})),
+					}),
 					authenticatorSelection: {
 						residentKey: "required",
 						requireResidentKey: true,

@@ -46,11 +46,13 @@ export function configure<U extends Auth.Users>(
 	const limits = {
 		register: limiter("register", 5, 10 * Time.minute),
 		login: limiter("login", 20, Time.minute),
+		add: limiter("add", 5, 10 * Time.minute),
 	};
 	const paths = {
 		register: "/auth/register",
 		login: "/auth/login",
 		logout: "/auth/logout",
+		passkey: "/auth/passkey",
 		options: "/_passkey/options",
 	} as const;
 	const page = options.page ?? "/login";
@@ -91,16 +93,33 @@ export function configure<U extends Auth.Users>(
 		return used;
 	};
 
-	const back = (c: Pick<Context, "redirect">, method: string, retry = 0) => {
-		const target = new URL(page, options.origin);
+	/** @returns The page a form was on, if it said, or where a login goes */
+	const returning = (c: Pick<Context, "url">) => {
+		const target = new URL(
+			c.url.searchParams.get(Form.params[0]) ?? redirect,
+			options.origin,
+		);
+		return target.origin === options.origin
+			? target
+			: new URL(redirect, options.origin);
+	};
+
+	const back = (
+		c: Pick<Context, "redirect" | "url">,
+		method: string,
+		retry = 0,
+	) => {
+		// a passkey is added from a page of the account, not the login page
+		const target =
+			method === "add" ? returning(c) : new URL(page, options.origin);
 		target.searchParams.set("_auth", method);
 		if (retry) target.searchParams.set("_retry", String(retry));
 		c.redirect(target, 303);
 	};
 
 	const admit = async (
-		c: Limiter.Context & Pick<Context, "text" | "redirect">,
-		method: "register" | "login",
+		c: Limiter.Context & Pick<Context, "text" | "redirect" | "url">,
+		method: "register" | "login" | "add",
 		prompt: boolean,
 	) => {
 		const admission = await limits[method].check(
@@ -129,9 +148,9 @@ export function configure<U extends Auth.Users>(
 		c.redirect(state(c).resume(redirect), 303);
 	};
 	const guard =
-		(method: "register" | "login" | "logout", prompt = false) =>
+		(method: "register" | "login" | "logout" | "add", prompt = false) =>
 		async (
-			c: Limiter.Context & Pick<Context, "text" | "redirect">,
+			c: Limiter.Context & Pick<Context, "text" | "redirect" | "url">,
 			next: Middleware.Next,
 		) => {
 			noStore(c.res.headers);
@@ -241,12 +260,49 @@ export function configure<U extends Auth.Users>(
 				action: paths.login,
 			});
 		});
+	const add = Route.post(paths.passkey)
+		.fields(Passkey.shape)
+		.use(guard("add"), async (c) => {
+			if (!(await Issue.data(c))) throw new Issue("passkey request");
+			const session = await state(c).session();
+			if (!session) throw new Issue("session");
+			const credential = await new Passkey(c, state(c)).register();
+			// the account that started the ceremony is still the one signed in
+			if (credential.user !== session.user) throw new Issue("user");
+			await storage
+				.register(() => {}, credential)
+				.catch((error: unknown) => {
+					// a passkey that is already an account's
+					if (Database.unique(error)) throw new Issue("passkey");
+					throw error;
+				});
+			c.redirect(returning(c), 303);
+		});
+	const adding = Route.post(`${paths.options}/add`)
+		.fields({ bootstrap: Field.hidden() })
+		.use(guard("add", true), async (c) => {
+			const input = await Issue.data(c);
+			if (!input || input.issues) throw new Issue("passkey request");
+			const session = await state(c).session();
+			if (!session) return c.text("Sign in to add a passkey.", 401);
+			const [account] = await options.database
+				.sql`SELECT * FROM ${users} WHERE ${users.columns.id!} = ${session.user}`;
+			await Passkey.issue(c, state(c), input.data.bootstrap, {
+				method: "register",
+				action: paths.passkey,
+				name: name((account ?? {}) as Field.Parse.Data<Shape>),
+				user: session.user,
+				exclude: await storage.credentials.list(session.user),
+			});
+		});
 	const routes = [
 		register,
 		login,
 		logout,
+		add,
 		registration,
 		assertion,
+		adding,
 		Passkey.client,
 	];
 	return {
@@ -287,17 +343,27 @@ export function configure<U extends Auth.Users>(
 									? `Too many authentication requests. ${wait ? `Try again in ${wait} seconds.` : "Try again now."}${method === "register" ? " If you already registered, sign in." : ""}`
 									: method === "register"
 										? "Registration could not be completed. If you already registered, sign in; otherwise try again."
-										: "Authentication failed. Try again."
+										: method === "add"
+											? "The passkey could not be added. Try again."
+											: "Authentication failed. Try again."
 								: undefined),
 					});
+			// another passkey for the account signed in, such as on a new device
+			const Add = passkey.form(add, "register", {
+				...props,
+				endpoint: adding.url(),
+				submit: "Add passkey",
+			});
 			Register.Issue = error("register", Register.Issue);
 			Login.Issue = error("login", Login.Issue);
+			Add.Issue = error("add", Add.Issue);
 			return {
 				Register: Object.assign(Register, {
 					Field: fields.Field,
 					Fields: fields.Fields,
 				}),
 				Login,
+				Add,
 				Logout: (props: Parameters<typeof logout.Form>[0]) =>
 					jsx(logout.Form, {
 						...props,

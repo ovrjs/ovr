@@ -30,6 +30,7 @@ const origin = "https://example.com";
 const endpoint = "/_passkey/options";
 const user = "user-1";
 const id = Codec.Base64Url.encode(Uint8Array.of(1, 2, 3, 4));
+const first = id;
 const bytes = (...parts: Uint8Array[]) => {
 	const result = new Uint8Array(
 		parts.reduce((sum, part) => sum + part.length, 0),
@@ -81,6 +82,7 @@ async function registration(
 		rp = "example.com",
 		invalid = false,
 		client = {},
+		credential: id = first,
 	}: {
 		flags?: number;
 		counter?: number;
@@ -88,6 +90,8 @@ async function registration(
 		rp?: string;
 		invalid?: boolean;
 		client?: object;
+		/** The new passkey's ID, four bytes */
+		credential?: string;
 	} = {},
 ) {
 	const key = await crypto.subtle.exportKey("jwk", keys.publicKey);
@@ -1407,6 +1411,140 @@ describe("configured passkey callbacks", () => {
 		const logout = await cold.post("/auth/logout", new FormData(), current);
 		expect(logout.headers.get("location")).toBe("/login");
 		expect(await warm.storage.size(db.auth_sessions)).toBe(0);
+	});
+
+	test("adds another passkey to the account signed in, and only to it", async () => {
+		const state = managed();
+		state.app.use(
+			Route.get("/passkeys").use((c) => {
+				const { Add } = state.service.forms(c);
+				return jsx(Add, { state: c.url });
+			}),
+		);
+		const second = Codec.Base64Url.encode(Uint8Array.of(5, 6, 7, 8));
+
+		/** Open the page and ask for the ceremony, as the form's script does */
+		const begin = async (cookie: string) => {
+			const page = await state.app.fetch(origin + "/passkeys", {
+				headers: { cookie },
+			});
+			const html = await page.text();
+			const script = html.match(/<script[^>]+>/)![0];
+			const data = new FormData();
+			data.set(
+				"bootstrap",
+				script.match(/data-bootstrap="([^"]+)"/)![1]!.replaceAll("&quot;", '"'),
+			);
+			cookie ||= page.headers
+				.getSetCookie()
+				.map((v) => v.split(";")[0])
+				.join("; ");
+			const response = await state.post(
+				script.match(/data-endpoint="([^"]+)"/)![1]!,
+				data,
+				cookie,
+			);
+			return { html, cookie, response };
+		};
+		const finish = (ceremony: string, credential: unknown, cookie: string) => {
+			const data = new FormData();
+			data.set("credential", JSON.stringify(credential));
+			data.set("ceremony", ceremony);
+			return state.post("/auth/passkey?_return=%2Fpasskeys", data, cookie);
+		};
+
+		// nobody signed in: no ceremony, and nothing to add to
+		const stranger = await begin("");
+		expect(stranger.html).toContain("<button>Add passkey</button>");
+		expect(stranger.html).toContain(
+			'action="/auth/passkey?_return=%2Fpasskeys"',
+		);
+		expect(stranger.response.status).toBe(401);
+
+		const start = await state.start("register");
+		const registered = await state.submit(
+			start,
+			await registration(start.options.challenge, await pair()),
+		);
+		const cookie =
+			start.cookie +
+			"; " +
+			registered.headers.getSetCookie().at(-1)!.split(";")[0];
+		const account = (await state.storage.record(id))!.user;
+
+		const adding = await begin(cookie);
+		const json: {
+			ceremony: string;
+			options: PublicKeyCredentialCreationOptionsJSON;
+		} = await adding.response.json();
+		// for the same account, by the name it registered with, and not on
+		// an authenticator that already holds its passkey
+		expect(json.options.user.id).toBe(
+			Codec.Base64Url.encode(Codec.encode(account)),
+		);
+		expect(json.options.user.name).toBe("user@example.com");
+		expect(json.options.excludeCredentials).toEqual([
+			{ type: "public-key", id },
+		]);
+
+		const keys = await pair();
+		const added = await finish(
+			json.ceremony,
+			await registration(json.options.challenge, keys, { credential: second }),
+			cookie,
+		);
+		expect(added.status).toBe(303);
+		expect(added.headers.get("location")).toBe(origin + "/passkeys");
+		expect((await state.storage.record(second))?.user).toBe(account);
+		expect(await state.storage.size(db.auth_credentials)).toBe(2);
+		expect(await state.created()).toHaveLength(1);
+
+		// the new passkey signs in as the account
+		const login = await state.start("login", start.cookie);
+		const logged = await state.submit(
+			login,
+			{
+				...(await assertion(login.options.challenge, keys, {
+					handle: account,
+				})),
+				id: second,
+				rawId: second,
+			},
+			"/auth/login",
+		);
+		expect(logged.status).toBe(303);
+		expect(logged.headers.get("location")).toBe("/account");
+
+		// one that is already an account's is not added again
+		const again: typeof json = await (await begin(cookie)).response.json();
+		const repeat = await finish(
+			again.ceremony,
+			await registration(again.options.challenge, await pair(), {
+				credential: second,
+			}),
+			cookie,
+		);
+		expect(repeat.headers.get("location")).toBe(origin + "/passkeys?_auth=add");
+		expect(await state.storage.size(db.auth_credentials)).toBe(2);
+
+		// a ceremony started signed in is not finished signed out
+		const last: typeof json = await (await begin(cookie)).response.json();
+		const out = await finish(
+			last.ceremony,
+			await registration(last.options.challenge, await pair(), {
+				credential: Codec.Base64Url.encode(Uint8Array.of(9, 9, 9, 9)),
+			}),
+			start.cookie,
+		);
+		expect(out.headers.get("location")).toBe(origin + "/passkeys?_auth=add");
+		expect(await state.storage.size(db.auth_credentials)).toBe(2);
+
+		const failed = await state.app.fetch(origin + "/passkeys?_auth=add", {
+			headers: { cookie },
+		});
+		expect(await failed.text()).toContain(
+			"The passkey could not be added. Try again.",
+		);
 	});
 
 	test("renders customizable fields and errors with external nonce-bearing scripts", async () => {

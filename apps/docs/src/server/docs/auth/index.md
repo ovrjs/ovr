@@ -140,6 +140,49 @@ The hidden `credential` and `ceremony` inputs are filled by the browser script.
 </form>
 ```
 
+### Add a passkey
+
+An account has the passkey it registered with. `<Add />` adds another to the account signed in, such as for a second device, or one that replaces a device that was lost. Render it on a page of the account, with `state` to return there:
+
+```tsx
+app.use(
+	Route.get("/account/passkeys").use(async (c) => {
+		const session = await c.session();
+		if (!session) return c.redirect("/login", 303);
+
+		const { Add } = auth.forms(c);
+		const passkeys = await database.sql`
+			SELECT * FROM ${database.auth_credentials}
+			WHERE ${database.auth_credentials.columns.user} = ${session.user}
+		`.parse(database.auth_credentials);
+
+		return (
+			<>
+				<p>{passkeys.length} passkeys</p>
+				<Add state={c.url} />
+			</>
+		);
+	}),
+);
+```
+
+The form's button is "Add passkey", and its children and `Add.Issue` are customized as the others are. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. Nobody signed in gets no ceremony.
+
+To remove a passkey, delete its row, and keep the account's last one, since nothing else signs in as it:
+
+```ts
+const credentials = database.auth_credentials;
+
+await database.sql`
+	DELETE FROM ${credentials}
+	WHERE ${credentials.columns.id} = ${id}
+		AND ${credentials.columns.user} = ${session.user}
+		AND (SELECT count(*) FROM ${credentials} WHERE ${credentials.columns.user} = ${session.user}) > 1
+`;
+```
+
+A passkey belongs to the site it was made on, so an account made at one origin, such as `localhost`, has none at another, such as the production domain, and cannot sign in there to add one. Sign the user in once another way, with `auth.login(c, user)`, and they add a passkey there. A link is one way: while signed in at the first origin, or from an admin script, store a random token with the user's ID and a short expiration, and give the user a link to the other origin with it. The route it opens takes the token, once, calls `auth.login`, and redirects to the page with `<Add />`. Treat the link as you would a password: anyone who has it is the user.
+
 ### Customization
 
 Supply children to control the markup and styling:
