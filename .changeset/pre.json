@@ -21,6 +21,7 @@
     "choices-return-source",
     "joined-descriptions",
     "json-tool-arguments",
+    "list-findings",
     "list-rows",
     "lists",
     "optional-select",
