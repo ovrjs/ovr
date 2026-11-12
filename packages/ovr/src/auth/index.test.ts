@@ -1244,11 +1244,11 @@ describe("configured passkey callbacks", () => {
 		},
 	);
 
-	test("a unique() field already used is said before the passkey prompt, a private one is not", async () => {
-		const accounts = new Table("unique_accounts", {
+	test("a taken() field already used is said before the passkey prompt, a private one is not", async () => {
+		const accounts = new Table("taken_accounts", {
 			id: Schema.string(),
 			email: Field.email(),
-			username: Field.text().unique("Someone already has this username"),
+			username: Field.text().taken("Someone already has this username"),
 		});
 		const database = new Database(
 			{ query: run, connect: async () => ({ query: run, release() {} }) },
@@ -1282,7 +1282,7 @@ describe("configured passkey callbacks", () => {
 			});
 		};
 		await engine.exec(
-			"CREATE TABLE unique_accounts (id text PRIMARY KEY, email text NOT NULL UNIQUE, username text NOT NULL UNIQUE)",
+			"CREATE TABLE taken_accounts (id text PRIMARY KEY, email text NOT NULL UNIQUE, username text NOT NULL UNIQUE)",
 		);
 		try {
 			await database.sql`INSERT INTO ${accounts} ${database.sql.values(accounts, { id: "1", email: "ross@example.com", username: "ross" })}`;
@@ -1295,7 +1295,7 @@ describe("configured passkey callbacks", () => {
 			expect((await start("ross@example.com", "cook")).ok).toBe(true);
 			expect((await start("cook@example.com", "cook")).ok).toBe(true);
 		} finally {
-			await engine.exec("DROP TABLE unique_accounts");
+			await engine.exec("DROP TABLE taken_accounts");
 		}
 	});
 

@@ -162,13 +162,13 @@ Supply children to control the markup and styling:
 
 The browser script updates this status element and hides the default fallback when you supply your own. With custom form children, it also adds missing protocol inputs, so you only need to render your application fields and submit button.
 
-Use field schemas for format checks: a field that fails one shows its own message, before the passkey prompt. Enforce uniqueness with database constraints, where errors stay generic, so registering with an email that has an account does not reveal it. A value anyone can see, such as a username, can say it is taken instead. Mark its field `unique()` with the message, and registration checks it before the passkey prompt:
+Use field schemas for format checks: a field that fails one shows its own message, before the passkey prompt. Enforce uniqueness with database constraints, where errors stay generic, so registering with an email that has an account does not reveal it. A value anyone can see, such as a username, can say it is taken instead. Give its field the message with `taken()`, and registration checks it before the passkey prompt:
 
 ```ts
 const users = new Table("users", {
 	id: Schema.string(),
 	email: Field.email(),
-	username: Field.text().unique("Someone already has this username"),
+	username: Field.text().taken("Someone already has this username"),
 });
 ```
 

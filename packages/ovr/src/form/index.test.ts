@@ -2,7 +2,7 @@ import { Markup } from "../markup/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
-import { Field, Form, query, unique } from "./index.js";
+import { Field, Form, query, taken } from "./index.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
 type FormValid<S extends Field.Shape> = Extract<
@@ -701,18 +701,18 @@ describe("Form schema", () => {
 		});
 	});
 
-	test("unique() is kept by what follows, and is for values people read", () => {
+	test("taken() is kept by what follows, and is for values people read", () => {
 		const field = Field.text()
-			.unique("Someone already has this username")
+			.taken("Someone already has this username")
 			.label("Username")
 			.refine((v) => v.length > 2, "Too short")
 			.optional();
-		expect(field[unique]).toBe("Someone already has this username");
-		expect(Field.text()[unique]).toBeUndefined();
+		expect(field[taken]).toBe("Someone already has this username");
+		expect(Field.text()[taken]).toBeUndefined();
 		// @ts-expect-error A password is never shown as taken
-		Field.password().unique("Taken");
+		Field.password().taken("Taken");
 		// @ts-expect-error Nor is a file
-		Field.file().unique("Taken");
+		Field.file().taken("Taken");
 	});
 
 	test("a label and a description are chained in any order, and kept by what follows", async () => {

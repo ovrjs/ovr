@@ -1,6 +1,6 @@
 import type { Context } from "../context/index.js";
 import { Database } from "../database/index.js";
-import { Field, Form, field, unique } from "../form/index.js";
+import { Field, Form, field, taken } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
@@ -76,19 +76,19 @@ export function configure<U extends Auth.Users>(
 
 	/**
 	 * @param data Registration values
-	 * @returns The message of each `unique()` field whose value a user has
+	 * @returns The message of each `taken()` field whose value a user has
 	 */
-	const used = async (data: Field.Parse.Data<Shape>) => {
-		const taken: Record<string, string> = {};
+	const conflicts = async (data: Field.Parse.Data<Shape>) => {
+		const used: Record<string, string> = {};
 		for (const name of fields.names) {
-			const message = shape[name]![unique];
+			const message = shape[name]![taken];
 			const value: unknown = Reflect.get(data, name);
 			if (message === undefined || value == null || value === "") continue;
 			const rows = await options.database
 				.sql`SELECT 1 FROM ${users} WHERE ${users.columns[name]!} = ${value} LIMIT 1`;
-			if (rows.length) taken[name] = message;
+			if (rows.length) used[name] = message;
 		}
-		return taken;
+		return used;
 	};
 
 	const back = (c: Pick<Context, "redirect">, method: string, retry = 0) => {
@@ -222,8 +222,8 @@ export function configure<U extends Auth.Users>(
 			const application = values(data);
 			// a public value already used, such as a username, is said before
 			// the passkey prompt, so no passkey is saved for a failed account
-			const taken = await used(application);
-			if (Object.keys(taken).length) return c.json({ fields: taken }, 422);
+			const used = await conflicts(application);
+			if (Object.keys(used).length) return c.json({ fields: used }, 422);
 			await Passkey.issue(c, state(c), data.bootstrap, {
 				method: "register",
 				action: paths.register,
