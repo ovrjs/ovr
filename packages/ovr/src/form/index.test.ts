@@ -1239,6 +1239,127 @@ test("a number field sent text asks for a number, left empty it is required", as
 	]);
 });
 
+describe("choices people call by another name", () => {
+	const form = new Form({
+		meal: Field.select({ dinner: "Dinner", crockpot: "Slow cooker" })
+			.optional()
+			.control({ placeholder: "Any meal" }),
+		effort: Field.radio({ easy: "Easy", constructor: "constructor" }),
+		tags: Field.checkboxes({ fall: "Fall", winter: "Winter" }).optional(),
+		side: Field.select(Schema.string()).optional(),
+		course: Field.select(["dinner", "side"]).control({
+			placeholder: "Choose a course",
+		}),
+	});
+
+	test("are sent by their value and shown by their label", async () => {
+		const result = formValid(
+			await form.parse(
+				new URLSearchParams("meal=crockpot&effort=easy&tags=fall&course=side"),
+			),
+		);
+		expectTypeOf(result.data.meal).toEqualTypeOf<
+			"dinner" | "crockpot" | undefined
+		>();
+		expectTypeOf(result.data.tags).toEqualTypeOf<
+			("fall" | "winter")[] | undefined
+		>();
+		expect(result.data).toEqual({
+			meal: "crockpot",
+			effort: "easy",
+			tags: ["fall"],
+			course: "side",
+		});
+		expect(
+			formInvalid(
+				await form.parse(
+					new URLSearchParams("meal=Slow+cooker&effort=easy&course=side"),
+				),
+			).issues.map((issue) => issue.path),
+		).toEqual([["meal"]]);
+
+		expect(
+			await Markup.string(
+				form.Field({ name: "meal", values: { meal: "crockpot" } }),
+			),
+		).toBe(
+			'<div><label for="meal">meal</label><select id="meal" name="meal"><option value="">Any meal</option><option value="dinner">Dinner</option><option selected value="crockpot">Slow cooker</option></select></div>',
+		);
+		expect(await Markup.string(form.Field({ name: "effort" }))).toContain(
+			'<input id="effort-easy" required type="radio" name="effort" value="easy"><label for="effort-easy">Easy</label>',
+		);
+		expect(await Markup.string(form.Field({ name: "tags" }))).toContain(
+			'<label for="tags-winter">Winter</label>',
+		);
+
+		// a custom layout gets them too, and may still say its own
+		const Meal = form.component({ name: "meal" });
+		expect(Meal.options).toEqual(["dinner", "crockpot"]);
+		expect(await Markup.string(Meal.Option({ value: "crockpot" }))).toBe(
+			'<option value="crockpot">Slow cooker</option>',
+		);
+		expect(
+			await Markup.string(Meal.Option({ value: "dinner", children: "Tea" })),
+		).toBe('<option value="dinner">Tea</option>');
+		// its empty choice is the layout's to write, without the attribute
+		expect(await Markup.string(Meal.Control())).toBe(
+			'<select id="meal" name="meal"></select>',
+		);
+	});
+
+	test("are given with the options of a field made from a schema", async () => {
+		expect(
+			await Markup.string(
+				form.Field({
+					name: "side",
+					options: { "7": "Rice", abc: "Beans" },
+					values: { side: "abc" },
+					placeholder: "No side",
+				}),
+			),
+		).toBe(
+			'<div><label for="side">side</label><select id="side" name="side"><option value="">No side</option><option value="7">Rice</option><option selected value="abc">Beans</option></select></div>',
+		);
+
+		// a field's own choices keep their own labels
+		expect(
+			await Markup.string(
+				form.Field({ name: "tags", options: { fall: "Autumn", spring: "x" } }),
+			),
+		).not.toContain("Autumn");
+	});
+
+	test("a select that must be chosen starts empty when it says what to choose", async () => {
+		expect(await Markup.string(form.Field({ name: "course" }))).toBe(
+			'<div><label for="course">course</label><select id="course" required name="course"><option value="">Choose a course</option><option value="dinner">dinner</option><option value="side">side</option></select></div>',
+		);
+	});
+
+	test("tell agents each value's label", () => {
+		const schema = Schema.object(form.shape).toJsonSchema({ io: "input" });
+
+		expect(schema.properties).toMatchObject({
+			meal: {
+				enum: ["dinner", "crockpot"],
+				description: "Choices: dinner (Dinner), crockpot (Slow cooker).",
+			},
+			// only where it is not the value itself
+			effort: {
+				enum: ["easy", "constructor"],
+				description: "Choices: easy (Easy).",
+			},
+			tags: {
+				type: "array",
+				items: { enum: ["fall", "winter"] },
+				description: "Choices: fall (Fall), winter (Winter).",
+			},
+		});
+		expect(
+			(schema.properties as Record<string, object>).course,
+		).not.toHaveProperty("description");
+	});
+});
+
 describe("lines", () => {
 	const form = new Form({
 		steps: Field.textarea().lines(),
@@ -1503,20 +1624,23 @@ describe("a list", () => {
 		const ingredients = await Markup.string(
 			form.Field({ name: "ingredients", values }),
 		);
+		// several fields are a table: a column each, named in its heading
 		expect(ingredients).toBe(
-			"<fieldset><legend>Ingredients</legend>" +
-				"<div>" +
-				'<input type="hidden" name="ingredients.0.id" value="7">' +
-				'<div><label for="ingredients.0.amount">amount</label><input id="ingredients.0.amount" type="number" name="ingredients.0.amount" value="2"></div>' +
-				'<div><label for="ingredients.0.name">name</label><input id="ingredients.0.name" type="text" name="ingredients.0.name" value="onion"></div>' +
-				'<div><label for="ingredients.0.organic">organic</label><input id="ingredients.0.organic" type="checkbox" name="ingredients.0.organic" checked></div>' +
-				"</div>" +
-				"<div>" +
-				'<input type="hidden" name="ingredients.1.id">' +
-				'<div><label for="ingredients.1.amount">amount</label><input id="ingredients.1.amount" type="number" name="ingredients.1.amount"></div>' +
-				'<div><label for="ingredients.1.name">name</label><input id="ingredients.1.name" type="text" name="ingredients.1.name"></div>' +
-				'<div><label for="ingredients.1.organic">organic</label><input id="ingredients.1.organic" type="checkbox" name="ingredients.1.organic"></div>' +
-				"</div>" +
+			"<fieldset><legend>Ingredients</legend><table>" +
+				"<thead><tr>" +
+				'<th id="ingredients.amount-label" scope="col">amount</th>' +
+				'<th id="ingredients.name-label" scope="col">name</th>' +
+				'<th id="ingredients.organic-label" scope="col">organic</th>' +
+				"</tr></thead><tbody>" +
+				"<tr>" +
+				'<td><input type="hidden" name="ingredients.0.id" value="7"><input id="ingredients.0.amount" type="number" name="ingredients.0.amount" aria-labelledby="ingredients.amount-label" value="2"></td>' +
+				'<td><input id="ingredients.0.name" type="text" name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"></td>' +
+				'<td><input id="ingredients.0.organic" type="checkbox" name="ingredients.0.organic" aria-labelledby="ingredients.organic-label" checked></td>' +
+				"</tr><tr>" +
+				'<td><input type="hidden" name="ingredients.1.id"><input id="ingredients.1.amount" type="number" name="ingredients.1.amount" aria-labelledby="ingredients.amount-label"></td>' +
+				'<td><input id="ingredients.1.name" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"></td>' +
+				'<td><input id="ingredients.1.organic" type="checkbox" name="ingredients.1.organic" aria-labelledby="ingredients.organic-label"></td>' +
+				"</tr></tbody></table>" +
 				'<p id="ingredients-description" data-description>What goes in</p>' +
 				"</fieldset>",
 		);
@@ -1541,9 +1665,11 @@ describe("a list", () => {
 		const html = await Markup.string(
 			form.Field({ name: "ingredients", state }),
 		);
-		expect(html).toContain('name="ingredients.0.name" value="onion"');
 		expect(html).toContain(
-			'<input id="ingredients.1.name" autofocus aria-invalid="true" aria-describedby="ingredients.1.name-issue" type="text" name="ingredients.1.name"><p id="ingredients.1.name-issue" data-issue="0">Required field</p>',
+			'name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"',
+		);
+		expect(html).toContain(
+			'<input id="ingredients.1.name" autofocus aria-invalid="true" aria-describedby="ingredients.1.name-issue" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"><p id="ingredients.1.name-issue" data-issue="0">Required field</p>',
 		);
 		// the list has no issue of its own
 		expect(html.match(/data-issue/g)).toHaveLength(1);
@@ -1610,10 +1736,15 @@ describe("a list", () => {
 			items: Field.list({ name: Field.text().describe("What to buy") }),
 		});
 
-		// the default layout renders each cell's description, and says so
-		expect(await Markup.string(described.Field({ name: "items" }))).toContain(
-			'<input id="items.0.name" aria-describedby="items.0.name-description" type="text" name="items.0.name"><p id="items.0.name-description" data-description>What to buy</p>',
+		// the default table describes a column once, in its heading
+		const table = await Markup.string(described.Field({ name: "items" }));
+		expect(table).toContain(
+			'<th id="items.name-label" scope="col">name<p id="items.name-description" data-description>What to buy</p></th>',
 		);
+		expect(table).toContain(
+			'<input id="items.0.name" aria-describedby="items.name-description" type="text" name="items.0.name" aria-labelledby="items.name-label">',
+		);
+		expect(table.match(/What to buy/g)).toHaveLength(1);
 
 		const [row] = described.component({ name: "items" }).rows;
 		expect(await Markup.string(row!.name.Control())).toBe(

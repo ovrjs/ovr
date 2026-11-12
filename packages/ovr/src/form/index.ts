@@ -719,7 +719,16 @@ class FieldSchema<
 		const { description } = this;
 		// what a browser's picker sends, which a string alone does not say
 		const format = FieldSchema.#formats[this.type as string];
-		const described = Prose.join(description, format);
+		// what people call a choice, where it is not its value
+		const named = Object.entries(this.#config.labels ?? {})
+			.filter(([value, label]) => label !== value)
+			.map(([value, label]) => `${value} (${label})`)
+			.join(", ");
+		const described = Prose.join(
+			description,
+			format,
+			named && `Choices: ${named}.`,
+		);
 
 		return {
 			...(label && { title: label }),
@@ -1058,9 +1067,33 @@ class FieldSchema<
 	 * @returns The field's own choices, those given for a field made from a
 	 * schema, or `undefined` for a field without choices
 	 */
-	#options(given: readonly string[] | undefined) {
+	#options(given: Field.Component.Props<Field.Shape>["options"]) {
 		const { options } = this;
-		return options && (options.length ? options : (given ?? []));
+		return (
+			options &&
+			(options.length
+				? options
+				: Array.isArray(given)
+					? (given as readonly string[])
+					: Object.keys(given ?? {}))
+		);
+	}
+
+	/**
+	 * @param given Options given as the form renders
+	 * @returns What people call each choice: the field's own labels, or those
+	 * given with the options of a field made from a schema
+	 */
+	#labels(given: Field.Component.Props<Field.Shape>["options"]) {
+		const labels =
+			this.#config.labels ??
+			(this.options?.length || Array.isArray(given)
+				? undefined
+				: (given as Readonly<Record<string, string>> | undefined));
+
+		// own labels only, so a value such as "constructor" is itself
+		return (value: string) =>
+			labels && Object.hasOwn(labels, value) ? labels[value]! : value;
 	}
 
 	/**
@@ -1071,17 +1104,19 @@ class FieldSchema<
 	[component]<S extends Field.Shape>(
 		props: Field.Component.Props<S, false>,
 		named?: string,
-		described?: boolean,
+		described?: boolean | string,
 	): Field.Component<this>;
 	[component]<S extends Field.Shape>(
 		{ state, options: given, ...props }: Field.Component.Props<S, false>,
 		// what a list calls its cell, which is named by its place
 		named: string = props.name,
 		// if the control is read with its description. A row laid out by
-		// hand, such as in a table, seldom renders each cell's.
-		described = true,
+		// hand, such as in a table, seldom renders each cell's, and the
+		// default table has one for the column, whose ID this is.
+		described: boolean | string = true,
 	): unknown {
 		const options = this.#options(given);
+		const text = this.#labels(given);
 		const value = state?.values?.[props.name];
 		const issue = state?.issues?.find(
 			(i) =>
@@ -1102,8 +1137,9 @@ class FieldSchema<
 			"aria-invalid": issue && "true",
 			// read with the control: its description, then what is wrong with it
 			"aria-describedby":
-				[described && descriptionId, issueId].filter(Boolean).join(" ") ||
-				undefined,
+				[described === true ? descriptionId : described, issueId]
+					.filter(Boolean)
+					.join(" ") || undefined,
 			...this.#config.props,
 			...props,
 		};
@@ -1184,7 +1220,7 @@ class FieldSchema<
 				value,
 				...rest
 			}: Field.Component.Label.Group<Field.Options>) =>
-				jsx("label", { for: groupId(value), children: value, ...rest });
+				jsx("label", { for: groupId(value), children: text(value), ...rest });
 
 			return {
 				Description,
@@ -1216,6 +1252,9 @@ class FieldSchema<
 				!hidden && jsx("label", { for: control.id, children: label, ...data }),
 			Control: (data?: Field.Component.Control<Tag>) => {
 				const attrs = { ...control, ...data };
+				// a select has none: it is the text of its empty choice
+				if (this.tag === "select")
+					delete (attrs as { placeholder?: unknown }).placeholder;
 
 				if (value !== undefined) {
 					if (this.tag === "textarea") {
@@ -1237,7 +1276,7 @@ class FieldSchema<
 				options &&
 				((data: Field.Component.Option<Field.Options>) =>
 					jsx("option", {
-						children: data.value,
+						children: text(data.value),
 						selected: chosen(data.value),
 						...data,
 					})),
@@ -1255,58 +1294,158 @@ class FieldSchema<
 		props: Field.Component.Props<S, false>,
 		named?: string,
 	): JSX.Element {
-		// the sub-components of each kind of field, told apart by `options` and `tag` below
-		const c = this[component](
-			props,
-			named,
-		) as unknown as Field.Component<Field.Cell> & {
-			Legend: (props?: Field.Component.Legend) => JSX.Element;
-			Option: (props: Field.Component.Option<Field.Options>) => JSX.Element;
-		};
-		const options = this.#options(props.options);
+		const { item } = this;
+		// a list of several fields is a table, a column for each
+		if (item && !(item instanceof FieldSchema)) return this.#table(props, item);
+
+		const c = this[component](props, named) as unknown as Parts;
 
 		return c.Root({
 			children: [
-				this.item
-					? // a list, a group with a legend, each item's fields together
+				item
+					? // a list of one field, a group with a legend, a row for each
 						[
 							c.Legend(),
-							this.#cells(props).map((row) =>
-								Array.isArray(row)
-									? row[0][render](row[1], row[2])
-									: jsx("div", {
-											children: Object.values(row).map((cell) =>
-												cell[0][render](cell[1], cell[2]),
-											),
-										}),
-							),
+							this.#cells(props).map((row) => {
+								const [field, cell, named] = row as Placed;
+								return field[render](cell, named);
+							}),
 						]
-					: options && this.tag !== "select"
-						? // radio/checkboxes, a group with a legend, each value labelled
-							[
-								c.Legend(),
-								options.map((value) =>
-									jsx("div", {
-										children: [c.Control({ value }), c.Label({ value })],
+					: this.#grouped(props)
+						? [c.Legend(), this.#body(c, props)]
+						: [c.Label(), this.#body(c, props)],
+				c.Description(),
+				c.Issue(),
+			],
+		});
+	}
+
+	/**
+	 * @template S Form shape type
+	 * @param props Field control props
+	 * @returns `true` for a radio or checkbox group
+	 */
+	#grouped<S extends Field.Shape>(props: Field.Component.Props<S, false>) {
+		return Boolean(this.#options(props.options)) && this.tag !== "select";
+	}
+
+	/**
+	 * @template S Form shape type
+	 * @param c The field's parts
+	 * @param props Field control props
+	 * @returns The field's control: a group's boxes each with its label, or
+	 * one control, a select with its options
+	 */
+	#body<S extends Field.Shape>(
+		c: Parts,
+		props: Field.Component.Props<S, false>,
+	) {
+		const options = this.#options(props.options);
+		if (!options) return c.Control();
+
+		if (this.tag !== "select")
+			return options.map((value) =>
+				jsx("div", { children: [c.Control({ value }), c.Label({ value })] }),
+			);
+
+		const placeholder =
+			props.placeholder ??
+			(this.#config.props as Field.Props.Select | undefined)?.placeholder;
+
+		return c.Control({
+			children: [
+				// a browser chooses a select's first option, so one that may be
+				// left empty, or that says what to choose, starts with an empty
+				// choice
+				(placeholder !== undefined || !(props.required ?? this.#required())) &&
+					!this.#config.props?.multiple &&
+					jsx("option", { value: "", children: placeholder }),
+				options.map((value) => c.Option({ value })),
+			],
+		});
+	}
+
+	/**
+	 * @template S Form shape type
+	 * @param props The list's props
+	 * @param item The fields of each item, by name
+	 * @returns A list of several fields: a table with a column for each
+	 * field, named and described once in its heading, and a row for each item
+	 */
+	#table<S extends Field.Shape>(
+		props: Field.Component.Props<S, false>,
+		item: Readonly<Record<string, Field.Cell>>,
+	) {
+		const c = this[component](props) as unknown as Parts;
+		const fields = Object.entries(item);
+		const columns = fields.filter(([, field]) => field.type !== "hidden");
+		const id = (key: string, part: string) => `${props.name}.${key}-${part}`;
+
+		return c.Root({
+			children: [
+				c.Legend(),
+				jsx("table", {
+					children: [
+						jsx("thead", {
+							children: jsx("tr", {
+								children: columns.map(([key, field]) =>
+									jsx("th", {
+										id: id(key, "label"),
+										scope: "col",
+										children: [
+											field.#config.label ?? key,
+											field.description &&
+												jsx("p", {
+													id: id(key, "description"),
+													children: field.description,
+													"data-description": true,
+												}),
+										],
 									}),
 								),
-							]
-						: [
-								c.Label(),
-								// a select has an option for each value
-								c.Control(
-									options && {
-										children: [
-											// a browser chooses a select's first option, so one
-											// that may be left empty starts with an empty choice
-											!(props.required ?? this.#required()) &&
-												!this.#config.props?.multiple &&
-												jsx("option", { value: "" }),
-											options.map((value) => c.Option({ value })),
-										],
-									},
-								),
-							],
+							}),
+						}),
+						jsx("tbody", {
+							children: this.#cells(props).map((cells) => {
+								const row = cells as Readonly<Record<string, Placed>>;
+
+								return jsx("tr", {
+									children: columns.map(([key, field], column) => {
+										const [, cell, named] = row[key]!;
+										const group = field.#grouped(cell);
+										const labelled = { "aria-labelledby": id(key, "label") };
+										const parts = field[component](
+											group ? cell : { ...cell, ...labelled },
+											named,
+											Boolean(field.description) && id(key, "description"),
+										) as unknown as Parts;
+										const body = field.#body(parts, cell);
+
+										return jsx("td", {
+											children: [
+												// a row's hidden values, such as its ID
+												!column &&
+													fields.map(
+														([key, field]) =>
+															field.type === "hidden" &&
+															field[render](row[key]![1], row[key]![2]),
+													),
+												group
+													? jsx("div", {
+															role: "group",
+															...labelled,
+															children: body,
+														})
+													: body,
+												parts.Issue(),
+											],
+										});
+									}),
+								});
+							}),
+						}),
+					],
+				}),
 				c.Description(),
 				c.Issue(),
 			],
@@ -1420,6 +1559,24 @@ class FieldSchema<
 		return field.#persist;
 	}
 }
+
+/** The parts of any kind of field, as its default layout uses them */
+type Parts = {
+	Root: (props?: Field.Component.Root) => JSX.Element;
+	Legend: (props?: Field.Component.Legend) => JSX.Element;
+	Label: (props?: { value?: string }) => JSX.Element;
+	Control: (props?: { value?: string; children?: unknown }) => JSX.Element;
+	Option: (props: Field.Component.Option<Field.Options>) => JSX.Element;
+	Description: (props?: Field.Component.Description) => JSX.Element;
+	Issue: (props?: Field.Component.Issue) => JSX.Element;
+};
+
+/** A cell of a list's row: its field, the props that render it, and its name */
+type Placed = readonly [
+	field: Field.Cell,
+	props: Field.Component.Props<Field.Shape, false>,
+	named: string,
+];
 
 /**
  * @param value Schema
@@ -1586,6 +1743,9 @@ export namespace Field {
 		/** Choices of a select, radio, or checkbox group */
 		readonly options?: V;
 
+		/** What people call each choice, by its value */
+		readonly labels?: Readonly<Record<string, string>> | undefined;
+
 		/** What people call the field, set with `label()` */
 		readonly label?: string;
 
@@ -1655,6 +1815,15 @@ export namespace Field {
 	export type Options = readonly [string, ...string[]];
 
 	/**
+	 * Fixed choices of a select, radio, or checkbox group: the values, or what
+	 * people call each one by its value, such as `{ crockpot: "Slow cooker" }`.
+	 *
+	 * @template V Value type
+	 */
+	export type Choices<V extends string> =
+		readonly [V, ...V[]] | Readonly<Record<V, string>>;
+
+	/**
 	 * Field instance type
 	 *
 	 * @template Output Parsed value
@@ -1708,10 +1877,12 @@ export namespace Field {
 			/**
 			 * Choices of a checkbox group, radio group, or select made from a
 			 * schema, such as `Field.checkboxes(Schema.string().uuid())`, known
-			 * as the form renders. Each is shown as its value unless a custom
-			 * layout labels it.
+			 * as the form renders: the values, each shown as it is, or what
+			 * people call each one by its value, such as `{ [recipe.id]:
+			 * recipe.title }`.
 			 */
-			readonly options?: readonly string[] | undefined;
+			readonly options?:
+				readonly string[] | Readonly<Record<string, string>> | undefined;
 
 			/**
 			 * How many rows a list shows on this form, over what its
@@ -1980,7 +2151,15 @@ export namespace Field {
 		export type Input = JSX.IntrinsicElements["input"] & Chained;
 
 		/** Attributes of a `<select>` field's control */
-		export type Select = JSX.IntrinsicElements["select"] & Chained;
+		export type Select = JSX.IntrinsicElements["select"] &
+			Chained & {
+				/**
+				 * Text of the select's empty first choice, such as "Any meal". A
+				 * select that must be chosen has the choice too when this is
+				 * set, and the browser asks for another.
+				 */
+				readonly placeholder?: string | undefined;
+			};
 
 		/** Attributes of a `<textarea>` field's control */
 		export type Textarea = JSX.IntrinsicElements["textarea"] & Chained;
@@ -2193,12 +2372,26 @@ export class Field {
 	 * @returns Fixed choices, and the schema that checks one, when given a list
 	 */
 	static #choices<V extends string>(
-		options: readonly [V, ...V[]] | Schema<V>,
-	): [options: readonly V[], choice: Schema<V>] {
-		return options instanceof Schema
-			? // given to `Field` or `component` as the form renders
-				[[], options]
-			: [options, Schema.enum(options, choose)];
+		options: Field.Choices<V> | Schema<V>,
+	): Pick<Field.Config<readonly [V, ...V[]]>, "options" | "labels"> & {
+		choice: Schema<V>;
+	} {
+		// given to `Field` or `component` as the form renders
+		if (options instanceof Schema)
+			return {
+				options: [] as unknown as readonly [V, ...V[]],
+				choice: options,
+			};
+
+		const labels = Array.isArray(options)
+			? undefined
+			: (options as Readonly<Record<V, string>>);
+		const values = (labels ? Object.keys(labels) : options) as unknown as [
+			V,
+			...V[],
+		];
+
+		return { options: values, labels, choice: Schema.enum(values, choose) };
 	}
 
 	/**
@@ -2215,15 +2408,15 @@ export class Field {
 	 * @returns Checkbox group input field
 	 */
 	static checkboxes<const V extends string>(
-		options: readonly [V, ...V[]] | Schema<V>,
+		options: Field.Choices<V> | Schema<V>,
 	): Field.Instance<V[], "input", "checkbox", readonly [V, ...V[]]> {
-		const [values, choice] = Field.#choices(options);
+		const { choice, ...config } = Field.#choices(options);
 
 		return new FieldSchema(
-			{ options: values as readonly [V, ...V[]], props: { type: "checkbox" } },
+			{ ...config, props: { type: "checkbox" } },
 			Schema.array(choice, choose),
 			readMany,
-			values.length || Infinity,
+			config.options!.length || Infinity,
 		);
 	}
 
@@ -2233,14 +2426,11 @@ export class Field {
 	 * @returns Radio group input field
 	 */
 	static radio<const V extends string>(
-		options: readonly [V, ...V[]] | Schema<V>,
+		options: Field.Choices<V> | Schema<V>,
 	): Field.Instance<V, "input", "radio", readonly [V, ...V[]]> {
-		const [values, choice] = Field.#choices(options);
+		const { choice, ...config } = Field.#choices(options);
 
-		return new FieldSchema(
-			{ options: values as readonly [V, ...V[]], props: { type: "radio" } },
-			choice,
-		);
+		return new FieldSchema({ ...config, props: { type: "radio" } }, choice);
 	}
 
 	/**
@@ -2295,13 +2485,10 @@ export class Field {
 	 * @returns Select field
 	 */
 	static select<const V extends string>(
-		options: readonly [V, ...V[]] | Schema<V>,
+		options: Field.Choices<V> | Schema<V>,
 	): Field.Instance<V, "select", Field.Type, readonly [V, ...V[]]> {
-		const [values, choice] = Field.#choices(options);
+		const { choice, ...config } = Field.#choices(options);
 
-		return new FieldSchema(
-			{ tag: "select", options: values as readonly [V, ...V[]] },
-			choice,
-		);
+		return new FieldSchema({ ...config, tag: "select" }, choice);
 	}
 }

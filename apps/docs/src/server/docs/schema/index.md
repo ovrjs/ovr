@@ -170,7 +170,13 @@ const recipe = Route.post("/recipes/:id")
 	.use(handler);
 ```
 
-When the options are only known as the page renders, such as which of a recipe's own photos to publish, give a schema that checks each value instead, and pass the options to the field as it renders. Each is labelled with its value unless you label it with `component`. The schema only checks the form of a value, so check that each one is the user's own in the handler.
+People see each option as its value. To call one something else, give the options as an object of each value and its label. The value is still what is sent, the route gets, and an agent sends, and the tool's description lists each value with its label:
+
+```tsx
+Field.select({ dinner: "Dinner", crockpot: "Slow cooker" });
+```
+
+When the options are only known as the page renders, such as which of a recipe's own photos to publish, give a schema that checks each value instead, and pass the options to the field as it renders: the values, or an object of each value and its label. The schema only checks the form of a value, so check that each one is the user's own in the handler.
 
 ```tsx
 const publish = Route.post("/recipes/:id/publish")
@@ -185,7 +191,9 @@ const publish = Route.post("/recipes/:id/publish")
 
 Agents see these as an array of the schema's values, such as UUIDs, without a fixed list.
 
-A select that may be left empty, one made `.optional()`, starts with an empty choice, since a browser otherwise chooses its first option. Write that choice yourself in a layout made with `component`.
+> An object lists keys that are whole numbers first, in number order, whatever order they were written in. Options whose values are numeric IDs are shown in that order.
+
+A select that may be left empty, one made `.optional()`, starts with an empty choice, since a browser otherwise chooses its first option. `placeholder` is that choice's text: `Field.select(meals).optional().control({ placeholder: "Any meal" })`. A select that must be chosen starts with the choice too when it has a `placeholder`, such as "Choose a meal", and the browser asks for another. Write the choice yourself in a layout made with `component`.
 
 ### Lists
 
@@ -214,7 +222,7 @@ const save = Route.post("/recipes/:id")
 	});
 ```
 
-A list renders a `<fieldset>` with a row for each item, and one empty row to add another. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
+A list renders a `<fieldset>` with a row for each item, and one empty row to add another. A list of several fields is a `<table>` in it, with a column for each field: its label, and its description, are said once in the column's heading, and each cell has the control and its issue. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
 
 Set how many rows a list shows with `control`, wherever it renders, or pass `rows` to one form, as with any field's attributes. A week's seven dinners are `Field.list(Field.select(id)).max(7).control({ rows: 7 })`, and an edit form with room to add is `<save.Field name="ingredients" rows={ingredients.length + 5} />`. Every item is always shown, and a list never shows more rows than its `max()`, so a full list has no empty row.
 
@@ -222,23 +230,31 @@ Each control is named by its list and its place, `sides.0` or `ingredients.0.amo
 
 Mark a list [`.persist()`](#persisted-form-state) so an invalid submission shows its rows again, with each issue on its cell. Without it the rows that were sent are gone, as any field's value is, so the issue is shown under the list and says where it was, such as "Row 2, name: Required field". The same happens when the rows are too many to keep in the URL.
 
-`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`. Each row is its field's component, or its fields' components by name, to lay out as a table or to label each choice. A row's control is read with its `Issue`, and not with its `Description`, which a table says once in its header rather than in every row:
+A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own:
 
 ```tsx
-const Sides = save.component({ name: "sides", rows: 3, values, state: c.url });
+<save.Field
+	name="sides"
+	options={Object.fromEntries(recipes.map((r) => [r.id, r.title]))}
+/>
+```
 
-<Sides.Root>
-	<Sides.Legend />
-	{Sides.rows.map((Side) => (
-		<Side.Control aria-label="Side">
-			<option value=""></option>
-			{recipes.map((recipe) => (
-				<Side.Option value={recipe.id}>{recipe.title}</Side.Option>
-			))}
-		</Side.Control>
+`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control is read with its `Issue`, and not with its `Description`, which a layout says once rather than in every row:
+
+```tsx
+const Items = save.component({ name: "ingredients", values, state: c.url });
+
+<Items.Root>
+	<Items.Legend />
+	{Items.rows.map((row) => (
+		<p>
+			<row.amount.Control aria-label="Amount" />
+			<row.name.Control aria-label="Name" />
+			<row.name.Issue />
+		</p>
 	))}
-	<Sides.Issue />
-</Sides.Root>;
+	<Items.Issue />
+</Items.Root>;
 ```
 
 A list takes any field but another list or a [streamed](#streaming) file. `multiple()` is a different thing: one control that takes several of its own options or files, not rows.
