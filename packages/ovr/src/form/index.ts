@@ -856,6 +856,33 @@ class FieldSchema<
 	}
 
 	/**
+	 * What people read under the control, in place of the field's
+	 * description. Use it when what `describe()` says is written for an agent
+	 * to be complete, and a person needs fewer words. Agents still read the
+	 * description. An empty hint shows people nothing.
+	 *
+	 * ```ts
+	 * Field.number()
+	 * 	.describe("Weight in grams for cups and spoons. Empty for counts and liquids.")
+	 * 	.hint("For cups and spoons");
+	 * ```
+	 *
+	 * @param text Hint
+	 * @returns Field with the hint
+	 */
+	hint(text: string): Field.Instance<Output, Tag, Type, Values, Stream, Item> {
+		return this.#with({ hint: text });
+	}
+
+	/**
+	 * @returns What people read under the control: the field's hint, or its
+	 * description
+	 */
+	#shown() {
+		return this.#config.hint ?? this.description;
+	}
+
+	/**
 	 * What to say when a user already has the value, for a value no two users
 	 * share and anyone may see, such as a username. Registration checks it
 	 * before the passkey prompt and shows `message` on the field. Leave it off
@@ -916,7 +943,7 @@ class FieldSchema<
 	 * @param changes What to change
 	 * @returns The same field with them
 	 */
-	#with(changes: Pick<Field.Config, "label" | "taken" | "props">) {
+	#with(changes: Pick<Field.Config, "label" | "hint" | "taken" | "props">) {
 		return this.#copy({ config: { ...this.#config, ...changes } });
 	}
 
@@ -1098,11 +1125,11 @@ class FieldSchema<
 			this.#config.labels ??
 			(this.options?.length || Array.isArray(given)
 				? undefined
-				: (given as Readonly<Record<string, string>> | undefined));
+				: (given as Readonly<Record<string, JSX.Element>> | undefined));
 
 		// own labels only, so a value such as "constructor" is itself
-		return (value: string) =>
-			labels && Object.hasOwn(labels, value) ? labels[value]! : value;
+		return (value: string): JSX.Element =>
+			labels && Object.hasOwn(labels, value) ? labels[value] : value;
 	}
 
 	/**
@@ -1136,7 +1163,7 @@ class FieldSchema<
 		const issueId = issue && `${props.name}-issue`;
 		const hidden = this.type === "hidden";
 		const { label = named } = this.#config;
-		const { description } = this;
+		const description = this.#shown();
 		const descriptionId =
 			description && !hidden ? `${props.name}-description` : undefined;
 		const control = {
@@ -1430,7 +1457,7 @@ class FieldSchema<
 											const parts = field[component](
 												group ? cell : { ...cell, ...labelled },
 												named,
-												Boolean(field.description) && id(key, "description"),
+												Boolean(field.#shown()) && id(key, "description"),
 											) as unknown as Parts;
 											const body = field.#body(parts, cell);
 
@@ -1464,7 +1491,7 @@ class FieldSchema<
 				// room for it. Each cell of the column is read with its text.
 				columns.map(
 					([key, field]) =>
-						field.description &&
+						field.#shown() &&
 						jsx("p", {
 							"data-description": true,
 							children: [
@@ -1472,7 +1499,7 @@ class FieldSchema<
 								": ",
 								jsx("span", {
 									id: id(key, "description"),
-									children: field.description,
+									children: field.#shown(),
 								}),
 							],
 						}),
@@ -1789,6 +1816,9 @@ export namespace Field {
 		/** What people call the field, set with `label()` */
 		readonly label?: string;
 
+		/** What people read in place of the description, set with `hint()` */
+		readonly hint?: string;
+
 		/** What registration says when a user already has the value, set with `taken()` */
 		readonly taken?: string;
 
@@ -1919,10 +1949,11 @@ export namespace Field {
 			 * schema, such as `Field.checkboxes(Schema.string().uuid())`, known
 			 * as the form renders: the values, each shown as it is, or what
 			 * people call each one by its value, such as `{ [recipe.id]:
-			 * recipe.title }`.
+			 * recipe.title }`. A label may be an element, such as an image
+			 * with its `alt`.
 			 */
 			readonly options?:
-				readonly string[] | Readonly<Record<string, string>> | undefined;
+				readonly string[] | Readonly<Record<string, JSX.Element>> | undefined;
 
 			/**
 			 * How many rows a list shows on this form, over what its

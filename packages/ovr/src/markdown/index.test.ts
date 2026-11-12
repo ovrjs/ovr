@@ -818,6 +818,48 @@ describe("Markdown", () => {
 		expect(mixed).toContain("| Soup |  | `pick=soup` (checked) | `done=on` |");
 	});
 
+	test("a choice labelled with an image is read by its alternative text", async () => {
+		const form = h(
+			"form",
+			{ method: "post", action: "/x" },
+			h(
+				"fieldset",
+				null,
+				h("legend", null, "photos"),
+				h("input", {
+					type: "checkbox",
+					name: "photos",
+					value: "a1",
+					id: "p-a1",
+				}),
+				h(
+					"label",
+					{ for: "p-a1" },
+					h("img", { src: "/a1.jpg", alt: "Card front" }),
+				),
+				h("input", {
+					type: "checkbox",
+					name: "photos",
+					value: "b2",
+					id: "p-b2",
+				}),
+				h("label", { for: "p-b2" }, h("img", { src: "/b2.jpg" })),
+			),
+		);
+
+		expect(
+			await md(form, {
+				base: "https://example.com/",
+				[tools]: () => ({
+					name: "x_post",
+					args: {},
+					choices: new Set(["photos"]),
+					lists: new Set<string>(),
+				}),
+			}),
+		).toContain("- `photos`, options: `a1 (Card front)`, `b2`");
+	});
+
 	test("a tool's form shows its hidden values, other forms do not", async () => {
 		const form = () =>
 			h(

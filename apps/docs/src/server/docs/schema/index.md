@@ -106,6 +106,8 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 `describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
 
+A description written to be complete for an agent can be more than a person needs under a control. `hint` is what people read in its place, and agents still read the description: `Field.number().describe("Weight in grams for cups and spoons. Empty for counts and liquids.").hint("For cups and spoons")`. An empty hint shows people nothing.
+
 `control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<signup.Field name="name" autofocus />`.
 
 - `signup.Fields` renders all the fields _without_ the outer `<form>` shell
@@ -176,7 +178,7 @@ People see each option as its value. To call one something else, give the option
 Field.select({ dinner: "Dinner", crockpot: "Slow cooker" });
 ```
 
-When the options are only known as the page renders, such as which of a recipe's own photos to publish, give a schema that checks each value instead, and pass the options to the field as it renders: the values, or an object of each value and its label. The schema only checks the form of a value, so check that each one is the user's own in the handler.
+When the options are only known as the page renders, such as which of a recipe's own photos to publish, give a schema that checks each value instead, and pass the options to the field as it renders: the values, or an object of each value and its label. A label given as the form renders may be an element, such as `{ [photo.id]: <img src={photo.url} alt={photo.caption} /> }`, which agents read by its `alt`. The schema only checks the form of a value, so check that each one is the user's own in the handler.
 
 ```tsx
 const publish = Route.post("/recipes/:id/publish")
@@ -256,6 +258,43 @@ const Items = save.component({ name: "ingredients", values, state: c.url });
 	<Items.Issue />
 </Items.Root>;
 ```
+
+A list has no script, so a person has the rows the page rendered, and saves to get more. To add a row in place, copy the last one: a row's controls are named by its place, and a place left out between two rows is fine. Give the list an `id` and render a button after it, hidden until the script runs:
+
+```html
+<button type="button" id="add" hidden>Add a row</button>
+
+<script type="module">
+	const name = "ingredients"; // the list's name, and here its id
+	const list = document.getElementById(name);
+	const add = document.getElementById("add");
+
+	add.hidden = false;
+	add.addEventListener("click", () => {
+		const rows = list.querySelectorAll("tbody > tr");
+		const last = rows[rows.length - 1];
+		const row = last.cloneNode(true);
+
+		// ingredients.3.name is ingredients.4.name in the next row
+		row.innerHTML = row.innerHTML.replaceAll(
+			`${name}.${rows.length - 1}`,
+			`${name}.${rows.length}`,
+		);
+
+		for (const control of row.querySelectorAll("input, select, textarea")) {
+			if (control.type === "checkbox" || control.type === "radio")
+				control.checked = false;
+			else control.value = "";
+			control.removeAttribute("aria-invalid");
+		}
+		for (const issue of row.querySelectorAll("[data-issue]")) issue.remove();
+
+		last.after(row);
+	});
+</script>
+```
+
+A list of one field has a `<div>` for each row in place of a `<tr>`, `:scope > div`, and each row's label is its number.
 
 A list takes any field but another list or a [streamed](#streaming) file. `multiple()` is a different thing: one control that takes several of its own options or files, not rows.
 

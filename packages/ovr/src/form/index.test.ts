@@ -1,3 +1,4 @@
+import { jsx } from "../jsx/index.js";
 import { Markup } from "../markup/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Schema } from "../schema/index.js";
@@ -1358,6 +1359,86 @@ describe("choices people call by another name", () => {
 			(schema.properties as Record<string, object>).course,
 		).not.toHaveProperty("description");
 	});
+});
+
+test("a hint is what people read, where the description is what agents read", async () => {
+	const form = new Form({
+		grams: Field.number()
+			.describe("Weight in grams for cups and spoons. Empty for counts.")
+			.hint("For cups and spoons")
+			.optional(),
+		notes: Field.text().describe("Free text, for the cook").hint("").optional(),
+		items: Field.list({
+			amount: Field.text()
+				.describe("As written, for an agent")
+				.hint("As written"),
+			unit: Field.text().describe("Singular, for an agent").hint("").optional(),
+		})
+			.describe("Every ingredient, in order")
+			.hint("Clear a row to remove it"),
+	});
+
+	expect(await Markup.string(form.Field({ name: "grams" }))).toBe(
+		'<div><label for="grams">grams</label><input id="grams" aria-describedby="grams-description" type="number" name="grams"><p id="grams-description" data-description>For cups and spoons</p></div>',
+	);
+	// an empty hint shows nothing, and the control names nothing
+	expect(await Markup.string(form.Field({ name: "notes" }))).toBe(
+		'<div><label for="notes">notes</label><input id="notes" type="text" name="notes"></div>',
+	);
+
+	const items = await Markup.string(form.Field({ name: "items" }));
+	expect(items).toContain(
+		'<legend>items</legend><p id="items-description" data-description>Clear a row to remove it</p>',
+	);
+	expect(items).toContain(
+		'<p data-description><span>amount</span>: <span id="items.amount-description">As written</span></p>',
+	);
+	expect(items).toContain(
+		'<input id="items.0.unit" type="text" name="items.0.unit" aria-labelledby="items.unit-label">',
+	);
+	expect(items).not.toContain("agent");
+
+	expect(
+		Schema.object(form.shape).toJsonSchema({ io: "input" }).properties,
+	).toMatchObject({
+		grams: {
+			description: "Weight in grams for cups and spoons. Empty for counts.",
+		},
+		notes: { description: "Free text, for the cook" },
+		items: {
+			description: "Every ingredient, in order",
+			items: {
+				properties: {
+					amount: { description: "As written, for an agent" },
+					unit: { description: "Singular, for an agent" },
+				},
+			},
+		},
+	});
+});
+
+test("a choice given as the form renders may be labelled with an element", async () => {
+	const form = new Form({
+		photos: Field.checkboxes(Schema.string()).optional(),
+	});
+
+	expect(
+		await Markup.string(
+			form.Field({
+				name: "photos",
+				options: {
+					a1: jsx("img", { src: "/a1.jpg", alt: "Card front" }),
+					b2: "Plain",
+				},
+				values: { photos: ["a1"] },
+			}),
+		),
+	).toBe(
+		"<fieldset><legend>photos</legend>" +
+			'<div><input id="photos-a1" type="checkbox" name="photos" checked value="a1"><label for="photos-a1"><img src="/a1.jpg" alt="Card front"></label></div>' +
+			'<div><input id="photos-b2" type="checkbox" name="photos" value="b2"><label for="photos-b2">Plain</label></div>' +
+			"</fieldset>",
+	);
 });
 
 describe("lines", () => {

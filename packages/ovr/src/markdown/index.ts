@@ -1308,6 +1308,8 @@ class Writer {
 		let text = "";
 		for (const child of node.children) {
 			if (typeof child === "string") text += child;
+			// an image is read as its alternative text, such as a label's
+			else if (child.tag === "img") text += ` ${child.attrs.alt ?? ""} `;
 			else if (!omitControls || !["select", "textarea"].includes(child.tag))
 				text += " " + Writer.#plain(child, omitControls) + " ";
 		}
