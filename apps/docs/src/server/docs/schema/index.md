@@ -277,6 +277,8 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 - set `aria-invalid` and `aria-describedby`
 - autofocus the first invalid field
 
+The state is kept small, since it is in a URL: a value over 512 characters is not kept, a list's items aside, and the whole state is at most 4 KB before it is encoded. When it is larger, values are left out, from the form's last field back, until it fits. The issues are always kept, so the person sees what was wrong, but not what they typed in the fields left out. Keep a long form's values another way, such as by saving a draft.
+
 Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
 
 ## GET forms
