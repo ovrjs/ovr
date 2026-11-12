@@ -24,6 +24,7 @@
     "lists",
     "optional-select",
     "registration-messages",
-    "taken-fields"
+    "taken-fields",
+    "textarea-lines"
   ]
 }
