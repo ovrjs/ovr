@@ -230,16 +230,25 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 			...state,
 			issues: state.issues.map((issue) => {
 				const [name, place, key] = issue.path;
+				if (
+					typeof place !== "number" ||
+					!this.#lists.includes(name as ShapeUtil.Name<Shape>) ||
+					state.values?.[name as ShapeUtil.Name<Shape>] !== undefined
+				)
+					return issue;
 
-				return typeof place === "number" &&
-					this.#lists.includes(name as ShapeUtil.Name<Shape>) &&
-					state.values?.[name as ShapeUtil.Name<Shape>] === undefined
-					? new Schema.Issue(
-							issue.expected,
-							[name!],
-							`Row ${place + 1}${typeof key === "string" ? `, ${key}` : ""}: ${issue.message}`,
-						)
-					: issue;
+				// the field as people know it, by its column's heading
+				const { item } = this.shape[name as ShapeUtil.Name<Shape>]!;
+				const cell =
+					typeof key === "string" && !field(item) && Object.hasOwn(item!, key)
+						? `, ${FieldSchema.named(item![key]!, key)}`
+						: "";
+
+				return new Schema.Issue(
+					issue.expected,
+					[name!],
+					`Row ${place + 1}${cell}: ${issue.message}`,
+				);
 			}) as unknown as Schema.Issue.List,
 		};
 	}
@@ -1174,11 +1183,15 @@ class FieldSchema<
 
 		if (this.item) {
 			const cells = () => this.#cells({ state, options: given, ...props });
+			// a list has no control of its own, so what is passed to it, such
+			// as a class, is its fieldset's
+			const { name: _, rows: __, ...attributes } = props;
 
 			return {
 				Description,
 				Issue,
-				Root: (data: Field.Component.Root.Group = {}) => jsx("fieldset", data),
+				Root: (data: Field.Component.Root.Group = {}) =>
+					jsx("fieldset", { ...attributes, ...data }),
 				Legend: (data: Field.Component.Legend = {}) =>
 					jsx("legend", { children: label, ...data }),
 				...this,
@@ -1303,18 +1316,20 @@ class FieldSchema<
 		return c.Root({
 			children: [
 				item
-					? // a list of one field, a group with a legend, a row for each
+					? // a list of one field, a group with a legend, a row for each.
+						// Its description is before the rows it explains, which
+						// may be many.
 						[
 							c.Legend(),
+							c.Description(),
 							this.#cells(props).map((row) => {
 								const [field, cell, named] = row as Placed;
 								return field[render](cell, named);
 							}),
 						]
 					: this.#grouped(props)
-						? [c.Legend(), this.#body(c, props)]
-						: [c.Label(), this.#body(c, props)],
-				c.Description(),
+						? [c.Legend(), this.#body(c, props), c.Description()]
+						: [c.Label(), this.#body(c, props), c.Description()],
 				c.Issue(),
 			],
 		});
@@ -1370,7 +1385,8 @@ class FieldSchema<
 	 * @param props The list's props
 	 * @param item The fields of each item, by name
 	 * @returns A list of several fields: a table with a column for each
-	 * field, named and described once in its heading, and a row for each item
+	 * field, named in its heading and described once under the table, and a
+	 * row for each item
 	 */
 	#table<S extends Field.Shape>(
 		props: Field.Component.Props<S, false>,
@@ -1384,23 +1400,17 @@ class FieldSchema<
 		return c.Root({
 			children: [
 				c.Legend(),
+				c.Description(),
 				jsx("table", {
 					children: [
 						jsx("thead", {
 							children: jsx("tr", {
 								children: columns.map(([key, field]) =>
+									// only the label, which names each cell of the column
 									jsx("th", {
 										id: id(key, "label"),
 										scope: "col",
-										children: [
-											field.#config.label ?? key,
-											field.description &&
-												jsx("p", {
-													id: id(key, "description"),
-													children: field.description,
-													"data-description": true,
-												}),
-										],
+										children: field.#config.label ?? key,
 									}),
 								),
 							}),
@@ -1446,7 +1456,23 @@ class FieldSchema<
 						}),
 					],
 				}),
-				c.Description(),
+				// what each column is, once under the table: a heading has no
+				// room for it. Each cell of the column is read with its text.
+				columns.map(
+					([key, field]) =>
+						field.description &&
+						jsx("p", {
+							"data-description": true,
+							children: [
+								jsx("span", { children: field.#config.label ?? key }),
+								": ",
+								jsx("span", {
+									id: id(key, "description"),
+									children: field.description,
+								}),
+							],
+						}),
+				),
 				c.Issue(),
 			],
 		});
@@ -1522,8 +1548,9 @@ class FieldSchema<
 		const cell = (field: Field.Cell, name: string, named: string) =>
 			[
 				field,
-				// never required: a row left empty is left out
-				{ ...props, name, state: cells, required: false },
+				// never required: a row left empty is left out. The list's own
+				// attributes are its fieldset's, not each control's.
+				{ name, state: cells, options: props.options, required: false },
 				named,
 			] as const;
 
@@ -1549,6 +1576,15 @@ class FieldSchema<
 							]),
 						),
 		);
+	}
+
+	/**
+	 * @param field Field definition
+	 * @param name The field's name
+	 * @returns What people call the field: its label, or its name
+	 */
+	static named(field: Field.Any, name: string) {
+		return field.#config.label ?? name;
 	}
 
 	/**

@@ -222,13 +222,13 @@ const save = Route.post("/recipes/:id")
 	});
 ```
 
-A list renders a `<fieldset>` with a row for each item, and one empty row to add another. A list of several fields is a `<table>` in it, with a column for each field: its label, and its description, are said once in the column's heading, and each cell has the control and its issue. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
+A list renders a `<fieldset>` with a row for each item, and one empty row to add another. A list of several fields is a `<table>` in it, with a column for each field: its label is the column's heading, each cell has the control and its issue, and the fields' descriptions are listed once under the table. A list's own description follows its legend, before the rows it explains. Attributes passed to a list, such as `<save.Field name="ingredients" class="wide" />`, are its fieldset's, since it has no control of its own. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
 
 Set how many rows a list shows with `control`, wherever it renders, or pass `rows` to one form, as with any field's attributes. A week's seven dinners are `Field.list(Field.select(id)).max(7).control({ rows: 7 })`, and an edit form with room to add is `<save.Field name="ingredients" rows={ingredients.length + 5} />`. Every item is always shown, and a list never shows more rows than its `max()`, so a full list has no empty row.
 
 Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. `values` takes the items as an array, as the route gets them.
 
-Mark a list [`.persist()`](#persisted-form-state) so an invalid submission shows its rows again, with each issue on its cell. Without it the rows that were sent are gone, as any field's value is, so the issue is shown under the list and says where it was, such as "Row 2, name: Required field". The same happens when the rows are too many to keep in the URL.
+Mark a list [`.persist()`](#persisted-form-state) so an invalid submission shows its rows again, with each issue on its cell. Without it the rows that were sent are gone, as any field's value is, so the issue is shown under the list and says where it was, such as "Row 2, Ingredient: Required field", with the field's label. The same happens when the rows are too many to keep in the URL.
 
 A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own:
 

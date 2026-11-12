@@ -1626,7 +1626,10 @@ describe("a list", () => {
 		);
 		// several fields are a table: a column each, named in its heading
 		expect(ingredients).toBe(
-			"<fieldset><legend>Ingredients</legend><table>" +
+			"<fieldset><legend>Ingredients</legend>" +
+				// before the rows it explains
+				'<p id="ingredients-description" data-description>What goes in</p>' +
+				"<table>" +
 				"<thead><tr>" +
 				'<th id="ingredients.amount-label" scope="col">amount</th>' +
 				'<th id="ingredients.name-label" scope="col">name</th>' +
@@ -1641,7 +1644,6 @@ describe("a list", () => {
 				'<td><input id="ingredients.1.name" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"></td>' +
 				'<td><input id="ingredients.1.organic" type="checkbox" name="ingredients.1.organic" aria-labelledby="ingredients.organic-label"></td>' +
 				"</tr></tbody></table>" +
-				'<p id="ingredients-description" data-description>What goes in</p>' +
 				"</fieldset>",
 		);
 	});
@@ -1736,13 +1738,15 @@ describe("a list", () => {
 			items: Field.list({ name: Field.text().describe("What to buy") }),
 		});
 
-		// the default table describes a column once, in its heading
+		// the default table names a column in its heading, which holds only
+		// the label, and describes it once under the table
 		const table = await Markup.string(described.Field({ name: "items" }));
-		expect(table).toContain(
-			'<th id="items.name-label" scope="col">name<p id="items.name-description" data-description>What to buy</p></th>',
-		);
+		expect(table).toContain('<th id="items.name-label" scope="col">name</th>');
 		expect(table).toContain(
 			'<input id="items.0.name" aria-describedby="items.name-description" type="text" name="items.0.name" aria-labelledby="items.name-label">',
+		);
+		expect(table).toContain(
+			'</table><p data-description><span>name</span>: <span id="items.name-description">What to buy</span></p></fieldset>',
 		);
 		expect(table.match(/What to buy/g)).toHaveLength(1);
 
@@ -1776,7 +1780,8 @@ describe("a list", () => {
 			title: Field.text(),
 			items: Field.list({
 				amount: Field.text().optional(),
-				name: Field.text(),
+				// said as people know it, by its column's heading
+				name: Field.text().label("Ingredient"),
 			}),
 			ids: Field.list(Field.text().uuid("Not an ID")).optional(),
 		});
@@ -1798,7 +1803,7 @@ describe("a list", () => {
 		);
 		const items = await Markup.string(plain.Field({ name: "items", state }));
 		expect(items).toContain(
-			'<p id="items-issue" data-issue="1">Row 2, name: Required field</p>',
+			'<p id="items-issue" data-issue="1">Row 2, Ingredient: Required field</p>',
 		);
 		// no row has it, since the rows that were sent are gone
 		expect(items.match(/data-issue/g)).toHaveLength(1);
@@ -1806,6 +1811,42 @@ describe("a list", () => {
 
 		expect(await Markup.string(plain.Field({ name: "ids", state }))).toContain(
 			'<p id="ids-issue" data-issue="2">Row 1: Not an ID</p>',
+		);
+	});
+
+	test("what is passed to a list is its fieldset's, and its description follows its legend", async () => {
+		const styled = new Form({
+			tags: Field.list(Field.text()).describe("Clear a row to remove it"),
+			items: Field.list({ name: Field.text() }),
+		});
+
+		expect(
+			await Markup.string(
+				styled.Field({ name: "tags", class: "tags", id: "the-tags" }),
+			),
+		).toBe(
+			'<fieldset class="tags" id="the-tags"><legend>tags</legend>' +
+				'<p id="tags-description" data-description>Clear a row to remove it</p>' +
+				'<div><label for="tags.0">1</label><input id="tags.0" type="text" name="tags.0"></div>' +
+				"</fieldset>",
+		);
+		expect(
+			await Markup.string(
+				styled.Field({ name: "items", class: "wide", disabled: true }),
+			),
+		).toContain(
+			'<fieldset class="wide" disabled><legend>items</legend><table>',
+		);
+		// a control of a row has none of them
+		expect(
+			await Markup.string(styled.Field({ name: "items", class: "wide" })),
+		).toContain(
+			'<input id="items.0.name" type="text" name="items.0.name" aria-labelledby="items.name-label">',
+		);
+
+		const Items = styled.component({ name: "items", class: "wide" });
+		expect(await Markup.string(Items.Root({ id: "x" }))).toBe(
+			'<fieldset class="wide" id="x"></fieldset>',
 		);
 	});
 
