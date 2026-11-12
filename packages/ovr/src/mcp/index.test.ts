@@ -795,7 +795,8 @@ describe("Mcp", () => {
 				.use((c) => {
 					c.res.headers.set(
 						"content-disposition",
-						'attachment; filename="week.html"',
+						// a name is all that reaches the result's text
+						'attachment; filename="week `1` [draft].html"',
 					);
 					return jsx("main", {
 						children: jsx("h1", { children: "Week of " + c.params.start }),
@@ -812,7 +813,7 @@ describe("Mcp", () => {
 		});
 		expect(body.result.isError).toBe(false);
 		expect(body.result.content).toEqual([
-			{ type: "text", text: "week.html" },
+			{ type: "text", text: "week _1_ _draft_.html" },
 			{
 				type: "resource",
 				resource: {
@@ -889,7 +890,7 @@ describe("Mcp", () => {
 			name: Route.post("/private-go").describe("x").tool!.name,
 		});
 		expect(JSON.stringify(hidden.body)).not.toContain("secret");
-		expect(hidden.body.result.content[0].text).toBe("Done");
+		expect(hidden.body.result.content[0].text).toBe("Redirected");
 		// another site is where the app sends the user, such as a payment page
 		const away = await rpc("tools/call", { name: "post_checkout" });
 		expect(away.body.result.content[0].text).toBe(
@@ -1721,7 +1722,7 @@ describe("Mcp", () => {
 				{
 					type: "text",
 					// not the page it went to: a list of every post, to change one
-					text: "Done. Redirected to /posts",
+					text: "Redirected to /posts",
 				},
 			],
 			isError: false,
@@ -2161,9 +2162,7 @@ describe("Mcp", () => {
 				params: { name: "post_posts", arguments: { title: "Third post" } },
 			});
 			expect(call.body.result).toMatchObject({ isError: false });
-			expect(call.body.result.content[0].text).toBe(
-				"Done. Redirected to /posts",
-			);
+			expect(call.body.result.content[0].text).toBe("Redirected to /posts");
 			expect(call.body.result).not.toHaveProperty("resultType");
 			expect([...posts.values()]).toContain("Third post");
 

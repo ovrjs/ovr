@@ -1294,7 +1294,8 @@ export class Mcp<P extends string = string> {
 	}
 
 	/**
-	 * Calls the app as the agent, following redirects to pages it can read.
+	 * Calls the app as the agent. A read follows redirects to pages it can
+	 * read, and a write that redirects is answered with where.
 	 *
 	 * @param c Request context
 	 * @param session Session the token authorizes
@@ -1342,10 +1343,8 @@ export class Mcp<P extends string = string> {
 					next.origin !== c.url.origin
 						? `Redirected to ${next.href}`
 						: readable
-							? `${wrote ? "Done. " : ""}${redirect(next)}`
-							: wrote
-								? "Done"
-								: "Redirected",
+							? redirect(next)
+							: "Redirected",
 				);
 			}
 
@@ -1374,7 +1373,10 @@ export class Mcp<P extends string = string> {
 			const disposition = res.headers.get("content-disposition") ?? "";
 			if (text !== undefined && res.ok && /^\s*attachment/i.test(disposition))
 				return Mcp.#result(
-					/filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "",
+					// the file's name, without what could read as more than a name
+					(/filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "")
+						.replace(/[^\w .-]+/g, "_")
+						.slice(0, 100),
 					false,
 					{
 						type: "resource",

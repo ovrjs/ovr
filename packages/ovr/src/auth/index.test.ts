@@ -1187,6 +1187,10 @@ describe("configured passkey callbacks", () => {
 		["/recipes/1?tab=photos", "/recipes/1?tab=photos"],
 		["//evil.example/path", "/"],
 		["https://evil.example/", "/"],
+		// a browser drops tabs and new lines, leaving //evil.example
+		["/\t/evil.example", "/"],
+		["/\n/evil.example", "/"],
+		["/\r/evil.example", "/"],
 	])(
 		"signing up from /signup?_return=%s goes to %s",
 		async (back, location) => {
@@ -1605,6 +1609,8 @@ describe("configured passkey callbacks", () => {
 
 		// opening it signs nobody in: it shows a button
 		const opened = await state.app.fetch(origin + "/link?_link=" + token);
+		// its address holds the token, so it is sent to no other site
+		expect(opened.headers.get("referrer-policy")).toBe("no-referrer");
 		const html = await opened.text();
 		expect(html).toContain(
 			`<form action="/auth/link" method="POST" enctype="multipart/form-data"><input type="hidden" name="link" value="${token}"><button>Sign in</button>`,

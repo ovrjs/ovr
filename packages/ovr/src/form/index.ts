@@ -131,11 +131,18 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @param value Candidate items
 	 * @returns The items a list can render, without what a cell cannot
 	 */
-	static #items(item: Field.Item, value: unknown) {
+	static #items(item: Field.Item, value: unknown, url = false) {
 		if (!Array.isArray(value)) return;
 
 		const cell = (field: Field.Cell, value: unknown) => {
-			if (field.type === "file" || field.type === "password" || value == null)
+			if (
+				field.type === "file" ||
+				field.type === "password" ||
+				// a row's hidden value, such as its ID, is the server's to give:
+				// state in a URL, which anyone can write, never sets it
+				(url && field.type === "hidden") ||
+				value == null
+			)
 				return;
 
 			const result = Form.#value().parse(value);
@@ -194,7 +201,17 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 					if (field.item) {
 						// a cleared list is recorded empty, and no list has a size of
 						// its own: the state's limit holds them all
-						const items = value === "" ? [] : Form.#items(field.item, value);
+						const items =
+							value === ""
+								? []
+								: Form.#items(
+										field.item,
+										// no more rows from a URL than the list takes
+										limit && Array.isArray(value)
+											? value.slice(0, FieldSchema.most(field))
+											: value,
+										limit,
+									);
 						if (items) own(sanitized, name, items);
 						continue;
 					}
@@ -705,7 +722,15 @@ class FieldSchema<
 		this.item = config.item as Item;
 		this.#read = read;
 		this.type = config.props?.type as Type;
-		this.parts = parts;
+		// a list takes as many rows as its `max()`, or the most any list
+		// does, so a request cannot send rows without end
+		const { item } = this;
+		this.parts = item
+			? Math.min(this.#most(), FieldSchema.#rows) *
+				(item instanceof FieldSchema
+					? item.parts
+					: Object.values(item).reduce((sum, cell) => sum + cell.parts, 0))
+			: parts;
 		this.streaming = stream;
 		this.#persist = persist;
 	}
@@ -843,15 +868,21 @@ class FieldSchema<
 		const filled = (cell: Field.Cell, value: Field.Input) =>
 			value !== undefined && value !== false && cell.type !== "hidden";
 
-		return (data, name) => {
-			const places = new Set<number>();
-			for (const key of data.keys()) {
+		return (all, name) => {
+			// each row's own entries, found in one pass: reading a cell from
+			// all of them would cost the whole form again for every cell
+			const rows = new Map<number, FormData>();
+			for (const [key, value] of all) {
 				const place = FieldSchema.place(item, name, key);
-				if (place !== undefined) places.add(place);
+				if (place === undefined) continue;
+
+				let row = rows.get(place);
+				if (!row) rows.set(place, (row = new FormData()));
+				row.append(key, value);
 			}
 
 			const items: Field.Input.Cell[] | Record<string, Field.Input.Cell>[] = [];
-			for (const place of [...places].sort((a, b) => a - b)) {
+			for (const [place, data] of [...rows].sort(([a], [b]) => a - b)) {
 				const at = `${name}.${place}`;
 
 				if (item instanceof FieldSchema) {
@@ -1254,6 +1285,7 @@ class FieldSchema<
 
 		if (this.item) {
 			const cells = () => this.#cells({ state, options: given, ...props });
+			let built: unknown[] | undefined;
 			// a list has no control of its own, so what is passed to it, such
 			// as a class, is its fieldset's
 			const { name: _, rows: __, ...attributes } = props;
@@ -1268,7 +1300,7 @@ class FieldSchema<
 				...this,
 				// built when read, the default layout renders each cell itself
 				get rows() {
-					return cells().map((row) =>
+					return (built ??= cells().map((row) =>
 						Array.isArray(row)
 							? row[0][component](row[1], row[2], false)
 							: Object.fromEntries(
@@ -1277,7 +1309,7 @@ class FieldSchema<
 										cell[0][component](cell[1], cell[2], false),
 									]),
 								),
-					);
+					));
 				},
 			};
 		}
@@ -1572,6 +1604,18 @@ class FieldSchema<
 				c.Issue(),
 			],
 		});
+	}
+
+	/** The most rows a list without a `max()` takes in one request */
+	static readonly #rows = 1000;
+
+	/**
+	 * @param field List field
+	 * @returns The most items it shows from state in a URL: its `max()`, or
+	 * the most any list takes
+	 */
+	static most(field: Field.Any) {
+		return Math.min(field.#most(), FieldSchema.#rows);
 	}
 
 	/**
@@ -2613,7 +2657,8 @@ export class Field {
 	 * ```
 	 *
 	 * @template V Value type
-	 * @param options Checkbox options, or a schema for each one
+	 * @param options Checkbox options, an object of each one's label by its
+	 * value, or a schema for each one
 	 * @returns Checkbox group input field
 	 */
 	static checkboxes<const V extends string>(
@@ -2631,7 +2676,8 @@ export class Field {
 
 	/**
 	 * @template V Value type
-	 * @param options Radio button options, or a schema for the one chosen
+	 * @param options Radio button options, an object of each one's label by
+	 * its value, or a schema for the one chosen
 	 * @returns Radio group input field
 	 */
 	static radio<const V extends string>(
@@ -2690,7 +2736,9 @@ export class Field {
 
 	/**
 	 * @template V Value type
-	 * @param options Select options, or a schema for the one chosen
+	 * @param options Select options, an object of each one's label by its
+	 * value, or a schema for the one chosen. One that may be left empty
+	 * starts with an empty choice, whose text is its `placeholder`.
 	 * @returns Select field
 	 */
 	static select<const V extends string>(

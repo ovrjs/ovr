@@ -1032,7 +1032,11 @@ class Writer {
 
 			let row = group.rows.get(place);
 			if (!row) {
-				row = { value: key === undefined ? undefined : {}, filled: false };
+				row = {
+					// no prototype, a control's name is its key
+					value: key === undefined ? undefined : Object.create(null),
+					filled: false,
+				};
 				group.rows.set(place, row);
 			}
 

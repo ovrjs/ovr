@@ -181,12 +181,22 @@ export class State {
 	 * another host, short enough for a cookie
 	 */
 	static #local(path: string) {
-		return (
-			path.startsWith("/") &&
-			!path.startsWith("//") &&
-			!path.includes("\\") &&
-			path.length <= 2048
-		);
+		if (
+			!path.startsWith("/") ||
+			path.startsWith("//") ||
+			path.includes("\\") ||
+			path.length > 2048
+		)
+			return false;
+
+		// as a browser reads it: it drops tabs and new lines, so `/\t/host` is
+		// `//host`, another site
+		const base = "https://local.invalid";
+		try {
+			return new URL(path, base).origin === base;
+		} catch {
+			return false;
+		}
 	}
 
 	/** Replace the current session and issue a new signed, secure cookie. */

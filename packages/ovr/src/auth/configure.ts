@@ -304,14 +304,17 @@ export function configure<U extends Auth.Users>(
 			if (!input || input.issues) throw new Issue("passkey request");
 			const session = await state(c).session();
 			if (!session) return c.text("Sign in to add a passkey.", 401);
-			const [account] = await options.database
-				.sql`SELECT * FROM ${users} WHERE ${users.columns.id!} = ${session.user}`;
+			const [[account], exclude] = await Promise.all([
+				options.database
+					.sql`SELECT * FROM ${users} WHERE ${users.columns.id!} = ${session.user}`,
+				storage.credentials.list(session.user),
+			]);
 			await Passkey.issue(c, state(c), input.data.bootstrap, {
 				method: "register",
 				action: paths.passkey,
 				name: name((account ?? {}) as Field.Parse.Data<Shape>),
 				user: session.user,
-				exclude: await storage.credentials.list(session.user),
+				exclude,
 			});
 		});
 	/** The parameter of the authentication page a link's token is in */
@@ -413,6 +416,8 @@ export function configure<U extends Auth.Users>(
 			Add.Issue = error("add", Add.Issue);
 			// a link's token, from the address the link opened
 			const token = c.url.searchParams.get(linked);
+			// the page's address holds the token, so it is sent to no other site
+			if (token) c.res.headers.set("referrer-policy", "no-referrer");
 			const Link = Object.assign(
 				(props: Parameters<typeof link.Form>[0]) =>
 					(token || failure === "link") &&

@@ -166,7 +166,7 @@ app.use(
 );
 ```
 
-The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its children and `Add.Issue` are customized as the others are. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. Nobody signed in gets no ceremony.
+The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `Add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. Without a session, the passkey prompt is refused with a 401.
 
 Each passkey has what tells it apart in a list: its `name`, if it was added with one, `created`, a time in milliseconds, and the `origin` it was made at.
 
@@ -185,7 +185,7 @@ await database.sql`
 
 ### Sign-in link
 
-A passkey belongs to the site it was made on. An account made at one origin, such as `localhost`, has none at another that shares its users table, such as the production domain, and someone who lost their only device has none at all. `auth.link` makes a link that signs a user in once, so they can add a passkey:
+A passkey belongs to the site it was made on. An account made at one origin, such as `localhost`, has none at another that shares its database, such as the production domain, and someone who lost their only device has none at all. `auth.link` makes a link that signs a user in once, so they can add a passkey:
 
 ```tsx
 // signed in at the first origin, or in an admin script
@@ -194,7 +194,7 @@ const link = await auth.link(session.user, {
 });
 ```
 
-The link opens your authentication `page` at that origin. Render `<Link />` there, from `auth.forms(c)`: it is a "Sign in" button, so opening the link signs nobody in, and a preview or a prefetch cannot use it up. On a page opened without a link it renders nothing.
+`origin` must be an HTTPS origin with no path, or `auth.link` throws. The link opens your authentication `page` at that origin, and its address holds the token, so keep other sites' scripts off that page. Render `<Link />` there, from `auth.forms(c)`: it is a "Sign in" button, so opening the link signs nobody in, and a preview or a prefetch cannot use it up. On a page opened without a link it renders nothing.
 
 ```tsx
 const { Login, Link } = auth.forms(c);
@@ -312,14 +312,14 @@ await database.migrate(files); // Auth's migrations, then your migrations/*.sql
 
 A version's SQL never changes, so its checksum stays valid. Changes ship as a new version, such as `auth:2`, which the next `database.migrate()` applies.
 
-| Table              | Contents                                                      |
-| ------------------ | ------------------------------------------------------------- |
-| `auth_credentials` | Passkeys, with their owner, public key, counter, backup flags |
-| `auth_sessions`    | Revocable sessions                                            |
-| `auth_challenges`  | Outstanding ceremonies, each used once                        |
-| `rate_limits`      | [Rate limit](/middleware#rate-limiting) buckets               |
-| `auth_tokens`      | Agents' authorization codes and tokens, stored as hashes      |
-| `auth_links`       | One-time [sign-in links](#sign-in-link), stored as hashes     |
+| Table              | Contents                                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `auth_credentials` | Passkeys, with their owner, public key, counter, backup flags, and when, where, and by what name each was made |
+| `auth_sessions`    | Revocable sessions                                                                                             |
+| `auth_challenges`  | Outstanding ceremonies, each used once                                                                         |
+| `rate_limits`      | [Rate limit](/middleware#rate-limiting) buckets                                                                |
+| `auth_tokens`      | Agents' authorization codes and tokens, stored as hashes                                                       |
+| `auth_links`       | One-time [sign-in links](#sign-in-link), stored as hashes                                                      |
 
 Auth's user IDs are text: passkey registration creates random UUIDs, and `auth.login` accepts any ID. Give your `users` table a `text` ID and reference it from each of Auth's tables that belong to a user, in your own migration:
 
@@ -349,7 +349,7 @@ const passkeys = await database.sql`
 `.parse(database.auth_credentials);
 ```
 
-Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, and rate-limit buckets are deleted periodically as new ones are written. Each browser can have 10 outstanding ceremonies, see [rate limiting](#rate-limiting).
+Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, sign-in links, and rate-limit buckets are deleted periodically as new ones are written. Each browser can have 10 outstanding ceremonies, see [rate limiting](#rate-limiting).
 
 ## Rate limiting
 
@@ -467,4 +467,4 @@ Use HTTPS and browsers with native WebAuthn JSON support. JavaScript is required
 
 Every instance must use the same database and signing secrets. Set up network overload protection at your edge.
 
-Auth operations enforce the configured origin: on another host, `c.session()` returns `null`, signing in or out and preparing forms throw, and Auth's endpoints answer 421. Generated POST routes also require a same-origin `Sec-Fetch-Site` or matching `Origin`, even with `App` CSRF protection disabled. Cookies are host-wide, so use one authentication system per hostname. This implementation supports new-account registration with a first discoverable ES256/P-256 passkey. Adding more passkeys to an existing account and account recovery are not provided.
+Auth operations enforce the configured origin: on another host, `c.session()` returns `null`, signing in or out and preparing forms throw, and Auth's endpoints answer 421. Generated POST routes also require a same-origin `Sec-Fetch-Site` or matching `Origin`, even with `App` CSRF protection disabled. Cookies are host-wide, so use one authentication system per hostname. This implementation registers an account with a discoverable ES256/P-256 passkey, adds more with [`Add`](#add-a-passkey), and signs a user in once with a [sign-in link](#sign-in-link) you make for them. There is no self-service recovery, such as by email.

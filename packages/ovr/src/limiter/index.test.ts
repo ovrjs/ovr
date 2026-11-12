@@ -406,7 +406,7 @@ test("a write that redirects is one request, so the page it sends to cannot fail
 	for (const count of [1, 2, 3])
 		expect(await add(), String(count)).toMatchObject({
 			isError: false,
-			content: [{ type: "text", text: "Done. Redirected to /list" }],
+			content: [{ type: "text", text: "Redirected to /list" }],
 		});
 	expect(todos).toEqual(["t0", "t1", "t2"]);
 

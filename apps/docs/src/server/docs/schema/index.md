@@ -145,21 +145,24 @@ const update = Route.post("/posts/:id")
 	.describe(
 		"Change a post. Send the fields to change; the others stay as they are.",
 	)
-	.fields({ title, body, tags })
+	// a field an agent may leave out is optional here, though the table's is not
+	.fields({ title: title.optional(), body: body.optional(), tags })
 	.use(async (c) => {
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
 
-		await database.sql`
-			UPDATE ${database.posts} SET ${database.sql.set(database.posts, result.updates)}
-			WHERE id = ${c.params.id}
-		`;
+		// nothing was sent: `sql.set` needs a column
+		if (Object.keys(result.updates).length)
+			await database.sql`
+				UPDATE ${database.posts} SET ${database.sql.set(database.posts, result.updates)}
+				WHERE id = ${c.params.id}
+			`;
 
 		return c.redirect(view.url({ params: c.params }), 303);
 	});
 ```
 
-A form sends every field it has, so for a person nothing is left out: an emptied field is cleared. A browser sends nothing for a box that is not ticked, so a checkbox, a radio or checkbox group, and a select with `multiple()` always count as sent. An [agent](/agents#tools) sends only the arguments it gives, so one that sends `{ id, title }` changes the title and nothing else, and clears a field by sending it empty or `null`. A required field is still required of both.
+A form sends every field it has, so for a person nothing is left out: an emptied field is cleared. A browser sends nothing for a box that is not ticked, so a checkbox, a radio or checkbox group, and a select with `multiple()` always count as sent. An [agent](/agents#tools) sends only the arguments it gives, so one that sends `{ id, title }` changes the title and nothing else, and clears a field by sending it empty or `null`. A required field must be in every request, from a person or an agent, so make a field `.optional()` in the update route when an agent may leave it out. Sent empty, it is then `null` in the updates, which a column that is `NOT NULL` refuses, so check it or let the database's error become a message with [`result.invalid`](#errors-after-parsing).
 
 ### Errors after parsing
 
@@ -220,13 +223,15 @@ const publish = Route.post("/recipes/:id/publish")
 
 Agents see these as an array of the schema's values, such as UUIDs, without a fixed list.
 
+A radio or checkbox group renders a `<fieldset>`. Its description follows its legend, before the options. Attributes passed as it renders, such as `class` and `id`, are the fieldset's, and each box has what `control()` set.
+
 > An object lists keys that are whole numbers first, in number order, whatever order they were written in. Options whose values are numeric IDs are shown in that order.
 
 A select that may be left empty, one made `.optional()`, starts with an empty choice, since a browser otherwise chooses its first option. `placeholder` is that choice's text: `Field.select(meals).optional().control({ placeholder: "Any meal" })`. A select that must be chosen starts with the choice too when it has a `placeholder`, such as "Choose a meal", and the browser asks for another. Write the choice yourself in a layout made with `component`.
 
 ### Lists
 
-`Field.textarea().lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Empty lines are left out, and each line is checked as the textarea checks its text, so `Field.textarea().max(80).lines()` limits each line to 80 characters. What comes after counts the lines: `Field.textarea().lines().max(10)` takes at most ten.
+`Field.textarea().lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Each line is trimmed, empty lines are left out, and each line is checked as the textarea checks its text, so `Field.textarea().max(80).lines()` limits each line to 80 characters. What comes after counts the lines: `Field.textarea().lines().max(10)` takes at most ten.
 
 `Field.list()` is a list of items in order, where an item may repeat. Each item is one field, or several by name:
 
@@ -268,7 +273,7 @@ A list's `options` are those of each row's choices made from a schema, so a week
 />
 ```
 
-`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control is read with its `Issue`, and not with its `Description`, which a layout says once rather than in every row:
+`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
 
 ```tsx
 const Items = save.component({ name: "ingredients", values, state: c.url });
@@ -322,7 +327,7 @@ A list has no script, so a person has the rows the page rendered, and saves to g
 </script>
 ```
 
-A list of one field has a `<div>` for each row in place of a `<tr>`, `:scope > div`, and each row's label is its number. To write the script in JSX, keep its text in a string and render it with `<script type="module">{Markup.raw(text)}</script>`, so its quotes and angle brackets are not escaped.
+A list of one field has a `<div>` for each row in place of a `<tr>`, `:scope > div`, and each row's label is its number, so set it too: `row.querySelector("label").textContent = rows.length + 1`. To write the script in JSX, keep its text in a string and render it with `<script type="module">{Markup.raw(text)}</script>`, so its quotes and angle brackets are not escaped.
 
 A list takes any field but another list or a [streamed](#streaming) file. `multiple()` is a different thing: one control that takes several of its own options or files, not rows.
 
@@ -345,7 +350,7 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 - set `aria-invalid` and `aria-describedby`
 - autofocus the first invalid field
 
-The state is kept small, since it is in a URL: a value over 512 characters is not kept, where each of many values, such as a line of `lines()`, has that limit of its own and a list's items have none, and the whole state is at most 4 KB before it is encoded. When it is larger, values are left out, from the form's last field back, until it fits. The issues are always kept, so the person sees what was wrong, but not what they typed in the fields left out. Keep a long form's values another way, such as by saving a draft.
+The state is kept small, since it is in a URL. A value over 512 characters is not kept. Each value of a field with many, such as a line of `lines()`, has that limit of its own. A list's items have no limit of their own, but a list shows no more rows from a URL than its `max()`, and never a row's hidden value. The whole state is at most 4 KB before it is encoded. When it is larger, values are left out, from the form's last field back, until it fits. The issues are kept unless they alone are over 4 KB, so the person sees what was wrong, but not what they typed in the fields left out. Keep a long form's values another way, such as by saving a draft.
 
 Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
 
@@ -421,8 +426,9 @@ const submit = Route.post("/submit")
 
 ## Protections
 
-- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()`, a group made from a schema, `Field.textarea().lines()`, or `Field.list()` has no limit.
+- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, a list counts its fields for each row it takes, and a file with `multiple()`, a group made from a schema, or `Field.textarea().lines()` has no limit.
 - You can still override the parser per request with `Context.data({ parts, memory, payload })`.
 - A body over a limit, such as more parts than the form has fields, throws a `Multipart.Limit`, one that is not multipart form data a `Multipart.Unsupported`, and malformed form data a `Multipart.Malformed`. Browsers submitting your form never send any of these. Left uncaught by the route, ovr answers them itself: 413 for a body over a limit, 415 for another content type, and 400 for malformed form data. Catch them in the route's own [middleware](/middleware) to answer differently; global middleware that [catches errors](/middleware#not-found-and-errors) sees the answer, not the error.
 - App-wide multipart defaults can be set with `new App({ multipart: { memory, payload, parts } })`.
 - Unexpected names in `FormData` or multipart requests become validation issues instead of being silently accepted. A list takes only the names of its own cells, such as `ingredients.0.amount`.
+- A list takes as many rows in one request as its `max()`, and 1,000 without one. A request with more is refused as over the `parts` limit, before its rows are read.

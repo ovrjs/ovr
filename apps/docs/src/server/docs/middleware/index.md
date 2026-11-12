@@ -160,7 +160,8 @@ const errors: Middleware = async (c, next) => {
 const notFound: Middleware = async (c, next) => {
 	await next();
 
-	// no route matched, or one set a status without a body
+	// no route matched, or one set a status without a body. A route's own
+	// 404 has a body and `c.res.status === 404`: check that too to replace it.
 	if (c.res.body === undefined) {
 		c.res.status = 404;
 
@@ -210,7 +211,7 @@ app.use(
 
 Without `key`, a limiter counts each client IP, which your server passes with `app.fetch(request, { ip })`, see [client IP examples](/app#client-ip).
 
-A limiter counts agents too, as it counts people: by the requests that reach your routes. The [MCP endpoint](/agents#mcp) makes a request to the route for each [tool call](/agents#tools), and follows a redirect as a browser does, so a form that redirects is two requests for either. A limiter passed to `app.use` does not see the endpoint's own requests, such as listing tools; limit those at your server or proxy if you need to.
+A limiter counts agents too, as it counts people: by the requests that reach your routes. The [MCP endpoint](/agents#mcp) makes a request to the route for each [tool call](/agents#tools), and a read follows a redirect as a browser does. A write that redirects is one request for an agent, which is told where the redirect goes and does not read it, and two for a person. A limiter passed to `app.use` does not see the endpoint's own requests, such as listing tools; limit those at your server or proxy if you need to.
 
 The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. A `key` that returns nothing throws, so put a limiter keyed by user after a sign-in check, as above. Cookies and forwarded headers are never used as fallback identities. Exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`. A missing or invalid identity, or a storage failure, throws: the request is not admitted, and your app's error handling sees the error like one from your own handler.
 

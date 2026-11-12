@@ -2121,6 +2121,56 @@ describe("a list", () => {
 		);
 	});
 
+	test("reads many rows in one pass, and state in a URL sets no hidden value or extra row", async () => {
+		const wide = new Form({
+			items: Field.list({
+				id: Field.hidden().optional(),
+				a: Field.text().optional(),
+				b: Field.text().optional(),
+				c: Field.text().optional(),
+			})
+				.max(3)
+				.optional()
+				.persist(),
+		});
+
+		// one cell in each of many rows: every other cell is looked for
+		const sparse = new FormData();
+		for (let place = 0; place < 20000; place++)
+			sparse.append(`items.${place}.a`, "x");
+		const started = performance.now();
+		const result = formInvalid(await wide.parse(sparse));
+		expect(performance.now() - started).toBeLessThan(2000);
+		expect(result.issues[0]?.message).toBe("At most 3");
+
+		// anyone can write the state in a URL
+		const forged = Codec.Base64Url.encode(
+			Codec.encode(
+				JSON.stringify({
+					id: decodeState<typeof wide.shape>(result.search).id,
+					values: {
+						items: Array.from({ length: 50 }, () => ({ id: "theirs", a: "x" })),
+					},
+				}),
+			),
+		);
+		const html = await Markup.string(
+			wide.Field({
+				name: "items",
+				state: new URL(`http://localhost/?_form=${forged}`),
+			}),
+		);
+		expect(html).not.toContain("theirs");
+		expect(html.match(/<tr>/g)).toHaveLength(1 + 3);
+
+		// the server's own values keep a row's hidden value
+		expect(
+			await Markup.string(
+				wide.Field({ name: "items", values: { items: [{ id: "7", a: "x" }] } }),
+			),
+		).toContain('name="items.0.id" value="7"');
+	});
+
 	test("is an array of its items to agents", () => {
 		const schema = Schema.object(form.shape).toJsonSchema({ io: "input" });
 
@@ -2212,8 +2262,15 @@ describe("a list", () => {
 		});
 	});
 
-	test("takes any number of parts, and only fields that are not lists or streamed", () => {
-		expect(form.parts).toBe(Infinity);
+	test("takes as many parts as its rows, and only fields that are not lists or streamed", () => {
+		// a row of each list is its fields: a thousand rows without a max()
+		expect(form.parts).toBe(1000 * 1 + 1000 * 4);
+		expect(
+			new Form({
+				week: Field.list(Field.text()).max(7),
+				items: Field.list({ a: Field.text(), b: Field.text() }).max(20),
+			}).parts,
+		).toBe(7 + 40);
 
 		// @ts-expect-error a list of lists
 		Field.list(Field.list(Field.text()));
