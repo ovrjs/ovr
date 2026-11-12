@@ -178,7 +178,7 @@ People see each option as its value. To call one something else, give the option
 Field.select({ dinner: "Dinner", crockpot: "Slow cooker" });
 ```
 
-When the options are only known as the page renders, such as which of a recipe's own photos to publish, give a schema that checks each value instead, and pass the options to the field as it renders: the values, or an object of each value and its label. A label given as the form renders may be an element, such as `{ [photo.id]: <img src={photo.url} alt={photo.caption} /> }`, which agents read by its `alt`. The schema only checks the form of a value, so check that each one is the user's own in the handler.
+When the options are only known as the page renders, such as which of a recipe's own photos to publish, give a schema that checks each value instead, and pass the options to the field as it renders: the values, or an object of each value and its label. A label given as the form renders may be an element, such as `{ [photo.id]: <img src={photo.url} alt={photo.caption} /> }`, which agents read by its `alt`. A label with its own text beside the image should give the image `alt=""`, or both are read. The schema only checks the form of a value, so check that each one is the user's own in the handler.
 
 ```tsx
 const publish = Route.post("/recipes/:id/publish")
@@ -224,7 +224,7 @@ const save = Route.post("/recipes/:id")
 	});
 ```
 
-A list renders a `<fieldset>` with a row for each item, and one empty row to add another. A list of several fields is a `<table>` in it, with a column for each field: its label is the column's heading, each cell has the control and its issue, and the fields' descriptions are listed once under the table. The table is in a `<div>` of its own, so a wide one can scroll sideways alone, such as `.wide > div { overflow-x: auto }`. A list's own description follows its legend, before the rows it explains. Attributes passed to a list, such as `<save.Field name="ingredients" class="wide" />`, are its fieldset's, since it has no control of its own. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
+A list renders a `<fieldset>` with a row for each item, and one empty row to add another. A list of several fields is a `<table>` in it, with a column for each field: its label is the column's heading, each cell has the control and its issue, and the fields' descriptions are listed once under the table. The table is in a `<div>` of its own, so a wide one can scroll sideways alone, such as `.wide > div { overflow-x: auto }`. A list's own description follows its legend, before the rows it explains, as a radio or checkbox group's does. Attributes passed to a list, such as `<save.Field name="ingredients" class="wide" />`, are its fieldset's, since it has no control of its own, as a group's are too: each box has what `control()` set. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
 
 Set how many rows a list shows with `control`, wherever it renders, or pass `rows` to one form, as with any field's attributes. A week's seven dinners are `Field.list(Field.select(id)).max(7).control({ rows: 7 })`, and an edit form with room to add is `<save.Field name="ingredients" rows={ingredients.length + 5} />`. Every item is always shown, and a list never shows more rows than its `max()`, so a full list has no empty row.
 
@@ -290,6 +290,7 @@ A list has no script, so a person has the rows the page rendered, and saves to g
 		for (const issue of row.querySelectorAll("[data-issue]")) issue.remove();
 
 		last.after(row);
+		row.querySelector("input, select, textarea")?.focus();
 	});
 </script>
 ```
@@ -316,7 +317,7 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 - set `aria-invalid` and `aria-describedby`
 - autofocus the first invalid field
 
-The state is kept small, since it is in a URL: a value over 512 characters is not kept, a list's items aside, and the whole state is at most 4 KB before it is encoded. When it is larger, values are left out, from the form's last field back, until it fits. The issues are always kept, so the person sees what was wrong, but not what they typed in the fields left out. Keep a long form's values another way, such as by saving a draft.
+The state is kept small, since it is in a URL: a value over 512 characters is not kept, where each of many values, such as a line of `lines()`, has that limit of its own and a list's items have none, and the whole state is at most 4 KB before it is encoded. When it is larger, values are left out, from the form's last field back, until it fits. The issues are always kept, so the person sees what was wrong, but not what they typed in the fields left out. Keep a long form's values another way, such as by saving a draft.
 
 Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
 

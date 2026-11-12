@@ -659,9 +659,10 @@ describe("Form schema", () => {
 		expect(await Markup.string(form.Field({ name: "url" }))).toBe(
 			'<div><label for="url">URL</label><input id="url" required aria-describedby="url-description" type="url" name="url"><p id="url-description" data-description>An http or https address.</p></div>',
 		);
-		// a group's after its options, and nothing for a hidden field or without one
+		// a group's after its legend, before its options, and nothing for a
+		// hidden field or without one
 		expect(await Markup.string(form.Field({ name: "size" }))).toMatch(
-			/<\/div><p id="size-description" data-description>Pick one<\/p><\/fieldset>$/,
+			/^<fieldset><legend>size<\/legend><p id="size-description" data-description>Pick one<\/p><div>/,
 		);
 		expect(await Markup.string(form.Field({ name: "id" }))).toBe(
 			'<input type="hidden" name="id">',
@@ -1438,6 +1439,67 @@ test("a choice given as the form renders may be labelled with an element", async
 			'<div><input id="photos-a1" type="checkbox" name="photos" checked value="a1"><label for="photos-a1"><img src="/a1.jpg" alt="Card front"></label></div>' +
 			'<div><input id="photos-b2" type="checkbox" name="photos" value="b2"><label for="photos-b2">Plain</label></div>' +
 			"</fieldset>",
+	);
+});
+
+test("what is passed to a group is its fieldset's, and each box has what control() set", async () => {
+	const form = new Form({
+		photos: Field.checkboxes(["a", "b"]).control({ "data-box": true }),
+		size: Field.radio(["s", "l"]),
+	});
+
+	expect(
+		await Markup.string(
+			form.Field({ name: "photos", class: "photo-choice", id: "pick" }),
+		),
+	).toBe(
+		'<fieldset class="photo-choice" id="pick"><legend>photos</legend>' +
+			'<div><input id="photos-a" type="checkbox" data-box name="photos" value="a"><label for="photos-a">a</label></div>' +
+			'<div><input id="photos-b" type="checkbox" data-box name="photos" value="b"><label for="photos-b">b</label></div>' +
+			"</fieldset>",
+	);
+	// required stays each box's
+	expect(await Markup.string(form.Field({ name: "size" }))).toContain(
+		'<input id="size-s" required type="radio" name="size" value="s">',
+	);
+	expect(
+		await Markup.string(form.Field({ name: "size", required: false })),
+	).toBe(
+		"<fieldset><legend>size</legend>" +
+			'<div><input id="size-s" type="radio" name="size" value="s"><label for="size-s">s</label></div>' +
+			'<div><input id="size-l" type="radio" name="size" value="l"><label for="size-l">l</label></div>' +
+			"</fieldset>",
+	);
+
+	const Size = form.component({ name: "size", class: "sizes" });
+	expect(await Markup.string(Size.Root())).toBe(
+		'<fieldset class="sizes"></fieldset>',
+	);
+});
+
+test("each line of a long text is kept, where one long value is not", async () => {
+	const form = new Form({
+		title: Field.text(),
+		steps: Field.textarea().lines().persist(),
+		note: Field.textarea().optional().persist(),
+	});
+	const steps = Array.from({ length: 8 }, (_, i) => `${i} ${"x".repeat(260)}`);
+
+	const state = decodeState<typeof form.shape>(
+		formInvalid(
+			await form.parse(
+				new URLSearchParams({ steps: steps.join("\n"), note: "y".repeat(600) }),
+			),
+		).search,
+	);
+	expect(state.values).toEqual({ steps });
+
+	// a line over the limit is not kept, nor the lines with it
+	const long = formInvalid(
+		await form.parse(new URLSearchParams({ steps: `ok\n${"z".repeat(600)}` })),
+	);
+	expect(decodeState<typeof form.shape>(long.search).values).not.toHaveProperty(
+		"steps",
 	);
 });
 

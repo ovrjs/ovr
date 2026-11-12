@@ -204,7 +204,11 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 					if (
 						!result.issues &&
 						(!limit ||
-							JSON.stringify(result.data).length <= Form.#maxValueChars)
+							// each of many values, such as a line, has the limit:
+							// the state's own holds them all
+							(Array.isArray(result.data) ? result.data : [result.data]).every(
+								(one) => JSON.stringify(one).length <= Form.#maxValueChars,
+							))
 					) {
 						own(sanitized, name, result.data);
 					}
@@ -1244,11 +1248,30 @@ class FieldSchema<
 			const groupId = (value: string) =>
 				`${control.name}-${value}`.toLowerCase();
 
+			// a group's own attributes, such as a class, are its fieldset's,
+			// as a list's are. Each box has those `control()` set, and if it
+			// is required.
+			const {
+				name,
+				required = this.#required(),
+				placeholder: _,
+				...attributes
+			} = props;
+			const box = {
+				id: undefined as string | undefined,
+				required,
+				autofocus: control.autofocus,
+				"aria-invalid": control["aria-invalid"],
+				"aria-describedby": control["aria-describedby"],
+				...this.#config.props,
+				name,
+			};
+
 			const Control = (
 				data: Field.Component.Control.Group<"input", Field.Options>,
 			) =>
 				jsx(this.tag, {
-					...control,
+					...box,
 					id: groupId(data.value),
 					// autofocus only the first input in the group
 					autofocus: control.autofocus && data.value === options[0],
@@ -1267,7 +1290,8 @@ class FieldSchema<
 				Issue,
 				Label,
 				Control,
-				Root: (data: Field.Component.Root = {}) => jsx("fieldset", data),
+				Root: (data: Field.Component.Root = {}) =>
+					jsx("fieldset", { ...attributes, ...data }),
 				Option: ({
 					value,
 					...rest
@@ -1355,7 +1379,8 @@ class FieldSchema<
 							}),
 						]
 					: this.#grouped(props)
-						? [c.Legend(), this.#body(c, props), c.Description()]
+						? // before the options it explains, as a list's is
+							[c.Legend(), c.Description(), this.#body(c, props)]
 						: [c.Label(), this.#body(c, props), c.Description()],
 				c.Issue(),
 			],
