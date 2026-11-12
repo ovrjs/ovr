@@ -696,7 +696,7 @@ describe("Form schema", () => {
 			}).properties,
 		).toMatchObject({
 			url: { title: "URL", description: "An http or https address." },
-			due: { description: "When it is due. Date as YYYY-MM-DD" },
+			due: { description: "When it is due. Date as YYYY-MM-DD." },
 			id: { description: "The bookmark to change" },
 		});
 	});

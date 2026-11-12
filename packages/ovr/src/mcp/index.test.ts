@@ -536,6 +536,8 @@ describe("Mcp", () => {
 					day: Field.date().describe("The day it is for."),
 					photo: Field.file().describe("At most 3 MB."),
 					plain: Field.text().describe("No period"),
+					when: Field.date().describe("The day"),
+					date: Field.date(),
 				})
 				.use(() => {}),
 		);
@@ -551,6 +553,9 @@ describe("Mcp", () => {
 			"At most 3 MB. A file. Send its contents as `text`, or as `base64` when it is not text.",
 		);
 		expect(properties.plain.description).toBe("No period");
+		expect(properties.when.description).toBe("The day. Date as YYYY-MM-DD.");
+		// ovr's own guidance alone, as written
+		expect(properties.date.description).toBe("Date as YYYY-MM-DD");
 	});
 
 	test("choices given as the form renders are listed with its tool", async () => {

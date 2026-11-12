@@ -400,8 +400,8 @@ export class Time {
 export class Prose {
 	/**
 	 * Joins parts of a description into sentences. A part without its own
-	 * end gets a period before the next, and when any part ends as a
-	 * sentence, so does the whole.
+	 * end gets a period before the next, and parts joined end as a sentence.
+	 * A single part is kept as written.
 	 *
 	 * @param parts Parts, empty ones skipped
 	 * @returns The description, or an empty string
@@ -414,7 +414,7 @@ export class Prose {
 				text ? `${text}${ended(text) ? "" : "."} ${part}` : part,
 			"",
 		);
-		if (given.some(ended) && !ended(joined)) joined += ".";
+		if (given.length > 1 && !ended(joined)) joined += ".";
 		return joined;
 	}
 }
