@@ -21,6 +21,8 @@
     "choices-return-source",
     "joined-descriptions",
     "json-tool-arguments",
+    "lists",
+    "optional-select",
     "registration-messages",
     "taken-fields"
   ]
