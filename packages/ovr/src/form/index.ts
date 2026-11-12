@@ -946,6 +946,54 @@ class FieldSchema<
 	}
 
 	/**
+	 * Take a textarea's lines as a list of text, such as steps or tags. People
+	 * write one on each line, and agents send an array. Empty lines are left
+	 * out, each line is checked as this field checks its text, and the list
+	 * needs one line unless the field is made optional after.
+	 *
+	 * ```ts
+	 * Field.textarea().lines(); // "Chop\nFry" and ["Chop", "Fry"] are ["Chop", "Fry"]
+	 * Field.textarea().max(80).lines(); // each line at most 80 characters
+	 * ```
+	 *
+	 * @returns Textarea field whose value is its lines
+	 */
+	lines(
+		this: Field.Instance<string, "textarea", Type, Values, Stream>,
+	): Field.Instance<string[], "textarea", Type, Values, Stream>;
+	// the overload above is its type
+	lines(): any {
+		const { description, ...def } = this.def;
+		// a description given before describes the field, not each line
+		const array = Schema.array(
+			(description === undefined
+				? this
+				: this.#copy({ def })) as Schema<unknown>,
+			required,
+		);
+
+		return new FieldSchema(
+			this.#config,
+			description === undefined ? array : { ...array.def, description },
+			(data, name) => {
+				// a person's one value is split, an agent's array has one each
+				const lines = data
+					.getAll(name)
+					.flatMap((value) =>
+						typeof value === "string" ? value.split(/\r?\n/) : [],
+					)
+					.map((line) => line.trim())
+					.filter(Boolean);
+
+				return lines.length ? lines : undefined;
+			},
+			Infinity,
+			this.streaming,
+			this.#persist,
+		);
+	}
+
+	/**
 	 * Persist this field in the encoded invalid form state.
 	 *
 	 * Use this for non-sensitive values that should refill after an invalid
@@ -1137,7 +1185,7 @@ class FieldSchema<
 
 				if (value !== undefined) {
 					if (this.tag === "textarea") {
-						// each of `lines()` on its own line
+						// each of its `lines()` on its own line
 						attrs.children = Array.isArray(value) ? value.join("\n") : value;
 					} else if (this.tag === "input") {
 						if (this.type === "checkbox") {
@@ -2129,37 +2177,6 @@ export class Field {
 	 */
 	static textarea(): Field.Instance<string, "textarea"> {
 		return new FieldSchema({ tag: "textarea" }, Schema.string(required));
-	}
-
-	/**
-	 * A list of text, such as steps or tags. People write one on each line of
-	 * a textarea, and agents send an array. Empty lines are left out, and the
-	 * list needs one line unless the field is made optional after.
-	 *
-	 * ```ts
-	 * Field.lines(); // "Chop\nFry" and ["Chop", "Fry"] are ["Chop", "Fry"]
-	 * ```
-	 *
-	 * @returns Textarea field whose value is its lines
-	 */
-	static lines(): Field.Instance<string[], "textarea"> {
-		return new FieldSchema(
-			{ tag: "textarea" },
-			Schema.array(Schema.string(), required),
-			(data, name) => {
-				// a person's one value is split, an agent's array has one each
-				const lines = data
-					.getAll(name)
-					.flatMap((value) =>
-						typeof value === "string" ? value.split(/\r?\n/) : [],
-					)
-					.map((line) => line.trim())
-					.filter(Boolean);
-
-				return lines.length ? lines : undefined;
-			},
-			Infinity,
-		);
 	}
 
 	/**

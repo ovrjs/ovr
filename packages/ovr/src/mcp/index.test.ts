@@ -600,8 +600,8 @@ describe("Mcp", () => {
 		const save = Route.post("/recipes/:id")
 			.describe("Save a recipe")
 			.fields({
-				steps: Field.lines(),
-				tags: Field.lines().optional(),
+				steps: Field.textarea().lines(),
+				tags: Field.textarea().lines().optional(),
 				dinners: Field.list(Field.select(Schema.string().uuid())).optional(),
 				ingredients: Field.list({
 					id: Field.hidden().optional(),

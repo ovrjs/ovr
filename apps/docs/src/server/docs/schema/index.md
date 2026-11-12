@@ -189,14 +189,14 @@ A select that may be left empty, one made `.optional()`, starts with an empty ch
 
 ### Lists
 
-`Field.lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Empty lines are left out.
+`Field.textarea().lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Empty lines are left out, and each line is checked as the textarea checks its text, so `Field.textarea().max(80).lines()` limits each line to 80 characters.
 
 `Field.list()` is a list of items in order, where an item may repeat. Each item is one field, or several by name:
 
 ```tsx
 const save = Route.post("/recipes/:id")
 	.fields({
-		steps: Field.lines(),
+		steps: Field.textarea().lines(),
 		ingredients: Field.list({
 			amount: Field.number().optional(),
 			name: Field.text(),
@@ -331,7 +331,7 @@ const submit = Route.post("/submit")
 
 ## Protections
 
-- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()`, a group made from a schema, `Field.lines()`, or `Field.list()` has no limit.
+- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, and a file with `multiple()`, a group made from a schema, `Field.textarea().lines()`, or `Field.list()` has no limit.
 - You can still override the parser per request with `Context.data({ parts, memory, payload })`.
 - A body over a limit, such as more parts than the form has fields, throws a `Multipart.Limit`, one that is not multipart form data a `Multipart.Unsupported`, and malformed form data a `Multipart.Malformed`. Browsers submitting your form never send any of these. Left uncaught by the route, ovr answers them itself: 413 for a body over a limit, 415 for another content type, and 400 for malformed form data. Catch them in the route's own [middleware](/middleware) to answer differently; global middleware that [catches errors](/middleware#not-found-and-errors) sees the answer, not the error.
 - App-wide multipart defaults can be set with `new App({ multipart: { memory, payload, parts } })`.

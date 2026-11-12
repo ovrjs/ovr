@@ -814,7 +814,7 @@ export class Mcp<P extends string = string> {
 
 	/**
 	 * @param field Form field
-	 * @returns `true` for a field of lines, `Field.lines()`, also when made
+	 * @returns `true` for a field of lines, `Field.textarea().lines()`, also when made
 	 * optional
 	 */
 	static #lines(field: Field.Any) {

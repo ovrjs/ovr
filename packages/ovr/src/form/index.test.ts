@@ -1241,8 +1241,8 @@ test("a number field sent text asks for a number, left empty it is required", as
 
 describe("lines", () => {
 	const form = new Form({
-		steps: Field.lines(),
-		tags: Field.lines().optional(),
+		steps: Field.textarea().lines(),
+		tags: Field.textarea().lines().optional(),
 	});
 
 	test("a person's lines and an agent's values are the same array", async () => {
@@ -1281,6 +1281,54 @@ describe("lines", () => {
 		).toContain(
 			'<textarea id="steps" required name="steps">Chop\nFry</textarea>',
 		);
+	});
+
+	test("check each line as the textarea checks its text, and keep what was chained", async () => {
+		const short = new Form({
+			tags: Field.textarea()
+				.max(4, "Too long")
+				.label("Tags")
+				.describe("One on each line")
+				.control({ rows: 3 })
+				.lines()
+				.persist(),
+		});
+
+		const invalid = formInvalid(
+			await short.parse(new URLSearchParams({ tags: "fall\nwinter" })),
+		);
+		expect(invalid.issues.map((issue) => [issue.path, issue.message])).toEqual([
+			[["tags", 1], "Too long"],
+		]);
+
+		const html = await Markup.string(
+			short.Field({
+				name: "tags",
+				state: new URL(
+					`http://localhost/?${new URLSearchParams(invalid.search)}`,
+				),
+			}),
+		);
+		expect(html).toContain('<label for="tags">Tags</label>');
+		expect(html).toContain(' rows="3" name="tags">fall\nwinter</textarea>');
+		expect(html).toContain("One on each line");
+		expect(html).toContain("Too long");
+
+		expect(
+			Schema.object(short.shape).toJsonSchema({ io: "input" }).properties,
+		).toEqual({
+			tags: {
+				type: "array",
+				title: "Tags",
+				description: "One on each line",
+				items: { type: "string", maxLength: 4 },
+			},
+		});
+
+		// @ts-expect-error only a textarea has lines
+		Field.text().lines();
+		// @ts-expect-error optional after, as the list
+		Field.textarea().optional().lines();
 	});
 
 	test("are an array of strings to agents", () => {
