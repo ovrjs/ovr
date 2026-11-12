@@ -16,6 +16,7 @@
     "7-agents",
     "8-auth",
     "9-database",
+    "add-passkey",
     "agent-limits",
     "choices-for-agents",
     "choices-return-source",
