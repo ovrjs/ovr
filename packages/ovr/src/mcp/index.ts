@@ -1037,6 +1037,10 @@ export class Mcp<P extends string = string> {
 			session,
 			url,
 			read ? undefined : { method: route.method, body },
+			// the form's fields among the arguments, which are all a write updates
+			new Set(
+				Object.keys(args).filter((name) => shape && Object.hasOwn(shape, name)),
+			),
 		);
 	}
 
@@ -1255,7 +1259,13 @@ export class Mcp<P extends string = string> {
 	 * @param init Method and body
 	 * @returns The response, or the form's issues instead of the redirect back to it
 	 */
-	async #run(c: Context, session: unknown, url: URL, init?: RequestInit) {
+	async #run(
+		c: Context,
+		session: unknown,
+		url: URL,
+		init?: RequestInit,
+		sent?: ReadonlySet<string>,
+	) {
 		const language = this.#languages.get(c.req);
 		const req = new Request(url, {
 			...init,
@@ -1270,6 +1280,7 @@ export class Mcp<P extends string = string> {
 		const call: Parameters<typeof agent.set>[1] = {
 			session,
 			tool: this.#tool(c),
+			...(sent && { sent }),
 		};
 		agent.set(req, call);
 		const res = await this.#app!.fetch(req, { ip: c.ip });
@@ -1291,7 +1302,13 @@ export class Mcp<P extends string = string> {
 	 * @param init Method and body
 	 * @returns Tool result
 	 */
-	async #fetch(c: Context, session: unknown, url: URL, init?: RequestInit) {
+	async #fetch(
+		c: Context,
+		session: unknown,
+		url: URL,
+		init?: RequestInit,
+		sent?: ReadonlySet<string>,
+	) {
 		let redirected: URL | undefined;
 		/** The call writes, so a redirect from it means it was done */
 		const wrote = init !== undefined;
@@ -1300,7 +1317,7 @@ export class Mcp<P extends string = string> {
 			`Redirected to ${page.pathname}${page.search}`;
 
 		for (let i = 0; ; i++) {
-			const res = await this.#run(c, session, url, init);
+			const res = await this.#run(c, session, url, init, sent);
 			if (typeof res === "string") return Mcp.#result(res, true);
 
 			const location = res.headers.get(Header.name.loc);
@@ -1352,6 +1369,18 @@ export class Mcp<P extends string = string> {
 				);
 
 			const [kind] = type?.split("/") ?? [];
+			// a page the route sends as a file to download, such as one to
+			// print: the agent gets the file, not its text to read
+			const disposition = res.headers.get("content-disposition") ?? "";
+			if (text !== undefined && res.ok && /^\s*attachment/i.test(disposition))
+				return Mcp.#result(
+					/filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "",
+					false,
+					{
+						type: "resource",
+						resource: { uri: this.#name(url), mimeType: type, text },
+					},
+				);
 
 			return Mcp.#result(
 				[redirected && redirect(redirected), !res.ok && Mcp.#status(res), text]

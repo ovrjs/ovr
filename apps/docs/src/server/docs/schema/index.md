@@ -136,6 +136,31 @@ const edit = Route.get("/posts/:id/edit").use(async (c) => {
 });
 ```
 
+### Update a record
+
+`result.data` is the whole record, for a create. To change one, use `result.updates`: what the request sets. It has each field that was sent, `null` for one sent empty, and nothing for one that was left out, so that field keeps its value. [`database.sql.set`](/database) writes exactly that:
+
+```tsx
+const update = Route.post("/posts/:id")
+	.describe(
+		"Change a post. Send the fields to change; the others stay as they are.",
+	)
+	.fields({ title, body, tags })
+	.use(async (c) => {
+		const result = await c.data();
+		if (result.issues) return c.redirect(result.url, 303);
+
+		await database.sql`
+			UPDATE ${database.posts} SET ${database.sql.set(database.posts, result.updates)}
+			WHERE id = ${c.params.id}
+		`;
+
+		return c.redirect(view.url({ params: c.params }), 303);
+	});
+```
+
+A form sends every field it has, so for a person nothing is left out: an emptied field is cleared. A browser sends nothing for a box that is not ticked, so a checkbox, a radio or checkbox group, and a select with `multiple()` always count as sent. An [agent](/agents#tools) sends only the arguments it gives, so one that sends `{ id, title }` changes the title and nothing else, and clears a field by sending it empty or `null`. A required field is still required of both.
+
 ### Errors after parsing
 
 Some issues are only found after the data is valid, for example when a database constraint rejects a duplicate email. `result.invalid` puts messages on fields and returns an invalid result with the same `url` as a failed parse, keeping persisted values.

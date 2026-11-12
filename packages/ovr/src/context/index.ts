@@ -17,6 +17,8 @@ export const agent = new WeakMap<
 	Request,
 	{
 		readonly session?: unknown;
+		/** The fields the tool call gave, which are all it updates */
+		readonly sent?: ReadonlySet<string>;
 		issues?: readonly { readonly path: string; readonly message: string }[];
 		/** The tool a form submits to and its arguments, so a page points to it */
 		readonly tool?: Markdown.Options[typeof tools];
@@ -338,6 +340,8 @@ export class Context<
 				post
 					? this.multipart({ parts: form.parts, ...options })
 					: this.url.searchParams,
+				[],
+				agent.get(this.req)?.sent,
 			);
 
 			/**
@@ -437,8 +441,15 @@ export class Context<
 			const [mime] = Header.shift(res.headers.get(Header.name.type));
 
 			if (!mime || mime === Mime.type.html) {
-				// pages are HTML for browsers and Markdown for agents that ask for it
-				if (this.#markdown()) {
+				// pages are HTML for browsers and Markdown for agents that ask for
+				// it, but a file to download, such as a page to print, is HTML
+				// for both
+				if (
+					!/^\s*attachment/i.test(
+						res.headers.get("content-disposition") ?? "",
+					) &&
+					this.#markdown()
+				) {
 					res.body = Markdown.stream(r, {
 						base: this.url,
 						[tools]: agent.get(this.req)?.tool,

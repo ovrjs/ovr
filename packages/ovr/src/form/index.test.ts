@@ -1561,6 +1561,75 @@ test("a picker's value is checked, since an agent sends what it likes", async ()
 	});
 });
 
+test("updates are what a request sets: a form's every field, an agent's only the ones it gave", async () => {
+	const form = new Form({
+		title: Field.text(),
+		author: Field.text().optional(),
+		servings: Field.number().optional(),
+		done: Field.checkbox(),
+		tags: Field.checkboxes(["fall", "winter"]).optional(),
+		steps: Field.textarea().lines().optional(),
+		items: Field.list({ name: Field.text() }).optional(),
+		kind: Field.select(["a", "b"]).default("a"),
+	});
+
+	// a browser sends every control but a box that is not ticked
+	const browser = new FormData();
+	browser.set("title", "Soup");
+	browser.set("author", "");
+	browser.set("servings", "4");
+	browser.set("steps", "");
+	browser.set("items.0.name", "");
+	browser.set("kind", "b");
+	const person = formValid(await form.parse(browser));
+	expect(person.data).toEqual({
+		title: "Soup",
+		servings: 4,
+		done: false,
+		kind: "b",
+	});
+	// emptied is cleared, and an unticked box is false
+	expect(person.updates).toEqual({
+		title: "Soup",
+		author: null,
+		servings: 4,
+		done: false,
+		tags: null,
+		steps: null,
+		items: null,
+		kind: "b",
+	});
+	expectTypeOf(person.updates).toEqualTypeOf<{
+		readonly title?: string | null;
+		readonly author?: string | null;
+		readonly servings?: number | null;
+		readonly done?: boolean | null;
+		readonly tags?: ("fall" | "winter")[] | null;
+		readonly steps?: string[] | null;
+		readonly items?: { name: string }[] | null;
+		readonly kind?: "a" | "b" | null;
+	}>();
+
+	// a form that renders some of the fields updates only those, and its boxes
+	const some = new FormData();
+	some.set("title", "Stew");
+	expect(formValid(await form.parse(some)).updates).toEqual({
+		title: "Stew",
+		done: false,
+		tags: null,
+	});
+
+	// an agent gave two arguments: one to change, one to clear
+	const agent = new FormData();
+	agent.set("title", "Chili");
+	const called = formValid(
+		await form.parse(agent, [], new Set(["title", "author"])),
+	);
+	expect(called.updates).toEqual({ title: "Chili", author: null });
+	// the whole record is as before: what was left out is not in it
+	expect(called.data).toEqual({ title: "Chili", done: false, kind: "a" });
+});
+
 describe("lines", () => {
 	const form = new Form({
 		steps: Field.textarea().lines(),

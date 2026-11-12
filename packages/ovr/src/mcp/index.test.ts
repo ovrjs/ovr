@@ -750,6 +750,89 @@ describe("Mcp", () => {
 		expect(text).not.toContain("`tags`");
 	});
 
+	test("a tool call updates only the arguments it gave, and null or false is given", async () => {
+		const { app, rpc } = setup();
+		const seen: unknown[] = [];
+		app.use(
+			Route.post("/recipes/:id")
+				.describe("Change a recipe")
+				.fields({
+					title: Field.text(),
+					author: Field.text().optional(),
+					notes: Field.textarea().lines().optional(),
+					done: Field.checkbox(),
+					id: Field.hidden().optional(),
+				})
+				.use(async (c) => {
+					const result = await c.data();
+					if (result.issues) return c.redirect(result.url, 303);
+					seen.push(result.updates);
+					return "saved";
+				}),
+		);
+		const call = (args: object) =>
+			rpc("tools/call", {
+				name: "post_recipes_id",
+				arguments: { id: "soup", ...args },
+			});
+
+		await call({ title: "Soup" });
+		await call({ title: "Soup", author: null, notes: [], done: false });
+		await call({ title: "Soup", author: "Ana", done: true });
+		expect(seen).toEqual([
+			// `id` is the address's parameter and the form's field
+			{ title: "Soup", id: "soup" },
+			{ title: "Soup", author: null, notes: null, done: false, id: "soup" },
+			{ title: "Soup", author: "Ana", done: true, id: "soup" },
+		]);
+	});
+
+	test("a page a route sends as a file to download reaches an agent as the file", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Route.get("/weeks/:start/packet")
+				.describe("The week's packet, to print")
+				.use((c) => {
+					c.res.headers.set(
+						"content-disposition",
+						'attachment; filename="week.html"',
+					);
+					return jsx("main", {
+						children: jsx("h1", { children: "Week of " + c.params.start }),
+					});
+				}),
+			Route.get("/weeks/:start")
+				.describe("A week")
+				.use((c) => jsx("h1", { children: "Week of " + c.params.start })),
+		);
+
+		const { body } = await rpc("tools/call", {
+			name: "get_weeks_start_packet",
+			arguments: { start: "2026-11-08" },
+		});
+		expect(body.result.isError).toBe(false);
+		expect(body.result.content).toEqual([
+			{ type: "text", text: "week.html" },
+			{
+				type: "resource",
+				resource: {
+					uri: expect.stringContaining("/weeks/2026-11-08/packet"),
+					mimeType: "text/html",
+					text: "<main><h1>Week of 2026-11-08</h1></main>",
+				},
+			},
+		]);
+
+		// a page without it is read, as before
+		const page = await rpc("tools/call", {
+			name: "get_weeks_start",
+			arguments: { start: "2026-11-08" },
+		});
+		expect(page.body.result.content).toEqual([
+			{ type: "text", text: "# Week of 2026-11-08\n" },
+		]);
+	});
+
 	test("a page preserves the value of a checkbox group with one option", async () => {
 		const { app, rpc } = setup();
 		const route = Route.post("/preferences")

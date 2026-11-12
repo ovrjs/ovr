@@ -406,13 +406,18 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 *
 	 * @param source FormData, URLSearchParams, or Multipart to parse
 	 * @param path Internal path reference
+	 * @param sent The fields an agent's tool call gave, which are all it
+	 * updates. Without it the source is a form's, which sends every field it
+	 * has.
 	 * @returns Parsed result
 	 */
 	parse = async (
 		source: FormData | URLSearchParams | Multipart,
 		path: Schema.Issue.Path = [],
+		sent?: ReadonlySet<string>,
 	): Promise<Field.Parse.Result<Shape>> => {
 		const data: Record<string, unknown> = {};
+		const updates: Record<string, unknown> = {};
 		const issues: Schema.Issue[] = [];
 		const values: Record<string, unknown> = {};
 		let form: FormData | URLSearchParams;
@@ -486,6 +491,11 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 					own(data, name, result.data);
 				}
 
+				// what the request sets: a field sent empty is cleared, and one
+				// not sent keeps its value
+				if (sent ? sent.has(name) : FieldSchema.sent(field, form, name))
+					own(updates, name, result.data ?? null);
+
 				// a cleared field is recorded empty, so it overrides initial values
 				if (FieldSchema.persisted(field)) own(values, name, value ?? "");
 			}
@@ -504,6 +514,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 
 		return {
 			data: data as Field.Parse.Data<Shape>,
+			updates: updates as Field.Parse.Updates<Shape>,
 			stream,
 			invalid: (messages: Field.Parse.Messages<Shape>) =>
 				this.#invalid(
@@ -767,6 +778,35 @@ class FieldSchema<
 		name: string,
 	) {
 		return field.#read(data, name);
+	}
+
+	/**
+	 * @param field Field
+	 * @param data A form's data
+	 * @param name The field's name
+	 * @returns `true` when the form sent the field. A browser sends nothing
+	 * for a box that is not ticked or a choice not made, so those are always
+	 * sent: empty is their value.
+	 */
+	static sent(
+		field: Field.Any,
+		data: FormData | URLSearchParams,
+		name: string,
+	) {
+		if (
+			field.type === "checkbox" ||
+			field.type === "radio" ||
+			(field.tag === "select" && field.#config.props?.multiple)
+		)
+			return true;
+
+		const { item } = field;
+		if (!item) return data.has(name);
+
+		// a list's cells are named by it
+		for (const key of data.keys())
+			if (FieldSchema.place(item, name, key) !== undefined) return true;
+		return false;
 	}
 
 	/**
@@ -1760,6 +1800,15 @@ export namespace Field {
 		export type Data<S extends Shape> = Schema.Infer<NonStreamShape<S>>;
 
 		/**
+		 * The fields a request sets, `null` for one it clears.
+		 *
+		 * @template S Form shape
+		 */
+		export type Updates<S extends Shape> = {
+			readonly [K in keyof Data<S>]?: Exclude<Data<S>[K], undefined> | null;
+		};
+
+		/**
 		 * Form parse result.
 		 *
 		 * @template S Form shape
@@ -1772,6 +1821,14 @@ export namespace Field {
 			Data<S>,
 			Result.Invalid<M>,
 			{
+				/**
+				 * What the request sets, to update a record with: each field
+				 * it sent, `null` for one sent empty, and nothing for one it
+				 * left out, which keeps its value. A form sends every field it
+				 * has, and an agent only the ones to change.
+				 */
+				readonly updates: Updates<S>;
+
 				/** Rest of the multipart parts to stream */
 				readonly stream?: AsyncGenerator<Multipart.Part> | undefined;
 
