@@ -355,9 +355,10 @@ test("an agent's tool call is one request to the app, counted once by each limit
 	expect((await page()).status).toBe(429);
 });
 
-test("a write that redirects is done, though the page it sends to is refused", async () => {
+test("a write that redirects is one request, so the page it sends to cannot fail it", async () => {
 	const todos: string[] = [];
-	// as for a person's browser, the form's request and the page's are two
+	// an agent's write is answered with where it redirects, not that page,
+	// so each call spends one of the limit
 	const everywhere = new Limiter("redirects", { database: db, limit: 3 });
 	const app = new App().use(
 		everywhere.middleware,
@@ -402,17 +403,15 @@ test("a write that redirects is done, though the page it sends to is refused", a
 			).json()) as any
 		).result;
 
-	expect(await add()).toMatchObject({
-		isError: false,
-		content: [{ type: "text", text: "Redirected to /list\n\nt0" }],
-	});
+	for (const count of [1, 2, 3])
+		expect(await add(), String(count)).toMatchObject({
+			isError: false,
+			content: [{ type: "text", text: "Done. Redirected to /list" }],
+		});
+	expect(todos).toEqual(["t0", "t1", "t2"]);
 
-	// the third request is the second write, the fourth is its page: the
-	// write happened, so the call is not an error an agent would retry
-	const second = await add();
-	expect(todos).toEqual(["t0", "t1"]);
-	expect(second.isError).toBe(false);
-	expect(second.content[0].text).toMatch(
-		/^Redirected to \/list, which could not be read: 429\n\nRetry after \d+ seconds$/,
-	);
+	// the fourth is over the limit, before the route: nothing was written
+	const refused = await add();
+	expect(refused.isError).toBe(true);
+	expect(todos).toHaveLength(3);
 });

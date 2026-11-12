@@ -806,7 +806,7 @@ describe("Mcp", () => {
 			name: Route.post("/private-go").describe("x").tool!.name,
 		});
 		expect(JSON.stringify(hidden.body)).not.toContain("secret");
-		expect(hidden.body.result.content[0].text).toBe("Redirected");
+		expect(hidden.body.result.content[0].text).toBe("Done");
 		// another site is where the app sends the user, such as a payment page
 		const away = await rpc("tools/call", { name: "post_checkout" });
 		expect(away.body.result.content[0].text).toBe(
@@ -1619,8 +1619,13 @@ describe("Mcp", () => {
 		).toBe("page 2");
 	});
 
-	test("tools call the route and follow its redirect", async () => {
-		const { rpc, posts } = setup();
+	test("a write that redirects says where, and a read follows the redirect", async () => {
+		const { app, rpc, posts } = setup();
+		app.use(
+			Route.get("/latest")
+				.describe("The newest posts")
+				.use((c) => c.redirect("/posts", 303)),
+		);
 		const { body } = await rpc("tools/call", {
 			name: "post_posts",
 			arguments: { title: "Second post", draft: true },
@@ -1632,12 +1637,19 @@ describe("Mcp", () => {
 			content: [
 				{
 					type: "text",
-					text: "Redirected to /posts\n\n# Posts\n\n- 1: First post\n- 2: Second post\n",
+					// not the page it went to: a list of every post, to change one
+					text: "Done. Redirected to /posts",
 				},
 			],
 			isError: false,
 			_meta: expect.any(Object),
 		});
+
+		// a read is the page it is sent to, as in a browser
+		const read = await rpc("tools/call", { name: "get_latest" });
+		expect(read.body.result.content[0].text).toBe(
+			"Redirected to /posts\n\n# Posts\n\n- 1: First post\n- 2: Second post\n",
+		);
 	});
 
 	test("resources/read reports form validation issues instead of successful empty contents", async () => {
@@ -2066,7 +2078,9 @@ describe("Mcp", () => {
 				params: { name: "post_posts", arguments: { title: "Third post" } },
 			});
 			expect(call.body.result).toMatchObject({ isError: false });
-			expect(call.body.result.content[0].text).toContain("Third post");
+			expect(call.body.result.content[0].text).toBe(
+				"Done. Redirected to /posts",
+			);
 			expect(call.body.result).not.toHaveProperty("resultType");
 			expect([...posts.values()]).toContain("Third post");
 

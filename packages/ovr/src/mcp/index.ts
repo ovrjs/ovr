@@ -1310,9 +1310,11 @@ export class Mcp<P extends string = string> {
 				const next = new URL(location, url);
 				const readable = this.#readable(c, next);
 
-				if (readable && i < Mcp.#redirects) {
+				// a read follows it, as a browser does. A write that redirects is
+				// done, and the agent is told where: the page it goes to, such as a
+				// whole list after deleting one item, is its to read if it wants
+				if (readable && i < Mcp.#redirects && !wrote) {
 					url = redirected = next;
-					init = undefined;
 					continue;
 				}
 
@@ -1323,18 +1325,10 @@ export class Mcp<P extends string = string> {
 					next.origin !== c.url.origin
 						? `Redirected to ${next.href}`
 						: readable
-							? redirect(next)
-							: "Redirected",
-				);
-			}
-
-			// the route answered a write by redirecting, so the write is done. A
-			// page it sends to that then fails, such as on a rate limit, must not
-			// read as the write failing, or an agent would make it again
-			if (redirected && wrote && !res.ok) {
-				await res.body?.cancel();
-				return Mcp.#result(
-					`${redirect(redirected)}, which could not be read: ${Mcp.#status(res)}`,
+							? `${wrote ? "Done. " : ""}${redirect(next)}`
+							: wrote
+								? "Done"
+								: "Redirected",
 				);
 			}
 
