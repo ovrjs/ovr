@@ -934,7 +934,8 @@ export class Schema<Output>
 	 */
 	static #test(check: Schema.Check): (value: any) => boolean {
 		switch (check.name) {
-			// a string has between length / 2 and length code points, count only between
+			// a string has between length / 2 and length code points, count only
+			// between. An array is checked by its number of items.
 			case "min": {
 				const min = Number(check.value);
 
@@ -942,7 +943,9 @@ export class Schema<Output>
 					typeof v === "string"
 						? v.length >= min * 2 ||
 							(v.length >= min && Schema.#length(v) >= min)
-						: v >= check.value;
+						: Array.isArray(v)
+							? v.length >= min
+							: v >= check.value;
 			}
 			case "max": {
 				const max = Number(check.value);
@@ -951,7 +954,9 @@ export class Schema<Output>
 					typeof v === "string"
 						? v.length <= max ||
 							(v.length <= max * 2 && Schema.#length(v) <= max)
-						: v <= check.value;
+						: Array.isArray(v)
+							? v.length <= max
+							: v <= check.value;
 			}
 			case "int":
 				return Number.isSafeInteger;
@@ -1205,15 +1210,19 @@ export class Schema<Output>
 				if (typeof check.value !== "number") return;
 
 				const min = check.name === "min";
-				const length = schema.type === "string";
-				const key = length
-					? `${check.name}Length`
-					: (schema.type === "number" || schema.type === "integer") &&
-						(min ? "minimum" : "maximum");
+				// a string's length and an array's items are counted
+				const length = schema.type === "string" || schema.type === "array";
+				const key =
+					schema.type === "string"
+						? `${check.name}Length`
+						: schema.type === "array"
+							? `${check.name}Items`
+							: (schema.type === "number" || schema.type === "integer") &&
+								(min ? "minimum" : "maximum");
 
 				if (!key) return;
 
-				// lengths are integers, so fractional bounds round inward
+				// counts are integers, so fractional bounds round inward
 				const value = length
 					? min
 						? Math.max(0, Math.ceil(check.value))
@@ -1733,8 +1742,44 @@ export class Schema<Output>
 	 * @returns Refined schema
 	 */
 	min(this: Schema<bigint>, value: bigint, message?: string): Schema<bigint>;
+	/**
+	 * Validate a list has no fewer items than the minimum.
+	 *
+	 * @template A Array type
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @template I What each item of a list field is
+	 * @param value Minimum number of items
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	min<
+		A extends unknown[],
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
+	>(
+		this: Field.Instance<A, T, U, V, undefined, I>,
+		value: number,
+		message?: string,
+	): Field.Instance<A, T, U, V, undefined, I>;
+	/**
+	 * Validate an array has no fewer items than the minimum.
+	 *
+	 * @template A Array type
+	 * @param value Minimum number of items
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	min<A extends unknown[]>(
+		this: Schema<A>,
+		value: number,
+		message?: string,
+	): Schema<A>;
 	min(
-		this: Schema<string | number | bigint>,
+		this: Schema<string | number | bigint | unknown[]>,
 		value: number | bigint,
 		message = `Expected minimum ${value}`,
 	) {
@@ -1834,8 +1879,44 @@ export class Schema<Output>
 	 * @returns Refined schema
 	 */
 	max(this: Schema<bigint>, value: bigint, message?: string): Schema<bigint>;
+	/**
+	 * Validate a list has no more items than the maximum.
+	 *
+	 * @template A Array type
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @template I What each item of a list field is
+	 * @param value Maximum number of items
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	max<
+		A extends unknown[],
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
+	>(
+		this: Field.Instance<A, T, U, V, undefined, I>,
+		value: number,
+		message?: string,
+	): Field.Instance<A, T, U, V, undefined, I>;
+	/**
+	 * Validate an array has no more items than the maximum.
+	 *
+	 * @template A Array type
+	 * @param value Maximum number of items
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	max<A extends unknown[]>(
+		this: Schema<A>,
+		value: number,
+		message?: string,
+	): Schema<A>;
 	max(
-		this: Schema<string | number | bigint>,
+		this: Schema<string | number | bigint | unknown[]>,
 		value: number | bigint,
 		message = `Expected maximum ${value}`,
 	) {

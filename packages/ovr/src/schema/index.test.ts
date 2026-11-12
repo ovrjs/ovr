@@ -602,6 +602,23 @@ describe("toJsonSchema", () => {
 		expect(schema.toJsonSchema()).toMatchObject({ minLength: 2, maxLength: 3 });
 	});
 
+	test("min and max count an array's items, and describe them", () => {
+		const schema = Schema.array(Schema.string().max(3)).min(1).max(2.9, "Two");
+
+		expect(valid(schema.parse(["a"])) satisfies string[]).toEqual(["a"]);
+		expect(valid(schema.parse(["a", "b"]))).toEqual(["a", "b"]);
+		expect(invalid(schema.parse([]))[0]?.message).toBe("Expected minimum 1");
+		expect(invalid(schema.parse(["a", "b", "c"]))[0]?.message).toBe("Two");
+		// each item is still its own schema's
+		expect(invalid(schema.parse(["long"]))[0]?.path).toEqual([0]);
+		expect(schema.toJsonSchema()).toMatchObject({
+			type: "array",
+			minItems: 1,
+			maxItems: 2,
+			items: { type: "string", maxLength: 3 },
+		});
+	});
+
 	test("refine keeps the base description", () => {
 		expect(
 			Schema.string()

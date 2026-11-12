@@ -1325,6 +1325,42 @@ describe("lines", () => {
 			},
 		});
 
+		// after lines(), min and max count the lines
+		const few = new Form({
+			tags: Field.textarea().max(4).lines().min(2).max(3, "At most 3 tags"),
+			boxes: Field.checkboxes(["a", "b", "c"]).max(2).optional(),
+		});
+		expectTypeOf(
+			formValid(await few.parse(new URLSearchParams({ tags: "a\nb" }))).data
+				.tags,
+		).toEqualTypeOf<string[]>();
+		expect(
+			formInvalid(
+				await few.parse(
+					new URLSearchParams([
+						["tags", "a\nb\nc\nd"],
+						["boxes", "a"],
+						["boxes", "b"],
+						["boxes", "c"],
+					]),
+				),
+			).issues.map((issue) => [issue.path, issue.message]),
+		).toEqual([
+			[["tags"], "At most 3 tags"],
+			[["boxes"], "Expected maximum 2"],
+		]);
+		expect(
+			Schema.object(few.shape).toJsonSchema({ io: "input" }).properties,
+		).toMatchObject({
+			tags: {
+				type: "array",
+				minItems: 2,
+				maxItems: 3,
+				items: { type: "string", maxLength: 4 },
+			},
+			boxes: { type: "array", maxItems: 2 },
+		});
+
 		// @ts-expect-error only a textarea has lines
 		Field.text().lines();
 		// @ts-expect-error optional after, as the list
@@ -1609,6 +1645,57 @@ describe("a list", () => {
 		expect(html.match(/<input/g)).toHaveLength(3);
 	});
 
+	test("shows the rows its control sets, a form's own over them, and no more than its max", async () => {
+		const week = new Form({
+			dinners: Field.list(Field.text())
+				.max(7, "A week has seven days")
+				.min(2, "Plan two dinners")
+				.control({ rows: 7 })
+				.optional(),
+			sides: Field.list(Field.text()).control({ rows: 3 }),
+			tags: Field.list(Field.text()).max(2),
+		});
+		const rows = async (
+			props: Parameters<typeof week.Field>[0],
+		): Promise<number> =>
+			(await Markup.string(week.Field(props))).match(/<input/g)!.length;
+
+		expect(await rows({ name: "dinners" })).toBe(7);
+		expect(await rows({ name: "dinners", rows: 4 })).toBe(4);
+		// a full list has no empty row, however many are asked for
+		expect(await rows({ name: "dinners", rows: 10 })).toBe(7);
+		expect(await rows({ name: "sides" })).toBe(3);
+		expect(await rows({ name: "sides", rows: 5 })).toBe(5);
+		expect(await rows({ name: "tags" })).toBe(1);
+		expect(await rows({ name: "tags", values: { tags: ["a"] } })).toBe(2);
+		expect(await rows({ name: "tags", values: { tags: ["a", "b"] } })).toBe(2);
+		// every item is shown, even more than it takes
+		expect(
+			await rows({ name: "tags", values: { tags: ["a", "b", "c"] } }),
+		).toBe(3);
+
+		const data = new FormData();
+		data.set("sides.0", "rice");
+		data.set("dinners.0", "soup");
+		for (const place of [0, 1, 2]) data.set(`tags.${place}`, "x");
+		expect(
+			formInvalid(await week.parse(data)).issues.map((issue) => [
+				issue.path,
+				issue.message,
+			]),
+		).toEqual([
+			[["dinners"], "Plan two dinners"],
+			[["tags"], "Expected maximum 2"],
+		]);
+
+		expect(
+			Schema.object(week.shape).toJsonSchema({ io: "input" }).properties,
+		).toMatchObject({
+			dinners: { type: "array", minItems: 2, maxItems: 7 },
+			tags: { type: "array", maxItems: 2 },
+		});
+	});
+
 	test("takes any number of parts, and only fields that are not lists or streamed", () => {
 		expect(form.parts).toBe(Infinity);
 
@@ -1616,7 +1703,7 @@ describe("a list", () => {
 		Field.list(Field.list(Field.text()));
 		// @ts-expect-error a streamed file
 		Field.list({ photo: Field.file().stream() });
-		// @ts-expect-error a list has no control of its own
+		// @ts-expect-error a list has no control of its own, only its rows
 		Field.list(Field.text()).control({ class: "wide" });
 	});
 });

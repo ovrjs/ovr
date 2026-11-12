@@ -856,7 +856,7 @@ class FieldSchema<
 				? Field.Props.Textarea
 				: Tag extends "fieldset"
 					? // a list has no control of its own, each of its fields has one
-						never
+						Field.Props.List
 					: // the field is its type
 						Field.Props.Input & { readonly type?: never },
 	): Field.Instance<Output, Tag, Type, Values, Stream, Item> {
@@ -1280,6 +1280,24 @@ class FieldSchema<
 	}
 
 	/**
+	 * @returns The most items a list takes, set with `max()`
+	 */
+	#most() {
+		let most = Infinity;
+
+		for (
+			let def: Schema.Def | undefined = this.def;
+			def && "inner" in def;
+			def = def.inner.def
+		) {
+			if (def.type === "check" && def.check.name === "max")
+				most = Math.min(most, Math.floor(Number(def.check.value)));
+		}
+
+		return most;
+	}
+
+	/**
 	 * @template S Form shape type
 	 * @param props The list's props
 	 * @returns Each row of the list: its filled items, then empty ones. A row is
@@ -1293,6 +1311,9 @@ class FieldSchema<
 	}: Field.Component.Props<S, false>) {
 		const item = this.item as Field.Item;
 		const { name } = props;
+		// for this form, or wherever the list renders, set with `control()`
+		const shown =
+			rows ?? (this.#config.props as Field.Props.List | undefined)?.rows;
 		const value = state?.values?.[name];
 		const filled: unknown[] = Array.isArray(value) ? value : [];
 		const values: Record<string, unknown> = {};
@@ -1335,11 +1356,15 @@ class FieldSchema<
 
 		return Array.from(
 			{
-				// every filled row, and one more unless told how many to show
-				length:
-					rows === undefined
-						? filled.length + 1
-						: Math.max(Number(rows), filled.length),
+				// every filled row, and one more unless told how many to show,
+				// but no more empty rows than the list takes
+				length: Math.max(
+					filled.length,
+					Math.min(
+						shown === undefined ? filled.length + 1 : Number(shown),
+						this.#most(),
+					),
+				),
 			},
 			(_, place) =>
 				item instanceof FieldSchema
@@ -1655,8 +1680,10 @@ export namespace Field {
 			readonly options?: readonly string[] | undefined;
 
 			/**
-			 * How many rows a list shows. Without it, a list shows its items and
-			 * one empty row to add another. Every item is always shown.
+			 * How many rows a list shows on this form, over what its
+			 * `control({ rows })` set. Without either, a list shows its items and
+			 * one empty row to add another. Every item is always shown, and no
+			 * more rows than its `max()`.
 			 */
 			readonly rows?: number | undefined;
 
@@ -1923,6 +1950,16 @@ export namespace Field {
 
 		/** Attributes of a `<textarea>` field's control */
 		export type Textarea = JSX.IntrinsicElements["textarea"] & Chained;
+
+		/** What a list takes in place of a control's attributes */
+		export type List = {
+			/**
+			 * How many rows the list shows. Without it, a list shows its items
+			 * and one empty row to add another. Every item is always shown, and
+			 * no more rows than its `max()`.
+			 */
+			readonly rows?: number | undefined;
+		};
 	}
 }
 
@@ -2183,11 +2220,12 @@ export class Field {
 	 * A list of items in order, where an item may repeat: each is one field,
 	 * or several by name. People fill a row for each item, and agents send an
 	 * array. A row left empty is left out, and the list needs one item unless
-	 * the field is made optional after.
+	 * the field is made optional after. `min()` and `max()` count its items.
 	 *
 	 * ```tsx
 	 * Field.list(Field.select(Schema.string().uuid())); // string[]
 	 * Field.list({ amount: Field.number(), name: Field.text() }); // { amount, name }[]
+	 * Field.list(Field.select(id)).max(7).control({ rows: 7 }); // a week's dinners
 	 * ```
 	 *
 	 * @template I Item type

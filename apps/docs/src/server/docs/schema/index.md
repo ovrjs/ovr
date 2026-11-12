@@ -189,7 +189,7 @@ A select that may be left empty, one made `.optional()`, starts with an empty ch
 
 ### Lists
 
-`Field.textarea().lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Empty lines are left out, and each line is checked as the textarea checks its text, so `Field.textarea().max(80).lines()` limits each line to 80 characters.
+`Field.textarea().lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Empty lines are left out, and each line is checked as the textarea checks its text, so `Field.textarea().max(80).lines()` limits each line to 80 characters. What comes after counts the lines: `Field.textarea().lines().max(10)` takes at most ten.
 
 `Field.list()` is a list of items in order, where an item may repeat. Each item is one field, or several by name:
 
@@ -214,7 +214,9 @@ const save = Route.post("/recipes/:id")
 	});
 ```
 
-A list renders a `<fieldset>` with a row for each item, and one empty row to add another. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. Pass `rows` to show more, or a fixed number such as a week's seven dinners: `<save.Field name="sides" rows={7} options={ids} />`. Every item is always shown. A list needs one item unless it is made `.optional()`.
+A list renders a `<fieldset>` with a row for each item, and one empty row to add another. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
+
+Set how many rows a list shows with `control`, wherever it renders, or pass `rows` to one form, as with any field's attributes. A week's seven dinners are `Field.list(Field.select(id)).max(7).control({ rows: 7 })`, and an edit form with room to add is `<save.Field name="ingredients" rows={ingredients.length + 5} />`. Every item is always shown, and a list never shows more rows than its `max()`, so a full list has no empty row.
 
 Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. `values` takes the items as an array, as the route gets them.
 
