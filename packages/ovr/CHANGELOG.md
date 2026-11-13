@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.25
+
+### Patch Changes
+
+- d82e9b9: The error for `preprocess()` on a table column says what to do: convert the value in your handler before inserting, or have the field reject what should not be stored.
+
 ## 7.0.0-next.24
 
 ### Patch Changes

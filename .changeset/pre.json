@@ -35,6 +35,7 @@
     "optional-select",
     "passkey-details",
     "picked-values",
+    "preprocess-message",
     "recent-sign-in",
     "registration-messages",
     "review-fixes",
