@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.23
+
+### Patch Changes
+
+- 07985dd: A tool's form with more than 20 choices given as the page renders lists the first five and how many there are, such as `options: 5 of 70`, so a page with a select of every record stays short for an agent. A form an agent submits itself still lists every choice.
+
 ## 7.0.0-next.22
 
 ### Patch Changes
