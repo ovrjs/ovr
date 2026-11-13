@@ -190,6 +190,12 @@ const remove = Route.post("/posts/:id/delete")
 	});
 ```
 
+An agent's client may ask the person before it calls a route that writes, since it could change or delete something. A route that only adds, such as one that creates a record, says so, and is not confirmed that way. One that edits a record overwrites what was there, so it stays destructive:
+
+```ts
+Route.post("/posts").describe("Create a post", { destructive: false });
+```
+
 GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
 
 A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages by checking the session. See [Agents](/agents) for how tools and pages are served to agents.

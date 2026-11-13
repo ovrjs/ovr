@@ -147,6 +147,8 @@ export namespace Route {
 		readonly description: string;
 		/** Only reads, a GET; other tools may change data, so agents can confirm them */
 		readonly read: boolean;
+		/** May change or delete what is there, so agents can confirm it; never a tool that reads */
+		readonly destructive: boolean;
 	};
 
 	/**
@@ -486,6 +488,9 @@ export class Route<
 	/** Description for agents */
 	#description?: string;
 
+	/** Whether the route may change or delete what is there, see `describe` */
+	#destructive = true;
+
 	/** Schemas that check and convert pattern parameters */
 	#paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
 
@@ -580,7 +585,7 @@ export class Route<
 				.replace(/_+/g, "_")
 				.slice(0, 56)}_${Checksum.djb2(`${method} ${pattern}`).slice(0, 7)}`;
 
-		return { name, description, read };
+		return { name, description, read, destructive: !read && this.#destructive };
 	}
 
 	/**
@@ -589,6 +594,9 @@ export class Route<
 	 *
 	 * @template D Description, a string literal that is not blank
 	 * @param description What the route does, written for an agent, not blank
+	 * @param options `destructive: false` for a route that only adds, such as
+	 *   a new record, and never changes or deletes what is there, so an
+	 *   agent's client need not confirm it as it does other writes
 	 * @returns The route
 	 */
 	describe<D extends string>(
@@ -598,9 +606,11 @@ export class Route<
 				["wildcard" | "*"] extends [keyof ExtractParams<Pattern>]
 				? "Rename :wildcard, a tool's * argument is named wildcard"
 				: D,
+		options: { readonly destructive?: boolean } = {},
 	) {
 		this.#configure("describe");
 		this.#description = description;
+		this.#destructive = options.destructive ?? true;
 		return this;
 	}
 

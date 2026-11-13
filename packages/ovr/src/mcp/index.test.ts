@@ -79,7 +79,7 @@ function setup() {
 		});
 
 	const create = Route.post("/posts")
-		.describe("Create a post")
+		.describe("Create a post", { destructive: false })
 		.fields({ title: Field.text().min(3), draft: Field.checkbox() })
 		.use(async (c) => {
 			const result = await c.data();
@@ -149,6 +149,25 @@ describe("Mcp", () => {
 			),
 		).toThrow(`change one of their patterns`);
 	});
+	test("a tool's title is its description's first sentence", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Route.post("/weeks")
+				.describe("Add a recipe to a week. The recipe must be v1.2 or later.")
+				.use(() => "added"),
+			Route.get("/open")
+				.describe("Is it open? Says yes or no")
+				.use(() => "yes"),
+		);
+		const { body } = await rpc("tools/list");
+		const title = (name: string) =>
+			body.result.tools.find((tool: { name: string }) => tool.name === name)
+				.title;
+
+		expect(title("post_weeks")).toBe("Add a recipe to a week");
+		expect(title("get_open")).toBe("Is it open");
+	});
+
 	test("distinct route patterns can expose tools without taking down discovery", async () => {
 		const { app, rpc } = setup();
 		app.use(
@@ -996,9 +1015,15 @@ describe("Mcp", () => {
 
 		expect(list).toEqual({
 			name: "get_posts",
+			title: "List posts",
 			description: "List posts",
 			inputSchema: { type: "object", properties: {} },
-			annotations: { readOnlyHint: true, openWorldHint: false },
+			annotations: {
+				title: "List posts",
+				readOnlyHint: true,
+				destructiveHint: false,
+				openWorldHint: false,
+			},
 		});
 		expect(search.description).toBe("Search posts");
 		expect(Object.keys(search.inputSchema.properties)).toEqual(["q"]);
@@ -1009,9 +1034,11 @@ describe("Mcp", () => {
 			default: false,
 		});
 		expect(create.inputSchema.required).toEqual(["title"]);
-		// writes claim nothing more, so clients treat them as possibly destructive
+		// a write that only adds says so
 		expect(create.annotations).toEqual({
+			title: create.description,
 			readOnlyHint: false,
+			destructiveHint: false,
 			openWorldHint: false,
 		});
 		expect(remove.inputSchema).toEqual({
@@ -1019,7 +1046,8 @@ describe("Mcp", () => {
 			properties: { id: { type: "string" } },
 			required: ["id"],
 		});
-		expect(remove.annotations).not.toHaveProperty("destructiveHint");
+		// any other write may change or delete, so a client may confirm it
+		expect(remove.annotations.destructiveHint).toBe(true);
 	});
 
 	test("a described parameter and field tell agents what they are", async () => {

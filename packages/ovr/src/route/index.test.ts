@@ -1056,7 +1056,16 @@ describe("chained routes", () => {
 			name: "post_posts_id_delete",
 			description: "Delete a post",
 			read: false,
+			destructive: true,
 		});
+		// a route that only adds, and a read, which never is
+		expect(
+			Route.post("/posts").describe("Create a post", { destructive: false })
+				.tool?.destructive,
+		).toBe(false);
+		expect(Route.get("/posts").describe("List posts").tool?.destructive).toBe(
+			false,
+		);
 		expect(undescribed.description).toBeUndefined();
 		expect(undescribed.tool).toBeUndefined();
 		// an empty description would leave the route silently unserved
