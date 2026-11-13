@@ -243,6 +243,15 @@ const users = new Table("users", {
 
 The constraint is still the table's, in a migration. Two people registering the same username at once get the generic error, from the constraint. `Field.email()` checks syntax; it does not verify ownership of an email address. The first field, here the email, labels the passkey in the user's password manager; it is not a verified identity.
 
+Registration stores what the person typed. A column cannot take `preprocess()`, since it would run on stored values as they are read, so have the field reject a form you don't want stored, and say why. A username that should be lowercase without its `@`:
+
+```ts
+Field.text().refine(
+	(value) => /^[a-z0-9_]+$/.test(value),
+	"Lowercase letters, numbers and _ only, without the @",
+);
+```
+
 ## Sessions
 
 Check the session before rendering a protected page:

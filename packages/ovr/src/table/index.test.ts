@@ -125,7 +125,7 @@ describe("Table", () => {
 				new Table("prices", {
 					cents: Schema.number().preprocess((value) => Number(value) * 100),
 				}),
-		).toThrow(TypeError);
+		).toThrow("convert the value in your handler before inserting");
 	});
 
 	test("rejects unknown default columns and empty names", () => {

@@ -280,7 +280,7 @@ export class Table<
 
 				throw Table.#invalid(
 					column,
-					`preprocess() would change stored values when they are read, convert before inserting instead`,
+					`preprocess() would run on stored values as they are read, convert the value in your handler before inserting instead, or have the field reject what should not be stored`,
 				);
 			case "json":
 				throw Table.#invalid(
