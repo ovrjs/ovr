@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.24
+
+### Patch Changes
+
+- A tool's form lists every choice given as the page renders, however many there are.
+
 ## 7.0.0-next.23
 
 ### Patch Changes
