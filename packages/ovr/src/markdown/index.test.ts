@@ -645,6 +645,39 @@ describe("Markdown", () => {
 		);
 	});
 
+	test("many choices are a few of them and how many for a tool, and all of them for a form an agent submits itself", async () => {
+		const form = (count: number) =>
+			h(
+				"form",
+				{ method: "post", action: "/x" },
+				h(
+					"select",
+					{ name: "recipe" },
+					...Array.from({ length: count }, (_, i) =>
+						h("option", { value: `r${i}` }, `Recipe ${i}`),
+					),
+				),
+			);
+		const tool = {
+			[tools]: () => ({
+				name: "x_post",
+				args: {},
+				choices: new Set(["recipe"]),
+				lists: new Set<string>(),
+			}),
+		};
+
+		expect(await md(form(70), tool)).toContain(
+			"- `recipe`, options: 5 of 70, `r0 (Recipe 0)`, `r1 (Recipe 1)`, `r2 (Recipe 2)`, `r3 (Recipe 3)`, `r4 (Recipe 4)`\n",
+		);
+
+		const twenty = await md(form(20), tool);
+		expect(twenty).toContain("`r19 (Recipe 19)`");
+		expect(twenty).not.toContain(" of 20");
+
+		expect(await md(form(70))).toContain("`r69 (Recipe 69)`");
+	});
+
 	test("a list's rows are an array for its tool, and controls for a form an agent submits itself", async () => {
 		const form = () =>
 			h(
