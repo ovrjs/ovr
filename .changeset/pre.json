@@ -21,6 +21,7 @@
     "choices-for-agents",
     "choices-return-source",
     "confirm-passkey",
+    "enum-types",
     "every-choice",
     "groups",
     "hints",
