@@ -229,6 +229,13 @@ A radio or checkbox group renders a `<fieldset>`. Its description follows its le
 
 A select that may be left empty, one made `.optional()`, starts with an empty choice, since a browser otherwise chooses its first option. `placeholder` is that choice's text: `Field.select(meals).optional().control({ placeholder: "Any meal" })`. A select that must be chosen starts with the choice too when it has a `placeholder`, such as "Choose a meal", and the browser asks for another. Write the choice yourself in a layout made with `component`.
 
+#### Many choices
+
+Every option is rendered for people and listed for agents, which suits tens of choices. For hundreds, such as picking from all of a person's recipes, use pages instead of a field:
+
+- **The record is saved**, such as adding a recipe to a week: link to a page with a [GET form](#get-forms) that searches, and a table of results with a button in each row that posts its ID and redirects back. An agent searches with one tool and adds with another.
+- **The record is not saved yet**: create it with its other fields first, then add to it as above. When the choice has to be made as the record is created, put the search field in the form with a `<button formmethod="get">`, and pass the matches as the field's options along with what is already chosen.
+
 ### Lists
 
 `Field.textarea().lines()` is a list of text, such as a recipe's steps or tags. People write one on each line of a textarea, [agents](/agents#tools) send an array, and the route gets a `string[]` either way. Each line is trimmed, empty lines are left out, and each line is checked as the textarea checks its text, so `Field.textarea().max(80).lines()` limits each line to 80 characters. What comes after counts the lines: `Field.textarea().lines().max(10)` takes at most ten.
