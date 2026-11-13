@@ -888,11 +888,7 @@ class Writer {
 					.map((f) => {
 						let line = `- ${Writer.#code(f.name)}`;
 						if (f.value.length) line += `: ${Writer.#codes(f.value)}`;
-						// many choices, such as every record a person has, are a
-						// few of them and how many: another tool lists them all
-						if (f.options.length > 20)
-							line += `, options: 5 of ${f.options.length}, ${Writer.#codes(f.options.slice(0, 5))}`;
-						else if (f.options.length)
+						if (f.options.length)
 							line += `, options: ${Writer.#codes(f.options)}`;
 						return Writer.#notes(f, line);
 					})
