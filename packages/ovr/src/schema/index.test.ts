@@ -669,7 +669,7 @@ describe("toJsonSchema", () => {
 				name: { type: "string" },
 				tags: { type: "array", items: { type: "string" } },
 				age: { type: "number" },
-				role: { enum: ["admin", "user"] },
+				role: { type: "string", enum: ["admin", "user"] },
 				note: { anyOf: [{ type: "string" }, { type: "null" }] },
 			},
 			required: ["name", "tags", "role"],
@@ -680,6 +680,21 @@ describe("toJsonSchema", () => {
 		expect(input.required).toEqual(["name", "tags"]);
 		expect(input.additionalProperties).toBeUndefined();
 		expect((input.properties as any).role.default).toBe("user");
+	});
+
+	test("literals and enums say their values' types", () => {
+		expect(Schema.literal("a").toJsonSchema()).toMatchObject({
+			type: "string",
+			const: "a",
+		});
+		expect(Schema.enum([1, 2]).toJsonSchema()).toMatchObject({
+			type: "number",
+			enum: [1, 2],
+		});
+		expect(Schema.enum(["a", 1, null]).toJsonSchema()).toMatchObject({
+			type: ["string", "number", "null"],
+			enum: ["a", 1, null],
+		});
 	});
 
 	test("unknown object properties can be absent on both sides", () => {
@@ -812,7 +827,7 @@ describe("toJsonSchema", () => {
 			properties: {
 				email: { type: "string", format: "email" },
 				count: { type: "integer", minimum: 0 },
-				plan: { enum: ["free", "pro"] },
+				plan: { type: "string", enum: ["free", "pro"] },
 				bio: { type: "string", maxLength: 500 },
 				agree: { type: "boolean" },
 			},

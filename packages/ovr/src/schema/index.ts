@@ -1308,14 +1308,25 @@ export class Schema<Output>
 			return Schema.#unrepresentable(c, "Non-JSON literal");
 		}
 
+		// the values' types, which the values already imply, for clients that
+		// need a type on every property
+		const types = [
+			...new Set(
+				defined.map((v) =>
+					v === null ? "null" : Array.isArray(v) ? "array" : typeof v,
+				),
+			),
+		];
+		const type = types.length === 1 ? types[0]! : types;
+
 		return {
 			// `not: {}` matches nothing, so the key must be absent
 			schema:
 				defined.length === 0
 					? { not: {} }
 					: defined.length === 1
-						? { const: defined[0] }
-						: { enum: defined },
+						? { type, const: defined[0] }
+						: { type, enum: defined },
 			optional: defined.length < values.length,
 		};
 	}
