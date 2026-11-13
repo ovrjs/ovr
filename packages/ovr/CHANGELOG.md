@@ -33,6 +33,7 @@
   - Form state in a URL shows no more rows of a list than it takes, and never sets a row's hidden value.
   - The page a sign-in link opens is sent with `Referrer-Policy: no-referrer`.
   - A file's name in an agent's tool result is only a name.
+  - A write that redirects answers an agent `Redirected to /recipes`, without the `Done.` that next.18 put before it.
 
 ## 7.0.0-next.19
 
