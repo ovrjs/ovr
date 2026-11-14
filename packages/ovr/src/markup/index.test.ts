@@ -15,6 +15,17 @@ test("escape content", () => {
 	expect(escaped.includes("<")).toBe(false);
 });
 
+test("a script takes a media type for a block of data", async () => {
+	const props: JSX.IntrinsicElements["script"] = {
+		type: "application/ld+json",
+		children: Markup.raw('{"@type":"Recipe"}'),
+	};
+
+	expect(await Markup.string(JSX.jsx("script", props))).toBe(
+		'<script type="application/ld+json">{"@type":"Recipe"}</script>',
+	);
+});
+
 test("escape attribute", () => {
 	const escaped = Markup.escape(`&<script>console.log("hello")</script>`, true);
 

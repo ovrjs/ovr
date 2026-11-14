@@ -606,7 +606,14 @@ type ScriptAttributes = Attributes<{
 	nomodule: boolean;
 	referrerpolicy: SharedAttributes["referrerpolicy"];
 	src: string;
-	type: "module" | "importmap" | "speculationrules";
+	/** How to run it, or a media type for a block of data, such as `application/ld+json` */
+	type:
+		| "module"
+		| "importmap"
+		| "speculationrules"
+		| "application/ld+json"
+		| "application/json"
+		| (string & {});
 }>;
 
 type SelectAttributes = Attributes<{
