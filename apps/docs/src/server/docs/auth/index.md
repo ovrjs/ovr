@@ -445,6 +445,19 @@ A client ID and its document are accepted when:
 
 A download that fails for now, such as a timeout, a 5xx, or a 429, is tried again later, and a document that is invalid or too large is refused.
 
+Some agents publish no document and ask for a client ID when a user adds your app. Host a document for one yourself, and give its address as the client ID. A file your app serves, here at `https://example.com/clients/agent.json`:
+
+```json
+{
+	"client_id": "https://example.com/clients/agent.json",
+	"client_name": "Agent",
+	"redirect_uris": ["https://agent.example/oauth/callback"],
+	"token_endpoint_auth_method": "none"
+}
+```
+
+Take the callback address from the agent's own documentation, never from a request: whoever receives a user there gets their token. The consent page then names your origin as the publisher, since you vouch for the document.
+
 Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute and download 10 documents per minute from one host, a host serves at most 300 downloads per minute in all, and an instance downloads at most 16 documents at once, 2 for one IP. Requests for the same agent share one download, a found agent is kept for 5 minutes, and a client ID without a valid document is remembered for a minute. When a download is refused, or fails in a way that may pass, such as a timeout or a 5xx response, an agent found in the last hour is served from its last document, so floods of made-up client IDs or a short outage cannot lock out agents users already connect. A final answer, such as a 404 or an invalid document, forgets the agent at once. Errors in an authorization request are answered with a 400 page, not redirected to the agent, since anyone can publish a document naming any callback.
 
 Agents send the `resource` they will use the token with, the URL of an MCP endpoint mounted with this `auth`, when they authorize and when they request tokens; any other URL is refused, even on your origin. Authorization requires PKCE with S256. Codes last a minute and are used once, and access tokens last an hour. Refresh tokens are replaced each time they are used, but a connection ends 30 days after the user approved it, however often the agent refreshes; then the user connects it again. Using a code or refresh token a second time revokes every token issued from it, since one of the two parties stole it. A token grants what the user can do, so requests with a `scope` are refused. Tokens are bound to the resource they were requested for, such as the MCP endpoint, and stored as SHA-256 hashes.
