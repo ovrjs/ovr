@@ -572,18 +572,17 @@ export class Route<
 				segment === "*" ? "wildcard" : segment.replace(/^:/, ""),
 			);
 
-		let name = `${method.toLowerCase()}_${segments.join("_") || "index"}`;
+		// punctuation, such as the `@` of `/@:username`, is a `_`. Two patterns
+		// whose names are then the same, such as `/a/b` and `/a_b`, are told
+		// apart when they are mounted: `app.use()` throws
+		let name = `${method.toLowerCase()}_${segments.join("_") || "index"}`
+			.replace(/[^A-Za-z0-9-]+/g, "_")
+			.replace(/_$/, "");
 
-		// `_` and other punctuation could make two patterns' names the same,
-		// such as `/a/b` and `/a_b`, so those names end with the pattern's hash
-		if (
-			!segments.every((segment) => /^[A-Za-z0-9-]+$/.test(segment)) ||
-			name.length > 64
-		)
-			name = `${name
-				.replace(/[^\w-]+/g, "_")
-				.replace(/_+/g, "_")
-				.slice(0, 56)}_${Checksum.djb2(`${method} ${pattern}`).slice(0, 7)}`;
+		// a name cut to the 64 characters a tool's may have ends with the
+		// pattern's hash, so two long patterns that start alike differ
+		if (name.length > 64)
+			name = `${name.slice(0, 56)}_${Checksum.djb2(`${method} ${pattern}`).slice(0, 7)}`;
 
 		return { name, description, read, destructive: !read && this.#destructive };
 	}

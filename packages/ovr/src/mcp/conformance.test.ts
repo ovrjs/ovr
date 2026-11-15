@@ -178,8 +178,8 @@ test.each([
 				"get_index",
 				"get_notes_id",
 				"post_notes",
-				expect.stringMatching(/^get_pixel_png_/),
-				expect.stringMatching(/^get_report_pdf_/),
+				"get_pixel_png",
+				"get_report_pdf",
 				"post_files",
 			]);
 			const [, , , pixel, report] = tools;

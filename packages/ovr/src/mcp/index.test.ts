@@ -135,6 +135,7 @@ describe("Mcp", () => {
 		["/", "/index"],
 		["/items/:id", "/items/id"],
 		["/files/*", "/files/wildcard"],
+		["/a/b", "/a_b"],
 	])("%s and %s clash when the app starts", (first, second) => {
 		const { app } = setup();
 		// before any agent lists the tools, so discovery never breaks
@@ -168,23 +169,21 @@ describe("Mcp", () => {
 		expect(title("get_open")).toBe("Is it open");
 	});
 
-	test("distinct route patterns can expose tools without taking down discovery", async () => {
-		const { app, rpc } = setup();
-		app.use(
-			Route.post("/a/b")
-				.describe("Nested")
-				.use(() => "nested"),
-			Route.post("/a_b")
-				.describe("Flat")
-				.use(() => "flat"),
-		);
-		const { body } = await rpc("tools/list");
-		const tools = body.result.tools.filter((tool: { description: string }) =>
-			["Nested", "Flat"].includes(tool.description),
-		);
-		expect(new Set(tools.map((tool: { name: string }) => tool.name)).size).toBe(
-			2,
-		);
+	test("punctuation in a pattern is a _ in its tool's name, and only a long name ends with a hash", () => {
+		const name = (pattern: string) =>
+			Route.get(pattern as "/").describe("Named").tool?.name;
+
+		expect(name("/@:username")).toBe("get_username");
+		expect(name("/api_keys")).toBe("get_api_keys");
+		expect(name("/report.pdf")).toBe("get_report_pdf");
+		expect(name("/users/:id.json")).toBe("get_users_id_json");
+
+		const long = name(`/${"segment/".repeat(10)}end`)!;
+		const other = name(`/${"segment/".repeat(10)}other`)!;
+		expect(long).toMatch(/^get_segment_/);
+		expect(long).not.toContain("end");
+		expect(long.length).toBeLessThanOrEqual(64);
+		expect(other).not.toBe(long);
 	});
 	test("a call finds its tool among many, by name only", async () => {
 		const { app, rpc } = setup();
