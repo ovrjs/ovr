@@ -2610,7 +2610,7 @@ test("oversized registration bodies are rejected without spending the signup bud
 
 /** Checksums of the shipped migrations: never update them, add a new version instead. */
 const checksums = {
-	auth: "c3424a04121e0207239c150633fe55825d77c5a549b68531aaeec3668c4ede00",
+	auth: "8001e3e7805cb9065d58ecb46b5f7db16784bcfb37f6a8c9a2c37773d0c38cfc",
 	limiter: "94fd469e8c2caa7331e532b764ae872352804a28527febb3decf5b09cf40ca70",
 };
 
@@ -3391,7 +3391,12 @@ describe("agents", () => {
 				await auth.disconnect(c, client_id);
 				return c.text("disconnected");
 			}),
+			Route.get("/agents").use(async (c) => c.json(await auth.agents(c))),
 		);
+		const agents = async () =>
+			(await (await browser("/agents")).json()) as Auth.Agent[];
+		// approved, but the agent has not taken its tokens yet
+		expect(await agents()).toEqual([]);
 		const issued = await (
 			await token(app, {
 				grant_type: "authorization_code",
@@ -3403,6 +3408,29 @@ describe("agents", () => {
 		).json();
 		expect((await call(app, issued.access_token, "connected")).status).toBe(
 			200,
+		);
+
+		// the agent is listed once, by the name it gave when it was approved
+		const before = Date.now();
+		const [agent, ...others] = await agents();
+		expect(others).toEqual([]);
+		expect(agent).toMatchObject({ id: client_id, name: expect.any(String) });
+		expect(agent!.name).not.toBe("");
+		expect(agent!.expires - agent!.connected).toBe(30 * 24 * 60 * 60 * 1000);
+		expect(Math.abs(agent!.connected - before)).toBeLessThan(60_000);
+		// a refresh replaces its tokens, and it is still one agent
+		const refreshed = await (
+			await token(app, {
+				grant_type: "refresh_token",
+				client_id,
+				refresh_token: issued.refresh_token,
+			})
+		).json();
+		expect(await agents()).toEqual([agent]);
+		issued.access_token = refreshed.access_token;
+		issued.refresh_token = refreshed.refresh_token;
+		await expect(app.fetch(`${origin}/agents`)).rejects.toThrow(
+			"Sign in to list agents",
 		);
 
 		// signed out, nothing is disconnected
@@ -3419,6 +3447,7 @@ describe("agents", () => {
 			headers: { origin },
 		});
 		expect(await done.text()).toBe("disconnected");
+		expect(await agents()).toEqual([]);
 		expect((await call(app, issued.access_token, "gone")).status).toBe(401);
 		expect(
 			(
@@ -3703,6 +3732,7 @@ describe("agents", () => {
 			kind: "access",
 			user: "user-1",
 			client: "agent",
+			name: "Agent",
 			resource: origin,
 			scope: "",
 			expiration: Date.now() + 60000,
@@ -3733,6 +3763,7 @@ describe("agents", () => {
 			kind: "refresh",
 			user: "deleted-user",
 			client: "agent",
+			name: "Agent",
 			resource: mcp,
 			scope: "",
 			expiration: Date.now() + 60000,
@@ -3767,6 +3798,7 @@ describe("agents", () => {
 				kind: "access",
 				user,
 				client: client_id,
+				name: "Agent",
 				resource: mcp,
 				scope: "",
 				expiration: now + 4 * Time.minute,
@@ -3785,6 +3817,7 @@ describe("agents", () => {
 			kind: "refresh",
 			user: "user-1",
 			client: "agent",
+			name: "Agent",
 			resource: mcp,
 			scope: "",
 			expiration: Date.now() + 60000,
@@ -3809,6 +3842,7 @@ describe("agents", () => {
 			kind: "refresh",
 			user: "user-1",
 			client: "agent",
+			name: "Agent",
 			resource: mcp,
 			scope: "",
 			expiration: Date.now() + 60000,

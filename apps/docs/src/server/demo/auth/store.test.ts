@@ -51,9 +51,9 @@ describe("demo database", () => {
 		const id = crypto.randomUUID();
 		await database.sql(async (t) => {
 			await t.sql`INSERT INTO ${users} ${t.sql.values(users, { id, email: "a@example.com" })}`;
-			await t.sql`INSERT INTO ${database.auth_credentials} ${t.sql.values(database.auth_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false })}`;
+			await t.sql`INSERT INTO ${database.auth_credentials} ${t.sql.values(database.auth_credentials, { id: "c", user: id, publicKey: "k", counter: 0, eligible: false, backedUp: false, created: Date.now(), origin: "https://localhost:5173", name: "" })}`;
 			await t.sql`INSERT INTO ${database.auth_sessions} ${t.sql.values(database.auth_sessions, { id: "s", user: id, expiration: Date.now() + 60000, started: Date.now() })}`;
-			await t.sql`INSERT INTO ${database.auth_tokens} ${t.sql.values(database.auth_tokens, { id: "t", kind: "access", user: id, client: "https://agent.example/client.json", resource: "https://localhost:5173/mcp", scope: "", redirect: null, challenge: null, family: "t", expiration: Date.now() + 60000 })}`;
+			await t.sql`INSERT INTO ${database.auth_tokens} ${t.sql.values(database.auth_tokens, { id: "t", kind: "access", user: id, client: "https://agent.example/client.json", name: "Agent", resource: "https://localhost:5173/mcp", scope: "", redirect: null, challenge: null, family: "t", expiration: Date.now() + 60000 })}`;
 		});
 		await database.sql`DELETE FROM ${users}`;
 		expect(

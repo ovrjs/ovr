@@ -60,6 +60,8 @@ export namespace Storage {
 		readonly kind: "code" | "access" | "refresh";
 		readonly user: string;
 		readonly client: string;
+		/** Name the agent gave itself when the user approved it */
+		readonly name: string;
 		readonly resource: string;
 		readonly scope: string;
 		readonly expiration: number;
@@ -137,6 +139,7 @@ export class Storage {
 		kind: Schema.enum(["code", "access", "refresh", "spent"]),
 		user: Schema.string(),
 		client: Schema.string(),
+		name: Schema.string(),
 		resource: Schema.string(),
 		scope: Schema.string(),
 		redirect: Schema.string().nullable(),
@@ -195,6 +198,7 @@ CREATE TABLE auth_tokens (
 	kind text NOT NULL,
 	"user" text NOT NULL,
 	client text NOT NULL,
+	name text NOT NULL,
 	resource text NOT NULL,
 	scope text NOT NULL,
 	redirect text,
@@ -383,6 +387,26 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 						return false;
 					throw error;
 				});
+		},
+		/**
+		 * @param user User ID
+		 * @returns The agents the user has connected, each by its latest
+		 * connection: a refresh token lasts as long as its connection does
+		 */
+		agents: async (user: string) => {
+			const { columns } = Storage.tokens;
+			return this.#db.sql`
+				SELECT DISTINCT ON (${columns.client}) ${columns.client}, ${columns.name}, ${columns.expiration}
+				FROM ${Storage.tokens}
+				WHERE ${columns.user} = ${user} AND ${columns.kind} = 'refresh' AND ${columns.expiration} > ${Date.now()}
+				ORDER BY ${columns.client}, ${columns.expiration} DESC
+			`.parse(
+				Schema.object({
+					client: Schema.string(),
+					name: Schema.string(),
+					expiration: Schema.number().int(),
+				}),
+			);
 		},
 		/**
 		 * Disconnect one of a user's agents: its codes, access tokens, and

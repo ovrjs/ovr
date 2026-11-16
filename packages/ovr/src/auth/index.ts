@@ -11,7 +11,7 @@ import type { Table } from "../table/index.js";
 import { Codec, noStore } from "../util/index.js";
 import { configure } from "./configure.js";
 import { Metadata } from "./metadata.js";
-import { oauth } from "./oauth.js";
+import { lifetime, oauth } from "./oauth.js";
 import { State } from "./state.js";
 import { Storage } from "./storage.js";
 
@@ -213,6 +213,18 @@ export namespace Auth {
 	}
 
 	/** Stored ES256 passkey, including state updated after each login. */
+	/** An agent the user has connected */
+	export interface Agent {
+		/** Client ID, the URL of the agent's metadata document, which `disconnect` takes */
+		readonly id: string;
+		/** Name the agent gave itself when the user approved it, not verified */
+		readonly name: string;
+		/** When the user approved it, in milliseconds */
+		readonly connected: number;
+		/** When the connection ends and the user connects it again, in milliseconds */
+		readonly expires: number;
+	}
+
 	export interface Credential {
 		id: string;
 		user: string;
@@ -417,12 +429,36 @@ export class Auth<
 	};
 
 	/**
+	 * The agents the signed-in user has connected, to list on an account page
+	 * with a way to disconnect each.
+	 *
+	 * @param c Request context of the signed-in user
+	 * @returns Each agent once, by its latest connection
+	 * @throws When nobody is signed in
+	 */
+	readonly agents = async (
+		c: Pick<Auth.Context, "url" | "cookie" | "res">,
+	): Promise<Auth.Agent[]> => {
+		const session = await this.#state(c).session();
+		if (!session) throw new Error("Sign in to list agents");
+
+		return (await this.#storage.tokens.agents(session.user)).map((row) => ({
+			id: row.client,
+			// one connected before names were kept
+			name: row.name || new URL(row.client).host,
+			// a connection lasts a fixed time from its approval
+			connected: row.expiration - lifetime.refresh,
+			expires: row.expiration,
+		}));
+	};
+
+	/**
 	 * Disconnect one of the signed-in user's agents. Once it resolves, the
 	 * agent's codes and tokens no longer work, including ones a refresh was
 	 * issuing meanwhile, and connecting again needs the user's consent.
 	 *
 	 * @param c Request context of the signed-in user
-	 * @param client Agent's client ID, from `auth_tokens`
+	 * @param client Agent's client ID, an agent's `id` from `auth.agents(c)`
 	 * @throws When nobody is signed in
 	 */
 	readonly disconnect = async (

@@ -26,6 +26,11 @@ export const migrations: Database.Migration[] = [
 		// deleting an account disconnects its agents
 		sql: `ALTER TABLE auth_tokens ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;`,
 	},
+	{
+		id: "0004_auth_links",
+		// and its sign-in links
+		sql: `ALTER TABLE auth_links ADD FOREIGN KEY ("user") REFERENCES users ON DELETE CASCADE;`,
+	},
 ];
 
 /**

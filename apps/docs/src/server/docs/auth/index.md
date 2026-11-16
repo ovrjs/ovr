@@ -464,22 +464,37 @@ Agents send the `resource` they will use the token with, the URL of an MCP endpo
 
 In a tool call, `c.session()` returns the session of the user who approved the agent, so the same handlers serve people and agents.
 
-To list the signed-in user's agents, query their unexpired refresh tokens; a refresh token expires when its connection ends. Disconnect one with `auth.disconnect(c, client)`, passing one of the listed client IDs:
+`auth.agents(c)` lists the agents the signed-in user has connected, for an account page. Disconnect one with `auth.disconnect(c, id)`:
 
-```ts
-const agents = await database.sql`
-	SELECT DISTINCT ${database.auth_tokens.columns.client} FROM ${database.auth_tokens}
-	WHERE ${database.auth_tokens.columns.user} = ${session.user}
-		AND ${database.auth_tokens.columns.kind} = 'refresh'
-		AND ${database.auth_tokens.columns.expiration} > ${Date.now()}
-`.parse(Schema.object({ client: Schema.string() }));
+```tsx
+const agents = await auth.agents(c);
 
-// for example, the agent the user chose from the list
-const [{ client }] = agents;
-await auth.disconnect(c, client);
+<ul>
+	{agents.map((agent) => (
+		<li>
+			{agent.name}, connected {new Date(agent.connected).toLocaleDateString()}
+			<disconnect.Form>
+				<input type="hidden" name="client" value={agent.id} />
+				<button>Disconnect</button>
+			</disconnect.Form>
+		</li>
+	))}
+</ul>;
+
+// in the route the form posts to
+await auth.disconnect(c, result.data.client);
 ```
 
-Once it resolves, that agent's codes and tokens no longer work, including ones a refresh was issuing at the same moment, and connecting again needs the user's consent. Disconnect through Auth, not by deleting rows from `auth_tokens` yourself: a delete can miss tokens a refresh commits while it runs. `auth.disconnect` acts for the signed-in user, and throws without one.
+| Property    | What it is                                                                         |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `id`        | The agent's client ID, which `disconnect` takes                                    |
+| `name`      | The name it gave itself when the user approved it, not verified                    |
+| `connected` | When the user approved it, in milliseconds                                         |
+| `expires`   | When the connection ends and the user connects it again, 30 days after `connected` |
+
+An agent is listed once it has taken its tokens, and once however often it refreshes them. An agent the user approved twice is listed by its latest approval. Both throw when nobody is signed in.
+
+Once it resolves, that agent's codes and tokens no longer work, including ones a refresh was issuing at the same moment, and connecting again needs the user's consent. Disconnect through Auth, not by deleting rows from `auth_tokens` yourself: a delete can miss tokens a refresh commits while it runs. `auth.disconnect` acts for the signed-in user.
 
 Logging out does not disconnect agents. Token requests are limited to 60 per minute per client IP.
 

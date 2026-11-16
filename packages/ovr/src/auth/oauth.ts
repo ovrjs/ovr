@@ -46,7 +46,7 @@ const paths = {
 } as const;
 
 /** Lifetimes */
-const lifetime = {
+export const lifetime = {
 	consent: 10 * Time.minute,
 	code: Time.minute,
 	access: Time.hour,
@@ -463,6 +463,7 @@ export function oauth(
 				kind: "code",
 				user: pending.user,
 				client: pending.client,
+				name: pending.name,
 				resource: pending.resource,
 				scope: "",
 				// compared at the exchange only when the request named it (OAuth 2.1)
@@ -664,6 +665,7 @@ export function oauth(
 					const row = {
 						user: token.user,
 						client: token.client,
+						name: token.name,
 						resource: token.resource,
 						scope: token.scope,
 					};
