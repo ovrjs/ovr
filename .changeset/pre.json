@@ -43,6 +43,7 @@
     "preprocess-message",
     "recent-sign-in",
     "registration-messages",
+    "render-class",
     "render",
     "review-fixes",
     "script-types",
