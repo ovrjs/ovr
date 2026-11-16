@@ -18,6 +18,7 @@
     "9-database",
     "add-passkey",
     "agent-limits",
+    "auth-agents",
     "choices-for-agents",
     "choices-return-source",
     "confirm-passkey",
