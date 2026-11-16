@@ -715,6 +715,9 @@ class FieldSchema<
 	/** If the control can't be left empty, found on first render */
 	#requires?: boolean;
 
+	/** What the control checks as the schema does, found on first render */
+	#constraints?: Readonly<Record<string, string | number>>;
+
 	/**
 	 * Create a new field.
 	 *
@@ -767,6 +770,106 @@ class FieldSchema<
 			Boolean(this.parse(this.#read(new URLSearchParams(), "")).issues));
 	}
 
+	/** Inputs whose value is text a person types */
+	static readonly #typed = new Set<unknown>([
+		"text",
+		"search",
+		"tel",
+		"email",
+		"url",
+		"password",
+	]);
+
+	/**
+	 * @returns The attributes that have the browser check what the schema
+	 * does, so a person is told before the form is sent: a length, a range, a
+	 * pattern. A check made after the value is changed, as by `transform()`,
+	 * is of another value than the control's, and is left to the server.
+	 */
+	#constrain() {
+		if (this.#constraints) return this.#constraints;
+
+		const attributes: Record<string, string | number> = {};
+		let checks: Schema.Check[] = [];
+		let def: Schema.Def = this.def;
+
+		while ("inner" in def) {
+			if (def.type === "check") checks.push(def.check);
+			else if (
+				def.type === "transform" ||
+				def.type === "json" ||
+				def.type === "pipe"
+			)
+				checks = [];
+			def = def.inner.def;
+		}
+
+		const input = this.tag === "input";
+		const typed =
+			this.tag === "textarea" || (input && FieldSchema.#typed.has(this.type));
+		const picked =
+			input && Object.hasOwn(FieldSchema.#formats, this.type as string);
+		const numeric = input && (this.type === "number" || this.type === "range");
+		/** Keeps the stricter of two bounds */
+		const bound = <V extends string | number>(
+			name: string,
+			value: V,
+			stricter: (current: V) => boolean,
+		) => {
+			const current = attributes[name] as V | undefined;
+			if (current === undefined || stricter(current)) attributes[name] = value;
+		};
+
+		// innermost first, so the attributes are in the order they were written
+		for (const check of checks.reverse()) {
+			if (check.name === "pattern") {
+				// a textarea has no pattern of its own
+				if (def.type === "string" && typed && input) {
+					attributes.pattern = check.source;
+					// a browser shows it with its own words for a mismatch
+					attributes.title = check.message;
+				}
+				continue;
+			}
+			if (check.name !== "min" && check.name !== "max") continue;
+
+			const min = check.name === "min";
+			const { value } = check;
+
+			if (typeof value === "string") {
+				if (def.type === "string" && picked)
+					bound(check.name, value, (current) =>
+						min ? value > current : value < current,
+					);
+			} else if (typeof value === "number") {
+				if (def.type === "number" && numeric)
+					bound(check.name, value, (current) =>
+						min ? value > current : value < current,
+					);
+				else if (def.type === "string" && typed) {
+					// a browser counts UTF-16 code units, where the schema counts
+					// characters, so one outside the basic plane is two to it
+					const length = min ? Math.ceil(value) : Math.floor(value);
+					// `required` already asks for one character
+					if (!min || length > 1)
+						bound(`${check.name}length`, length, (current) =>
+							min ? length > current : length < current,
+						);
+				}
+			}
+		}
+
+		// a number input takes whole numbers unless it is told otherwise
+		if (
+			def.type === "number" &&
+			numeric &&
+			!checks.some((check) => check.name === "int")
+		)
+			attributes.step = "any";
+
+		return (this.#constraints = attributes);
+	}
+
 	/** How each picker writes its value, a sentence so it reads alone too */
 	static readonly #formats: Record<string, string | undefined> = {
 		date: "Date as YYYY-MM-DD.",
@@ -793,9 +896,15 @@ class FieldSchema<
 			.filter(([value, label]) => label !== value)
 			.map(([value, label]) => `${value} (${label})`)
 			.join(", ");
+		// a picker's bounds, which JSON Schema has no keyword for
+		const { min, max } = format ? this.#constrain() : {};
+		const accepted = this.#config.accept;
 		const described = Prose.join(
 			description,
 			format,
+			min !== undefined ? `No earlier than ${min}.` : undefined,
+			max !== undefined ? `No later than ${max}.` : undefined,
+			accepted && `Accepts ${FieldSchema.#any(accepted)}.`,
 			named && `Choices: ${named}.`,
 		);
 
@@ -1026,11 +1135,71 @@ class FieldSchema<
 				: Tag extends "fieldset"
 					? // a list has no control of its own, each of its fields has one
 						Field.Props.List
-					: // the field is its type
-						Field.Props.Input & { readonly type?: never },
+					: // the field is its type, and what it checks is the schema's:
+						// `accept()` and `pattern()` are also checked on the server
+						Field.Props.Input & {
+							readonly type?: never;
+							readonly accept?: never;
+							readonly pattern?: never;
+						},
 	): Field.Instance<Output, Tag, Type, Values, Stream, Item> {
 		return this.#with({
 			props: { ...this.#config.props, ...attributes } as Field.Props,
+		});
+	}
+
+	/**
+	 * @param types Media types
+	 * @returns The types as a person reads a choice of them
+	 */
+	static #any(types: readonly string[]) {
+		return new Intl.ListFormat("en", { type: "disjunction" }).format(types);
+	}
+
+	/**
+	 * The types of file the field takes: media types, where `image/*` is any
+	 * image. The picker offers them, the server refuses any other, also a file
+	 * that does not say its type, and agents read them in the tool's
+	 * description.
+	 *
+	 * The type is the one the sender gives, so serve a file back with the type
+	 * that was checked. `image/*` includes SVG, a document that can run
+	 * scripts: name the types instead when people open each other's files.
+	 *
+	 * ```ts
+	 * Field.file().accept(["image/jpeg", "image/png", "image/webp"]);
+	 * ```
+	 *
+	 * @param types Media types the field takes
+	 * @param message Issue message for a file of another type
+	 * @returns Field that takes only those types
+	 */
+	accept(
+		this: Field.Instance<File, "input", "file", Values, Stream>,
+		types: readonly [Field.Accept, ...Field.Accept[]],
+		message?: string,
+	): Field.Instance<File, "input", "file", Values, Stream>;
+	// the overload above is its type
+	accept(types: readonly string[], message?: string): any {
+		const accepted = types.map((type) => type.toLowerCase());
+		const refined = (this as FieldSchema<any, any, any, any, any, any>).refine(
+			(file: File) => {
+				// without any parameters, such as a charset
+				const type = file.type.split(";", 1)[0]!.trim().toLowerCase();
+
+				return accepted.some((one) =>
+					one.endsWith("/*") ? type.startsWith(one.slice(0, -1)) : type === one,
+				);
+			},
+			message ?? `Expected a file of type ${FieldSchema.#any(accepted)}`,
+		) as FieldSchema<any, any, any, any, any, any>;
+
+		return refined.#copy({
+			config: {
+				...refined.#config,
+				accept: accepted,
+				props: { ...refined.#config.props, accept: accepted.join(",") },
+			},
 		});
 	}
 
@@ -1290,6 +1459,7 @@ class FieldSchema<
 				[described === true ? descriptionId : described, issueId]
 					.filter(Boolean)
 					.join(" ") || undefined,
+			...this.#constrain(),
 			...this.#config.props,
 			...props,
 		};
@@ -1878,6 +2048,21 @@ export namespace Field {
 	/** Fields by name, as a route's `fields` takes them. */
 	export type Shape = Record<string, Field.Any>;
 
+	/** A media type a file field takes, `image/*` for any of a kind */
+	export type Accept = `${string}/${string}`;
+
+	/**
+	 * How each picker writes its value, which is how `min()` and `max()` take
+	 * the earliest and latest one.
+	 */
+	export type Picked = {
+		date: `${number}-${number}-${number}`;
+		"datetime-local": `${number}-${number}-${number}T${number}:${number}`;
+		month: `${number}-${number}`;
+		week: `${number}-W${number}`;
+		time: `${number}:${number}`;
+	};
+
 	/** Persisted form value, a list's is its items */
 	export type Value = Value.Cell | Value.Cell[] | Record<string, Value.Cell>[];
 
@@ -2060,6 +2245,9 @@ export namespace Field {
 
 		/** What registration says when a user already has the value, set with `taken()` */
 		readonly taken?: string;
+
+		/** Media types a file field takes, set with `accept()` */
+		readonly accept?: readonly string[];
 
 		/** What each item of a list is */
 		readonly item?: Item;

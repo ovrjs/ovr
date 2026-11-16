@@ -1578,7 +1578,7 @@ describe("configured passkey callbacks", () => {
 			origin,
 		});
 		expect(stranger.html).toContain(
-			'<label for="name">Name</label><input id="name" aria-describedby="name-description" type="text" name="name">',
+			'<label for="name">Name</label><input id="name" aria-describedby="name-description" maxlength="64" type="text" name="name">',
 		);
 		expect(await state.storage.size(db.auth_credentials)).toBe(2);
 		expect(await state.created()).toHaveLength(1);

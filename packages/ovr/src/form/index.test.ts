@@ -750,7 +750,7 @@ describe("Form schema", () => {
 		expect(
 			await new Render({ markup: form.Field({ name: "title" }) }).string(),
 		).toBe(
-			'<div><label for="title">Title</label><input id="title" toolparamdescription="Title: A short name" aria-describedby="title-description" type="text" placeholder="Title" name="title"><p id="title-description" data-description>A short name</p></div>',
+			'<div><label for="title">Title</label><input id="title" toolparamdescription="Title: A short name" aria-describedby="title-description" maxlength="40" type="text" placeholder="Title" name="title"><p id="title-description" data-description>A short name</p></div>',
 		);
 		expect(
 			Schema.object(form.shape).toJsonSchema({ io: "input" }).properties,
@@ -1435,7 +1435,7 @@ test("a hint is what people read, where the description is what agents read", as
 	expect(
 		await new Render({ markup: form.Field({ name: "grams" }) }).string(),
 	).toBe(
-		'<div><label for="grams">grams</label><input id="grams" toolparamdescription="Weight in grams for cups and spoons. Empty for counts." aria-describedby="grams-description" type="number" name="grams"><p id="grams-description" data-description>For cups and spoons</p></div>',
+		'<div><label for="grams">grams</label><input id="grams" toolparamdescription="Weight in grams for cups and spoons. Empty for counts." aria-describedby="grams-description" step="any" type="number" name="grams"><p id="grams-description" data-description>For cups and spoons</p></div>',
 	);
 	// an empty hint shows nothing, and the control names nothing
 	expect(
@@ -1979,11 +1979,11 @@ describe("a list", () => {
 				'<th id="ingredients.organic-label" scope="col">organic</th>' +
 				"</tr></thead><tbody>" +
 				"<tr>" +
-				'<td><input type="hidden" name="ingredients.0.id" value="7"><input id="ingredients.0.amount" toolparamdescription="amount" type="number" name="ingredients.0.amount" aria-labelledby="ingredients.amount-label" value="2"></td>' +
+				'<td><input type="hidden" name="ingredients.0.id" value="7"><input id="ingredients.0.amount" toolparamdescription="amount" step="any" type="number" name="ingredients.0.amount" aria-labelledby="ingredients.amount-label" value="2"></td>' +
 				'<td><input id="ingredients.0.name" toolparamdescription="name" type="text" name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"></td>' +
 				'<td><input id="ingredients.0.organic" toolparamdescription="organic" type="checkbox" name="ingredients.0.organic" aria-labelledby="ingredients.organic-label" checked></td>' +
 				"</tr><tr>" +
-				'<td><input type="hidden" name="ingredients.1.id"><input id="ingredients.1.amount" toolparamdescription="amount" type="number" name="ingredients.1.amount" aria-labelledby="ingredients.amount-label"></td>' +
+				'<td><input type="hidden" name="ingredients.1.id"><input id="ingredients.1.amount" toolparamdescription="amount" step="any" type="number" name="ingredients.1.amount" aria-labelledby="ingredients.amount-label"></td>' +
 				'<td><input id="ingredients.1.name" toolparamdescription="name" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"></td>' +
 				'<td><input id="ingredients.1.organic" toolparamdescription="organic" type="checkbox" name="ingredients.1.organic" aria-labelledby="ingredients.organic-label"></td>' +
 				"</tr></tbody></table></div>" +
@@ -2067,7 +2067,7 @@ describe("a list", () => {
 				markup: row!.amount.Control({ "aria-label": "Amount" }),
 			}).string(),
 		).toBe(
-			'<input id="ingredients.0.amount" toolparamdescription="amount" type="number" name="ingredients.0.amount" aria-label="Amount">',
+			'<input id="ingredients.0.amount" toolparamdescription="amount" step="any" type="number" name="ingredients.0.amount" aria-label="Amount">',
 		);
 		expectTypeOf(row!.name.Label)
 			.parameter(0)

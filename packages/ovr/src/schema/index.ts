@@ -260,11 +260,18 @@ export namespace Schema {
 	export type Check =
 		| {
 				readonly name: "min" | "max";
-				readonly value: number | bigint;
+				/** A string bounds a picker's value, such as a date, by its order */
+				readonly value: number | bigint | string;
 				readonly message: string;
 		  }
 		| {
 				readonly name: "int" | "email" | "url" | "uuid";
+				readonly message: string;
+		  }
+		| {
+				readonly name: "pattern";
+				/** The expression as written, which the whole value matches */
+				readonly source: string;
 				readonly message: string;
 		  }
 		| {
@@ -937,7 +944,10 @@ export class Schema<Output>
 			// a string has between length / 2 and length code points, count only
 			// between. An array is checked by its number of items.
 			case "min": {
-				const min = Number(check.value);
+				const { value } = check;
+				// a picker's values, such as dates, are written so they sort
+				if (typeof value === "string") return (v) => v >= value;
+				const min = Number(value);
 
 				return (v) =>
 					typeof v === "string"
@@ -948,7 +958,9 @@ export class Schema<Output>
 							: v >= check.value;
 			}
 			case "max": {
-				const max = Number(check.value);
+				const { value } = check;
+				if (typeof value === "string") return (v) => v <= value;
+				const max = Number(value);
 
 				return (v) =>
 					typeof v === "string"
@@ -966,6 +978,12 @@ export class Schema<Output>
 				return URL.canParse;
 			case "uuid":
 				return (v) => Schema.#uuidRegex.test(v);
+			case "pattern": {
+				// as a browser compiles an input's `pattern`: the whole value
+				const pattern = new RegExp(`^(?:${check.source})$`, "v");
+
+				return (v) => pattern.test(v);
+			}
 			case "refine":
 				return check.fn;
 		}
@@ -1217,6 +1235,9 @@ export class Schema<Output>
 				return { format: check.name };
 			case "url":
 				return { format: "uri" };
+			case "pattern":
+				// JSON Schema's is found anywhere in the value, so it is anchored
+				return schema.type === "string" && { pattern: `^(?:${check.source})$` };
 			case "int":
 				return schema.type === "number" && { type: "integer" };
 			case "min":
@@ -1645,6 +1666,57 @@ export class Schema<Output>
 	}
 
 	/**
+	 * Validate the whole string matches a regular expression, as an input's
+	 * [`pattern`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/pattern)
+	 * does. A text field's control gets the pattern, with the message as its
+	 * `title`, so the browser checks it too, and agents read it in the tool's
+	 * JSON Schema.
+	 *
+	 * ```ts
+	 * Field.text().pattern("[a-z0-9_]{3,30}", "3 to 30 lowercase letters, numbers, or _");
+	 * ```
+	 *
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @template I What each item of a list field is
+	 * @param source The expression without slashes or flags, which the whole
+	 * value must match
+	 * @param message What the value must be, shown when it is not
+	 * @returns Refined field
+	 */
+	pattern<
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
+	>(
+		this: Field.Instance<string, T, U, V, undefined, I>,
+		source: string,
+		message: string,
+	): Field.Instance<string, T, U, V, undefined, I>;
+	/**
+	 * Validate the whole string matches a regular expression, as an input's
+	 * [`pattern`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/pattern)
+	 * does.
+	 *
+	 * @param source The expression without slashes or flags, which the whole
+	 * value must match
+	 * @param message What the value must be, shown when it is not
+	 * @returns Pattern schema
+	 */
+	pattern(
+		this: Schema<string>,
+		source: string,
+		message: string,
+	): Schema<string>;
+	pattern(this: Schema<string>, source: string, message: string) {
+		// compiled here too, so a pattern that is not one fails as the app starts
+		new RegExp(`^(?:${source})$`, "v");
+		return this.#check({ name: "pattern", source, message });
+	}
+
+	/**
 	 * Validate an input is a safe integer.
 	 *
 	 * @template T Field tag name
@@ -1674,6 +1746,30 @@ export class Schema<Output>
 		return this.#check({ name: "int", message });
 	}
 
+	/**
+	 * Validate a date or time is no earlier than the earliest one. The picker
+	 * gets it as its `min`, so it only offers what the server takes.
+	 *
+	 * ```ts
+	 * Field.date().min("2026-01-01");
+	 * ```
+	 *
+	 * @template U Picker type
+	 * @template V Field option values
+	 * @template I What each item of a list field is
+	 * @param value The earliest value, written as the picker writes one
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	min<
+		U extends keyof Field.Picked,
+		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
+	>(
+		this: Field.Instance<string, "input", U, V, undefined, I>,
+		value: Field.Picked[U],
+		message?: string,
+	): Field.Instance<string, "input", U, V, undefined, I>;
 	/**
 	 * Validate an input is greater than or equal to the minimum.
 	 *
@@ -1805,12 +1901,38 @@ export class Schema<Output>
 	): Schema<A>;
 	min(
 		this: Schema<string | number | bigint | unknown[]>,
-		value: number | bigint,
-		message = `At least ${this.#amount(value)}`,
+		value: number | bigint | string,
+		message = typeof value === "string"
+			? `${value} or later`
+			: `At least ${this.#amount(value)}`,
 	) {
 		return this.#check({ name: "min", value, message });
 	}
 
+	/**
+	 * Validate a date or time is no later than the latest one. The picker
+	 * gets it as its `max`, so it only offers what the server takes.
+	 *
+	 * ```ts
+	 * Field.date().max("2026-12-31");
+	 * ```
+	 *
+	 * @template U Picker type
+	 * @template V Field option values
+	 * @template I What each item of a list field is
+	 * @param value The latest value, written as the picker writes one
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	max<
+		U extends keyof Field.Picked,
+		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
+	>(
+		this: Field.Instance<string, "input", U, V, undefined, I>,
+		value: Field.Picked[U],
+		message?: string,
+	): Field.Instance<string, "input", U, V, undefined, I>;
 	/**
 	 * Validate an input is less than or equal to the maximum.
 	 *
@@ -1942,8 +2064,10 @@ export class Schema<Output>
 	): Schema<A>;
 	max(
 		this: Schema<string | number | bigint | unknown[]>,
-		value: number | bigint,
-		message = `At most ${this.#amount(value)}`,
+		value: number | bigint | string,
+		message = typeof value === "string"
+			? `${value} or earlier`
+			: `At most ${this.#amount(value)}`,
 	) {
 		return this.#check({ name: "max", value, message });
 	}
