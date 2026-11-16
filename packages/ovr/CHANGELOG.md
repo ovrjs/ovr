@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.36
+
+### Minor Changes
+
+- 9c1bfab: `Render.raw` and `Render.escape` name markup `markup`, where it was `html`, like `Render.markup`: `Render.raw({ markup, markdown })` and `Render.escape({ markup })`.
+
 ## 7.0.0-next.35
 
 ### Minor Changes
