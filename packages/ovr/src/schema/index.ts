@@ -256,6 +256,17 @@ export namespace Schema {
 		readonly description?: string;
 	};
 
+	/**
+	 * A step written out, such as `0.5`: above zero, or a type error.
+	 *
+	 * @template N Step
+	 */
+	export type Step<N extends number> = number extends N
+		? N
+		: `${N}` extends `-${string}` | "0"
+			? never
+			: N;
+
 	/** Validation applied to the output of another schema. */
 	export type Check =
 		| {
@@ -266,6 +277,12 @@ export namespace Schema {
 		  }
 		| {
 				readonly name: "int" | "email" | "url" | "uuid";
+				readonly message: string;
+		  }
+		| {
+				readonly name: "step";
+				/** What the number is a multiple of */
+				readonly value: number;
 				readonly message: string;
 		  }
 		| {
@@ -972,6 +989,15 @@ export class Schema<Output>
 			}
 			case "int":
 				return Number.isSafeInteger;
+			case "step": {
+				const { value } = check;
+
+				// a quotient such as 0.3 / 0.1 is not quite whole in binary
+				return (v) => {
+					const steps = v / value;
+					return Math.abs(steps - Math.round(steps)) < 1e-9;
+				};
+			}
 			case "email":
 				return (v) => Schema.#emailRegex.test(v);
 			case "url":
@@ -1240,6 +1266,12 @@ export class Schema<Output>
 				return schema.type === "string" && { pattern: `^(?:${check.source})$` };
 			case "int":
 				return schema.type === "number" && { type: "integer" };
+			case "step":
+				return (
+					(schema.type === "number" || schema.type === "integer") && {
+						multipleOf: check.value,
+					}
+				);
 			case "min":
 			case "max": {
 				if (typeof check.value !== "number") return;
@@ -1751,6 +1783,56 @@ export class Schema<Output>
 	int(this: Schema<number>, message?: string): Schema<number>;
 	int(this: Schema<number>, message = "Expected integer") {
 		return this.#check({ name: "int", message });
+	}
+
+	/**
+	 * Validate a number is a multiple of a step, such as halves or fives. A
+	 * number field's control gets it as its `step`, so the browser checks it
+	 * too, and agents read it in the tool's JSON Schema.
+	 *
+	 * ```ts
+	 * Field.number().min(0.5).max(5).step(0.5); // 0.5, 1, 1.5, to 5
+	 * ```
+	 *
+	 * @template N Step
+	 * @template T Field tag name
+	 * @template U Field input type attribute
+	 * @template V Field option values
+	 * @template I What each item of a list field is
+	 * @param value What the number is a multiple of, above zero
+	 * @param message Issue message when invalid
+	 * @returns Refined field
+	 */
+	step<
+		N extends number,
+		T extends Field.Tag,
+		U extends Field.Type,
+		V extends Field.Options | undefined,
+		I extends Field.Item | undefined,
+	>(
+		this: Field.Instance<number, T, U, V, undefined, I>,
+		value: Schema.Step<N>,
+		message?: string,
+	): Field.Instance<number, T, U, V, undefined, I>;
+	/**
+	 * Validate a number is a multiple of a step, such as halves or fives.
+	 *
+	 * @template N Step
+	 * @param value What the number is a multiple of, above zero
+	 * @param message Issue message when invalid
+	 * @returns Stepped schema
+	 */
+	step<N extends number>(
+		this: Schema<number>,
+		value: Schema.Step<N>,
+		message?: string,
+	): Schema<number>;
+	step(
+		this: Schema<number>,
+		value: number,
+		message = `Expected a multiple of ${value}`,
+	) {
+		return this.#check({ name: "step", value, message });
 	}
 
 	/**

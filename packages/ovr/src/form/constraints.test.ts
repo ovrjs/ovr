@@ -106,14 +106,65 @@ describe("a number", () => {
 		);
 	});
 
-	test("keeps the strictest range, and a step control() sets", async () => {
-		const tag = await control(
-			Field.number().min(1).min(3).max(9).max(7).control({ step: 0.5 }),
+	test("keeps the strictest range", async () => {
+		expect(await control(Field.number().min(1).min(3).max(9).max(7))).toContain(
+			'min="3" max="7"',
 		);
+	});
 
-		expect(tag).toContain('min="3" max="7"');
-		expect(tag).toContain('step="0.5"');
-		expect(tag).not.toContain('step="any"');
+	test("in steps is checked by the browser and the server", async () => {
+		const rating = Field.number().min(0.5).max(5).step(0.5);
+
+		expect(await control(rating)).toBe(
+			'<input id="value" required min="0.5" max="5" step="0.5" type="number" name="value">',
+		);
+		expect(await refused(rating, "3.5")).toBeUndefined();
+		expect(await refused(rating, "5")).toBeUndefined();
+		expect(await refused(rating, "3.2")).toBe("Expected a multiple of 0.5");
+		expect(await refused(Field.number().step(5, "By fives"), "12")).toBe(
+			"By fives",
+		);
+		// tenths are not exact in binary
+		for (const value of ["0.3", "0.7", "1.1", "19.9"])
+			expect(await refused(Field.number().step(0.1), value)).toBeUndefined();
+		expect(await refused(Field.number().step(0.1), "0.25")).toBeDefined();
+		expect(await control(Field.number().int().step(5))).toContain('step="5"');
+		expect(await control(Field.range().step(10))).toContain('step="10"');
+	});
+
+	test("in steps is told to agents", () => {
+		expect(described(Field.number().min(0.5).step(0.5))).toMatchObject({
+			type: "number",
+			minimum: 0.5,
+			multipleOf: 0.5,
+		});
+		expect(Schema.number().step(2).parse(3).issues).toBeDefined();
+		expect(Schema.number().step(2).parse(4).data).toBe(4);
+	});
+
+	test("whose range starts between steps keeps the step for the server", async () => {
+		// a browser would count from 1: 1, 3, 5, where the server takes 2, 4, 6
+		const even = Field.number().min(1).step(2);
+
+		expect(await control(even)).toContain('min="1" step="any"');
+		expect(await refused(even, "4")).toBeUndefined();
+		expect(await refused(even, "3")).toBe("Expected a multiple of 2");
+	});
+
+	test("a step is above zero, and the schema's", () => {
+		if (false) {
+			// @ts-expect-error a step is above zero
+			Field.number().step(0);
+			// @ts-expect-error a step is above zero
+			Field.number().step(-1);
+			// @ts-expect-error step() is also checked on the server
+			Field.number().control({ step: 0.5 });
+			// @ts-expect-error text has no step
+			Field.text().step(2);
+		}
+
+		// a picker's step is still its control's
+		expect(Field.time().control({ step: 1 })).toBeInstanceOf(Schema);
 	});
 });
 

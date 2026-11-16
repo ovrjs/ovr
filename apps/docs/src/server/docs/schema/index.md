@@ -344,7 +344,7 @@ A constraint is written once on the field. The browser checks it before the form
 
 ```ts
 Field.text().min(2).max(80);
-Field.number().min(0.5).max(5);
+Field.number().min(0.5).max(5).step(0.5);
 Field.number().int().min(1);
 Field.date().min("2026-01-01").max("2026-12-31");
 Field.text()
@@ -359,6 +359,7 @@ Field.file().accept(["image/jpeg", "image/png", "image/webp"]);
 | `min(number)`, `max(number)` | `number`, `range`                           | `min`, `max`                                   |
 | `int()`                      | `number`, `range`                           | Nothing: a number input takes whole numbers    |
 | Not `int()`                  | `number`, `range`                           | `step="any"`, so it takes decimals             |
+| `step(n)`                    | `number`, `range`                           | `step`                                         |
 | `min(value)`, `max(value)`   | `date`, `datetime`, `month`, `week`, `time` | `min`, `max`                                   |
 | `pattern(source)`            | Text inputs                                 | `pattern`, and the field's hint as its `title` |
 | `accept(types)`              | `file`                                      | `accept`                                       |
@@ -366,8 +367,9 @@ Field.file().accept(["image/jpeg", "image/png", "image/webp"]);
 - A picker's earliest and latest values are written as the picker writes one: `"2026-01-01"` for a date, `"09:00"` for a time, `"2026-W10"` for a week. Another format is a type error.
 - `pattern` takes the expression as the HTML attribute does: without slashes or flags, and matched by the whole value. A browser shows the control's `title` when the value does not match, which is the field's hint, or its description: say there what the value must be. `Schema.string().pattern()` checks the same way without a control.
 - `accept` takes media types, and `image/*` for any image. A file that does not say its type is refused. The type is the one the sender gives, so serve a file back with the type that was checked. `image/*` includes SVG, a document that can run scripts, so name the types when people open each other's files.
-- `accept` and `pattern` are not attributes for `control()`, where only the browser would check them.
-- An attribute `control()` sets, or one passed as a form renders, replaces the field's own. A step of halves is `Field.number().control({ step: 0.5 })`, with a `refine` for the server.
+- `accept`, `pattern`, and a number's `step` are not attributes for `control()`, where only the browser would check them.
+- `step(n)` takes multiples of `n`, counted from zero: `step(0.5)` is halves. A browser counts from the control's `min` instead, so when a range starts between steps, such as `min(1).step(2)`, the control takes any number and the server checks the step.
+- An attribute passed as a form renders replaces the field's own, such as a later `min` on one form's date: `<plan.Field name="start" min={today} />`. The server still checks what the field says.
 - A check made after `transform()` is of the changed value, not the control's, so only the server makes it. Each line's length in `lines()` is the server's too.
 - A browser counts a character outside the basic plane, such as an emoji, as two toward `maxlength`, where the server counts it as one. A field of emoji fills at half its `max()` in the browser.
 

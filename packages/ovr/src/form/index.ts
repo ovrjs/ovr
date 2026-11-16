@@ -861,13 +861,27 @@ class FieldSchema<
 			}
 		}
 
-		// a number input takes whole numbers unless it is told otherwise
-		if (
-			def.type === "number" &&
-			numeric &&
-			!checks.some((check) => check.name === "int")
-		)
-			attributes.step = "any";
+		if (def.type === "number" && numeric) {
+			const steps = checks.flatMap((check) =>
+				check.name === "step" ? [check.value] : [],
+			);
+			const [step] = steps;
+			const from = attributes.min;
+
+			if (step !== undefined)
+				// a browser counts steps from the control's `min`, where the schema
+				// counts them from zero, so a range that starts between steps, or
+				// more than one step, is left to the server
+				attributes.step =
+					steps.length === 1 &&
+					(typeof from !== "number" ||
+						Math.abs(from / step - Math.round(from / step)) < 1e-9)
+						? step
+						: "any";
+			// a number input takes whole numbers unless it is told otherwise
+			else if (!checks.some((check) => check.name === "int"))
+				attributes.step = "any";
+		}
 
 		return (this.#constraints = attributes);
 	}
@@ -1143,7 +1157,10 @@ class FieldSchema<
 							readonly type?: never;
 							readonly accept?: never;
 							readonly pattern?: never;
-						},
+						} & (Type extends "number" | "range"
+								? // `step()` is also checked on the server
+									{ readonly step?: never }
+								: unknown),
 	): Field.Instance<Output, Tag, Type, Values, Stream, Item> {
 		return this.#with({
 			props: { ...this.#config.props, ...attributes } as Field.Props,
