@@ -267,11 +267,18 @@ export namespace Schema {
 			? never
 			: N;
 
+	/** A date, or a date and time, as `min()` and `max()` take a `Date`'s */
+	export type Dated =
+		`${number}-${number}-${number}` | `${number}-${number}-${number}T${string}`;
+
 	/** Validation applied to the output of another schema. */
 	export type Check =
 		| {
 				readonly name: "min" | "max";
-				/** A string bounds a picker's value, such as a date, by its order */
+				/**
+				 * A string is the earliest or latest date or time: of a picker's
+				 * value, by its order, or of a `Date`
+				 */
 				readonly value: number | bigint | string;
 				readonly message: string;
 		  }
@@ -962,8 +969,12 @@ export class Schema<Output>
 			// between. An array is checked by its number of items.
 			case "min": {
 				const { value } = check;
-				// a picker's values, such as dates, are written so they sort
-				if (typeof value === "string") return (v) => v >= value;
+				if (typeof value === "string") {
+					const time = Date.parse(value);
+					// a picker's values, such as dates, are written so they sort,
+					// and a `Date` is compared with the moment the bound names
+					return (v) => (v instanceof Date ? v.getTime() >= time : v >= value);
+				}
 				const min = Number(value);
 
 				return (v) =>
@@ -976,7 +987,10 @@ export class Schema<Output>
 			}
 			case "max": {
 				const { value } = check;
-				if (typeof value === "string") return (v) => v <= value;
+				if (typeof value === "string") {
+					const time = Date.parse(value);
+					return (v) => (v instanceof Date ? v.getTime() <= time : v <= value);
+				}
 				const max = Number(value);
 
 				return (v) =>
@@ -1013,6 +1027,19 @@ export class Schema<Output>
 			case "refine":
 				return check.fn;
 		}
+	}
+
+	/**
+	 * @param value The earliest or latest date of `min()` or `max()`
+	 * @throws When a `Date` is bound by what is not a date, such as a day the
+	 * calendar does not have
+	 */
+	#dated(value: string) {
+		let def: Schema.Def = this.def;
+		while ("inner" in def) def = def.inner.def;
+
+		if (def.type === "date" && Number.isNaN(Date.parse(value)))
+			throw new TypeError(`"${value}" is not a date`);
 	}
 
 	/**
@@ -1988,13 +2015,28 @@ export class Schema<Output>
 		value: number,
 		message?: string,
 	): Schema<A>;
+	/**
+	 * Validate a `Date` is no earlier than the earliest one, written as a
+	 * date field's is.
+	 *
+	 * ```ts
+	 * Schema.date().min("2026-01-01");
+	 * ```
+	 *
+	 * @param value The earliest date, or date and time: one without a time zone
+	 * is read as `new Date(value)` reads it
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	min(this: Schema<Date>, value: Schema.Dated, message?: string): Schema<Date>;
 	min(
-		this: Schema<string | number | bigint | unknown[]>,
+		this: Schema<string | number | bigint | Date | unknown[]>,
 		value: number | bigint | string,
 		message = typeof value === "string"
 			? `${value} or later`
 			: `At least ${this.#amount(value)}`,
 	) {
+		if (typeof value === "string") this.#dated(value);
 		return this.#check({ name: "min", value, message });
 	}
 
@@ -2151,13 +2193,28 @@ export class Schema<Output>
 		value: number,
 		message?: string,
 	): Schema<A>;
+	/**
+	 * Validate a `Date` is no later than the latest one, written as a
+	 * date field's is.
+	 *
+	 * ```ts
+	 * Schema.date().max("2026-12-31T23:59:59Z");
+	 * ```
+	 *
+	 * @param value The latest date, or date and time: one without a time zone
+	 * is read as `new Date(value)` reads it
+	 * @param message Issue message when invalid
+	 * @returns Refined schema
+	 */
+	max(this: Schema<Date>, value: Schema.Dated, message?: string): Schema<Date>;
 	max(
-		this: Schema<string | number | bigint | unknown[]>,
+		this: Schema<string | number | bigint | Date | unknown[]>,
 		value: number | bigint | string,
 		message = typeof value === "string"
 			? `${value} or earlier`
 			: `At most ${this.#amount(value)}`,
 	) {
+		if (typeof value === "string") this.#dated(value);
 		return this.#check({ name: "max", value, message });
 	}
 

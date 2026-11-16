@@ -365,6 +365,7 @@ Field.file().accept(["image/jpeg", "image/png", "image/webp"]);
 | `accept(types)`              | `file`                                      | `accept`                                       |
 
 - A picker's earliest and latest values are written as the picker writes one: `"2026-01-01"` for a date, `"09:00"` for a time, `"2026-W10"` for a week. Another format is a type error.
+- `Schema.date()`, whose value is a `Date`, such as a table's `created`, takes the same: `Schema.date().min("2026-01-01")`, or a date and time such as `"2026-12-31T23:59:59Z"`.
 - `pattern` takes the expression as the HTML attribute does: without slashes or flags, and matched by the whole value. A browser shows the control's `title` when the value does not match, which is the field's hint, or its description: say there what the value must be. `Schema.string().pattern()` checks the same way without a control.
 - `accept` takes media types, and `image/*` for any image. A file that does not say its type is refused. The type is the one the sender gives, so serve a file back with the type that was checked. `image/*` includes SVG, a document that can run scripts, so name the types when people open each other's files.
 - `accept`, `pattern`, and a number's `step` are not attributes for `control()`, where only the browser would check them.

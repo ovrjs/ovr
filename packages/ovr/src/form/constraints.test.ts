@@ -376,3 +376,35 @@ describe("accept", () => {
 		expect(photo).toBeInstanceOf(Schema);
 	});
 });
+
+describe("a Date's range", () => {
+	test("is written as a date field's is", () => {
+		const created = Schema.date().min("2026-01-01").max("2026-12-31T23:59:59Z");
+
+		expect(created.parse(new Date("2026-06-15")).issues).toBeUndefined();
+		expect(created.parse(new Date("2026-01-01")).issues).toBeUndefined();
+		expect(
+			created.parse(new Date("2025-12-31T23:59:59Z")).issues?.[0].message,
+		).toBe("2026-01-01 or later");
+		expect(created.parse(new Date("2027-01-01")).issues?.[0].message).toBe(
+			"2026-12-31T23:59:59Z or earlier",
+		);
+		expect(
+			Schema.date().max("2026-01-01", "Too late").parse(new Date("2026-01-02"))
+				.issues?.[0].message,
+		).toBe("Too late");
+	});
+
+	test("that is not a date fails where it is written", () => {
+		expect(() => Schema.date().min("2026-13-45")).toThrow(
+			'"2026-13-45" is not a date',
+		);
+
+		if (false) {
+			// @ts-expect-error not a date
+			Schema.date().min("tomorrow");
+			// @ts-expect-error a Date is bound by a date, not a count
+			Schema.date().min(5);
+		}
+	});
+});
