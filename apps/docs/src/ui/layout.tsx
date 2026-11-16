@@ -15,7 +15,7 @@ import * as o from "ovr";
 import { version } from "ovr/package.json";
 
 const Assets = () => {
-	return o.Render.raw({ html: script.tags + style.tags });
+	return o.Render.raw({ markup: script.tags + style.tags });
 };
 
 /** The document around each page. */

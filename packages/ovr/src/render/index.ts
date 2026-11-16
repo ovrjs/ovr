@@ -30,37 +30,37 @@ export namespace Render {
 	export type Escape =
 		| {
 				/** Text for an element's content */
-				readonly html: string;
+				readonly markup: string;
 				readonly attr?: never;
 				readonly markdown?: never;
 		  }
 		| {
 				/** Text for an attribute's value */
 				readonly attr: string;
-				readonly html?: never;
+				readonly markup?: never;
 				readonly markdown?: never;
 		  }
 		| {
 				/** Text for Markdown */
 				readonly markdown: string;
-				readonly html?: never;
+				readonly markup?: never;
 				readonly attr?: never;
 		  };
 
 	/**
 	 * What is written as it is, for people, agents, or both. With only
-	 * `html`, agents get the HTML too, which Markdown can contain.
+	 * `markup`, agents get the markup too, which Markdown can contain.
 	 */
 	export type Raw =
 		| {
 				/** Safe markup the page shows */
-				readonly html: unknown;
+				readonly markup: unknown;
 				/** What agents reading the page as Markdown get in its place, empty for nothing */
 				readonly markdown?: unknown;
 		  }
 		| {
 				/** Safe markup the page shows, nothing when left out */
-				readonly html?: unknown;
+				readonly markup?: unknown;
 				/** What agents reading the page as Markdown get */
 				readonly markdown: unknown;
 		  };
@@ -81,10 +81,10 @@ export class Render {
 	 * escaping, so both must be safe.
 	 *
 	 * ```tsx
-	 * Render.raw({ html: icon }); // the page and agents get the markup
-	 * Render.raw({ html: render(steps), markdown: steps }); // each its own
+	 * Render.raw({ markup: icon }); // the page and agents get the markup
+	 * Render.raw({ markup: render(steps), markdown: steps }); // each its own
 	 * Render.raw({ markdown: " · " }); // only agents
-	 * Render.raw({ html: button, markdown: "" }); // only the page
+	 * Render.raw({ markup: button, markdown: "" }); // only the page
 	 * ```
 	 *
 	 * @param raw Safe markup for the page, and what agents get in its place
@@ -92,8 +92,8 @@ export class Render {
 	 */
 	static raw(raw: Render.Raw): Render.Chunk {
 		return raw.markdown === undefined
-			? new ChunkClass(raw.html, true)
-			: new Source(raw.markdown, raw.html);
+			? new ChunkClass(raw.markup, true)
+			: new Source(raw.markdown, raw.markup);
 	}
 
 	/**
@@ -101,12 +101,12 @@ export class Render {
 	 * yourself, such as what `Render.raw` is given.
 	 *
 	 * ```ts
-	 * Render.escape({ html: "a < b" }); // "a &lt; b"
+	 * Render.escape({ markup: "a < b" }); // "a &lt; b"
 	 * Render.escape({ attr: 'say "hi"' }); // "say &quot;hi&quot;"
 	 * Render.escape({ markdown: "2 * 3" }); // "2 \\* 3"
 	 * ```
 	 *
-	 * @param text Text to escape, by where it goes: `html` for an element's
+	 * @param text Text to escape, by where it goes: `markup` for an element's
 	 * content, `attr` for an attribute's value, or `markdown`
 	 * @returns Escaped text
 	 */
@@ -115,7 +115,7 @@ export class Render {
 			? MarkdownRender.escape(text.markdown)
 			: text.attr !== undefined
 				? MarkupRender.escape(text.attr, true)
-				: MarkupRender.escape(text.html);
+				: MarkupRender.escape(text.markup);
 	}
 
 	/**

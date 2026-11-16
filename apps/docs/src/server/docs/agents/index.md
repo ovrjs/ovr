@@ -63,7 +63,7 @@ const post = Route.get("/posts/:slug").use(async (c) => {
 	{recipe.time}
 	{/* people only */}
 	{Render.raw({
-		html: '<button type="button">Read more</button>',
+		markup: '<button type="button">Read more</button>',
 		markdown: "",
 	})}
 </p>

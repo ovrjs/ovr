@@ -16,18 +16,18 @@ test("raw is for the page, for agents, or for both", async () => {
 		]);
 
 	// markup alone is what agents get too, since Markdown can hold it
-	expect(await both(Render.raw({ html: "<b>x</b>" }))).toEqual([
+	expect(await both(Render.raw({ markup: "<b>x</b>" }))).toEqual([
 		"<p>a<b>x</b>b</p>",
 		"a<b>x</b>b\n",
 	]);
 	expect(
-		await both(Render.raw({ html: "<b>x</b>", markdown: "**x**" })),
+		await both(Render.raw({ markup: "<b>x</b>", markdown: "**x**" })),
 	).toEqual(["<p>a<b>x</b>b</p>", "a**x**b\n"]);
 	expect(await both(Render.raw({ markdown: " · " }))).toEqual([
 		"<p>ab</p>",
 		"a · b\n",
 	]);
-	expect(await both(Render.raw({ html: "<i>!</i>", markdown: "" }))).toEqual([
+	expect(await both(Render.raw({ markup: "<i>!</i>", markdown: "" }))).toEqual([
 		"<p>a<i>!</i>b</p>",
 		"ab\n",
 	]);
@@ -38,7 +38,7 @@ test("raw is for the page, for agents, or for both", async () => {
 
 test("escape content", () => {
 	const escaped = Render.escape({
-		html: `&<script>console.log("hello")</script>`,
+		markup: `&<script>console.log("hello")</script>`,
 	});
 
 	expect(escaped.includes("&amp")).toBe(true);
@@ -62,7 +62,7 @@ test("escaped Markdown reads as the text it was", async () => {
 	const title = "Soup *with* [a link](https://example.com)";
 	const page = jsx("p", {
 		children: Render.raw({
-			html: `<b>${Render.escape({ html: title })}</b>`,
+			markup: `<b>${Render.escape({ markup: title })}</b>`,
 			markdown: `**${escape(title)}**`,
 		}),
 	});
@@ -72,7 +72,7 @@ test("escaped Markdown reads as the text it was", async () => {
 
 	// one of them, as one call gives one string
 	// @ts-expect-error two
-	void (() => Render.escape({ html: "a", markdown: "a" }));
+	void (() => Render.escape({ markup: "a", markdown: "a" }));
 	// @ts-expect-error none
 	void (() => Render.escape({}));
 });
@@ -80,7 +80,7 @@ test("escaped Markdown reads as the text it was", async () => {
 test("a script takes a media type for a block of data", async () => {
 	const props: JSX.IntrinsicElements["script"] = {
 		type: "application/ld+json",
-		children: Render.raw({ html: '{"@type":"Recipe"}' }),
+		children: Render.raw({ markup: '{"@type":"Recipe"}' }),
 	};
 
 	expect(await Render.markup(JSX.jsx("script", props)).string()).toBe(
@@ -105,11 +105,11 @@ test("fragment", () => {
 
 test("generators preserve trusted HTML and escape ordinary children", async () => {
 	function* sync() {
-		yield Render.raw({ html: "<b>trusted</b>" });
+		yield Render.raw({ markup: "<b>trusted</b>" });
 		yield "<&";
 	}
 	async function* async() {
-		yield Render.raw({ html: "<b>trusted</b>" });
+		yield Render.raw({ markup: "<b>trusted</b>" });
 		yield "<&";
 	}
 	for (const element of [sync(), async()]) {
@@ -187,7 +187,7 @@ test("parallel child errors close sibling generators", async () => {
 });
 
 test("a chunk rendered more than once is never changed", async () => {
-	const star = Render.raw({ html: "★" });
+	const star = Render.raw({ markup: "★" });
 	const later = new Promise((resolve) => setTimeout(() => resolve("a"), 5));
 
 	// the second child renders while the first waits, so its chunks are queued
@@ -576,14 +576,14 @@ describe("stream", () => {
 			await chunks(
 				Render.markup([
 					"a",
-					Render.raw({ html: "" }),
+					Render.raw({ markup: "" }),
 					"b",
-					Render.raw({ html: "" }),
+					Render.raw({ markup: "" }),
 				]).stream(),
 			),
 		).toStrictEqual(["ab"]);
 		expect(
-			await chunks(Render.markup(Render.raw({ html: "" })).stream()),
+			await chunks(Render.markup(Render.raw({ markup: "" })).stream()),
 		).toStrictEqual([]);
 	});
 

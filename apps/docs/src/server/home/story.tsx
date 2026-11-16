@@ -150,7 +150,7 @@ const Code = (props: {
 	>
 		<code>
 			{o.Render.raw({
-				html: lines
+				markup: lines
 					.filter((_, i) =>
 						props.lines.some(([from, to]) => i + 1 >= from && i + 1 <= to),
 					)

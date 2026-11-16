@@ -327,15 +327,15 @@ describe("Markdown", () => {
 	test("raw HTML is a block only when it starts with one", async () => {
 		expect(
 			await md([
-				h("div", null, "Price: ", Render.raw({ html: "&euro;" }), "5 total"),
+				h("div", null, "Price: ", Render.raw({ markup: "&euro;" }), "5 total"),
 				h(
 					"ul",
 					null,
-					h("li", null, "A ", Render.raw({ html: "<b>bold</b>" }), " item"),
+					h("li", null, "A ", Render.raw({ markup: "<b>bold</b>" }), " item"),
 				),
 				"Loose ",
-				Render.raw({ html: "<i>text</i>" }),
-				Render.raw({ html: "<figure>block</figure>" }),
+				Render.raw({ markup: "<i>text</i>" }),
+				Render.raw({ markup: "<figure>block</figure>" }),
 			]),
 		).toBe(
 			"Price: &euro;5 total\n\n- A <b>bold</b> item\n\nLoose <i>text</i>\n\n<figure>block</figure>\n",
@@ -403,7 +403,7 @@ describe("Markdown", () => {
 					h("label", { for: "note" }, "Note"),
 					h("input", { id: "note", name: "note" }),
 					h("p", null, "Optional"),
-					Render.raw({ html: "<pre>a\n  b</pre>" }),
+					Render.raw({ markup: "<pre>a\n  b</pre>" }),
 					h("pre", null, "x\n  y"),
 					h("button", null, "Delete selected"),
 					h("a", { href: "/posts" }, "Cancel"),
@@ -542,30 +542,30 @@ describe("Markdown", () => {
 					h(
 						"head",
 						null,
-						Render.raw({ html: '<script src="/app.js"></script>' }),
+						Render.raw({ markup: '<script src="/app.js"></script>' }),
 					),
 					h(
 						"body",
 						null,
-						Render.raw({ html: "<nav>Raw nav</nav>" }),
+						Render.raw({ markup: "<nav>Raw nav</nav>" }),
 						h(
 							"main",
 							null,
 							h("h1", null, "Doc"),
 							Render.raw({
-								html: '<pre class="shiki"><code>  indented\n</code></pre>',
+								markup: '<pre class="shiki"><code>  indented\n</code></pre>',
 							}),
 							h(
 								"p",
 								null,
 								"Press ",
-								Render.raw({ html: "<kbd>K</kbd>" }),
+								Render.raw({ markup: "<kbd>K</kbd>" }),
 								" now",
 							),
 							h(
 								"div",
 								null,
-								Render.raw({ html: "<p>One</p>" }),
+								Render.raw({ markup: "<p>One</p>" }),
 								h("p", null, "Two"),
 							),
 						),
@@ -1121,13 +1121,13 @@ describe("raw Markdown", () => {
 				jsx("section", {
 					children: [
 						jsx("h2", { children: "Steps" }),
-						Render.raw({ html, markdown: steps }),
+						Render.raw({ markup: html, markdown: steps }),
 					],
 				}),
 				jsx("p", {
 					children: [
 						"Serve ",
-						Render.raw({ html: "<em>warm</em>", markdown: "*warm*" }),
+						Render.raw({ markup: "<em>warm</em>", markdown: "*warm*" }),
 						".",
 					],
 				}),
@@ -1149,7 +1149,7 @@ describe("raw Markdown", () => {
 						Render.raw({ markdown: " · " }),
 						jsx("span", { children: "Anthropic" }),
 						// only people see it
-						Render.raw({ html: "<button>More</button>", markdown: "" }),
+						Render.raw({ markup: "<button>More</button>", markdown: "" }),
 					],
 				}),
 			});
@@ -1166,7 +1166,7 @@ describe("raw Markdown", () => {
 				jsx("div", {
 					children: [
 						"Before",
-						Render.raw({ html: "<h2>Steps</h2>", markdown: "## Steps" }),
+						Render.raw({ markup: "<h2>Steps</h2>", markdown: "## Steps" }),
 						"After",
 					],
 				}),

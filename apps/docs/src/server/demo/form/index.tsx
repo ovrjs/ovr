@@ -58,7 +58,7 @@ export const form = Route.get("/demo/form").use((c) => {
 		<Layout head={<Meta {...formContent.frontmatter} />}>
 			<h1>{formContent.frontmatter.title}</h1>
 
-			{Render.raw({ html: formContent.html })}
+			{Render.raw({ markup: formContent.html })}
 
 			<enroll.Form state={c.url} />
 		</Layout>

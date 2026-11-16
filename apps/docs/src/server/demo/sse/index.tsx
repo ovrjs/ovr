@@ -9,7 +9,7 @@ export const ssePage = ovr.Route.get("/demo/sse").use((c) => {
 	return (
 		<Layout head={<Meta {...sseContent.frontmatter} />}>
 			<h1>{sseContent.frontmatter.title}</h1>
-			{ovr.Render.raw({ html: sseContent.html })}
+			{ovr.Render.raw({ markup: sseContent.html })}
 			<p>
 				Check out the server sent events{" "}
 				<sse.Anchor data-no-prefetch>demo</sse.Anchor>.

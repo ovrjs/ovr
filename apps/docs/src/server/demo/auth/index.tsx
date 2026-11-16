@@ -47,7 +47,7 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 			<Layout head={<Meta {...content.frontmatter} />}>
 				<h1>{content.frontmatter.title}</h1>
 
-				{Render.raw({ html: content.html })}
+				{Render.raw({ markup: content.html })}
 
 				<div class="mt-8 flex justify-center">
 					<div>

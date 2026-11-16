@@ -202,7 +202,7 @@ function Theme() {
 	return (
 		<script>
 			{Render.raw({
-				html: `if (matchMedia("(prefers-color-scheme: dark)").matches && !localStorage.theme) document.documentElement.dataset.theme = "dark";`,
+				markup: `if (matchMedia("(prefers-color-scheme: dark)").matches && !localStorage.theme) document.documentElement.dataset.theme = "dark";`,
 			})}
 		</script>
 	);
@@ -213,24 +213,24 @@ Use it for markup you trust, such as HTML from a Markdown processor or an SVG fi
 
 Agents reading the page as [Markdown](#markdown) get the same markup, which Markdown can contain. Give `markdown` too, and they get that in its place: for content written in Markdown, such as a recipe's steps, the source it was rendered from. Neither is escaped.
 
-| Call                                 | The page shows | Agents read  |
-| ------------------------------------ | -------------- | ------------ |
-| `Render.raw({ html })`               | The markup     | The markup   |
-| `Render.raw({ html, markdown })`     | The markup     | The Markdown |
-| `Render.raw({ markdown })`           | Nothing        | The Markdown |
-| `Render.raw({ html, markdown: "" })` | The markup     | Nothing      |
+| Call                                   | The page shows | Agents read  |
+| -------------------------------------- | -------------- | ------------ |
+| `Render.raw({ markup })`               | The markup     | The markup   |
+| `Render.raw({ markup, markdown })`     | The markup     | The Markdown |
+| `Render.raw({ markdown })`             | Nothing        | The Markdown |
+| `Render.raw({ markup, markdown: "" })` | The markup     | Nothing      |
 
 ### Escape
 
 `Render.raw` writes what it is given, so escape any text you put into it, as a render does for you everywhere else. Say where the text goes:
 
 ```tsx
-Render.escape({ html: "a < b" }); // "a &lt; b", an element's content
+Render.escape({ markup: "a < b" }); // "a &lt; b", an element's content
 Render.escape({ attr: 'say "hi"' }); // "say &quot;hi&quot;", an attribute's value
 Render.escape({ markdown: "2 * 3" }); // "2 \\* 3"
 
 Render.raw({
-	html: `<b>${Render.escape({ html: recipe.title })}</b>`,
+	markup: `<b>${Render.escape({ markup: recipe.title })}</b>`,
 	markdown: `**${Render.escape({ markdown: recipe.title })}**`,
 });
 ```
