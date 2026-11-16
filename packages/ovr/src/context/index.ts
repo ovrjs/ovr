@@ -1,10 +1,10 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { type Field, Form as FormSchema, forms } from "../form/index.js";
-import { Markdown, tools } from "../markdown/index.js";
-import { Markup } from "../markup/index.js";
+import { type Options, tools } from "../markdown/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
+import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { Checksum, Header, Method, Mime, type Util } from "../util/index.js";
 
@@ -21,7 +21,7 @@ export const agent = new WeakMap<
 		readonly sent?: ReadonlySet<string>;
 		issues?: readonly { readonly path: string; readonly message: string }[];
 		/** The tool a form submits to and its arguments, so a page points to it */
-		readonly tool?: Markdown.Options[typeof tools];
+		readonly tool?: Options[typeof tools];
 	}
 >();
 
@@ -450,19 +450,22 @@ export class Context<
 					) &&
 					this.#markdown()
 				) {
-					res.body = new Markdown(r, {
-						base: this.url,
-						[tools]: agent.get(this.req)?.tool,
-					}).stream();
+					res.body = new Render(
+						{ markdown: r },
+						{ base: this.url, [tools]: agent.get(this.req)?.tool },
+					).stream();
 					res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
 					return;
 				}
 			}
 
-			res.body = new Markup(r, {
-				// other defined types are not markup, so they are not escaped
-				raw: Boolean(mime && !Mime.markup(mime)),
-			}).stream();
+			res.body = new Render(
+				{ markup: r },
+				{
+					// other defined types are not markup, so they are not escaped
+					raw: Boolean(mime && !Mime.markup(mime)),
+				},
+			).stream();
 
 			if (!mime) {
 				// default to HTML

@@ -1,9 +1,17 @@
 import type { JSX } from "../jsx/index.js";
-import { Markdown as MarkdownRender } from "../markdown/index.js";
+import {
+	Blocks,
+	type Options as MarkdownOptions,
+	escape as markdown,
+} from "../markdown/index.js";
 import {
 	Chunk as ChunkClass,
-	Markup as MarkupRender,
+	Group,
+	Renderer,
 	Source,
+	type Step,
+	escape as markup,
+	readable,
 	source,
 } from "../markup/index.js";
 
@@ -11,14 +19,15 @@ export namespace Render {
 	/** A piece of a render, an interface so declaration files name it */
 	export interface Chunk extends ChunkClass {}
 
-	export namespace Markup {
-		/** Markup options */
-		export type Options = MarkupRender.Options;
-	}
+	export namespace Options {
+		/** Options of a render of markup */
+		export type Markup = {
+			/** Set to `true` to disable escaping, for content that is not markup */
+			raw?: boolean;
+		};
 
-	export namespace Markdown {
-		/** Markdown options */
-		export type Options = MarkdownRender.Options;
+		/** Options of a render of Markdown */
+		export type Markdown = MarkdownOptions;
 	}
 
 	/** Text to escape, by where it goes: one of them */
@@ -79,8 +88,12 @@ export class Render {
 	/** Element to render */
 	readonly #element: JSX.Element;
 
-	/** What renders it */
-	readonly #render: MarkupRender | MarkdownRender;
+	/** Rendered to Markdown, otherwise to markup */
+	readonly #markdown: boolean;
+
+	/** Options of either */
+	readonly #options:
+		(Render.Options.Markup & Render.Options.Markdown) | undefined;
 
 	/**
 	 * @param element The element, by what to render it to: `markup`, such as
@@ -89,7 +102,7 @@ export class Render {
 	 */
 	constructor(
 		element: { readonly markup: JSX.Element },
-		options?: Render.Markup.Options,
+		options?: Render.Options.Markup,
 	);
 	/**
 	 * @param element The element, by what to render it to: `markdown`, as
@@ -100,20 +113,16 @@ export class Render {
 	 */
 	constructor(
 		element: { readonly markdown: JSX.Element },
-		options?: Render.Markdown.Options,
+		options?: Render.Options.Markdown,
 	);
 	constructor(
 		element:
 			{ readonly markup: JSX.Element } | { readonly markdown: JSX.Element },
-		options?: Render.Markup.Options & Render.Markdown.Options,
+		options?: Render.Options.Markup & Render.Options.Markdown,
 	) {
-		if ("markdown" in element) {
-			this.#element = element.markdown;
-			this.#render = new MarkdownRender(this.#element, options);
-		} else {
-			this.#element = element.markup;
-			this.#render = new MarkupRender(this.#element, options);
-		}
+		this.#markdown = "markdown" in element;
+		this.#element = "markdown" in element ? element.markdown : element.markup;
+		this.#options = options;
 	}
 
 	/** @returns The element, rendered in place where a render is a child */
@@ -121,9 +130,26 @@ export class Render {
 		return this.#element;
 	}
 
-	/** @returns Strings of the render, as the element resolves */
-	[Symbol.asyncIterator]() {
-		return this.#render[Symbol.asyncIterator]();
+	/** @returns What renders the element a step at a time, Markdown a block at a time */
+	#steps() {
+		return this.#markdown
+			? new Blocks(this.#element, this.#options)
+			: new Renderer(this.#element, this.#options?.raw);
+	}
+
+	/** @yields Strings of the render, as the element resolves */
+	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
+		const steps = this.#steps();
+
+		try {
+			for (let result: Step | string; (result = steps.step());) {
+				if (typeof result === "string") yield result;
+				else if (result instanceof ChunkClass) yield result.toString();
+				else await result;
+			}
+		} finally {
+			await steps.close();
+		}
 	}
 
 	/**
@@ -133,7 +159,7 @@ export class Render {
 	 * @returns `ReadableStream` of the render
 	 */
 	stream() {
-		return this.#render.stream();
+		return readable(this.#steps());
 	}
 
 	/**
@@ -142,8 +168,23 @@ export class Render {
 	 *
 	 * @returns The render, concatenated
 	 */
-	string() {
-		return this.#render.string();
+	async string() {
+		const steps = this.#steps();
+		const chunks: ChunkClass[] = [];
+		let text = "";
+
+		try {
+			for (let result: Step | string; (result = steps.step());) {
+				if (typeof result === "string") text += result;
+				else if (result instanceof ChunkClass) chunks.push(result);
+				else await result;
+			}
+		} finally {
+			await steps.close();
+		}
+
+		// markup is written once every chunk is rendered, as a group of them is
+		return this.#markdown ? text : new Group(chunks).toString();
 	}
 
 	/**
@@ -182,9 +223,9 @@ export class Render {
 	 */
 	static escape(text: Render.Escape) {
 		return text.markdown !== undefined
-			? MarkdownRender.escape(text.markdown)
+			? markdown(text.markdown)
 			: text.attr !== undefined
-				? MarkupRender.escape(text.attr, true)
-				: MarkupRender.escape(text.markup);
+				? markup(text.attr, true)
+				: markup(text.markup);
 	}
 }

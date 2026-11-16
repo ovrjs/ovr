@@ -24,7 +24,7 @@ export class Chunk {
 	 * @returns Safe markup to render
 	 */
 	toString(): string {
-		return this.raw ? this.value : Markup.escape(this.value);
+		return this.raw ? this.value : escape(this.value);
 	}
 }
 
@@ -72,7 +72,7 @@ export class Tag extends Chunk {
 				// just put the key without the value
 				opening += ` ${key}`;
 			} else if (typeof value === "string") {
-				opening += ` ${key}="${Markup.escape(value, true)}"`;
+				opening += ` ${key}="${escape(value, true)}"`;
 			} else if (typeof value === "number" || typeof value === "bigint") {
 				opening += ` ${key}="${value}"`;
 			}
@@ -738,114 +738,26 @@ export const readable = (render: {
 	);
 };
 
-export namespace Markup {
-	/** Markup options */
-	export type Options = {
-		/** Set to `true` to disable escaping, for content that is not markup */
-		raw?: boolean;
-	};
-}
+/** Regex to find escape character for attributes */
+const attribute = /[&"<]/g;
+
+/** Regex to find escape character for content */
+const content = /[&<]/g;
+
+/** Escape character map */
+const entities: Record<string, string> = {
+	"&": "&amp;",
+	'"': "&quot;",
+	"<": "&lt;",
+};
 
 /**
- * Renders an element to markup, such as HTML, SVG, or XML, as an
- * `AsyncIterable` of strings, a stream, or a string. `Markdown` renders the
- * same elements to Markdown. Internal to ovr, made with `new Render`.
+ * Escapes text for markup.
+ *
+ * @param text Text to escape
+ * @param attr Set to `true` if the value is an attribute, otherwise it is content
+ * @returns Escaped text
  */
-export class Markup {
-	/** Regex to find escape character for attributes */
-	static readonly #attr = /[&"<]/g;
-
-	/** Regex to find escape character for content */
-	static readonly #content = /[&<]/g;
-
-	/** Escape character map */
-	static readonly #map = { "&": "&amp;", '"': "&quot;", "<": "&lt;" };
-
-	/** Element to render */
-	readonly #element: JSX.Element;
-
-	/** Markup options */
-	readonly #options: Markup.Options | undefined;
-
-	/**
-	 * Creates an `AsyncIterable` that renders the `Element`.
-	 *
-	 * @param element Element to render
-	 * @param options Markup options
-	 */
-	constructor(element: JSX.Element, options?: Markup.Options) {
-		this.#element = element;
-		this.#options = options;
-	}
-
-	/** @returns The element, rendered in place where a render is a child */
-	get [source]() {
-		return this.#element;
-	}
-
-	/** @yields Markup as the `Element` resolves */
-	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
-		const render = new Renderer(this.#element, this.#options?.raw);
-
-		try {
-			for (let result: Step; (result = render.step());) {
-				if (result instanceof Chunk) yield result.toString();
-				else await result;
-			}
-		} finally {
-			await render.close();
-		}
-	}
-
-	/**
-	 * The render piped into a `ReadableStream`. Iterate it when possible, to
-	 * avoid the overhead of the stream.
-	 *
-	 * @returns `ReadableStream` of markup
-	 */
-	stream() {
-		return readable(new Renderer(this.#element, this.#options?.raw));
-	}
-
-	/**
-	 * The whole render as one string.
-	 *
-	 * ### WARNING
-	 *
-	 * This negates streaming benefits and buffers the result into a string.
-	 *
-	 * @returns Concatenated markup
-	 */
-	async string() {
-		const render = new Renderer(this.#element, this.#options?.raw);
-		const chunks: Chunk[] = [];
-
-		try {
-			for (let result: Step; (result = render.step());) {
-				if (result instanceof Chunk) chunks.push(result);
-				else await result;
-			}
-		} finally {
-			await render.close();
-		}
-
-		// written once every chunk is rendered, as a group of them is
-		return new Group(chunks).toString();
-	}
-
-	/**
-	 * Escapes text for markup.
-	 *
-	 * @param html String to escape
-	 * @param attr Set to `true` if the value is an attribute, otherwise it is content
-	 * @returns Escaped text
-	 */
-	static escape(html: string, attr?: boolean) {
-		return html.replace(
-			attr ? Markup.#attr : Markup.#content,
-			(c) =>
-				// @ts-expect-error - private method type error
-				Markup.#map[c],
-		);
-	}
+export function escape(text: string, attr?: boolean) {
+	return text.replace(attr ? attribute : content, (c) => entities[c]!);
 }

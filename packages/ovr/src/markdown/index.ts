@@ -1,12 +1,5 @@
 import type { JSX } from "../jsx/index.js";
-import {
-	type Chunk,
-	Group,
-	Renderer,
-	Source,
-	Tag,
-	readable,
-} from "../markup/index.js";
+import { type Chunk, Group, Renderer, Source, Tag } from "../markup/index.js";
 
 /** Parsed element */
 type Node = {
@@ -50,40 +43,38 @@ type Field = {
 /** Internal protocol for the MCP endpoint, to write a form as its tool's call. */
 export const tools = Symbol("tools");
 
-export namespace Markdown {
-	/** Markdown conversion options */
-	export type Options = {
-		/** Resolves relative links and form actions, usually the request URL */
-		readonly base?: string | URL | undefined;
+/** Markdown conversion options */
+export type Options = {
+	/** Resolves relative links and form actions, usually the request URL */
+	readonly base?: string | URL | undefined;
 
-		/**
-		 * Finds the tool that submits a form, if there is one, set by
-		 * an MCP endpoint. A form is then written as the call to its tool, with
-		 * the arguments its address holds, its values, and its messages. A form
-		 * without a tool is left out: the agent has no way to submit it.
-		 *
-		 * @param method Form method
-		 * @param action Resolved form action
-		 * @returns The tool's name, the arguments from the address's parameters,
-		 * the fields whose choices are given as the form renders, which its
-		 * input schema can't list, and the fields it takes as an array, which
-		 * the form shows as rows or lines
-		 */
-		readonly [tools]?:
-			| ((
-					method: string,
-					action: URL,
-			  ) =>
-					| {
-							name: string;
-							args: Record<string, string>;
-							choices: ReadonlySet<string>;
-							lists: ReadonlySet<string>;
-					  }
-					| undefined)
-			| undefined;
-	};
-}
+	/**
+	 * Finds the tool that submits a form, if there is one, set by
+	 * an MCP endpoint. A form is then written as the call to its tool, with
+	 * the arguments its address holds, its values, and its messages. A form
+	 * without a tool is left out: the agent has no way to submit it.
+	 *
+	 * @param method Form method
+	 * @param action Resolved form action
+	 * @returns The tool's name, the arguments from the address's parameters,
+	 * the fields whose choices are given as the form renders, which its
+	 * input schema can't list, and the fields it takes as an array, which
+	 * the form shows as rows or lines
+	 */
+	readonly [tools]?:
+		| ((
+				method: string,
+				action: URL,
+		  ) =>
+				| {
+						name: string;
+						args: Record<string, string>;
+						choices: ReadonlySet<string>;
+						lists: ReadonlySet<string>;
+				  }
+				| undefined)
+		| undefined;
+};
 
 /** Writes Markdown from rendered chunks, one block at a time */
 class Writer {
@@ -162,7 +153,7 @@ class Writer {
 	/** Attributes of an element without any, never changed */
 	static readonly #none: Record<string, string> = Object.freeze({});
 
-	readonly #options: Markdown.Options;
+	readonly #options: Options;
 
 	/** Open elements below the top level */
 	readonly #stack: Node[] = [];
@@ -195,7 +186,7 @@ class Writer {
 	#count = 0;
 
 	/** @param options Conversion options */
-	constructor(options: Markdown.Options = {}) {
+	constructor(options: Options = {}) {
 		this.#options = options;
 	}
 
@@ -1431,7 +1422,7 @@ class Writer {
  * Renders an element to Markdown a step at a time, as a render of markup
  * steps through its chunks, so neither waits unless the element does.
  */
-class Blocks {
+export class Blocks {
 	/** Render of the element's chunks */
 	readonly #render: Renderer;
 
@@ -1445,7 +1436,7 @@ class Blocks {
 	 * @param element Element to render
 	 * @param options Markdown options
 	 */
-	constructor(element: JSX.Element, options?: Markdown.Options) {
+	constructor(element: JSX.Element, options?: Options) {
 		this.#render = new Renderer(element, undefined);
 		this.#writer = new Writer(options);
 	}
@@ -1476,79 +1467,9 @@ class Blocks {
 }
 
 /**
- * Renders an element to Markdown, as an `AsyncIterable` of blocks, a stream,
- * or a string, from the same elements `Markup` renders. Internal to ovr,
- * made with `new Render`. Each top level block is
- * written as soon as it closes, and when the page has a `<main>` element, only
- * its contents are kept. Raw HTML is written as it is.
- *
- * ```tsx
- * const markdown = await new Render({ markdown: <Post post={post} /> }, { base: url }).string();
- * ```
+ * @param text Plain text
+ * @returns The text escaped, to write in Markdown as it is
  */
-export class Markdown {
-	/**
-	 * @param text Plain text
-	 * @returns The text escaped, to write in Markdown as it is
-	 */
-	static escape(text: string) {
-		return Writer.escape(text);
-	}
-
-	/** Element to render */
-	readonly #element: JSX.Element;
-
-	/** Markdown options */
-	readonly #options: Markdown.Options | undefined;
-
-	/**
-	 * Creates an `AsyncIterable` that renders the element to Markdown.
-	 *
-	 * @param element Element to render
-	 * @param options Markdown options
-	 */
-	constructor(element: JSX.Element, options?: Markdown.Options) {
-		this.#element = element;
-		this.#options = options;
-	}
-
-	/** @yields Markdown as each block completes */
-	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
-		const blocks = new Blocks(this.#element, this.#options);
-
-		try {
-			for (let result; (result = blocks.step());) {
-				if (typeof result === "string") yield result;
-				else await result;
-			}
-		} finally {
-			await blocks.close();
-		}
-	}
-
-	/** @returns `ReadableStream` of Markdown */
-	stream() {
-		return readable(new Blocks(this.#element, this.#options));
-	}
-
-	/**
-	 * The whole render as one string.
-	 *
-	 * @returns Concatenated Markdown
-	 */
-	async string() {
-		const blocks = new Blocks(this.#element, this.#options);
-		let markdown = "";
-
-		try {
-			for (let result; (result = blocks.step());) {
-				if (typeof result === "string") markdown += result;
-				else await result;
-			}
-		} finally {
-			await blocks.close();
-		}
-
-		return markdown;
-	}
+export function escape(text: string) {
+	return Writer.escape(text);
 }

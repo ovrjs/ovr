@@ -6,7 +6,7 @@ import { Route } from "../route/index.js";
 import { tools } from "./index.js";
 import { describe, expect, test } from "vitest";
 
-const md = (element: JSX.Element, options?: Render.Markdown.Options) =>
+const md = (element: JSX.Element, options?: Render.Options.Markdown) =>
 	new Render({ markdown: element }, options).string();
 
 /** Element with props and children, like JSX */
