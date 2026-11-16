@@ -24,6 +24,7 @@
     "choices-return-source",
     "confirm-passkey",
     "constraints",
+    "date-range",
     "enum-types",
     "escape",
     "every-choice",
