@@ -1354,7 +1354,6 @@ class FieldSchema<
 				autofocus: control.autofocus,
 				"aria-invalid": control["aria-invalid"],
 				"aria-describedby": control["aria-describedby"],
-				toolparamdescription: control.toolparamdescription,
 				...this.#config.props,
 				name,
 			};
@@ -1383,7 +1382,13 @@ class FieldSchema<
 				Label,
 				Control,
 				Root: (data: Field.Component.Root = {}) =>
-					jsx("fieldset", { ...attributes, ...data }),
+					jsx("fieldset", {
+						// an agent in the browser reads a group's description from
+						// its fieldset, not from its legend or its boxes
+						toolparamdescription: told,
+						...attributes,
+						...data,
+					}),
 				Option: ({
 					value,
 					...rest

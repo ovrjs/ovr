@@ -307,7 +307,7 @@ The endpoint is tested with the official [MCP conformance suite](https://github.
 </form>
 ```
 
-The browser builds the tool's input from the form's controls and reads each one's label. A field with a [description](/schema#post-forms) adds `toolparamdescription`, its label and description, never its `hint`, and so does each cell of a [list](/schema#lists), which is named by its column's heading. A list is an argument for each cell on the page, such as `ingredients.0.name`, where the MCP endpoint takes an array.
+The browser builds the tool's input from the form's controls and reads each one's label. A field with a [description](/schema#post-forms) adds `toolparamdescription`, its label and description, never its `hint`, and so does each cell of a [list](/schema#lists), which is named by its column's heading. A radio or checkbox group has it on its `<fieldset>`, where the browser reads a group's, and not on each box. A list is an argument for each cell on the page, such as `ingredients.0.name`, where the MCP endpoint takes an array.
 
 A form that may change data waits for the user to submit it, after the agent fills it in. GET forms, such as a search, add `toolautosubmit`, so the agent submits them itself and sees the results. Forms of routes with parameters, like a delete button in each row, would repeat the name, so they are not annotated; when one is the only form on its page, pass `toolname` and `tooldescription` yourself. Undescribed routes are never annotated, so an agent cannot sign in or approve itself.
 

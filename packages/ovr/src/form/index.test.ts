@@ -676,7 +676,9 @@ describe("Form schema", () => {
 		expect(
 			await new Render({ markup: form.Field({ name: "size" }) }).string(),
 		).toMatch(
-			/^<fieldset><legend>size<\/legend><p id="size-description" data-description>Pick one<\/p><div>/,
+			// its fieldset is where an agent in the browser reads a group's
+			// description, and its boxes carry none
+			/^<fieldset toolparamdescription="Pick one"><legend>size<\/legend><p id="size-description" data-description>Pick one<\/p><div><input id="size-s" required aria-describedby="size-description" type="radio"/,
 		);
 		expect(
 			await new Render({ markup: form.Field({ name: "id" }) }).string(),
