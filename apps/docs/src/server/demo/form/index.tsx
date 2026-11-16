@@ -1,7 +1,7 @@
 import * as formContent from "@/server/demo/form/index.md";
 import { createLayout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
-import { Field, Markup, Route } from "ovr";
+import { Field, Render, Route } from "ovr";
 
 export const enroll = Route.post("/demo/form")
 	.fields({
@@ -58,7 +58,7 @@ export const form = Route.get("/demo/form").use((c) => {
 		<Layout head={<Meta {...formContent.frontmatter} />}>
 			<h1>{formContent.frontmatter.title}</h1>
 
-			{Markup.raw(formContent.html)}
+			{Render.raw({ html: formContent.html })}
 
 			<enroll.Form state={c.url} />
 		</Layout>

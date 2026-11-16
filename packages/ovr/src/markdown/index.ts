@@ -1,8 +1,8 @@
 import type { JSX } from "../jsx/index.js";
 import {
+	type Chunk,
 	Group,
-	type Markup,
-	Render,
+	Renderer,
 	Source,
 	Tag,
 	readable,
@@ -210,7 +210,7 @@ class Writer {
 	}
 
 	/** @param chunk Rendered chunk, read by its kind instead of parsing its HTML */
-	chunk(chunk: Markup.Chunk) {
+	chunk(chunk: Chunk) {
 		if (chunk instanceof Group) {
 			for (const child of chunk.chunks) this.chunk(child);
 		} else if (chunk instanceof Tag) {
@@ -259,8 +259,8 @@ class Writer {
 	}
 
 	/**
-	 * Raw HTML, such as from `Markup.raw`, is valid Markdown, so it is
-	 * written as it is, as is Markdown source from `Markdown.raw`.
+	 * Raw HTML, such as from `Render.raw`, is valid Markdown, so it is
+	 * written as it is, as is the Markdown it is given with.
 	 *
 	 * @param html HTML, or Markdown source
 	 * @param source The text is Markdown source that is its own block
@@ -1413,7 +1413,7 @@ class Writer {
  */
 class Blocks {
 	/** Render of the element's chunks */
-	readonly #render: Render;
+	readonly #render: Renderer;
 
 	/** Writes Markdown from the chunks */
 	readonly #writer: Writer;
@@ -1426,7 +1426,7 @@ class Blocks {
 	 * @param options Markdown options
 	 */
 	constructor(element: JSX.Element, options?: Markdown.Options) {
-		this.#render = new Render(element, undefined);
+		this.#render = new Renderer(element, undefined);
 		this.#writer = new Writer(options);
 	}
 
@@ -1457,12 +1457,13 @@ class Blocks {
 
 /**
  * Renders an element to Markdown, as an `AsyncIterable` of blocks, a stream,
- * or a string, from the same elements `Markup` renders. Each top level block is
+ * or a string, from the same elements `Markup` renders. Made with
+ * `Render.markdown`. Each top level block is
  * written as soon as it closes, and when the page has a `<main>` element, only
  * its contents are kept. Raw HTML is written as it is.
  *
  * ```tsx
- * const markdown = await Markdown.string(<Post post={post} />, { base: url });
+ * const markdown = await Render.markdown(<Post post={post} />, { base: url }).string();
  * ```
  */
 export class Markdown {
@@ -1497,24 +1498,18 @@ export class Markdown {
 		}
 	}
 
-	/**
-	 * @param element Element to render
-	 * @param options Markdown options
-	 * @returns `ReadableStream` of Markdown
-	 */
-	static stream(element: JSX.Element, options?: Markdown.Options) {
-		return readable(new Blocks(element, options));
+	/** @returns `ReadableStream` of Markdown */
+	stream() {
+		return readable(new Blocks(this.#element, this.#options));
 	}
 
 	/**
-	 * Converts a render into a fully concatenated string of Markdown.
+	 * The whole render as one string.
 	 *
-	 * @param element Element to render
-	 * @param options Markdown options
 	 * @returns Concatenated Markdown
 	 */
-	static async string(element: JSX.Element, options?: Markdown.Options) {
-		const blocks = new Blocks(element, options);
+	async string() {
+		const blocks = new Blocks(this.#element, this.#options);
 		let markdown = "";
 
 		try {
@@ -1527,22 +1522,5 @@ export class Markdown {
 		}
 
 		return markdown;
-	}
-
-	/**
-	 * Markdown source with the HTML it renders to, such as steps written in
-	 * Markdown. Pages show the HTML, and agents reading the page as Markdown
-	 * get the source. Neither is escaped, so both must be safe.
-	 *
-	 * ```tsx
-	 * <section>{Markdown.raw(recipe.steps, render(recipe.steps))}</section>
-	 * ```
-	 *
-	 * @param markdown Markdown source
-	 * @param html Safe HTML it renders to
-	 * @returns New _safe_ chunk
-	 */
-	static raw(markdown: unknown, html: unknown): Markup.Chunk {
-		return new Source(markdown, html);
 	}
 }

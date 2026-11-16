@@ -29,9 +29,9 @@ Submit: Create post
 - Links and images are absolute, so an agent can follow them.
 - Forms are described by where they submit and how to encode the body, their fields with types, rules such as `required`, choices, and current values, and errors from a failed submission. A form in a table's cell that is only a button, such as a delete in each row, is written in the cell as ``Delete: `POST https://example.com/posts/1/delete` ``. One with fields is written after the table. A form around a table, such as one with a checkbox in each row, keeps the table, with each control named in its cell as `` `ids=1` ``, followed by `(checked)` for a box that is ticked, and a select as the option chosen.
 - Scripts, styles, and elements with `hidden` or `aria-hidden="true"` are left out. `<noscript>` content is kept, since agents do not run scripts.
-- Raw markup from `Markup.raw` is written as it is, since Markdown can contain HTML, and `Markdown.raw(markdown, html)` is written as its Markdown source.
+- Raw markup from [`Render.raw`](/render#raw) is written as it is, since Markdown can contain HTML, or as the `markdown` it is given with.
 
-To render Markdown yourself, such as part of a page, use [`Markdown`](/render#markdown).
+To render Markdown yourself, such as part of a page, use [`Render.markdown`](/render#markdown).
 
 Browsers get HTML: Markdown is only used when it is listed in `Accept` and preferred at least as much as HTML. These responses include `Vary: Accept` for caches. Responses with another content type, such as XML, are not converted. A page served from a static file, such as a prerendered one, never reaches the app, so it is always HTML.
 
@@ -43,26 +43,29 @@ A page that is a Markdown document, such as a blog post or a docs page, can give
 const post = Route.get("/posts/:slug").use(async (c) => {
 	const post = await posts.get(c.params.slug);
 
-	if (c.md(post.markdown)) return;
+	if (c.markdown(post.markdown)) return;
 
 	return <Post html={post.html} />;
 });
 ```
 
-`c.md(body, status)` responds with the Markdown and returns `true` when the request asks for Markdown, otherwise it returns `false` and the page renders for the browser. It runs in the handler, after the route's middleware, such as a sign-in check.
+`c.markdown(body, status)` responds with the Markdown and returns `true` when the request asks for Markdown, otherwise it returns `false` and the page renders for the browser. It runs in the handler, after the route's middleware, such as a sign-in check.
 
 ### Text for one audience
 
-`Markdown.raw(markdown, html)` gives agents one thing and people another, and either may be empty:
+[`Render.raw`](/render#raw) with `markdown` gives agents one thing and people another, and either may be left empty:
 
 ```tsx
 <p>
 	{recipe.meal}
 	{/* agents only: CSS sets these apart for people */}
-	{Markdown.raw(" · ", "")}
+	{Render.raw({ markdown: " · " })}
 	{recipe.time}
 	{/* people only */}
-	{Markdown.raw("", '<button type="button">Read more</button>')}
+	{Render.raw({
+		html: '<button type="button">Read more</button>',
+		markdown: "",
+	})}
 </p>
 ```
 

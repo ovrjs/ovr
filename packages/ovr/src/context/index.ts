@@ -194,7 +194,7 @@ export class Context<
 	 * that is a Markdown document, so agents read its source.
 	 *
 	 * ```tsx
-	 * if (c.md(post.body)) return;
+	 * if (c.markdown(post.body)) return;
 	 *
 	 * return <Post post={post} />;
 	 * ```
@@ -203,7 +203,7 @@ export class Context<
 	 * @param status [HTTP response status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)
 	 * @returns `true` if it responded, otherwise the page renders for the browser
 	 */
-	md(body: BodyInit | null, status?: number) {
+	markdown(body: BodyInit | null, status?: number) {
 		if (!this.#markdown()) return false;
 
 		this.#respond(body, status, Header.utf8(Mime.type.md));
@@ -450,19 +450,19 @@ export class Context<
 					) &&
 					this.#markdown()
 				) {
-					res.body = Markdown.stream(r, {
+					res.body = new Markdown(r, {
 						base: this.url,
 						[tools]: agent.get(this.req)?.tool,
-					});
+					}).stream();
 					res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
 					return;
 				}
 			}
 
-			res.body = Markup.stream(r, {
+			res.body = new Markup(r, {
 				// other defined types are not markup, so they are not escaped
 				raw: Boolean(mime && !Mime.markup(mime)),
-			});
+			}).stream();
 
 			if (!mime) {
 				// default to HTML

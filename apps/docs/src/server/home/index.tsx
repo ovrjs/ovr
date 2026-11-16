@@ -12,7 +12,7 @@ export const page = o.Route.get("/")
 	.use((c) => {
 		content.cache(c);
 		// agents read the page's source
-		if (c.md(content.md(result))) return;
+		if (c.markdown(content.md(result))) return;
 
 		return (
 			<HomeLayout head={<Meta {...result.frontmatter} />}>

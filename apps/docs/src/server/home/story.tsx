@@ -149,13 +149,13 @@ const Code = (props: {
 		class={`shiki my-0 text-sm [tab-size:2] ${props.class ?? "py-4 leading-5"}`}
 	>
 		<code>
-			{o.Markup.raw(
-				lines
+			{o.Render.raw({
+				html: lines
 					.filter((_, i) =>
 						props.lines.some(([from, to]) => i + 1 >= from && i + 1 <= to),
 					)
 					.join("\n"),
-			)}
+			})}
 		</code>
 	</pre>
 );

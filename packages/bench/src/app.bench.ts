@@ -14,7 +14,7 @@ function* Component() {
 
 describe("render", () => {
 	bench("generate 500", async () => {
-		const r = new o.Markup(jsx(Component, {}));
+		const r = o.Render.markup(jsx(Component, {}));
 		for await (const _r of r);
 	});
 });

@@ -8,7 +8,11 @@ import { bench, describe, expect } from "vitest";
 type Create = typeof import("ovr/jsx-runtime").jsx;
 
 const url = baseline("render");
-const { Render: Before }: { Render: typeof o.Markup } = await import(url);
+const {
+	Render: Before,
+}: { Render: new (element: unknown) => AsyncIterable<string> } = await import(
+	url
+);
 const { JSX: Original }: { JSX: { jsx: Create } } = await import(
 	baseline("jsx", { "../render/index.js": url })
 );
@@ -22,7 +26,7 @@ function page(jsx: Create, count = 500) {
 }
 
 expect((await Array.fromAsync(new Before(page(Original.jsx)))).join("")).toBe(
-	(await Array.fromAsync(new o.Markup(page(jsx)))).join(""),
+	(await Array.fromAsync(o.Render.markup(page(jsx)))).join(""),
 );
 
 const paths = [
@@ -94,14 +98,14 @@ describe("rendering hot path", () => {
 		bench(
 			`render ${count} sibling elements`,
 			async () => {
-				for await (const _ of new o.Markup(page(jsx, count)));
+				for await (const _ of o.Render.markup(page(jsx, count)));
 			},
 			options,
 		);
 	}
 
 	bench("render 100 fragments", async () => {
-		for await (const _ of new o.Markup(
+		for await (const _ of o.Render.markup(
 			Array.from({ length: 100 }, (_, i) =>
 				jsx(Fragment, { children: ["Hello, world!", i] }),
 			),

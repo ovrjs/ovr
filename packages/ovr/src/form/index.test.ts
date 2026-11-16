@@ -1,6 +1,6 @@
 import { jsx } from "../jsx/index.js";
-import { Markup } from "../markup/index.js";
 import { Multipart } from "../multipart/index.js";
+import { Render } from "../render/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
 import { Field, Form, query, taken } from "./index.js";
@@ -542,7 +542,9 @@ describe("Form schema", () => {
 			Codec.Base64Url.encode(Codec.encode(JSON.stringify(tampered))),
 		);
 
-		const html = await Markup.string(form.Field({ name: "name", state: url }));
+		const html = await Render.markup(
+			form.Field({ name: "name", state: url }),
+		).string();
 
 		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes('value="{')).toBe(false);
@@ -566,10 +568,12 @@ describe("Form schema", () => {
 
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const name = await Markup.string(form.Field({ name: "name", state: url }));
-		const email = await Markup.string(
+		const name = await Render.markup(
+			form.Field({ name: "name", state: url }),
+		).string();
+		const email = await Render.markup(
 			form.Field({ name: "email", state: url }),
-		);
+		).string();
 
 		expect(name.includes('value="ross"')).toBe(true);
 		expect(email.includes('value="ross@example.com"')).toBe(false);
@@ -590,7 +594,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const html = await Markup.string(form.Fields({ state: url }));
+		const html = await Render.markup(form.Fields({ state: url })).string();
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(1);
@@ -611,7 +615,7 @@ describe("Form schema", () => {
 			kinds: Field.select(["a", "b"]).multiple(),
 			token: Field.hidden(),
 		});
-		const html = await Markup.string(form.Fields());
+		const html = await Render.markup(form.Fields()).string();
 		const required = (name: string) =>
 			[...html.matchAll(/<(?:input|select|textarea)\b[^>]*>/g)]
 				.map(([tag]) => tag)
@@ -630,7 +634,9 @@ describe("Form schema", () => {
 		expect(required("token")).toEqual([false]);
 
 		expect(
-			await Markup.string(form.Field({ name: "text", required: false })),
+			await Render.markup(
+				form.Field({ name: "text", required: false }),
+			).string(),
 		).not.toContain("required");
 	});
 
@@ -640,7 +646,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set("first", "ross");
 
-		const html = await Markup.string(form.Fields({ state: url }));
+		const html = await Render.markup(form.Fields({ state: url })).string();
 		const autofocus = html.match(/autofocus/g) ?? [];
 
 		expect(autofocus).toHaveLength(0);
@@ -656,28 +662,28 @@ describe("Form schema", () => {
 		});
 
 		// people: a paragraph after the control, which the control points to
-		expect(await Markup.string(form.Field({ name: "url" }))).toBe(
+		expect(await Render.markup(form.Field({ name: "url" })).string()).toBe(
 			'<div><label for="url">URL</label><input id="url" required toolparamdescription="URL: An http or https address." aria-describedby="url-description" type="url" name="url"><p id="url-description" data-description>An http or https address.</p></div>',
 		);
 		// a group's after its legend, before its options, and nothing for a
 		// hidden field or without one
-		expect(await Markup.string(form.Field({ name: "size" }))).toMatch(
+		expect(await Render.markup(form.Field({ name: "size" })).string()).toMatch(
 			/^<fieldset><legend>size<\/legend><p id="size-description" data-description>Pick one<\/p><div>/,
 		);
-		expect(await Markup.string(form.Field({ name: "id" }))).toBe(
+		expect(await Render.markup(form.Field({ name: "id" })).string()).toBe(
 			'<input type="hidden" name="id">',
 		);
-		expect(await Markup.string(form.Field({ name: "plain" }))).not.toContain(
-			"description",
-		);
+		expect(
+			await Render.markup(form.Field({ name: "plain" })).string(),
+		).not.toContain("description");
 
 		// with an issue, the control is described by both, the description first
 		const result = formInvalid(await form.parse(new FormData()));
 		const url = new URL("https://example.com/form");
 		url.searchParams.set("_form", result.search![0][1]);
-		const invalid = await Markup.string(
+		const invalid = await Render.markup(
 			form.Field({ name: "url", state: url }),
-		);
+		).string();
 		expect(invalid).toContain('aria-describedby="url-description url-issue"');
 		expect(invalid.indexOf('id="url-description"')).toBeLessThan(
 			invalid.indexOf('id="url-issue"'),
@@ -685,7 +691,9 @@ describe("Form schema", () => {
 
 		// a part of its own, for a custom layout
 		const part = form.component({ name: "url" });
-		expect(await Markup.string(part.Description({ class: "muted" }))).toBe(
+		expect(
+			await Render.markup(part.Description({ class: "muted" })).string(),
+		).toBe(
 			'<p id="url-description" data-description class="muted">An http or https address.</p>',
 		);
 
@@ -727,7 +735,7 @@ describe("Form schema", () => {
 			.optional();
 		const form = new Form({ title: field });
 
-		expect(await Markup.string(form.Field({ name: "title" }))).toBe(
+		expect(await Render.markup(form.Field({ name: "title" })).string()).toBe(
 			'<div><label for="title">Title</label><input id="title" toolparamdescription="Title: A short name" aria-describedby="title-description" type="text" placeholder="Title" name="title"><p id="title-description" data-description>A short name</p></div>',
 		);
 		expect(
@@ -757,9 +765,9 @@ describe("Form schema", () => {
 			.control({ rows: 3 })
 			.control({ class: "wide" });
 		expect(
-			await Markup.string(
+			await Render.markup(
 				new Form({ note: wide }).Field({ name: "note", rows: 8 }),
-			),
+			).string(),
 		).toBe(
 			'<div><label for="note">note</label><textarea id="note" required rows="8" class="wide" name="note"></textarea></div>',
 		);
@@ -783,9 +791,9 @@ describe("Form schema", () => {
 			"a.txt",
 			"b.txt",
 		]);
-		expect(await Markup.string(form.Field({ name: "colors" }))).toContain(
-			'<select id="colors" multiple name="colors">',
-		);
+		expect(
+			await Render.markup(form.Field({ name: "colors" })).string(),
+		).toContain('<select id="colors" multiple name="colors">');
 
 		void (() => {
 			// @ts-expect-error - one value per field, as text
@@ -801,8 +809,8 @@ describe("Form schema", () => {
 			role: Field.radio(["reader", "admin"]).label("Role"),
 		});
 
-		const email = await Markup.string(form.Field({ name: "email" }));
-		const role = await Markup.string(form.Field({ name: "role" }));
+		const email = await Render.markup(form.Field({ name: "email" })).string();
+		const role = await Render.markup(form.Field({ name: "role" })).string();
 
 		expect(email.includes(">Email Address</label>")).toBe(true);
 		expect(email.includes(' label="Email Address"')).toBe(false);
@@ -820,11 +828,15 @@ describe("Form schema", () => {
 			"https://example.com/search?q=travel+backpack&sort=newest&inStock=on",
 		);
 
-		const q = await Markup.string(form.Field({ name: "q", state: url }));
-		const sort = await Markup.string(form.Field({ name: "sort", state: url }));
-		const inStock = await Markup.string(
+		const q = await Render.markup(
+			form.Field({ name: "q", state: url }),
+		).string();
+		const sort = await Render.markup(
+			form.Field({ name: "sort", state: url }),
+		).string();
+		const inStock = await Render.markup(
 			form.Field({ name: "inStock", state: url }),
-		);
+		).string();
 
 		expect(q.includes('value="travel backpack"')).toBe(true);
 		expect(sort.includes('<option selected value="newest">')).toBe(true);
@@ -848,8 +860,12 @@ describe("Form schema", () => {
 		url.searchParams.set("sort", "oldest");
 		url.searchParams.set("_form", result.search![0][1]);
 
-		const q = await Markup.string(form.Field({ name: "q", state: url }));
-		const sort = await Markup.string(form.Field({ name: "sort", state: url }));
+		const q = await Render.markup(
+			form.Field({ name: "q", state: url }),
+		).string();
+		const sort = await Render.markup(
+			form.Field({ name: "sort", state: url }),
+		).string();
 
 		expect(q.includes('value="travel backpack"')).toBe(true);
 		expect(sort.includes("aria-invalid")).toBe(true);
@@ -888,13 +904,15 @@ describe("Form schema", () => {
 			),
 		);
 
-		const name = await Markup.string(form.Field({ name: "name", state: url }));
-		const email = await Markup.string(
+		const name = await Render.markup(
+			form.Field({ name: "name", state: url }),
+		).string();
+		const email = await Render.markup(
 			form.Field({ name: "email", state: url }),
-		);
-		const password = await Markup.string(
+		).string();
+		const password = await Render.markup(
 			form.Field({ name: "password", state: url }),
-		);
+		).string();
 
 		expect(name.includes('value="ross"')).toBe(true);
 		expect(email.includes('value="ross@example.com"')).toBe(false);
@@ -947,7 +965,9 @@ describe("Form schema", () => {
 			),
 		);
 
-		const html = await Markup.string(form.Field({ name: "name", state: url }));
+		const html = await Render.markup(
+			form.Field({ name: "name", state: url }),
+		).string();
 
 		expect(html.includes('name="name"')).toBe(true);
 		expect(html.includes("aria-invalid")).toBe(false);
@@ -1124,7 +1144,7 @@ test("a description given before multiple() describes the field", async () => {
 			items: { type: "string", enum: ["a", "b"] },
 		}),
 	});
-	expect(await Markup.string(form.Fields())).toContain("Pick some");
+	expect(await Render.markup(form.Fields()).string()).toContain("Pick some");
 });
 
 describe("choices a schema checks", () => {
@@ -1164,21 +1184,21 @@ describe("choices a schema checks", () => {
 			tags: Field.checkboxes(["fall", "winter"]),
 		});
 
-		const group = await Markup.string(
+		const group = await Render.markup(
 			form.Field({ name: "photos", options: [a, b] }),
-		);
+		).string();
 		expect(group).toContain(`type="checkbox" name="photos" value="${a}"`);
 		expect(group).toContain(`value="${b}"`);
 
-		const select = await Markup.string(
+		const select = await Render.markup(
 			form.Field({ name: "recipe", options: [a] }),
-		);
+		).string();
 		expect(select).toContain(`<option value="${a}">${a}</option>`);
 
 		// a field of fixed choices keeps its own
-		const tags = await Markup.string(
+		const tags = await Render.markup(
 			form.Field({ name: "tags", options: ["spring"] }),
-		);
+		).string();
 		expect(tags).toContain('value="fall"');
 		expect(tags).not.toContain("spring");
 
@@ -1186,7 +1206,9 @@ describe("choices a schema checks", () => {
 		const Photos = form.component({ name: "photos", options: [a] });
 		expect(Photos.options).toEqual([a]);
 		expect(
-			await Markup.string(Photos.Label({ value: a, children: "Card front" })),
+			await Render.markup(
+				Photos.Label({ value: a, children: "Card front" }),
+			).string(),
 		).toBe(`<label for="photos-${a}">Card front</label>`);
 	});
 
@@ -1209,17 +1231,17 @@ test("a select that may be left empty starts with an empty choice", async () => 
 		tags: Field.select(["fall", "winter"]).multiple().optional(),
 	});
 
-	expect(await Markup.string(form.Field({ name: "meal" }))).toContain(
+	expect(await Render.markup(form.Field({ name: "meal" })).string()).toContain(
 		'<select id="meal" name="meal"><option value=""></option><option value="dinner">',
 	);
 	// a required one keeps the browser's choice of its first, and a
 	// multiple one is empty with nothing selected
-	expect(await Markup.string(form.Field({ name: "course" }))).not.toContain(
-		'value=""',
-	);
-	expect(await Markup.string(form.Field({ name: "tags" }))).not.toContain(
-		'value=""',
-	);
+	expect(
+		await Render.markup(form.Field({ name: "course" })).string(),
+	).not.toContain('value=""');
+	expect(
+		await Render.markup(form.Field({ name: "tags" })).string(),
+	).not.toContain('value=""');
 
 	expect(
 		formValid(await form.parse(new URLSearchParams("meal=&course=side"))).data,
@@ -1281,58 +1303,62 @@ describe("choices people call by another name", () => {
 		).toEqual([["meal"]]);
 
 		expect(
-			await Markup.string(
+			await Render.markup(
 				form.Field({ name: "meal", values: { meal: "crockpot" } }),
-			),
+			).string(),
 		).toBe(
 			'<div><label for="meal">meal</label><select id="meal" name="meal"><option value="">Any meal</option><option value="dinner">Dinner</option><option selected value="crockpot">Slow cooker</option></select></div>',
 		);
-		expect(await Markup.string(form.Field({ name: "effort" }))).toContain(
+		expect(
+			await Render.markup(form.Field({ name: "effort" })).string(),
+		).toContain(
 			'<input id="effort-easy" required type="radio" name="effort" value="easy"><label for="effort-easy">Easy</label>',
 		);
-		expect(await Markup.string(form.Field({ name: "tags" }))).toContain(
-			'<label for="tags-winter">Winter</label>',
-		);
+		expect(
+			await Render.markup(form.Field({ name: "tags" })).string(),
+		).toContain('<label for="tags-winter">Winter</label>');
 
 		// a custom layout gets them too, and may still say its own
 		const Meal = form.component({ name: "meal" });
 		expect(Meal.options).toEqual(["dinner", "crockpot"]);
-		expect(await Markup.string(Meal.Option({ value: "crockpot" }))).toBe(
-			'<option value="crockpot">Slow cooker</option>',
-		);
 		expect(
-			await Markup.string(Meal.Option({ value: "dinner", children: "Tea" })),
+			await Render.markup(Meal.Option({ value: "crockpot" })).string(),
+		).toBe('<option value="crockpot">Slow cooker</option>');
+		expect(
+			await Render.markup(
+				Meal.Option({ value: "dinner", children: "Tea" }),
+			).string(),
 		).toBe('<option value="dinner">Tea</option>');
 		// its empty choice is the layout's to write, without the attribute
-		expect(await Markup.string(Meal.Control())).toBe(
+		expect(await Render.markup(Meal.Control()).string()).toBe(
 			'<select id="meal" name="meal"></select>',
 		);
 	});
 
 	test("are given with the options of a field made from a schema", async () => {
 		expect(
-			await Markup.string(
+			await Render.markup(
 				form.Field({
 					name: "side",
 					options: { "7": "Rice", abc: "Beans" },
 					values: { side: "abc" },
 					placeholder: "No side",
 				}),
-			),
+			).string(),
 		).toBe(
 			'<div><label for="side">side</label><select id="side" name="side"><option value="">No side</option><option value="7">Rice</option><option selected value="abc">Beans</option></select></div>',
 		);
 
 		// a field's own choices keep their own labels
 		expect(
-			await Markup.string(
+			await Render.markup(
 				form.Field({ name: "tags", options: { fall: "Autumn", spring: "x" } }),
-			),
+			).string(),
 		).not.toContain("Autumn");
 	});
 
 	test("a select that must be chosen starts empty when it says what to choose", async () => {
-		expect(await Markup.string(form.Field({ name: "course" }))).toBe(
+		expect(await Render.markup(form.Field({ name: "course" })).string()).toBe(
 			'<div><label for="course">course</label><select id="course" required name="course"><option value="">Choose a course</option><option value="dinner">dinner</option><option value="side">side</option></select></div>',
 		);
 	});
@@ -1379,15 +1405,15 @@ test("a hint is what people read, where the description is what agents read", as
 			.hint("Clear a row to remove it"),
 	});
 
-	expect(await Markup.string(form.Field({ name: "grams" }))).toBe(
+	expect(await Render.markup(form.Field({ name: "grams" })).string()).toBe(
 		'<div><label for="grams">grams</label><input id="grams" toolparamdescription="Weight in grams for cups and spoons. Empty for counts." aria-describedby="grams-description" type="number" name="grams"><p id="grams-description" data-description>For cups and spoons</p></div>',
 	);
 	// an empty hint shows nothing, and the control names nothing
-	expect(await Markup.string(form.Field({ name: "notes" }))).toBe(
+	expect(await Render.markup(form.Field({ name: "notes" })).string()).toBe(
 		'<div><label for="notes">notes</label><input id="notes" toolparamdescription="Free text, for the cook" type="text" name="notes"></div>',
 	);
 
-	const items = await Markup.string(form.Field({ name: "items" }));
+	const items = await Render.markup(form.Field({ name: "items" })).string();
 	expect(items).toContain(
 		'<legend>items</legend><p id="items-description" data-description>Clear a row to remove it</p>',
 	);
@@ -1427,7 +1453,7 @@ test("a choice given as the form renders may be labelled with an element", async
 	});
 
 	expect(
-		await Markup.string(
+		await Render.markup(
 			form.Field({
 				name: "photos",
 				options: {
@@ -1436,7 +1462,7 @@ test("a choice given as the form renders may be labelled with an element", async
 				},
 				values: { photos: ["a1"] },
 			}),
-		),
+		).string(),
 	).toBe(
 		"<fieldset><legend>photos</legend>" +
 			'<div><input id="photos-a1" type="checkbox" name="photos" checked value="a1"><label for="photos-a1"><img src="/a1.jpg" alt="Card front"></label></div>' +
@@ -1452,9 +1478,9 @@ test("what is passed to a group is its fieldset's, and each box has what control
 	});
 
 	expect(
-		await Markup.string(
+		await Render.markup(
 			form.Field({ name: "photos", class: "photo-choice", id: "pick" }),
-		),
+		).string(),
 	).toBe(
 		'<fieldset class="photo-choice" id="pick"><legend>photos</legend>' +
 			'<div><input id="photos-a" type="checkbox" data-box name="photos" value="a"><label for="photos-a">a</label></div>' +
@@ -1462,11 +1488,11 @@ test("what is passed to a group is its fieldset's, and each box has what control
 			"</fieldset>",
 	);
 	// required stays each box's
-	expect(await Markup.string(form.Field({ name: "size" }))).toContain(
+	expect(await Render.markup(form.Field({ name: "size" })).string()).toContain(
 		'<input id="size-s" required type="radio" name="size" value="s">',
 	);
 	expect(
-		await Markup.string(form.Field({ name: "size", required: false })),
+		await Render.markup(form.Field({ name: "size", required: false })).string(),
 	).toBe(
 		"<fieldset><legend>size</legend>" +
 			'<div><input id="size-s" type="radio" name="size" value="s"><label for="size-s">s</label></div>' +
@@ -1475,7 +1501,7 @@ test("what is passed to a group is its fieldset's, and each box has what control
 	);
 
 	const Size = form.component({ name: "size", class: "sizes" });
-	expect(await Markup.string(Size.Root())).toBe(
+	expect(await Render.markup(Size.Root()).string()).toBe(
 		'<fieldset class="sizes"></fieldset>',
 	);
 });
@@ -1669,9 +1695,9 @@ describe("lines", () => {
 
 	test("render as a textarea with a line for each", async () => {
 		expect(
-			await Markup.string(
+			await Render.markup(
 				form.Field({ name: "steps", values: { steps: ["Chop", "Fry"] } }),
-			),
+			).string(),
 		).toContain(
 			'<textarea id="steps" required name="steps">Chop\nFry</textarea>',
 		);
@@ -1695,14 +1721,14 @@ describe("lines", () => {
 			[["tags", 1], "Too long"],
 		]);
 
-		const html = await Markup.string(
+		const html = await Render.markup(
 			short.Field({
 				name: "tags",
 				state: new URL(
 					`http://localhost/?${new URLSearchParams(invalid.search)}`,
 				),
 			}),
-		);
+		).string();
 		expect(html).toContain('<label for="tags">Tags</label>');
 		expect(html).toContain(' rows="3" name="tags">fall\nwinter</textarea>');
 		expect(html).toContain("One on each line");
@@ -1871,9 +1897,9 @@ describe("a list", () => {
 			],
 		};
 
-		const dinners = await Markup.string(
+		const dinners = await Render.markup(
 			form.Field({ name: "dinners", values, options: [a, b] }),
-		);
+		).string();
 		expect(dinners).toBe(
 			"<fieldset><legend>dinners</legend>" +
 				`<div><label for="dinners.0">1</label><select id="dinners.0" name="dinners.0"><option value=""></option><option selected value="${a}">${a}</option><option value="${b}">${b}</option></select></div>` +
@@ -1881,22 +1907,22 @@ describe("a list", () => {
 				"</fieldset>",
 		);
 
-		const week = await Markup.string(
+		const week = await Render.markup(
 			form.Field({ name: "dinners", values, options: [a], rows: 7 }),
-		);
+		).string();
 		expect(week.match(/<select/g)).toHaveLength(7);
 		// every item is shown, however few rows are asked for
 		expect(
 			(
-				await Markup.string(
+				await Render.markup(
 					form.Field({ name: "dinners", values: { dinners: [a, b] }, rows: 1 }),
-				)
+				).string()
 			).match(/<select/g),
 		).toHaveLength(2);
 
-		const ingredients = await Markup.string(
+		const ingredients = await Render.markup(
 			form.Field({ name: "ingredients", values }),
-		);
+		).string();
 		// several fields are a table: a column each, named in its heading
 		expect(ingredients).toBe(
 			"<fieldset><legend>Ingredients</legend>" +
@@ -1937,9 +1963,9 @@ describe("a list", () => {
 		const state = new URL(
 			`http://localhost/?${new URLSearchParams(invalid.search)}`,
 		);
-		const html = await Markup.string(
+		const html = await Render.markup(
 			form.Field({ name: "ingredients", state }),
-		);
+		).string();
 		expect(html).toContain(
 			'name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"',
 		);
@@ -1952,7 +1978,7 @@ describe("a list", () => {
 
 		// a list cleared after it had items stays cleared
 		const cleared = formInvalid(await form.parse(new FormData()));
-		const again = await Markup.string(
+		const again = await Render.markup(
 			form.Field({
 				name: "ingredients",
 				state: new URL(
@@ -1960,7 +1986,7 @@ describe("a list", () => {
 				),
 				values: { ingredients: [{ name: "onion" }] },
 			}),
-		);
+		).string();
 		expect(again).not.toContain("onion");
 		expect(again).toContain(
 			'<p id="ingredients-issue" data-issue="0">Required field</p>',
@@ -1975,25 +2001,27 @@ describe("a list", () => {
 		});
 		expect(Dinners.rows).toHaveLength(2);
 		expect(
-			await Markup.string(
+			await Render.markup(
 				Dinners.rows[0]!.Control({
 					children: [
 						Dinners.rows[0]!.Option({ value: a, children: "Soup" }),
 						Dinners.rows[0]!.Option({ value: b, children: "Stew" }),
 					],
 				}),
-			),
+			).string(),
 		).toBe(
 			`<select id="dinners.0" name="dinners.0"><option value="${a}">Soup</option><option selected value="${b}">Stew</option></select>`,
 		);
-		expect(await Markup.string(Dinners.Legend())).toBe(
+		expect(await Render.markup(Dinners.Legend()).string()).toBe(
 			"<legend>dinners</legend>",
 		);
 
 		const Ingredients = form.component({ name: "ingredients" });
 		const [row] = Ingredients.rows;
 		expect(
-			await Markup.string(row!.amount.Control({ "aria-label": "Amount" })),
+			await Render.markup(
+				row!.amount.Control({ "aria-label": "Amount" }),
+			).string(),
 		).toBe(
 			'<input id="ingredients.0.amount" toolparamdescription="amount" type="number" name="ingredients.0.amount" aria-label="Amount">',
 		);
@@ -2013,7 +2041,9 @@ describe("a list", () => {
 
 		// the default table names a column in its heading, which holds only
 		// the label, and describes it once under the table
-		const table = await Markup.string(described.Field({ name: "items" }));
+		const table = await Render.markup(
+			described.Field({ name: "items" }),
+		).string();
 		expect(table).toContain('<th id="items.name-label" scope="col">name</th>');
 		expect(table).toContain(
 			'<input id="items.0.name" toolparamdescription="name: What to buy" aria-describedby="items.name-description" type="text" name="items.0.name" aria-labelledby="items.name-label">',
@@ -2024,7 +2054,7 @@ describe("a list", () => {
 		expect(table.match(/>What to buy</g)).toHaveLength(1);
 
 		const [row] = described.component({ name: "items" }).rows;
-		expect(await Markup.string(row!.name.Control())).toBe(
+		expect(await Render.markup(row!.name.Control()).string()).toBe(
 			'<input id="items.0.name" toolparamdescription="name: What to buy" type="text" name="items.0.name">',
 		);
 		// its issue is still read with it
@@ -2043,7 +2073,7 @@ describe("a list", () => {
 				`http://localhost/?${new URLSearchParams(invalid.search)}`,
 			),
 		}).rows;
-		expect(await Markup.string(again!.name.Control())).toContain(
+		expect(await Render.markup(again!.name.Control()).string()).toContain(
 			'aria-describedby="items.0.name-issue"',
 		);
 	});
@@ -2074,7 +2104,9 @@ describe("a list", () => {
 		const state = new URL(
 			`http://localhost/?${new URLSearchParams(invalid.search)}`,
 		);
-		const items = await Markup.string(plain.Field({ name: "items", state }));
+		const items = await Render.markup(
+			plain.Field({ name: "items", state }),
+		).string();
 		expect(items).toContain(
 			'<p id="items-issue" data-issue="1">Row 2, Ingredient: Required field</p>',
 		);
@@ -2082,9 +2114,9 @@ describe("a list", () => {
 		expect(items.match(/data-issue/g)).toHaveLength(1);
 		expect(items).not.toContain("aria-invalid");
 
-		expect(await Markup.string(plain.Field({ name: "ids", state }))).toContain(
-			'<p id="ids-issue" data-issue="2">Row 1: Not an ID</p>',
-		);
+		expect(
+			await Render.markup(plain.Field({ name: "ids", state })).string(),
+		).toContain('<p id="ids-issue" data-issue="2">Row 1: Not an ID</p>');
 	});
 
 	test("what is passed to a list is its fieldset's, and its description follows its legend", async () => {
@@ -2094,9 +2126,9 @@ describe("a list", () => {
 		});
 
 		expect(
-			await Markup.string(
+			await Render.markup(
 				styled.Field({ name: "tags", class: "tags", id: "the-tags" }),
-			),
+			).string(),
 		).toBe(
 			'<fieldset class="tags" id="the-tags"><legend>tags</legend>' +
 				'<p id="tags-description" data-description>Clear a row to remove it</p>' +
@@ -2104,22 +2136,24 @@ describe("a list", () => {
 				"</fieldset>",
 		);
 		expect(
-			await Markup.string(
+			await Render.markup(
 				styled.Field({ name: "items", class: "wide", disabled: true }),
-			),
+			).string(),
 		).toContain(
 			// the table in an element of its own, to scroll alone
 			'<fieldset class="wide" disabled><legend>items</legend><div><table>',
 		);
 		// a control of a row has none of them
 		expect(
-			await Markup.string(styled.Field({ name: "items", class: "wide" })),
+			await Render.markup(
+				styled.Field({ name: "items", class: "wide" }),
+			).string(),
 		).toContain(
 			'<input id="items.0.name" toolparamdescription="name" type="text" name="items.0.name" aria-labelledby="items.name-label">',
 		);
 
 		const Items = styled.component({ name: "items", class: "wide" });
-		expect(await Markup.string(Items.Root({ id: "x" }))).toBe(
+		expect(await Render.markup(Items.Root({ id: "x" })).string()).toBe(
 			'<fieldset class="wide" id="x"></fieldset>',
 		);
 	});
@@ -2157,20 +2191,20 @@ describe("a list", () => {
 				}),
 			),
 		);
-		const html = await Markup.string(
+		const html = await Render.markup(
 			wide.Field({
 				name: "items",
 				state: new URL(`http://localhost/?_form=${forged}`),
 			}),
-		);
+		).string();
 		expect(html).not.toContain("theirs");
 		expect(html.match(/<tr>/g)).toHaveLength(1 + 3);
 
 		// the server's own values keep a row's hidden value
 		expect(
-			await Markup.string(
+			await Render.markup(
 				wide.Field({ name: "items", values: { items: [{ id: "7", a: "x" }] } }),
-			),
+			).string(),
 		).toContain('name="items.0.id" value="7"');
 	});
 
@@ -2203,12 +2237,12 @@ describe("a list", () => {
 			query
 		]();
 
-		const html = await Markup.string(
+		const html = await Render.markup(
 			search.Field({
 				name: "tags",
 				state: new URL("http://localhost/?tags.0=fall&tags.1=&tags.2=soup"),
 			}),
-		);
+		).string();
 		expect(html).toContain('name="tags.0" value="fall"');
 		expect(html).toContain('name="tags.1" value="soup"');
 		expect(html.match(/<input/g)).toHaveLength(3);
@@ -2227,7 +2261,8 @@ describe("a list", () => {
 		const rows = async (
 			props: Parameters<typeof week.Field>[0],
 		): Promise<number> =>
-			(await Markup.string(week.Field(props))).match(/<input/g)!.length;
+			(await Render.markup(week.Field(props)).string()).match(/<input/g)!
+				.length;
 
 		expect(await rows({ name: "dinners" })).toBe(7);
 		expect(await rows({ name: "dinners", rows: 4 })).toBe(4);

@@ -30,7 +30,7 @@ export const page = ovr.Route.get("/:slug")
 
 		content.cache(c);
 		// agents read the page's source
-		if (c.md(content.md(result))) return;
+		if (c.markdown(content.md(result))) return;
 
 		const Layout = createLayout(c);
 
@@ -38,7 +38,7 @@ export const page = ovr.Route.get("/:slug")
 			<Layout head={<Meta {...result.frontmatter} />}>
 				<h1>{result.frontmatter.title}</h1>
 
-				{ovr.Markup.raw(result.html)}
+				{ovr.Render.raw({ html: result.html })}
 
 				<hr />
 

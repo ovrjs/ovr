@@ -29,8 +29,8 @@ const coils = Array.from({ length: 7 }, (_, i) => {
  * around the shroud ring.
  */
 export const Mark = (props: { class?: string }) =>
-	o.Markup.raw(
-		source
+	o.Render.raw({
+		html: source
 			.replace("<svg ", `<svg aria-hidden="true" class="${props.class ?? ""}" `)
 			.replace("</svg>", `${coils}</svg>`),
-	);
+	});

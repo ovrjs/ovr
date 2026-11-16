@@ -29,7 +29,7 @@ export const memory = ovr.Route.get("/demo/memory").use(async (c) => {
 		<Layout head={<Meta {...memoryContent.frontmatter} />}>
 			<h1>{memoryContent.frontmatter.title}</h1>
 
-			{ovr.Markup.raw(memoryContent.html)}
+			{ovr.Render.raw({ html: memoryContent.html })}
 
 			<div class="flex flex-wrap gap-px">
 				<div class="sr-only">

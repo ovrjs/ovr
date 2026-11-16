@@ -1,12 +1,13 @@
 import { App } from "../app/index.js";
 import { Field } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
-import { Markup } from "../markup/index.js";
+import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
-import { Markdown, tools } from "./index.js";
+import { tools } from "./index.js";
 import { describe, expect, test } from "vitest";
 
-const md = Markdown.string;
+const md = (element: JSX.Element, options?: Render.Markdown.Options) =>
+	Render.markdown(element, options).string();
 
 /** Element with props and children, like JSX */
 const h = (
@@ -189,7 +190,7 @@ describe("Markdown", () => {
 		const output = await md(table());
 		expect(output.match(/One/g)).toHaveLength(512);
 		expect(output.length).toBeLessThan(
-			10 * (await Markup.string(table())).length,
+			10 * (await Render.markup(table()).string()).length,
 		);
 	});
 
@@ -326,11 +327,15 @@ describe("Markdown", () => {
 	test("raw HTML is a block only when it starts with one", async () => {
 		expect(
 			await md([
-				h("div", null, "Price: ", Markup.raw("&euro;"), "5 total"),
-				h("ul", null, h("li", null, "A ", Markup.raw("<b>bold</b>"), " item")),
+				h("div", null, "Price: ", Render.raw({ html: "&euro;" }), "5 total"),
+				h(
+					"ul",
+					null,
+					h("li", null, "A ", Render.raw({ html: "<b>bold</b>" }), " item"),
+				),
 				"Loose ",
-				Markup.raw("<i>text</i>"),
-				Markup.raw("<figure>block</figure>"),
+				Render.raw({ html: "<i>text</i>" }),
+				Render.raw({ html: "<figure>block</figure>" }),
 			]),
 		).toBe(
 			"Price: &euro;5 total\n\n- A <b>bold</b> item\n\nLoose <i>text</i>\n\n<figure>block</figure>\n",
@@ -398,7 +403,7 @@ describe("Markdown", () => {
 					h("label", { for: "note" }, "Note"),
 					h("input", { id: "note", name: "note" }),
 					h("p", null, "Optional"),
-					Markup.raw("<pre>a\n  b</pre>"),
+					Render.raw({ html: "<pre>a\n  b</pre>" }),
 					h("pre", null, "x\n  y"),
 					h("button", null, "Delete selected"),
 					h("a", { href: "/posts" }, "Cancel"),
@@ -534,18 +539,35 @@ describe("Markdown", () => {
 				h(
 					"html",
 					null,
-					h("head", null, Markup.raw('<script src="/app.js"></script>')),
+					h(
+						"head",
+						null,
+						Render.raw({ html: '<script src="/app.js"></script>' }),
+					),
 					h(
 						"body",
 						null,
-						Markup.raw("<nav>Raw nav</nav>"),
+						Render.raw({ html: "<nav>Raw nav</nav>" }),
 						h(
 							"main",
 							null,
 							h("h1", null, "Doc"),
-							Markup.raw('<pre class="shiki"><code>  indented\n</code></pre>'),
-							h("p", null, "Press ", Markup.raw("<kbd>K</kbd>"), " now"),
-							h("div", null, Markup.raw("<p>One</p>"), h("p", null, "Two")),
+							Render.raw({
+								html: '<pre class="shiki"><code>  indented\n</code></pre>',
+							}),
+							h(
+								"p",
+								null,
+								"Press ",
+								Render.raw({ html: "<kbd>K</kbd>" }),
+								" now",
+							),
+							h(
+								"div",
+								null,
+								Render.raw({ html: "<p>One</p>" }),
+								h("p", null, "Two"),
+							),
 						),
 					),
 				),
@@ -941,19 +963,21 @@ describe("Markdown", () => {
 		const page = () => [h("h1", null, "One"), h("p", null, "Two")];
 		const expected = "# One\n\nTwo\n";
 
-		expect((await Array.fromAsync(new Markdown(page()))).join("")).toBe(
+		expect((await Array.fromAsync(Render.markdown(page()))).join("")).toBe(
 			expected,
 		);
-		expect(await new Response(Markdown.stream(page())).text()).toBe(expected);
-		expect(await Markdown.string(page())).toBe(expected);
+		expect(await new Response(Render.markdown(page()).stream()).text()).toBe(
+			expected,
+		);
+		expect(await Render.markdown(page()).string()).toBe(expected);
 	});
 
 	test("writes each block once it closes", async () => {
 		let release!: (value: JSX.Element) => void;
 		const rest = new Promise<JSX.Element>((resolve) => (release = resolve));
-		const reader = Markdown.stream(
-			h("main", null, h("h1", null, "One"), rest),
-		).getReader();
+		const reader = Render.markdown(h("main", null, h("h1", null, "One"), rest))
+			.stream()
+			.getReader();
 		const decoder = new TextDecoder();
 
 		expect(decoder.decode((await reader.read()).value)).toBe("# One");
@@ -1024,28 +1048,28 @@ describe("Markdown responses", () => {
 		expect(await res.text()).toBe("<rss></rss>");
 	});
 
-	test("Markdown.stream streams Markdown", async () => {
+	test("a render of Markdown streams", async () => {
 		const text = await new Response(
-			Markdown.stream([
+			Render.markdown([
 				jsx("h2", { children: "Hi" }),
 				Promise.resolve(jsx("p", { children: "later" })),
-			]),
+			]).stream(),
 		).text();
 
 		expect(text).toBe("## Hi\n\nlater\n");
 	});
 });
 
-describe("c.md", () => {
+describe("c.markdown", () => {
 	const post = { title: "Hello", body: "# Hello\n\nWritten in _Markdown_.\n" };
 	const app = new App().use(
 		Route.get("/post").use((c) => {
-			if (c.md(post.body)) return;
+			if (c.markdown(post.body)) return;
 
 			return jsx("main", { children: jsx("h1", { children: post.title }) });
 		}),
 		Route.get("/missing").use((c) => {
-			if (c.md("Not found", 404)) return;
+			if (c.markdown("Not found", 404)) return;
 
 			c.text("Not found", 404);
 		}),
@@ -1087,7 +1111,7 @@ describe("c.md", () => {
 	});
 });
 
-describe("Markdown.raw", () => {
+describe("raw Markdown", () => {
 	const steps = "1. Grease the pan.\n2. Bake at 325°F.";
 	const html = "<ol><li>Grease the pan.</li><li>Bake at 325°F.</li></ol>";
 	const page = () =>
@@ -1097,17 +1121,21 @@ describe("Markdown.raw", () => {
 				jsx("section", {
 					children: [
 						jsx("h2", { children: "Steps" }),
-						Markdown.raw(steps, html),
+						Render.raw({ html, markdown: steps }),
 					],
 				}),
 				jsx("p", {
-					children: ["Serve ", Markdown.raw("*warm*", "<em>warm</em>"), "."],
+					children: [
+						"Serve ",
+						Render.raw({ html: "<em>warm</em>", markdown: "*warm*" }),
+						".",
+					],
 				}),
 			],
 		});
 
 	test("a page shows the HTML", async () => {
-		expect(await Markup.string(page())).toBe(
+		expect(await Render.markup(page()).string()).toBe(
 			`<main><h1>Buns</h1><section><h2>Steps</h2>${html}</section><p>Serve <em>warm</em>.</p></main>`,
 		);
 	});
@@ -1118,34 +1146,36 @@ describe("Markdown.raw", () => {
 				children: jsx("li", {
 					children: [
 						jsx("span", { children: "Claude" }),
-						Markdown.raw(" · ", ""),
+						Render.raw({ markdown: " · " }),
 						jsx("span", { children: "Anthropic" }),
 						// only people see it
-						Markdown.raw("", "<button>More</button>"),
+						Render.raw({ html: "<button>More</button>", markdown: "" }),
 					],
 				}),
 			});
 
-		expect(await Markdown.string(item())).toBe("- Claude · Anthropic\n");
-		expect(await Markup.string(item())).toBe(
+		expect(await Render.markdown(item()).string()).toBe(
+			"- Claude · Anthropic\n",
+		);
+		expect(await Render.markup(item()).string()).toBe(
 			"<ul><li><span>Claude</span><span>Anthropic</span><button>More</button></li></ul>",
 		);
 		// a line that stands for a block is one
 		expect(
-			await Markdown.string(
+			await Render.markdown(
 				jsx("div", {
 					children: [
 						"Before",
-						Markdown.raw("## Steps", "<h2>Steps</h2>"),
+						Render.raw({ html: "<h2>Steps</h2>", markdown: "## Steps" }),
 						"After",
 					],
 				}),
-			),
+			).string(),
 		).toBe("Before\n\n## Steps\n\nAfter\n");
 	});
 
 	test("an agent reads the source, as its own block or in its sentence", async () => {
-		expect(await Markdown.string(page())).toBe(
+		expect(await Render.markdown(page()).string()).toBe(
 			`# Buns\n\n## Steps\n\n${steps}\n\nServe *warm*.\n`,
 		);
 	});

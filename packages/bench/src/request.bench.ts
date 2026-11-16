@@ -6,18 +6,23 @@ import { bench, describe, expect } from "vitest";
 /** The JSX runtime's element function, current or from an older commit */
 type Create = typeof import("ovr/jsx-runtime").jsx;
 
+/** A renderer of the earlier build, whose methods were static */
+type Before = {
+	string(element: unknown): Promise<string>;
+	stream(element: unknown): ReadableStream<Uint8Array>;
+};
+
 // the renderer when each element was a generator, before a render read them
 const commit = "220a8d1fb1b3c37af53ded742f633b46b8c25d32";
 const markup = baseline("markup", {}, commit);
 const imports = { "../markup/index.js": markup };
-const { Markup: MarkupBefore }: { Markup: typeof o.Markup } = await import(
-	markup
-);
+const { Markup: MarkupBefore }: { Markup: Before } = await import(markup);
 const { JSX: JsxBefore }: { JSX: { jsx: Create } } = await import(
 	baseline("jsx", imports, commit)
 );
-const { Markdown: MarkdownBefore }: { Markdown: typeof o.Markdown } =
-	await import(baseline("markdown", imports, commit));
+const { Markdown: MarkdownBefore }: { Markdown: Before } = await import(
+	baseline("markdown", imports, commit)
+);
 
 const options = { time: 2000, warmupTime: 1000, setup: () => global.gc?.() };
 const origin = "http://localhost:5173";
@@ -151,13 +156,13 @@ expect((await app.fetch(origin + "/search?q=ovr&page=2")).status).toBe(200);
 expect(parsed).toEqual({ q: "ovr", page: 2 });
 
 // the same page, written the same, before and after
-expect(await o.Markup.string(page(jsx, "7"))).toBe(
+expect(await o.Render.markup(page(jsx, "7")).string()).toBe(
 	await MarkupBefore.string(page(JsxBefore.jsx, "7")),
 );
-expect(await text(o.Markup.stream(page(jsx, "7")))).toBe(
+expect(await text(o.Render.markup(page(jsx, "7")).stream())).toBe(
 	await text(MarkupBefore.stream(page(JsxBefore.jsx, "7"))),
 );
-expect(await o.Markdown.string(page(jsx, "7"))).toBe(
+expect(await o.Render.markdown(page(jsx, "7")).string()).toBe(
 	await MarkdownBefore.string(page(JsxBefore.jsx, "7")),
 );
 
@@ -207,7 +212,7 @@ describe("small page to an HTML string", () => {
 	bench(
 		"after",
 		async () => {
-			await o.Markup.string(page(jsx, "7"));
+			await o.Render.markup(page(jsx, "7")).string();
 		},
 		options,
 	);
@@ -225,7 +230,7 @@ describe("small page to an HTML stream", () => {
 	bench(
 		"after",
 		async () => {
-			await text(o.Markup.stream(page(jsx, "7")));
+			await text(o.Render.markup(page(jsx, "7")).stream());
 		},
 		options,
 	);
@@ -243,7 +248,7 @@ describe("small page to a Markdown string", () => {
 	bench(
 		"after",
 		async () => {
-			await o.Markdown.string(page(jsx, "7"));
+			await o.Render.markdown(page(jsx, "7")).string();
 		},
 		options,
 	);
@@ -261,7 +266,7 @@ describe("small page to a Markdown stream", () => {
 	bench(
 		"after",
 		async () => {
-			await text(o.Markdown.stream(page(jsx, "7")));
+			await text(o.Render.markdown(page(jsx, "7")).stream());
 		},
 		options,
 	);

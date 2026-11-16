@@ -2,7 +2,7 @@ import type { JSX } from "../jsx/index.js";
 import { Codec, Size } from "../util/index.js";
 
 /** Chunk of a rendered element: text, or markup */
-class Chunk {
+export class Chunk {
 	/** Text, or markup when `raw` */
 	readonly value: string;
 
@@ -88,7 +88,7 @@ export class Tag extends Chunk {
 }
 
 /**
- * Markup with its Markdown source, from `Markdown.raw`, internal to ovr. It
+ * Markup with the Markdown agents get in its place, from `Render.raw`, internal to ovr. It
  * is written as its markup, and as its source in Markdown.
  */
 export class Source extends Chunk {
@@ -189,7 +189,7 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	 */
 	get #generator(): AsyncGenerator<Chunk, void, unknown> {
 		return (this.#chunks ??= (async function* (element) {
-			const render = new Render(element, undefined);
+			const render = new Renderer(element, undefined);
 
 			try {
 				for (let result: Step; (result = render.step());) {
@@ -241,7 +241,7 @@ type Sequence = {
  * synchronous unless the element has to be waited for, so nested elements cost
  * a loop instead of a generator and a promise for each chunk at every level.
  */
-export class Render {
+export class Renderer {
 	/** Chunks rendered before the element is its parent's current child */
 	queue: Chunk[] | undefined;
 
@@ -458,14 +458,14 @@ export class Render {
  */
 class Parallel {
 	/** Render of each child */
-	readonly #children: Render[];
+	readonly #children: Renderer[];
 
 	/**
 	 * Children after the current one that can step: not waiting, and not done.
 	 * Only these are looked at as the others wait, so a list of many children
 	 * that each wait costs no more for each one that resolves.
 	 */
-	readonly #idle: Render[] = [];
+	readonly #idle: Renderer[] = [];
 
 	/** Index of the child being yielded */
 	#current = 0;
@@ -491,7 +491,7 @@ class Parallel {
 
 		// each child starts before any is waited for
 		for (const element of elements) {
-			const child = new Render(element, raw);
+			const child = new Renderer(element, raw);
 			const chunk = this.#advance(child);
 
 			if (chunk) child.queue = [chunk];
@@ -549,7 +549,7 @@ class Parallel {
 	 * @param child Child that is not waiting
 	 * @returns The chunk, if it rendered one
 	 */
-	#advance(child: Render) {
+	#advance(child: Renderer) {
 		let result: Step;
 
 		try {
@@ -627,7 +627,7 @@ class Parallel {
 	 *
 	 * @param child Current child, which is waiting
 	 */
-	async #wait(child: Render) {
+	async #wait(child: Renderer) {
 		while (child.waiting && !this.#failed && !this.#closed) {
 			if (this.#rest()) await undefined;
 			else await new Promise<void>((resolve) => (this.#notify = resolve));
@@ -737,24 +737,18 @@ export const readable = (render: {
 	);
 };
 
-/** The class `Markup.Chunk` is named for */
-type ChunkClass = Chunk;
-
 export namespace Markup {
 	/** Markup options */
 	export type Options = {
 		/** Set to `true` to disable escaping, for content that is not markup */
 		raw?: boolean;
 	};
-
-	/** Rendered `Chunk` instance, an interface so declaration files name it */
-	export interface Chunk extends ChunkClass {}
 }
 
 /**
  * Renders an element to markup, such as HTML, SVG, or XML, as an
  * `AsyncIterable` of strings, a stream, or a string. `Markdown` renders the
- * same elements to Markdown.
+ * same elements to Markdown. Made with `Render.markup`.
  */
 export class Markup {
 	/** Regex to find escape character for attributes */
@@ -790,7 +784,7 @@ export class Markup {
 
 	/** @yields Markup as the `Element` resolves */
 	async *[Symbol.asyncIterator](): AsyncGenerator<string, void, unknown> {
-		const render = new Render(this.#element, this.#options?.raw);
+		const render = new Renderer(this.#element, this.#options?.raw);
 
 		try {
 			for (let result: Step; (result = render.step());) {
@@ -803,30 +797,26 @@ export class Markup {
 	}
 
 	/**
-	 * `render` piped into a `ReadableStream`.
-	 * Use `render` when possible to avoid the overhead of the stream.
+	 * The render piped into a `ReadableStream`. Iterate it when possible, to
+	 * avoid the overhead of the stream.
 	 *
-	 * @param element Element to render
-	 * @param options Markup options
 	 * @returns `ReadableStream` of markup
 	 */
-	static stream(element: JSX.Element, options?: Markup.Options) {
-		return readable(new Render(element, options?.raw));
+	stream() {
+		return readable(new Renderer(this.#element, this.#options?.raw));
 	}
 
 	/**
-	 * Converts a render into a fully concatenated string of markup.
+	 * The whole render as one string.
 	 *
 	 * ### WARNING
 	 *
 	 * This negates streaming benefits and buffers the result into a string.
 	 *
-	 * @param element Element to render
-	 * @param options Markup options
 	 * @returns Concatenated markup
 	 */
-	static async string(element: JSX.Element, options?: Markup.Options) {
-		const render = new Render(element, options?.raw);
+	async string() {
+		const render = new Renderer(this.#element, this.#options?.raw);
 		const chunks: Chunk[] = [];
 
 		try {
@@ -840,17 +830,6 @@ export class Markup {
 
 		// written once every chunk is rendered, as a group of them is
 		return new Group(chunks).toString();
-	}
-
-	/**
-	 * Render raw markup and dangerously bypass escaping. It is written as it is
-	 * in Markdown too, which can contain HTML.
-	 *
-	 * @param html Safe markup to render
-	 * @returns New _safe_ `Chunk`
-	 */
-	static raw(html: unknown): Markup.Chunk {
-		return new Chunk(html, true);
 	}
 
 	/**

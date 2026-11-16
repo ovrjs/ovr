@@ -1,4 +1,4 @@
-import { Element, type Markup } from "../markup/index.js";
+import { type Chunk, Element } from "../markup/index.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 
 export namespace JSX {
@@ -59,7 +59,7 @@ export class JSX {
 	static jsx<P extends JSX.Props = JSX.Props>(
 		tag: ((props: P) => JSX.Element) | string,
 		props: P,
-	): AsyncGenerator<Markup.Chunk, void, unknown> {
+	): AsyncGenerator<Chunk, void, unknown> {
 		// this function doesn't need to be called recursively
 		// JSX will be transformed into `jsx()` function calls automatically
 

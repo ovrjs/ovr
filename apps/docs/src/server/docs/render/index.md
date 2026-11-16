@@ -91,7 +91,7 @@ function Page() {
 
 ## Data types
 
-You can `return` or `yield` most data types from a component, they will be rendered as you might expect. Each of these data types can also be rendered on its own, with [`Markup`](#markup) or [`Markdown`](#markdown).
+You can `return` or `yield` most data types from a component, they will be rendered as you might expect. Each of these data types can also be rendered on its own, with [`Render.markup`](#markup) or [`Render.markdown`](#markdown).
 
 ```tsx
 function* DataTypes() {
@@ -109,34 +109,34 @@ function* DataTypes() {
 }
 ```
 
-> Check out the [source code](https://github.com/ovrjs/ovr/blob/main/packages/ovr/src/markup/index.ts) for the `Markup` class to understand how ovr evaluates each data type.
+> Check out the [source code](https://github.com/ovrjs/ovr/blob/main/packages/ovr/src/markup/index.ts) for the renderer to understand how ovr evaluates each data type.
 
 ## Markup
 
-To render any element on its own (for example, if you aren't returning it from `Middleware` or need to call it separately), use the `Markup` class. It renders HTML, and other markup such as SVG or an XML sitemap.
+To render any element on its own (for example, if you aren't returning it from `Middleware` or need to call it separately), use `Render.markup`. It renders HTML, and other markup such as SVG or an XML sitemap. The render it returns is an async iterable, with a `stream()` and a `string()`.
 
 ### Async iterable
 
-Create a new `Markup` async iterable that yields strings of markup as the element renders.
+Iterate the render for strings of markup as the element renders.
 
 ```tsx
-import { Markup } from "ovr";
+import { Render } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const markup = new Markup(<Component />);
+const markup = Render.markup(<Component />);
 
 for await (const html of markup) {
 	console.log(html); // <p>element</p>
 }
 ```
 
-> Any of the supported [data types](#data-types) can also be rendered directly without JSX. For example, the following array can be passed into `Markup` running all async operations in parallel.
+> Any of the supported [data types](#data-types) can also be rendered directly without JSX. For example, the following array can be passed into `Render.markup` running all async operations in parallel.
 
 ```ts
-const markup = new Markup([
+const markup = Render.markup([
 	async () => "hello",
 	"world",
 	[
@@ -151,26 +151,26 @@ for await (const html of markup) {
 }
 ```
 
-Set `Markup.Options.raw` to `true` to skip escaping, for content that is not markup, such as plain text or server-sent events.
+Set `Render.Markup.Options.raw` to `true` to skip escaping, for content that is not markup, such as plain text or server-sent events.
 
 ```ts
-new Markup(element, { raw: true });
+Render.markup(element, { raw: true });
 ```
 
 ### Stream
 
-Turn an element into a `ReadableStream` using `Markup.stream`.
+Turn an element into a `ReadableStream` with `stream()`.
 
 This stream is optimized for generating markup---it ensures backpressure is properly handled for slower clients and generation stops if the client aborts the request. Each read sends everything that is ready, up to about 2KB, and nothing waits for what is still loading.
 
 ```tsx
-import { Markup } from "ovr";
+import { Render } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const stream = Markup.stream(<Component />);
+const stream = Render.markup(<Component />).stream();
 
 const response = new Response(stream, {
 	headers: { "content-type": "text/html; charset=utf-8" },
@@ -179,31 +179,31 @@ const response = new Response(stream, {
 
 ### String
 
-Convert any element into a `string` of markup with `Markup.string`. This iterates through the render and joins the results into a single string.
+Convert any element into a `string` of markup with `string()`. This iterates through the render and joins the results into a single string.
 
 ```tsx
-import { Markup } from "ovr";
+import { Render } from "ovr";
 
 function Component() {
 	return <p>element</p>;
 }
 
-const str = await Markup.string(<Component />);
+const str = await Render.markup(<Component />).string();
 ```
 
-### Raw markup
+### Raw
 
-To render safe markup **without escaping**, use `Markup.raw`. Text is escaped, so `&&` in an inline script would become `&amp;&amp;` and break it.
+To render safe markup **without escaping**, use `Render.raw`. Text is escaped, so `&&` in an inline script would become `&amp;&amp;` and break it.
 
 ```tsx
-import { Markup } from "ovr";
+import { Render } from "ovr";
 
 function Theme() {
 	return (
 		<script>
-			{Markup.raw(
-				`if (matchMedia("(prefers-color-scheme: dark)").matches && !localStorage.theme) document.documentElement.dataset.theme = "dark";`,
-			)}
+			{Render.raw({
+				html: `if (matchMedia("(prefers-color-scheme: dark)").matches && !localStorage.theme) document.documentElement.dataset.theme = "dark";`,
+			})}
 		</script>
 	);
 }
@@ -211,14 +211,23 @@ function Theme() {
 
 Use it for markup you trust, such as HTML from a Markdown processor or an SVG file, never for user input.
 
-For content written in Markdown, `Markdown.raw(markdown, html)` renders the HTML on the page and gives agents reading it as [Markdown](#markdown) the source instead, such as a recipe's steps. Neither is escaped.
+Agents reading the page as [Markdown](#markdown) get the same markup, which Markdown can contain. Give `markdown` too, and they get that in its place: for content written in Markdown, such as a recipe's steps, the source it was rendered from. Neither is escaped.
+
+| Call                                 | The page shows | Agents read  |
+| ------------------------------------ | -------------- | ------------ |
+| `Render.raw({ html })`               | The markup     | The markup   |
+| `Render.raw({ html, markdown })`     | The markup     | The Markdown |
+| `Render.raw({ markdown })`           | Nothing        | The Markdown |
+| `Render.raw({ html, markdown: "" })` | The markup     | Nothing      |
+
+`Render.escape(text)` escapes text as a render does, for markup you build yourself.
 
 ## Markdown
 
-`Markdown` renders the same elements to Markdown, with the same ways in: an async iterable, a stream, and a string. Text is escaped, so a page's content, such as a user's comment, cannot write Markdown of its own. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use `Markdown` to render it yourself, such as to write files or answer with part of a page.
+`Render.markdown` renders the same elements to Markdown, with the same ways out: an async iterable, a stream, and a string. Text is escaped, so a page's content, such as a user's comment, cannot write Markdown of its own. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use `Render.markdown` to render it yourself, such as to write files or answer with part of a page.
 
 ```tsx
-import { Markdown } from "ovr";
+import { Render } from "ovr";
 
 function Post() {
 	return (
@@ -231,10 +240,12 @@ function Post() {
 	);
 }
 
-const md = await Markdown.string(<Post />, { base: "https://example.com" });
+const md = await Render.markdown(<Post />, {
+	base: "https://example.com",
+}).string();
 // # Hello
 //
 // Read the [docs](https://example.com/docs).
 ```
 
-Each block, such as a paragraph or a list, is written once it closes, so a stream still sends the page as it renders. When the element has a `<main>`, only its contents are written; without one a `<main>` could still follow, so the page is written when it ends. Scripts, styles, and hidden elements are left out, forms are described by their fields, and links resolve against `base`. Raw markup from `Markup.raw` is written as it is, since Markdown can contain HTML. A form in a table's cell that is only a button is written in the cell, one with fields after the table, and an element that holds blocks, such as a custom element around a card, is read as a container.
+Each block, such as a paragraph or a list, is written once it closes, so a stream still sends the page as it renders. When the element has a `<main>`, only its contents are written; without one a `<main>` could still follow, so the page is written when it ends. Scripts, styles, and hidden elements are left out, forms are described by their fields, and links resolve against `base`. Raw markup from `Render.raw` is written as it is, since Markdown can contain HTML. A form in a table's cell that is only a button is written in the cell, one with fields after the table, and an element that holds blocks, such as a custom element around a card, is read as a container.
