@@ -19,6 +19,7 @@
     "add-passkey",
     "agent-limits",
     "auth-agents",
+    "cell-fieldset",
     "choices-for-agents",
     "choices-return-source",
     "confirm-passkey",
