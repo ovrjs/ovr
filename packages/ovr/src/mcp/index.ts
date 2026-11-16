@@ -1,6 +1,13 @@
 import { type App, agents, direct, mount } from "../app/index.js";
 import { type Context, agent } from "../context/index.js";
-import { type Field, forms, field as isField } from "../form/index.js";
+import {
+	type Field,
+	entries,
+	forms,
+	field as isField,
+	sent,
+	whole,
+} from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters, schemas } from "../route/index.js";
 import { Schema } from "../schema/index.js";
@@ -13,6 +20,15 @@ import {
 	Size,
 	noStore,
 } from "../util/index.js";
+
+/** The protocol version the endpoint speaks. Internal to ovr. */
+export const version = "2026-07-28";
+
+/**
+ * The path of each app's first MCP endpoint, by the app's `fetch`. Internal
+ * to ovr, for what calls an app's tools without being given the endpoint.
+ */
+export const endpoints = new WeakMap<App["fetch"], string>();
 
 /** JSON-RPC request id */
 type Id = string | number | null;
@@ -114,7 +130,7 @@ export namespace Mcp {
  */
 export class Mcp<P extends string = string> {
 	/** Supported protocol versions */
-	static readonly #versions = ["2026-07-28"];
+	static readonly #versions = [version];
 
 	/**
 	 * Earlier versions, which start with `initialize`, newest first. Clients
@@ -167,6 +183,7 @@ export class Mcp<P extends string = string> {
 			throw new TypeError("An Mcp endpoint can only be mounted on one app.");
 		this.#app = app;
 		const { path, auth } = this.#options;
+		if (!endpoints.has(app.fetch)) endpoints.set(app.fetch, path);
 
 		const routes: Route[] = [
 			Route.post(path).use((c) => this.#handle(c)),
@@ -713,7 +730,7 @@ export class Mcp<P extends string = string> {
 						),
 					};
 
-		if (Mcp.#whole(field)) {
+		if (whole(field)) {
 			const {
 				type: _,
 				contentMediaType: __,
@@ -761,18 +778,6 @@ export class Mcp<P extends string = string> {
 		return bytes >= Size.mb
 			? `${+(bytes / Size.mb).toFixed(1)} MB`
 			: `${Math.ceil(bytes / Size.kb)} KB`;
-	}
-
-	/**
-	 * @param field Form field
-	 * @returns `true` for a field that parses its one value as JSON, such as
-	 * `Field.textarea().json(schema)`, also when made optional
-	 */
-	static #whole(field: Field.Any) {
-		let def: Schema.Def | undefined = field.def;
-		while (def && def.type !== "json")
-			def = "inner" in def ? def.inner.def : undefined;
-		return Boolean(def);
 	}
 
 	/**
@@ -913,67 +918,6 @@ export class Mcp<P extends string = string> {
 					true,
 				);
 		}
-		/**
-		 * @param field The field the argument is for, if there is one
-		 * @param name Form data name
-		 * @param value The argument
-		 * @returns The name of a file field whose argument is not a file
-		 */
-		const send = (
-			field: Field.Any | undefined,
-			name: string,
-			value: unknown,
-		): string | undefined => {
-			const item = field?.item;
-			if (item) {
-				// each item's fields are named by its place, as a row's are
-				let place = 0;
-				for (const row of Array.isArray(value) ? value : []) {
-					const at = `${name}.${place++}`;
-					if (isField(item)) {
-						const failed = send(item, at, row);
-						if (failed) return failed;
-					} else if (row && typeof row === "object") {
-						for (const key of Object.keys(item)) {
-							const failed = send(
-								item[key],
-								`${at}.${key}`,
-								(row as Json)[key],
-							);
-							if (failed) return failed;
-						}
-					}
-				}
-				return;
-			}
-
-			const upload = !read && field?.type === "file";
-			// a JSON field reads one value, so an array is sent whole, as its
-			// input schema describes it
-			if (field && Mcp.#whole(field) && value != null) {
-				const text = JSON.stringify(value);
-				if (read) url.searchParams.append(name, text);
-				else body.append(name, text);
-				return;
-			}
-			for (const item of Array.isArray(value) ? value : [value]) {
-				if (item == null || item === false) continue;
-				if (upload) {
-					const file = Mcp.#upload(item);
-					if (!file) return name;
-					body.append(name, file);
-					continue;
-				}
-				const text =
-					item === true
-						? "on"
-						: typeof item === "object"
-							? JSON.stringify(item)
-							: String(item);
-				if (read) url.searchParams.append(name, text);
-				else body.append(name, text);
-			}
-		};
 
 		for (const [name, value] of Object.entries(args)) {
 			const field =
@@ -981,18 +925,24 @@ export class Mcp<P extends string = string> {
 			// a parameter is in the path, and also sent when a field has its name
 			if (pathParams.has(name) && !field) continue;
 
-			const path = send(field, name, value);
-			if (path)
-				return Mcp.#result(
-					Mcp.#issues([
-						{
-							path,
-							message:
-								"Expected a file: its name, and its contents as text or base64",
-						},
-					]),
-					true,
-				);
+			for (const [at, item, leaf] of entries(field, name, value)) {
+				if (!read && leaf?.type === "file") {
+					const file = Mcp.#upload(item);
+					if (!file)
+						return Mcp.#result(
+							Mcp.#issues([
+								{
+									path: at,
+									message:
+										"Expected a file: its name, and its contents as text or base64",
+								},
+							]),
+							true,
+						);
+					body.append(at, file);
+				} else if (read) url.searchParams.append(at, sent(item));
+				else body.append(at, sent(item));
+			}
 		}
 
 		return this.#fetch(

@@ -359,6 +359,15 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 
 The state is kept small, since it is in a URL. A value over 512 characters is not kept. Each value of a field with many, such as a line of `lines()`, has that limit of its own. A list's items have no limit of their own, but a list shows no more rows from a URL than its `max()`, and never a row's hidden value. The whole state is at most 4 KB before it is encoded. When it is larger, values are left out, from the form's last field back, until it fits. The issues are kept unless they alone are over 4 KB, so the person sees what was wrong, but not what they typed in the fields left out. Keep a long form's values another way, such as by saving a draft.
 
+`route.state(url)` reads the state a URL holds for the route's form: its `issues`, and the `values` kept. It is `undefined` when the URL holds none of the form's own. Use it to act on a refused submission outside the form's components, such as opening the `<details>` the form is in:
+
+```tsx
+<details open={Boolean(create.state(c.url)?.issues)}>
+	<summary>Add a recipe</summary>
+	<create.Form state={c.url} />
+</details>
+```
+
 Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
 
 ## GET forms

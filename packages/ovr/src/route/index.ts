@@ -210,7 +210,7 @@ export namespace Route {
 	 */
 	type Components<S extends Field.Shape> = Pick<
 		FormSchema<S>,
-		"Field" | "Fields" | "component"
+		"Field" | "Fields" | "component" | "state"
 	>;
 
 	/**
@@ -657,9 +657,9 @@ export class Route<
 		// a GET form's submission is the URL, so its fields read from it
 		if (this.method === Method.get) form = form[query]();
 		forms.set(this, form);
-		const { Field, Fields, component } = form;
+		const { Field, Fields, component, state } = form;
 
-		return Object.assign(this, { Field, Fields, component }) as any;
+		return Object.assign(this, { Field, Fields, component, state }) as any;
 	}
 
 	/**

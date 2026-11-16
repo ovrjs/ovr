@@ -14,6 +14,10 @@ import { Metadata } from "./metadata.js";
 import { lifetime, oauth } from "./oauth.js";
 import { State } from "./state.js";
 import { Storage } from "./storage.js";
+import { Token } from "./token.js";
+
+/** Connects an agent without the consent page, see `Auth[grant]`. Internal to ovr. */
+export const grant = Symbol("grant");
 
 export namespace Auth {
 	/** Authentication validation issue. */
@@ -426,6 +430,45 @@ export class Auth<
 	/** Revoke the current session and expire its cookie. Always await this method. */
 	readonly logout = (c: Pick<Auth.Context, "url" | "cookie" | "res">) => {
 		return this.#state(c).logout();
+	};
+
+	/**
+	 * Connects an agent for a user without the consent page, as `Tester` does.
+	 * It is listed and disconnected like any other.
+	 *
+	 * @param user ID of the user the agent acts for
+	 * @param resource The MCP endpoint's URL, which the token is issued for
+	 * @param agent The agent's client ID and the name it gives
+	 * @returns An access token
+	 */
+	readonly [grant] = async (
+		user: string,
+		resource: string,
+		agent: { id: string; name: string },
+	) => {
+		const access = Token.random();
+		const now = Date.now();
+		const row = {
+			user,
+			client: agent.id,
+			name: agent.name,
+			resource,
+			scope: "",
+		};
+
+		await this.#storage.tokens.set(access, {
+			...row,
+			kind: "access",
+			expiration: now + lifetime.access,
+		});
+		// what lists the agent as connected
+		await this.#storage.tokens.set(Token.random(), {
+			...row,
+			kind: "refresh",
+			expiration: now + lifetime.refresh,
+		});
+
+		return access;
 	};
 
 	/**

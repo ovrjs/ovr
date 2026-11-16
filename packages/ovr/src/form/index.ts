@@ -294,6 +294,26 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	}
 
 	/**
+	 * What a URL holds for this form after a submission it refused: the issues
+	 * found, and the values kept to show again. Use it to act on a refused
+	 * submission outside the form's own components, such as opening the
+	 * `<details>` the form is in, or to check one in a test.
+	 *
+	 * ```tsx
+	 * <details open={Boolean(create.state(c.url)?.issues)}>
+	 * ```
+	 *
+	 * @param url The page's URL, or an address such as the one a refused
+	 * submission redirects to
+	 * @returns The form's state, `undefined` when the URL holds none of its own
+	 */
+	state = (url: URL | string): Field.State<Shape> | undefined =>
+		this.#restore(
+			// only the search is read, so a path of the app's own needs no origin
+			typeof url === "string" ? new URL(url, "http://localhost") : url,
+		);
+
+	/**
 	 * Restore form state from the URL.
 	 *
 	 * @param stateInput Current page URL
@@ -1783,6 +1803,76 @@ type Placed = readonly [
  */
 export const field = (value: unknown): value is Field.Any =>
 	value instanceof FieldSchema;
+
+/**
+ * @param field Form field
+ * @returns `true` for a field that parses its one value as JSON, such as
+ * `Field.textarea().json(schema)`, also when made optional
+ */
+export const whole = (field: Field.Any) => {
+	let def: Schema.Def | undefined = field.def;
+	while (def && def.type !== "json")
+		def = "inner" in def ? def.inner.def : undefined;
+	return Boolean(def);
+};
+
+/**
+ * A value as the field's controls send it: one entry for each control that
+ * sends something, a list's cells named by their row, as `ingredients.0.name`.
+ * Internal to ovr, for what sends a form without a browser.
+ *
+ * @param target The field the value is for, if there is one
+ * @param name Form data name
+ * @param value The value: an array for a list or a field of many values
+ * @yields Each entry's name and value, with the field it is for. A value is
+ * as given: text is the caller's to write, as a file is
+ */
+export function* entries(
+	target: Field.Any | undefined,
+	name: string,
+	value: unknown,
+): Generator<[name: string, value: unknown, field: Field.Any | undefined]> {
+	const item = target?.item;
+
+	if (item) {
+		// each item's fields are named by its place, as a row's are
+		let place = 0;
+		for (const row of Array.isArray(value) ? value : []) {
+			const at = `${name}.${place++}`;
+			if (field(item)) yield* entries(item, at, row);
+			else if (row && typeof row === "object")
+				for (const key of Object.keys(item))
+					yield* entries(
+						item[key],
+						`${at}.${key}`,
+						(row as Record<string, unknown>)[key],
+					);
+		}
+		return;
+	}
+
+	// a JSON field reads one value, so an array is sent whole, as its input
+	// schema describes it
+	if (target && whole(target) && value != null) {
+		yield [name, JSON.stringify(value), target];
+		return;
+	}
+
+	for (const one of Array.isArray(value) ? value : [value])
+		// a control left empty, or a box left clear, sends nothing
+		if (one != null && one !== false) yield [name, one, target];
+}
+
+/**
+ * @param value An entry's value that is not a file
+ * @returns The text a control sends for it: `on` for a ticked box
+ */
+export const sent = (value: unknown) =>
+	value === true
+		? "on"
+		: typeof value === "object"
+			? JSON.stringify(value)
+			: String(value);
 
 export namespace Field {
 	/** Fields by name, as a route's `fields` takes them. */

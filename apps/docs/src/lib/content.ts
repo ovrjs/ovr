@@ -14,7 +14,7 @@ const pages = import.meta.glob<Result<typeof FrontmatterSchema>>(
 export const sections = [
 	{ name: "Start", slugs: ["get-started"] },
 	{ name: "Basics", slugs: ["app", "route", "middleware", "render"] },
-	{ name: "Features", slugs: ["schema", "agents", "database", "auth"] },
+	{ name: "Features", slugs: ["schema", "agents", "database", "auth", "test"] },
 	{ name: "Reference", slugs: ["multipart"] },
 ];
 

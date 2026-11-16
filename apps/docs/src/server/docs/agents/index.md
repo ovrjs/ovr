@@ -269,7 +269,7 @@ curl https://localhost:5173/mcp \
 	-d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-With `auth`, the request also needs a token, which only a signed-in user's approval gives, so connect a real client to try a signed-in tool.
+With `auth`, the request also needs a token, which only a signed-in user's approval gives, so connect a real client to try a signed-in tool. In a test, [`Tester`](/test#as-an-agent) calls a tool as a signed-in user's agent.
 
 ### Publish to a directory
 
