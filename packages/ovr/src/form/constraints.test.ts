@@ -183,25 +183,46 @@ describe("a picker's range", () => {
 });
 
 describe("pattern", () => {
-	const username = Field.text().pattern(
-		"[a-z0-9_]{3,30}",
-		"3 to 30 lowercase letters, numbers, or _",
-	);
+	const username = Field.text()
+		.describe("3 to 30 lowercase letters, numbers, or _")
+		.pattern("[a-z0-9_]{3,30}");
 
-	test("is the control's, with the message as its title", async () => {
+	test("is the control's, with what people read as its title", async () => {
 		expect(await control(username)).toBe(
-			'<input id="value" required pattern="[a-z0-9_]{3,30}" title="3 to 30 lowercase letters, numbers, or _" type="text" name="value">',
+			'<input id="value" required toolparamdescription="3 to 30 lowercase letters, numbers, or _" aria-describedby="value-description" pattern="[a-z0-9_]{3,30}" title="3 to 30 lowercase letters, numbers, or _" type="text" name="value">',
 		);
+		// the hint, where it is what people read in place of the description
+		expect(
+			await control(
+				Field.text()
+					.describe("For an agent, at length")
+					.hint("Lowercase letters")
+					.pattern("[a-z]+"),
+			),
+		).toContain('pattern="[a-z]+" title="Lowercase letters"');
+		// chained in any order
+		expect(
+			await control(Field.text().pattern("[a-z]+").hint("Lowercase letters")),
+		).toContain('title="Lowercase letters"');
+		// nothing to say, so the browser's own words stand alone
+		expect(await control(Field.text().pattern("[a-z]+"))).toBe(
+			'<input id="value" required pattern="[a-z]+" type="text" name="value">',
+		);
+		expect(
+			await control(
+				Field.text().describe("For an agent").hint("").pattern("[a-z]+"),
+			),
+		).not.toContain("title");
 	});
 
 	test("is matched by the whole value on the server, as a browser does", async () => {
 		expect(await refused(username, "ross_r")).toBeUndefined();
 		expect(await refused(username, "Ross")).toBe(
-			"3 to 30 lowercase letters, numbers, or _",
+			"Expected pattern [a-z0-9_]{3,30}",
 		);
 		// a part that matches is not enough
 		expect(await refused(username, "ross r")).toBe(
-			"3 to 30 lowercase letters, numbers, or _",
+			"Expected pattern [a-z0-9_]{3,30}",
 		);
 		expect(await refused(Field.text().pattern("a|b", "a or b"), "ab")).toBe(
 			"a or b",
@@ -211,6 +232,7 @@ describe("pattern", () => {
 	test("is told to agents, anchored as JSON Schema reads it", () => {
 		expect(described(username)).toMatchObject({
 			type: "string",
+			description: "3 to 30 lowercase letters, numbers, or _",
 			pattern: "^(?:[a-z0-9_]{3,30})$",
 		});
 	});
@@ -220,16 +242,12 @@ describe("pattern", () => {
 
 		expect(await control(notes)).not.toContain("pattern");
 		expect(await refused(notes, "a <b>")).toBe("No angle brackets");
-		expect(
-			Schema.string().pattern("\\d+", "Digits").parse("12a").issues,
-		).toBeDefined();
-		expect(Schema.string().pattern("\\d+", "Digits").parse("12").data).toBe(
-			"12",
-		);
+		expect(Schema.string().pattern("\\d+").parse("12a").issues).toBeDefined();
+		expect(Schema.string().pattern("\\d+").parse("12").data).toBe("12");
 	});
 
 	test("that is not an expression fails where it is written", () => {
-		expect(() => Field.text().pattern("[a-", "Letters")).toThrow(SyntaxError);
+		expect(() => Field.text().pattern("[a-")).toThrow(SyntaxError);
 	});
 });
 

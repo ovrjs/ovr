@@ -1668,12 +1668,15 @@ export class Schema<Output>
 	/**
 	 * Validate the whole string matches a regular expression, as an input's
 	 * [`pattern`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/pattern)
-	 * does. A text field's control gets the pattern, with the message as its
-	 * `title`, so the browser checks it too, and agents read it in the tool's
-	 * JSON Schema.
+	 * does. A text field's control gets the pattern, so the browser checks it
+	 * too, with the field's hint or description as its `title`, which a
+	 * browser shows when the value does not match. Agents read the pattern in
+	 * the tool's JSON Schema.
 	 *
 	 * ```ts
-	 * Field.text().pattern("[a-z0-9_]{3,30}", "3 to 30 lowercase letters, numbers, or _");
+	 * Field.text()
+	 * 	.describe("3 to 30 lowercase letters, numbers, or _")
+	 * 	.pattern("[a-z0-9_]{3,30}");
 	 * ```
 	 *
 	 * @template T Field tag name
@@ -1682,7 +1685,7 @@ export class Schema<Output>
 	 * @template I What each item of a list field is
 	 * @param source The expression without slashes or flags, which the whole
 	 * value must match
-	 * @param message What the value must be, shown when it is not
+	 * @param message Issue message when invalid
 	 * @returns Refined field
 	 */
 	pattern<
@@ -1693,7 +1696,7 @@ export class Schema<Output>
 	>(
 		this: Field.Instance<string, T, U, V, undefined, I>,
 		source: string,
-		message: string,
+		message?: string,
 	): Field.Instance<string, T, U, V, undefined, I>;
 	/**
 	 * Validate the whole string matches a regular expression, as an input's
@@ -1702,15 +1705,19 @@ export class Schema<Output>
 	 *
 	 * @param source The expression without slashes or flags, which the whole
 	 * value must match
-	 * @param message What the value must be, shown when it is not
+	 * @param message Issue message when invalid
 	 * @returns Pattern schema
 	 */
 	pattern(
 		this: Schema<string>,
 		source: string,
-		message: string,
+		message?: string,
 	): Schema<string>;
-	pattern(this: Schema<string>, source: string, message: string) {
+	pattern(
+		this: Schema<string>,
+		source: string,
+		message = `Expected pattern ${source}`,
+	) {
 		// compiled here too, so a pattern that is not one fails as the app starts
 		new RegExp(`^(?:${source})$`, "v");
 		return this.#check({ name: "pattern", source, message });

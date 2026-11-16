@@ -826,8 +826,10 @@ class FieldSchema<
 				// a textarea has no pattern of its own
 				if (def.type === "string" && typed && input) {
 					attributes.pattern = check.source;
-					// a browser shows it with its own words for a mismatch
-					attributes.title = check.message;
+					// what the value must be, which a browser shows with its own
+					// words for a mismatch: what people already read under the control
+					const shown = this.#shown();
+					if (shown) attributes.title = shown;
 				}
 				continue;
 			}

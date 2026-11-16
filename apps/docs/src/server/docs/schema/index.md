@@ -347,25 +347,24 @@ Field.text().min(2).max(80);
 Field.number().min(0.5).max(5);
 Field.number().int().min(1);
 Field.date().min("2026-01-01").max("2026-12-31");
-Field.text().pattern(
-	"[a-z0-9_]{3,30}",
-	"3 to 30 lowercase letters, numbers, or _",
-);
+Field.text()
+	.hint("3 to 30 lowercase letters, numbers, or _")
+	.pattern("[a-z0-9_]{3,30}");
 Field.file().accept(["image/jpeg", "image/png", "image/webp"]);
 ```
 
-| Constraint                   | Fields                                      | The control gets                            |
-| ---------------------------- | ------------------------------------------- | ------------------------------------------- |
-| `min(length)`, `max(length)` | Text inputs and a textarea                  | `minlength`, `maxlength`                    |
-| `min(number)`, `max(number)` | `number`, `range`                           | `min`, `max`                                |
-| `int()`                      | `number`, `range`                           | Nothing: a number input takes whole numbers |
-| Not `int()`                  | `number`, `range`                           | `step="any"`, so it takes decimals          |
-| `min(value)`, `max(value)`   | `date`, `datetime`, `month`, `week`, `time` | `min`, `max`                                |
-| `pattern(source, message)`   | Text inputs                                 | `pattern`, and the message as its `title`   |
-| `accept(types)`              | `file`                                      | `accept`                                    |
+| Constraint                   | Fields                                      | The control gets                               |
+| ---------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| `min(length)`, `max(length)` | Text inputs and a textarea                  | `minlength`, `maxlength`                       |
+| `min(number)`, `max(number)` | `number`, `range`                           | `min`, `max`                                   |
+| `int()`                      | `number`, `range`                           | Nothing: a number input takes whole numbers    |
+| Not `int()`                  | `number`, `range`                           | `step="any"`, so it takes decimals             |
+| `min(value)`, `max(value)`   | `date`, `datetime`, `month`, `week`, `time` | `min`, `max`                                   |
+| `pattern(source)`            | Text inputs                                 | `pattern`, and the field's hint as its `title` |
+| `accept(types)`              | `file`                                      | `accept`                                       |
 
 - A picker's earliest and latest values are written as the picker writes one: `"2026-01-01"` for a date, `"09:00"` for a time, `"2026-W10"` for a week. Another format is a type error.
-- `pattern` takes the expression as the HTML attribute does: without slashes or flags, and matched by the whole value. `Schema.string().pattern()` checks the same way without a control.
+- `pattern` takes the expression as the HTML attribute does: without slashes or flags, and matched by the whole value. A browser shows the control's `title` when the value does not match, which is the field's hint, or its description: say there what the value must be. `Schema.string().pattern()` checks the same way without a control.
 - `accept` takes media types, and `image/*` for any image. A file that does not say its type is refused. The type is the one the sender gives, so serve a file back with the type that was checked. `image/*` includes SVG, a document that can run scripts, so name the types when people open each other's files.
 - `accept` and `pattern` are not attributes for `control()`, where only the browser would check them.
 - An attribute `control()` sets, or one passed as a form renders, replaces the field's own. A step of halves is `Field.number().control({ step: 0.5 })`, with a `refine` for the server.
