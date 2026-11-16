@@ -235,6 +235,16 @@ To build an index on a large production table without blocking writes:
 
 New databases build the index in the migration, and the production database skips it.
 
+### Change a table while the app runs
+
+A migration and a deploy never land at the same moment, so for a while the old code runs against the new tables, or the new code against the old. Change a table in steps that both versions can use. To add a column that must have a value:
+
+1. Add it with a default, in a migration: `ALTER TABLE posts ADD COLUMN source text NOT NULL DEFAULT ''`. The code that is running does not know the column, and its inserts get the default.
+2. Deploy the code that reads and writes it.
+3. Drop the default in a second migration, `ALTER TABLE posts ALTER COLUMN source DROP DEFAULT`, if the table should require a value.
+
+Code that does not know a column still reads its rows: a table's rows are parsed with its own columns, and others are left out. [`database.check()`](#check) reports nothing between the steps, since a default the table does not list is allowed. To remove a column, go the other way: deploy code that no longer uses it, then drop it.
+
 ## Check
 
 `database.check()` is a basic compatibility check between the live database and your tables. It returns one line per difference without changing anything.
