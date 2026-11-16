@@ -1112,6 +1112,38 @@ describe("Markdown.raw", () => {
 		);
 	});
 
+	test("a line of source stays in its line, such as text only agents read", async () => {
+		const item = () =>
+			jsx("ul", {
+				children: jsx("li", {
+					children: [
+						jsx("span", { children: "Claude" }),
+						Markdown.raw(" · ", ""),
+						jsx("span", { children: "Anthropic" }),
+						// only people see it
+						Markdown.raw("", "<button>More</button>"),
+					],
+				}),
+			});
+
+		expect(await Markdown.string(item())).toBe("- Claude · Anthropic\n");
+		expect(await Markup.string(item())).toBe(
+			"<ul><li><span>Claude</span><span>Anthropic</span><button>More</button></li></ul>",
+		);
+		// a line that stands for a block is one
+		expect(
+			await Markdown.string(
+				jsx("div", {
+					children: [
+						"Before",
+						Markdown.raw("## Steps", "<h2>Steps</h2>"),
+						"After",
+					],
+				}),
+			),
+		).toBe("Before\n\n## Steps\n\nAfter\n");
+	});
+
 	test("an agent reads the source, as its own block or in its sentence", async () => {
 		expect(await Markdown.string(page())).toBe(
 			`# Buns\n\n## Steps\n\n${steps}\n\nServe *warm*.\n`,

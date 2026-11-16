@@ -66,7 +66,9 @@ const post = Route.get("/posts/:slug").use(async (c) => {
 </p>
 ```
 
-An element with `hidden` or `aria-hidden="true"` is also left out of Markdown, and a screen reader skips it too.
+One line of source stays in its line, as the separator above does in its list item or sentence. Source of several lines, or with HTML that starts with a block element such as `<h2>`, is its own block.
+
+An element with `hidden` or `aria-hidden="true"` is left out of Markdown. One that CSS hides is not, since the page's styles are not read: text in a `display: none` element is another way to write for agents only, which a screen reader also skips.
 
 ## MCP
 

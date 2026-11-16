@@ -228,7 +228,15 @@ class Writer {
 			// it ends, so they share one empty set, which is never changed
 			this.#open(chunk.name, attrs ?? Writer.#none);
 			if (chunk.closed) this.#close(chunk.name);
-		} else if (chunk instanceof Source) this.#raw(chunk.markdown, true);
+		} else if (chunk instanceof Source)
+			this.#raw(
+				chunk.markdown,
+				// its own block when it is written as one, or stands for one. A
+				// line for a line, such as a separator only agents read, stays
+				// in its sentence
+				/\n/.test(chunk.markdown.trim()) ||
+					Writer.#rawBlock.test(String(chunk.value)),
+			);
 		else if (chunk.raw) this.#raw(chunk.value);
 		else this.#text(chunk.value);
 	}
@@ -252,11 +260,10 @@ class Writer {
 
 	/**
 	 * Raw HTML, such as from `Markup.raw`, is valid Markdown, so it is
-	 * written as it is, as is Markdown source from `Markdown.raw`, which is
-	 * always its own block.
+	 * written as it is, as is Markdown source from `Markdown.raw`.
 	 *
 	 * @param html HTML, or Markdown source
-	 * @param source The text is Markdown source
+	 * @param source The text is Markdown source that is its own block
 	 */
 	#raw(html: string, source?: boolean) {
 		if (!html || this.#skipping) return;
