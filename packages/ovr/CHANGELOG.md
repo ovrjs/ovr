@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.39
+
+### Patch Changes
+
+- 20bb4d8: A radio or checkbox group gives an agent in the browser its description on its `<fieldset>`, where Chrome reads a group's `toolparamdescription`. It was on each box, which Chrome does not read, so a group had no description.
+
 ## 7.0.0-next.38
 
 ### Patch Changes

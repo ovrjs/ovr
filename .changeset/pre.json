@@ -25,6 +25,7 @@
     "enum-types",
     "escape",
     "every-choice",
+    "group-descriptions",
     "groups",
     "hints",
     "inline-source",
