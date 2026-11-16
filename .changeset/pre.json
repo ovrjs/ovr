@@ -23,6 +23,7 @@
     "choices-return-source",
     "confirm-passkey",
     "enum-types",
+    "escape",
     "every-choice",
     "groups",
     "hints",
