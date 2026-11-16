@@ -26,6 +26,27 @@ export namespace Render {
 		export type Options = MarkdownRender.Options;
 	}
 
+	/** Text to escape, by where it goes: one of them */
+	export type Escape =
+		| {
+				/** Text for an element's content */
+				readonly html: string;
+				readonly attr?: never;
+				readonly markdown?: never;
+		  }
+		| {
+				/** Text for an attribute's value */
+				readonly attr: string;
+				readonly html?: never;
+				readonly markdown?: never;
+		  }
+		| {
+				/** Text for Markdown */
+				readonly markdown: string;
+				readonly html?: never;
+				readonly attr?: never;
+		  };
+
 	/**
 	 * What is written as it is, for people, agents, or both. With only
 	 * `html`, agents get the HTML too, which Markdown can contain.
@@ -76,14 +97,25 @@ export class Render {
 	}
 
 	/**
-	 * Escapes text for markup.
+	 * Escapes text, as a render does, to put in markup or Markdown you write
+	 * yourself, such as what `Render.raw` is given.
 	 *
-	 * @param text Text to escape
-	 * @param attr Set to `true` if the value is an attribute, otherwise it is content
+	 * ```ts
+	 * Render.escape({ html: "a < b" }); // "a &lt; b"
+	 * Render.escape({ attr: 'say "hi"' }); // "say &quot;hi&quot;"
+	 * Render.escape({ markdown: "2 * 3" }); // "2 \\* 3"
+	 * ```
+	 *
+	 * @param text Text to escape, by where it goes: `html` for an element's
+	 * content, `attr` for an attribute's value, or `markdown`
 	 * @returns Escaped text
 	 */
-	static escape(text: string, attr?: boolean) {
-		return MarkupRender.escape(text, attr);
+	static escape(text: Render.Escape) {
+		return text.markdown !== undefined
+			? MarkdownRender.escape(text.markdown)
+			: text.attr !== undefined
+				? MarkupRender.escape(text.attr, true)
+				: MarkupRender.escape(text.html);
 	}
 
 	/**

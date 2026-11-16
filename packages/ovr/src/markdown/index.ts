@@ -437,16 +437,36 @@ class Writer {
 	#paragraph(children: (Node | string)[]) {
 		return this.#inline(children)
 			.split("\n")
-			.map((line) =>
-				line
-					.trim()
-					// a quote needs no space after it, and a line of `=` makes a heading of the one above
-					.replace(/^(>|=+$|(?:[#+-]|-{2,})(?=\s|$))/, "\\$1")
-					// the escape goes before the delimiter, one before a digit is text
-					.replace(/^(\d+)([.)])(?=\s|$)/, "$1\\$2"),
-			)
+			.map((line) => Writer.#lead(line.trim()))
 			.join("\n")
 			.trim();
+	}
+
+	/**
+	 * @param line A line of text
+	 * @returns The line with what would start a block escaped, such as a
+	 * heading, a quote, or a list
+	 */
+	static #lead(line: string) {
+		return (
+			line
+				// a quote needs no space after it, and a line of `=` makes a heading of the one above
+				.replace(/^(\s*)(>|=+$|(?:[#+-]|-{2,})(?=\s|$))/, "$1\\$2")
+				// the escape goes before the delimiter, one before a digit is text
+				.replace(/^(\s*\d+)([.)])(?=\s|$)/, "$1\\$2")
+		);
+	}
+
+	/**
+	 * @param text Plain text, of one line or several
+	 * @returns The text as Markdown that reads as the same text: its syntax
+	 * characters escaped, and what would start a block on each line
+	 */
+	static escape(text: string) {
+		return text
+			.split("\n")
+			.map((line) => Writer.#lead(Writer.#escape(line)))
+			.join("\n");
 	}
 
 	/**
@@ -1467,6 +1487,14 @@ class Blocks {
  * ```
  */
 export class Markdown {
+	/**
+	 * @param text Plain text
+	 * @returns The text escaped, to write in Markdown as it is
+	 */
+	static escape(text: string) {
+		return Writer.escape(text);
+	}
+
 	/** Element to render */
 	readonly #element: JSX.Element;
 

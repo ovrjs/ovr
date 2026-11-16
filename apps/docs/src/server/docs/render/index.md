@@ -220,7 +220,22 @@ Agents reading the page as [Markdown](#markdown) get the same markup, which Mark
 | `Render.raw({ markdown })`           | Nothing        | The Markdown |
 | `Render.raw({ html, markdown: "" })` | The markup     | Nothing      |
 
-`Render.escape(text)` escapes text as a render does, for markup you build yourself.
+### Escape
+
+`Render.raw` writes what it is given, so escape any text you put into it, as a render does for you everywhere else. Say where the text goes:
+
+```tsx
+Render.escape({ html: "a < b" }); // "a &lt; b", an element's content
+Render.escape({ attr: 'say "hi"' }); // "say &quot;hi&quot;", an attribute's value
+Render.escape({ markdown: "2 * 3" }); // "2 \\* 3"
+
+Render.raw({
+	html: `<b>${Render.escape({ html: recipe.title })}</b>`,
+	markdown: `**${Render.escape({ markdown: recipe.title })}**`,
+});
+```
+
+Escaped Markdown reads as the text it was: its syntax characters are escaped, and so is what would start a block on a line, such as `#`, `>`, or `1.`.
 
 ## Markdown
 

@@ -37,10 +37,44 @@ test("raw is for the page, for agents, or for both", async () => {
 });
 
 test("escape content", () => {
-	const escaped = Render.escape(`&<script>console.log("hello")</script>`);
+	const escaped = Render.escape({
+		html: `&<script>console.log("hello")</script>`,
+	});
 
 	expect(escaped.includes("&amp")).toBe(true);
 	expect(escaped.includes("<")).toBe(false);
+});
+
+test("escaped Markdown reads as the text it was", async () => {
+	const escape = (markdown: string) => Render.escape({ markdown });
+
+	expect(escape("plain text")).toBe("plain text");
+	expect(escape("2 * 3 and [a](b) `c` <b>")).toBe(
+		"2 \\* 3 and \\[a\\](b) \\`c\\` \\<b>",
+	);
+	// what would start a block, on each line
+	expect(
+		escape("# not a heading\n> not a quote\n1. not a list\n- nor this"),
+	).toBe("\\# not a heading\n\\> not a quote\n1\\. not a list\n\\- nor this");
+	expect(escape("snake_case and ~/home")).toBe("snake_case and ~/home");
+
+	// a title that writes Markdown is only text, in a render and when read back
+	const title = "Soup *with* [a link](https://example.com)";
+	const page = jsx("p", {
+		children: Render.raw({
+			html: `<b>${Render.escape({ html: title })}</b>`,
+			markdown: `**${escape(title)}**`,
+		}),
+	});
+	expect(await Render.markdown(page).string()).toBe(
+		"**Soup \\*with\\* \\[a link\\](https://example.com)**\n",
+	);
+
+	// one of them, as one call gives one string
+	// @ts-expect-error two
+	void (() => Render.escape({ html: "a", markdown: "a" }));
+	// @ts-expect-error none
+	void (() => Render.escape({}));
 });
 
 test("a script takes a media type for a block of data", async () => {
@@ -55,7 +89,9 @@ test("a script takes a media type for a block of data", async () => {
 });
 
 test("escape attribute", () => {
-	const escaped = Render.escape(`&<script>console.log("hello")</script>`, true);
+	const escaped = Render.escape({
+		attr: `&<script>console.log("hello")</script>`,
+	});
 
 	expect(escaped.includes("&amp")).toBe(true);
 	expect(escaped.includes("<")).toBe(false);
