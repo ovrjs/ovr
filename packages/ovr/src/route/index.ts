@@ -589,7 +589,7 @@ export class Route<
 
 	/**
 	 * Describe the route for agents. Only described routes are served to
-	 * them: as MCP tools, and GET routes as resources too.
+	 * them, as MCP tools.
 	 *
 	 * @template D Description, a string literal that is not blank
 	 * @param description What the route does, written for an agent, not blank

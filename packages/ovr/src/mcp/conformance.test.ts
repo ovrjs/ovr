@@ -158,7 +158,7 @@ test.each(["2026-07-28", "2025-11-25"])(
 
 /**
  * The official client libraries, which most agents are built on, read each
- * result with the protocol's own schemas, so a tool or resource result they
+ * result with the protocol's own schemas, so a tool result they
  * accept is one a real client can use.
  */
 test.each([
@@ -166,7 +166,7 @@ test.each([
 	["the earlier", "2025-11-25", Earlier, EarlierTransport],
 ] as const)(
 	"%s official client lists, calls, and reads through the endpoint",
-	async (_, version, Client, Transport) => {
+	async (_, _version, Client, Transport) => {
 		const server = await serve();
 		const client = new Client({ name: "official-client", version: "1.0.0" });
 
@@ -225,42 +225,6 @@ test.each([
 					},
 				},
 			]);
-
-			// pages as resources
-			const origin = new URL(server.url).origin;
-			const { resources } = await client.listResources();
-			expect(resources.map((resource) => resource.uri)).toEqual([
-				`${origin}/`,
-				`${origin}/pixel.png`,
-				`${origin}/report.pdf`,
-			]);
-			expect(
-				(await client.listResourceTemplates()).resourceTemplates[0]!
-					.uriTemplate,
-			).toBe(`${origin}/notes/{id}`);
-			expect(
-				(await client.readResource({ uri: `${origin}/notes/3` })).contents,
-			).toEqual([
-				{
-					uri: `${origin}/notes/3`,
-					mimeType: "text/markdown",
-					text: "Note 3\n",
-				},
-			]);
-			expect(
-				(await client.readResource({ uri: `${origin}/report.pdf` })).contents,
-			).toEqual([
-				{
-					uri: `${origin}/report.pdf`,
-					mimeType: "application/pdf",
-					blob: "JVBERi0xLjcA/w==",
-				},
-			]);
-			await expect(
-				client.readResource({ uri: `${origin}/missing` }),
-			).rejects.toMatchObject({
-				code: version === "2026-07-28" ? -32602 : -32002,
-			});
 		} finally {
 			await client.close();
 			server.close();

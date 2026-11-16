@@ -17,7 +17,9 @@ server:
   - elicitation-sep1034-defaults
   - elicitation-sep1330-enums
 
-  # resources read by a fixed URI
+  # resources are an optional feature that ovr does not have: an agent reads
+  # a page with its GET route's tool
+  - resources-list
   - resources-read-text
   - resources-read-binary
   - resources-templates-read

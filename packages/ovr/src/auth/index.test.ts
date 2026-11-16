@@ -3076,7 +3076,7 @@ describe("agents", () => {
 					children: [
 						jsx("h1", { children: `Allow ${request.client.name}?` }),
 						jsx("p", { children: new URL(request.client.id).origin }),
-						jsx("p", { children: request.redirect }),
+						jsx("p", { children: request.returns }),
 						request.Form({}),
 					],
 				});

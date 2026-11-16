@@ -24,13 +24,18 @@ server:
   - server-stateless:sep-2575-http-server-no-independent-requests-on-stream
   - server-stateless:sep-2575-server-no-log-without-loglevel
 
-  # resources read by a fixed URI
+  # resources are an optional feature that ovr does not have: an agent reads
+  # a page with its GET route's tool
+  - resources-list
+  - sep-2164-resource-not-found
+  - caching:sep-2549-resources-list-caching-hints
+  - caching:sep-2549-resources-templates-list-caching-hints
   - resources-read-text
   - resources-read-binary
   - resources-templates-read
 
   # prompts and completion are optional features that ovr does not have, a
-  # route is a tool or a resource
+  # route is a tool
   - prompts-list
   - prompts-get-simple
   - prompts-get-with-args

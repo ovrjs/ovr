@@ -183,7 +183,7 @@ const connect = Route.get("/connect").use(async (c) => {
 			<p>
 				{request.client.name}, published by {new URL(request.client.id).origin},
 				will be able to read and change your bookmarks. You will return to{" "}
-				{request.redirect}.
+				{request.returns}.
 			</p>
 			<request.Form />
 		</Page>

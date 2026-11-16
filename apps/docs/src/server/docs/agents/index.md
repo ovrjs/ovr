@@ -51,6 +51,23 @@ const post = Route.get("/posts/:slug").use(async (c) => {
 
 `c.md(body, status)` responds with the Markdown and returns `true` when the request asks for Markdown, otherwise it returns `false` and the page renders for the browser. It runs in the handler, after the route's middleware, such as a sign-in check.
 
+### Text for one audience
+
+`Markdown.raw(markdown, html)` gives agents one thing and people another, and either may be empty:
+
+```tsx
+<p>
+	{recipe.meal}
+	{/* agents only: CSS sets these apart for people */}
+	{Markdown.raw(" · ", "")}
+	{recipe.time}
+	{/* people only */}
+	{Markdown.raw("", '<button type="button">Read more</button>')}
+</p>
+```
+
+An element with `hidden` or `aria-hidden="true"` is also left out of Markdown, and a screen reader skips it too.
+
 ## MCP
 
 Add an `Mcp` endpoint to the app. Agents connect to `/mcp`.
@@ -89,17 +106,88 @@ const remove = Route.post("/posts/:id/delete")
 	.use(handler);
 ```
 
-| Route                             | Agents get                       |
-| --------------------------------- | -------------------------------- |
-| POST and other methods, described | A tool                           |
-| GET, described                    | A read-only tool, and a resource |
-| Not described                     | Nothing through MCP              |
+| Route                             | Agents get          |
+| --------------------------------- | ------------------- |
+| POST and other methods, described | A tool              |
+| GET, described                    | A read-only tool    |
+| Not described                     | Nothing through MCP |
 
-A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. A field's `label` is its `title`, so a terse name such as `dob` still reads as "Date of birth", what it is given with [`describe`](/schema#post-forms) is its `description`, never its `hint`, which is only for people, a choice's label is listed in the description beside its value, such as `crockpot (Slow cooker)`, and an unchecked `Field.checkbox()` may be left out, as browsers do. A file field takes the file's `name`, an optional media `type`, and its contents as `text`, or as `base64` when it is not text, such as `{ "name": "notes.txt", "text": "..." }`. A field made with `.json(schema)` takes the value its schema describes, such as an array of ingredients, and the route receives it as the JSON text a form would send. `Field.textarea().lines()` takes an array of strings and `Field.list()` an array of its items, each an object of its fields when it has several, where a person fills a textarea's lines or a row for each. The page of an edit form shows the current items as that array, and leaves out a table that only lays out the list's rows. The call's request is read into memory, so it is limited by the app's [`multipart.memory`](/app#multipart), 4MB by default. A date, time, date and time, month, week, or color field adds the format its picker sends to its description, such as `Birthday. Date as YYYY-MM-DD.` A parameter its `params` schema rejects, such as an ID that is not a UUID, is returned to the agent as an issue, like a form's, where a browser would get a 404. A form's tool takes only its fields and parameters, so an argument it does not have is an issue naming it. A route without fields is left open, since its handler may read the query or the body itself. A `*` wildcard is the `wildcard` argument, so describing a pattern with both `:wildcard` and `*` is a type error. Its name is generated from the method and pattern, for example `post_posts_id_delete`. Its `title`, which a client shows people, is the description's first sentence, so start with a short line such as "Delete a post". A tool that only reads is marked `readOnlyHint`, and one that writes `destructiveHint`, since it may change or delete what is there, so a client may ask the person before calling it. A route that only adds says so with [`destructive: false`](/route#describe).
+A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown. Your handlers do not change. An agent reads a page by calling its GET route's tool.
 
-A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown. A read follows a redirect to a described page, as a browser does. A write that redirects is done, so the agent gets one line saying where, such as `Redirected to /recipes`, and not the page: deleting one recipe would otherwise return the whole list. It reads the page if it needs it, so put what an agent needs after a write, such as a new record's ID, in the address it redirects to. The endpoint itself is outside your app's [global middleware](/middleware#composition): the request it makes to the route is the one that passes through it, once, like a person's request to the same route. A page the route sends as a file to download, with `Content-Disposition: attachment`, is given to the agent as that file, an embedded resource with its HTML, and not read as Markdown: use it for a page an agent passes on, such as one to print. The same page is HTML for any request that asks for Markdown. The file is the whole page as a browser gets it, with what Markdown leaves out, such as scripts and hidden inputs, so send only a page made to be handed on. A write updates only the arguments an agent gave, see [`result.updates`](/schema#update-a-record). A response that is not text is returned as a file, as a person would see or download it: an image or audio as `image` or `audio` content, and any other type, such as a PDF, as an embedded resource with its `blob`. A response over 4MB is the protocol's internal error, `Response too large`. An event stream may never end, so the agent gets its address instead, to open itself, read as the events arrive, and close when it has enough. With `auth` the address is for the user to open in their browser. A redirect to another site returns its URL, such as a checkout page for the user to open. A redirect to a page of the app agents cannot read returns only that it redirected, keeping its address and any token in it private. To give an agent a link, such as a share link, describe the page it redirects to, or respond with the link instead of redirecting. When `c.data()` finds issues, the agent receives them as an error with each field's message, instead of a redirect back to the form. A response the agent can act on, such as a 403 or a 404, is returned as an error result with its text, or for a resource as an error about the request, and a rate limit's with when to retry. A server error, a status of 500 or more, is the app's to fix, so the agent receives the protocol's internal error, -32603 with the status in its `data`, and not your error page. A resource the app refuses, such as with a 403, is -32602 with its `uri` and `status`, and a missing one is -32602 `Resource not found`, or -32002 for a client on a 2025 version, the code those versions use. That needs your app to [catch its errors](/middleware#not-found-and-errors): one that nothing catches leaves `app.fetch`, as from any route. Your handlers do not change.
+The endpoint itself is outside your app's [global middleware](/middleware#composition): the request it makes to the route is the one that passes through it, once, like a person's request to the same route.
 
-A client may state the user's language. The route receives it as `Accept-Language`, as a person's browser sends it, and the `Content-Language` the route answers with is reported back to the client.
+#### Names
+
+A tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
+
+- Punctuation in a pattern is a `_` in the name, so `/@:username` is `get_username`.
+- A name longer than 64 characters is cut and ends with a short hash of the pattern.
+- Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, or for `/a/b` and `/a_b`, so you find out when the app starts.
+- A `*` wildcard is the `wildcard` argument, so describing a pattern with both `:wildcard` and `*` is a type error.
+
+A name is public: clients save it and directories list it. Moving a route renames its tool, so treat the pattern of a described route as you would a published URL.
+
+`route.tool` is the name and description a route is called with, whether it only reads, and whether it is destructive, or `undefined` when it is not a tool.
+
+#### Titles and hints
+
+A tool's `title`, which a client shows people, is the description's first sentence, so start with a short line such as "Delete a post" and put detail in a second sentence.
+
+A tool that only reads is marked `readOnlyHint`, and one that writes `destructiveHint`, since it may change or delete what is there, so a client may ask the person before calling it. A route that only adds says so with [`destructive: false`](/route#describe).
+
+#### Arguments
+
+A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. A form's tool takes only its fields and parameters, so an argument it does not have is an issue naming it. A route without fields is left open, since its handler may read the query or the body itself.
+
+| Field                          | What the agent sends                                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Text, number, and other inputs | A value of the field's type, with its rules                                                           |
+| `Field.checkbox()`             | `true` or `false`, and it may be left out when unchecked, as browsers do                              |
+| Select, radio, and checkboxes  | One of the values, or an array of them. A choice's label is listed beside its value                   |
+| Date, time, month, week, color | Text in the format the picker sends, which the description says, such as `Date as YYYY-MM-DD.`        |
+| `Field.textarea().lines()`     | An array of strings                                                                                   |
+| `Field.list()`                 | An array of its items, each an object of its fields when it has several                               |
+| `.json(schema)`                | The value its schema describes; the route receives it as the JSON text a form would send              |
+| `Field.file()`                 | The file's `name`, an optional media `type`, and its contents as `text`, or as `base64` when not text |
+
+- A field's `label` is its `title`, so a terse name such as `dob` still reads as "Date of birth". What it is given with [`describe`](/schema#post-forms) is its `description`, never its `hint`, which is only for people.
+- A write updates only the arguments an agent gave, see [`result.updates`](/schema#update-a-record).
+- The call's request is read into memory, so it is limited by the app's [`multipart.memory`](/app#multipart), 4MB by default.
+- A client may state the user's language. The route receives it as `Accept-Language`, as a person's browser sends it, and the `Content-Language` the route answers with is reported back to the client.
+
+#### Results
+
+| The route answers with                        | The agent gets                                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------------------- |
+| A page                                        | Its Markdown                                                                    |
+| JSON, such as `c.json()`                      | The text, and the same value as `structuredContent` when it is an object        |
+| An image or audio                             | `image` or `audio` content                                                      |
+| Another file, such as a PDF                   | An embedded resource with its `blob`                                            |
+| A page with `Content-Disposition: attachment` | The page's HTML as a file, not read as Markdown                                 |
+| A redirect, from a read                       | The page it leads to, when that page is described, as a browser follows it      |
+| A redirect, from a write                      | One line saying where, such as `Redirected to /recipes`                         |
+| A redirect to another site                    | Its URL, such as a checkout page for the user to open                           |
+| An event stream                               | Its address, to open itself; with `auth`, for the user to open in their browser |
+
+- A write that redirects is done, so the agent is not sent the page: deleting one recipe would otherwise return the whole list. It reads the page if it needs it, so put what an agent needs after a write, such as a new record's ID, in the address it redirects to.
+- A redirect to a page of the app agents cannot read returns only that it redirected, keeping its address and any token in it private. To give an agent a link, such as a share link, describe the page it redirects to, or respond with the link instead of redirecting.
+- A page sent as an attachment is for one an agent passes on, such as one to print. It is the whole page as a browser gets it, with what Markdown leaves out, such as scripts and hidden inputs, so send only a page made to be handed on. The same page is HTML for any request that asks for Markdown.
+- An event stream may never end, so it is not read: the agent reads it as the events arrive, and closes it when it has enough.
+
+#### Errors
+
+| What happened                                    | The agent gets                                                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `c.data()` finds issues                          | An error result with each field's message, instead of a redirect back to the form |
+| A parameter its `params` schema rejects          | An issue, like a form's, where a browser would get a 404                          |
+| A response it can act on, such as a 403 or a 404 | An error result with the response's text                                          |
+| A rate limit                                     | An error result that says when to retry                                           |
+| A status of 500 or more                          | The protocol's internal error, -32603 with the status in its `data`               |
+| A response over 4MB                              | The protocol's internal error, `Response too large`                               |
+
+A server error is the app's to fix, so the agent does not get your error page. That needs your app to [catch its errors](/middleware#not-found-and-errors): one that nothing catches leaves `app.fetch`, as from any route.
+
+#### Forms in a page
 
 Pages an agent reads through MCP give each form as the call to its tool, with the arguments the form's address holds, such as a delete beside each item:
 
@@ -108,15 +196,27 @@ Pages an agent reads through MCP give each form as the call to its tool, with th
   Delete ovr: tool `post_bookmarks_id_delete`, `id`: `0b8f5d0a`
 ```
 
-A form with current values or messages, such as an edit form, lists them under the tool's name, since the tool's input schema already describes its fields. Choices given as the page renders, such as a record's own photos, are listed there too, since the schema can't hold them. A single checkbox's value is `true` or `false`, like its argument. A form that submits to a route you have not described is left out, as the agent has no tool to submit it with. Pages requested as Markdown outside MCP describe every form, with its address and fields.
+- A form with current values or messages, such as an edit form, lists them under the tool's name, since the tool's input schema already describes its fields.
+- Choices given as the page renders, such as a record's own photos, are listed there too, since the schema can't hold them.
+- A list's current items are shown as the array an agent sends, and a table that only lays out the list's rows is left out.
+- A single checkbox's value is `true` or `false`, like its argument.
+- A form that submits to a route you have not described is left out, as the agent has no tool to submit it with.
 
-`route.tool` is the name and description a route is called with, and whether it only reads, or `undefined` when it is not a tool. Punctuation in a pattern is a `_` in the name, so `/@:username` is `get_username`, and a name longer than 64 characters is cut and ends with a short hash of the pattern. Two routes cannot share a name: `app.use()` throws when they would, such as for a parameter and a segment with the same text, like `/drafts/:id` and `/drafts/id`, or for `/a/b` and `/a_b`, so you find out when the app starts.
+Pages requested as Markdown outside MCP describe every form, with its address and fields.
 
-### Resources
+### Guide
 
-Described GET routes are resources. Routes without parameters are listed; routes with parameters are templates, like `https://example.com/posts/{id}`. Reading one renders the page as Markdown.
+Many clients do not show the server's `instructions` to the agent or the person. Describe a page with the same text, and the agent has a tool that returns it:
 
-A resource is named by its address, which an agent may also fetch itself. With [`auth`](#sign-in), the address needs the user's session, so the page is named `page://example.com/posts/{id}` instead and read through the endpoint. Links inside a page stay real addresses, for the user to open, and reading one by its address works too.
+```tsx
+const instructions = "Write and manage the user's blog posts. ...";
+
+const guide = Route.get("/guide")
+	.describe("How to use this app. Read this first.")
+	.use(() => <main>{instructions}</main>);
+
+app.use(new Mcp({ instructions }), guide);
+```
 
 ### Sign in
 
@@ -144,11 +244,40 @@ To see what an agent gets, connect one to these docs, which are an ovr app with 
 claude mcp add --transport http ovr https://ovrjs.com/mcp
 ```
 
+How clients we know of connect, as of November 2026:
+
+| Client           | How it connects                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| Claude           | Publishes its own client document                                                   |
+| ChatGPT          | Publishes its own client document, and speaks a 2025 version, starting `initialize` |
+| Muse             | Asks for a client ID: [host a document for it](/auth#agents)                        |
+| OpenCode, Gemini | Need dynamic client registration, which ovr does not have, so they cannot sign in   |
+
+### Test with a request
+
+The endpoint keeps no session, so every request says which version of the protocol it speaks. A request without one is refused with `Unsupported protocol version` and the versions it accepts. Send the `MCP-Protocol-Version` header to call it from a script:
+
+```bash
+curl https://localhost:5173/mcp \
+	-H "Content-Type: application/json" \
+	-H "MCP-Protocol-Version: 2025-11-25" \
+	-d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+With `auth`, the request also needs a token, which only a signed-in user's approval gives, so connect a real client to try a signed-in tool.
+
+### Publish to a directory
+
+Directories that list MCP servers, such as Claude's and ChatGPT's, check each tool. ovr gives every tool what they ask for: a `title`, `readOnlyHint`, `destructiveHint`, `openWorldHint`, and a `type` on every argument.
+
+- Read each title as a person browsing the directory would, and mark the routes that only add with `destructive: false`.
+- A directory keeps its own copy of the tool list, so after you rename a tool by moving its route, update the listing.
+
 ### Protocol
 
-The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) Streamable HTTP transport: each JSON-RPC request is a POST that receives a JSON response, with `server/discover`, the mirrored request headers, and no sessions. Clients of the earlier [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) and 2025-06-18 versions, such as ChatGPT's, start with `initialize` and send the version in the `MCP-Protocol-Version` header; they are served the same tools and resources, also without sessions. Requests from another `Origin` are rejected. So is a browser request that reaches the endpoint from the same machine for a host that is not local, which is how a site attacks a local server by [DNS rebinding](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#security--endpoint); it needs the [client IP](/app#client-ip) from your server.
+The endpoint implements the [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) Streamable HTTP transport: each JSON-RPC request is a POST that receives a JSON response, with `server/discover`, the mirrored request headers, and no sessions. Clients of the earlier [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) and 2025-06-18 versions, such as ChatGPT's, start with `initialize` and send the version in the `MCP-Protocol-Version` header; they are served the same tools, also without sessions. Requests from another `Origin` are rejected. So is a browser request that reaches the endpoint from the same machine for a host that is not local, which is how a site attacks a local server by [DNS rebinding](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#security--endpoint); it needs the [client IP](/app#client-ip) from your server.
 
-The endpoint is tested with the official [MCP conformance suite](https://github.com/modelcontextprotocol/conformance) for 2026-07-28 and 2025-11-25, and with the official client libraries for both. Its scenarios for prompts, completion, and asking the client for input are not passed, since ovr has none of those, and neither are the ones that call tools and resources by fixed names, since a tool is named after its route.
+The endpoint is tested with the official [MCP conformance suite](https://github.com/modelcontextprotocol/conformance) for 2026-07-28 and 2025-11-25, and with the official client libraries for both. Its scenarios for resources, prompts, completion, and asking the client for input are not passed, since ovr has none of those, and neither are the ones that call tools by fixed names, since a tool is named after its route.
 
 ## WebMCP
 

@@ -267,14 +267,42 @@ describe("Mcp", () => {
 		}
 		const res = await first.fetch(
 			"http://localhost/mcp",
-			request("resources/read", { uri: "http://localhost/tenant" }),
+			request("tools/call", { name: "get_tenant", arguments: {} }),
 		);
-		expect((await res.json()).result.contents[0].text.trim()).toBe(
+		expect((await res.json()).result.content[0].text.trim()).toBe(
 			"first tenant",
 		);
 	});
 
-	test("resources/read does not run undescribed GET handlers", async () => {
+	test("JSON a route answers with is also given as structured content", async () => {
+		const { app, rpc } = setup();
+		app.use(
+			Route.get("/groceries")
+				.describe("List groceries")
+				.use((c) => c.json({ items: [{ name: "flour", amount: 2 }] })),
+			Route.get("/names")
+				.describe("List names")
+				.use((c) => c.json(["flour"])),
+			Route.get("/plain")
+				.describe("Read text")
+				.use(() => "{}"),
+		);
+		const call = async (name: string) =>
+			(await rpc("tools/call", { name, arguments: {} })).body.result;
+
+		expect(await call("get_groceries")).toMatchObject({
+			content: [
+				{ type: "text", text: '{"items":[{"name":"flour","amount":2}]}' },
+			],
+			structuredContent: { items: [{ name: "flour", amount: 2 }] },
+			isError: false,
+		});
+		// structured content is an object, so an array stays text alone
+		expect(await call("get_names")).not.toHaveProperty("structuredContent");
+		expect(await call("get_plain")).not.toHaveProperty("structuredContent");
+	});
+
+	test("a tool call does not run undescribed GET handlers", async () => {
 		const { app, rpc } = setup();
 		let called = false;
 		app.use(
@@ -283,7 +311,7 @@ describe("Mcp", () => {
 				return "private data";
 			}),
 		);
-		await rpc("resources/read", { uri: "http://localhost/private" });
+		await rpc("tools/call", { name: "get_private", arguments: {} });
 		expect(called).toBe(false);
 	});
 
@@ -600,10 +628,11 @@ describe("Mcp", () => {
 					}),
 				),
 		);
-		const { body } = await rpc("resources/read", {
-			uri: "http://localhost/recipes/soup",
+		const { body } = await rpc("tools/call", {
+			name: "get_recipes_slug",
+			arguments: { slug: "soup" },
 		});
-		const text = body.result.contents[0].text;
+		const text = body.result.content[0].text;
 		expect(text).toContain("**Tool:** `post_recipes_slug_publish`");
 		expect(text).toContain(`- \`photos\`, options: \`${a}\``);
 		// the tool's schema lists fixed choices
@@ -749,10 +778,11 @@ describe("Mcp", () => {
 			}),
 		);
 
-		const { body } = await rpc("resources/read", {
-			uri: "http://localhost/recipes/soup",
+		const { body } = await rpc("tools/call", {
+			name: "get_recipes_id",
+			arguments: { id: "soup" },
 		});
-		const text = body.result.contents[0].text;
+		const text = body.result.content[0].text;
 		expect(text).toContain("**Tool:** `post_recipes_id`");
 		expect(text).toContain('- `steps`: `["Chop","Fry"]`');
 		expect(text).toContain(
@@ -863,11 +893,12 @@ describe("Mcp", () => {
 				.describe("Edit preferences")
 				.use(() => route.Form({ values: { tags: ["news"] } })),
 		);
-		const { body } = await rpc("resources/read", {
-			uri: "http://localhost/preferences",
+		const { body } = await rpc("tools/call", {
+			name: "get_preferences",
+			arguments: {},
 		});
-		expect(body.result.contents[0].text).toContain("- `tags`: `news`");
-		expect(body.result.contents[0].text).not.toContain("- `tags`: `true`");
+		expect(body.result.content[0].text).toContain("- `tags`: `news`");
+		expect(body.result.content[0].text).not.toContain("- `tags`: `true`");
 	});
 
 	test("a tool reports a parameter its schema rejects, instead of a bare 404", async () => {
@@ -949,7 +980,7 @@ describe("Mcp", () => {
 		expect(pulls).toBe(1);
 	});
 
-	test("disconnecting an MCP client aborts its in-flight resource request", async () => {
+	test("disconnecting an MCP client aborts its in-flight request", async () => {
 		const { app } = setup();
 		const started = Promise.withResolvers<AbortSignal>();
 		const finish = Promise.withResolvers<void>();
@@ -964,7 +995,7 @@ describe("Mcp", () => {
 		);
 		const client = new AbortController();
 		const pending = app.fetch("http://localhost/mcp", {
-			...request("resources/read", { uri: "http://localhost/slow" }),
+			...request("tools/call", { name: "get_slow", arguments: {} }),
 			signal: client.signal,
 		});
 		const downstream = await started.promise;
@@ -985,7 +1016,7 @@ describe("Mcp", () => {
 		expect(body.result).toMatchObject({
 			resultType: "complete",
 			supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18"],
-			capabilities: { tools: {}, resources: {} },
+			capabilities: { tools: {} },
 			instructions: "Manage posts.",
 			_meta: {
 				"io.modelcontextprotocol/serverInfo": {
@@ -1289,13 +1320,6 @@ describe("Mcp", () => {
 		expect(await call("get_rows")).toEqual([
 			{ type: "text", text: "a,b\n1,2\n" },
 		]);
-		expect(
-			(await rpc("resources/read", { uri: "http://localhost/report" })).result
-				.contents,
-		).toEqual([
-			{ uri: "http://localhost/report", mimeType: "application/pdf", blob },
-		]);
-
 		const tools = (await rpc("tools/list")).result.tools;
 		const book = tools.find(
 			(tool: { name: string }) => tool.name === "post_book",
@@ -1358,13 +1382,9 @@ describe("Mcp", () => {
 		// the route stops, instead of writing to nobody
 		await new Promise((resolve) => setTimeout(resolve, 30));
 		expect(stopped).toBe(true);
-
-		expect((await rpc("resources/read", { uri })).result.contents).toEqual([
-			{ uri, mimeType: "text/plain", text: note },
-		]);
 	});
 
-	test("with sign-in a page is named page://, since its address needs the user's session", async () => {
+	test("with sign-in a page keeps its links as real addresses, and a stream is not linked", async () => {
 		const pages = [
 			Route.get("/invoices")
 				.describe("List invoices")
@@ -1403,45 +1423,20 @@ describe("Mcp", () => {
 				).json()) as any
 			).result;
 
+		// a link in the page stays a real address, for the user to open
 		expect(
-			(await rpc(signed, "resources/list")).resources.map(
-				(resource: { uri: string }) => resource.uri,
-			),
-		).toEqual(["page://localhost/invoices", "page://localhost/live"]);
-		expect(
-			(await rpc(signed, "resources/templates/list")).resourceTemplates[0]
-				.uriTemplate,
-		).toBe("page://localhost/invoices/{id}");
-		// without sign-in the address is the name, the agent can fetch it
-		expect((await rpc(open, "resources/list")).resources[0].uri).toBe(
-			"http://localhost/invoices",
-		);
-
-		// read by its name, or by its address as a link in a page gives it
-		for (const uri of [
-			"page://localhost/invoices",
-			"http://localhost/invoices",
-		])
-			expect(await rpc(signed, "resources/read", { uri })).toMatchObject({
-				contents: [
-					{
-						uri: "page://localhost/invoices",
-						// a link in the page stays a real address, for the user to open
-						text: "[Invoice 7](http://localhost/invoices/7)\n",
-					},
-				],
-				cacheScope: "private",
-			});
+			(await rpc(signed, "tools/call", { name: "get_invoices" })).content,
+		).toEqual([
+			{ type: "text", text: "[Invoice 7](http://localhost/invoices/7)\n" },
+		]);
 		expect(
 			(
-				await rpc(open, "resources/read", {
-					uri: "page://localhost/invoices/7",
+				await rpc(open, "tools/call", {
+					name: "get_invoices_id",
+					arguments: { id: "7" },
 				})
-			).contents[0],
-		).toMatchObject({
-			uri: "http://localhost/invoices/7",
-			text: "Invoice 7\n",
-		});
+			).content[0].text,
+		).toBe("Invoice 7\n");
 
 		// a stream the agent cannot open itself is not linked
 		const live = await rpc(signed, "tools/call", { name: "get_live" });
@@ -1632,10 +1627,7 @@ describe("Mcp", () => {
 		expect(
 			(await rpc("tools/call", { name: "get_broken", arguments: {} })).error,
 		).toEqual(internal);
-		expect(
-			(await rpc("resources/read", { uri: "http://localhost/broken" })).error,
-		).toEqual(internal);
-		expect(seen).toHaveLength(2);
+		expect(seen).toHaveLength(1);
 
 		// what the agent can act on stays a result it reads
 		expect(
@@ -1645,16 +1637,6 @@ describe("Mcp", () => {
 			isError: true,
 			content: [{ type: "text", text: "403\n\nNot yours" }],
 		});
-		// and for a resource, an error about the request, not a server fault
-		expect(
-			(await rpc("resources/read", { uri: "http://localhost/forbidden" }))
-				.error,
-		).toEqual({
-			code: -32602,
-			message: "403 Not yours",
-			data: { uri: "http://localhost/forbidden", status: 403 },
-		});
-
 		// without error handling in the app, the error is the server's, as
 		// from any route
 		const bare = new App().use(
@@ -1761,16 +1743,6 @@ describe("Mcp", () => {
 		expect(read.body.result.content[0].text).toBe(
 			"Redirected to /posts\n\n# Posts\n\n- 1: First post\n- 2: Second post\n",
 		);
-	});
-
-	test("resources/read reports form validation issues instead of successful empty contents", async () => {
-		const { rpc } = setup();
-		const { body } = await rpc("resources/read", {
-			uri: "http://localhost/search",
-		});
-		expect(body.error).toBeDefined();
-		expect(body.error.message).toContain('"path":"q"');
-		expect(body.result).toBeUndefined();
 	});
 
 	test("invalid arguments are tool errors with the issues", async () => {
@@ -1900,14 +1872,6 @@ describe("Mcp", () => {
 		});
 	});
 
-	test("an MCP resource URI with credentials returns a protocol error", async () => {
-		const { rpc } = setup();
-		const { body } = await rpc("resources/read", {
-			uri: "http://user:password@localhost/posts",
-		});
-		expect(body.error).toBeDefined();
-	});
-
 	test("a tool preserves a named parameter called wildcard on a write", async () => {
 		const { app, rpc } = setup();
 		const removed: string[] = [];
@@ -1951,66 +1915,20 @@ describe("Mcp", () => {
 		]);
 	});
 
-	test("described pages are resources", async () => {
-		const { app, rpc } = setup();
-		// undescribed pages are not served to agents
-		app.use(
-			Route.get("/about").use(() => "About"),
-			Route.get("/drafts/:id").use(() => "Draft"),
-		);
+	test("resources are not served, and ping is gone", async () => {
+		const { rpc } = setup();
 
-		const list = await rpc("resources/list");
-		expect(list.body.result.resources).toEqual([
-			{
+		for (const method of [
+			"resources/list",
+			"resources/templates/list",
+			"resources/read",
+		]) {
+			const { status, body } = await rpc(method, {
 				uri: "http://localhost/posts",
-				name: "/posts",
-				description: "List posts",
-				mimeType: "text/markdown",
-			},
-			{
-				uri: "http://localhost/search",
-				name: "/search",
-				description: "Search posts",
-				mimeType: "text/markdown",
-			},
-		]);
-
-		const templates = await rpc("resources/templates/list");
-		expect(templates.body.result.resourceTemplates).toEqual([
-			{
-				uriTemplate: "http://localhost/posts/{id}",
-				name: "/posts/:id",
-				description: "Show a post",
-				mimeType: "text/markdown",
-			},
-		]);
-
-		const read = await rpc("resources/read", {
-			uri: "http://localhost/posts/1",
-		});
-		expect(read.body.result.contents).toEqual([
-			{
-				uri: "http://localhost/posts/1",
-				mimeType: "text/markdown",
-				text: "# First post\n",
-			},
-		]);
-		// a page may change at any time, and without sign-in is the same for all
-		expect(read.body.result).toMatchObject({ ttlMs: 0, cacheScope: "public" });
-
-		// invalid params since 2026-07-28, which names the resource
-		const missing = await rpc("resources/read", {
-			uri: "http://localhost/posts/7",
-		});
-		expect(missing.body.error).toMatchObject({
-			code: -32602,
-			data: { uri: "http://localhost/posts/7" },
-		});
-
-		const other = await rpc("resources/read", {
-			uri: "https://example.com/posts",
-		});
-		expect(other.body.error.code).toBe(-32602);
+			});
+			expect(status).toBe(404);
+			expect(body.error.code).toBe(-32601);
+		}
 
 		// removed in 2026-07-28
 		const ping = await rpc("ping");
@@ -2126,7 +2044,7 @@ describe("Mcp", () => {
 				id: 0,
 				result: {
 					protocolVersion: "2025-06-18",
-					capabilities: { tools: {}, resources: {} },
+					capabilities: { tools: {} },
 					instructions: "Manage posts.",
 					serverInfo: { name: "posts", version: "1.0.0" },
 				},
@@ -2195,19 +2113,13 @@ describe("Mcp", () => {
 
 			const read = await legacy(app, {
 				id: 4,
-				method: "resources/read",
-				params: { uri: "http://localhost/posts" },
+				method: "tools/call",
+				params: { name: "get_posts", arguments: {} },
 			});
-			expect(read.body.result.contents[0].text).toContain("Third post");
+			expect(read.body.result.content[0].text).toContain("Third post");
 			expect(read.body.result).not.toHaveProperty("ttlMs");
 
-			// an earlier version's own code for a missing resource, and its ping
-			const missing = await legacy(app, {
-				id: 5,
-				method: "resources/read",
-				params: { uri: "http://localhost/posts/7" },
-			});
-			expect(missing.body.error.code).toBe(-32002);
+			// an earlier version's ping
 			expect(
 				(await legacy(app, { id: 6, method: "ping" })).body.result,
 			).toEqual({});
@@ -2344,7 +2256,7 @@ describe("Mcp", () => {
 		await rpc("tools/call", { name: "post_undescribed", arguments: {} });
 		expect(called).toBe(false);
 
-		// pages are resources, not tools
+		// neither is a route without a description
 		expect(Route.post("/internal").tool).toBeUndefined();
 		expect(
 			Route.get("/search").fields({ q: Field.search() }).tool,

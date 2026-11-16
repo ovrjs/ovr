@@ -206,8 +206,8 @@ export namespace Auth {
 			/** Name the agent gives itself, not verified */
 			readonly name: string;
 		};
-		/** Host the user returns to after deciding */
-		readonly redirect: string;
+		/** Host the user returns to after deciding, the agent's own */
+		readonly returns: string;
 		/** Form with Allow, confirmed with the user's passkey, and Deny buttons; custom `children` deny with `formaction="/oauth/deny"` */
 		readonly Form: (props: JSX.IntrinsicElements["form"]) => JSX.Element;
 	}

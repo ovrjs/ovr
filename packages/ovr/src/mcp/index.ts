@@ -106,7 +106,7 @@ export namespace Mcp {
 
 /**
  * Model Context Protocol endpoint. Agents use the app's routes as tools, and
- * read its pages as Markdown resources.
+ * read its pages as Markdown with the tools of its GET routes.
  *
  * ```ts
  * app.use(new Mcp({ instructions: "Save and organize bookmarks." }));
@@ -127,13 +127,6 @@ export class Mcp<P extends string = string> {
 
 	/** Largest response an agent reads from a route */
 	static readonly #output = 4 * Size.mb;
-
-	/**
-	 * Scheme that names a page of an app agents sign in to. An `https` name
-	 * says the agent can fetch the page itself, which it cannot without the
-	 * user's session, so it reads the page through this endpoint.
-	 */
-	static readonly #scheme = "page:";
 
 	/** Redirects followed after a tool call */
 	static readonly #redirects = 5;
@@ -546,9 +539,7 @@ export class Mcp<P extends string = string> {
 		const name =
 			method === "tools/call" || method === "prompts/get"
 				? params.name
-				: method === "resources/read"
-					? params.uri
-					: undefined;
+				: undefined;
 
 		if (name !== undefined) {
 			let value = c.req.headers.get("mcp-name");
@@ -580,7 +571,7 @@ export class Mcp<P extends string = string> {
 	/** @returns Server capabilities and instructions */
 	#server() {
 		return {
-			capabilities: { tools: {}, resources: {} },
+			capabilities: { tools: {} },
 			instructions: this.#options.instructions,
 		};
 	}
@@ -616,40 +607,6 @@ export class Mcp<P extends string = string> {
 				return { tools: this.#tools(), ...cache };
 			case "tools/call":
 				return this.#call(c, params, session);
-			case "resources/list":
-			case "resources/templates/list": {
-				// pages with parameters are templates
-				const templates = method !== "resources/list";
-				return {
-					[templates ? "resourceTemplates" : "resources"]:
-						this.#app!.routes.filter(
-							(route) =>
-								route.method === Method.get &&
-								route.description &&
-								/[:*]/.test(route.pattern) === templates,
-						).map((route) => {
-							const href = this.#name(
-								new URL(
-									route.pattern.replace(parameters, (_, name?: string) =>
-										name ? `{${name}}` : "{+wildcard}",
-									),
-									c.url,
-								),
-							);
-							return {
-								[templates ? "uriTemplate" : "uri"]: templates
-									? href.replaceAll("%7B", "{").replaceAll("%7D", "}")
-									: href,
-								name: route.pattern,
-								description: route.description,
-								mimeType: Mime.type.md,
-							};
-						}),
-					...cache,
-				};
-			}
-			case "resources/read":
-				return this.#resource(c, params, session, legacy);
 		}
 
 		throw new RpcError(-32601, "Method not found", 404);
@@ -1054,92 +1011,6 @@ export class Mcp<P extends string = string> {
 	}
 
 	/**
-	 * Reads a page as Markdown.
-	 *
-	 * @param c Request context
-	 * @param params `resources/read` params
-	 * @param session Session the token authorizes
-	 * @returns Resource contents
-	 */
-	async #resource(c: Context, params: Json, session: unknown, legacy: boolean) {
-		const uri = String(params.uri);
-		let url: URL;
-		try {
-			url = new URL(uri);
-			// a page by its name, or by its address, as a link in a page gives it
-			if (url.protocol === Mcp.#scheme)
-				url = new URL(
-					url.pathname + url.search + url.hash,
-					`${c.url.protocol}//${url.host}`,
-				);
-		} catch {
-			throw new RpcError(-32602, "Invalid resource URI");
-		}
-
-		// its own code before 2026-07-28, invalid params since
-		const missing = () =>
-			new RpcError(legacy ? -32002 : -32602, "Resource not found", 200, {
-				uri,
-			});
-		// a page read as the user is theirs alone, and may change at any time
-		const cache = {
-			ttlMs: 0,
-			cacheScope: this.#options.auth ? "private" : "public",
-		};
-
-		if (!this.#readable(c, url)) throw missing();
-
-		const res = await this.#run(c, session, url);
-		// the page's form has issues, such as a search with invalid parameters
-		if (typeof res === "string") throw new RpcError(-32602, res);
-
-		if (res.status >= 500) throw await Mcp.#failed(res);
-
-		// a stream is only from a page that succeeds, so it passes the checks below
-		const { type, live, ...body } = await Mcp.#body(res);
-
-		if (res.status === 404) throw missing();
-		// refused, such as a 403: the request's to change, where a server error
-		// above is the app's
-		if (!res.ok) {
-			const retry = res.headers.get("retry-after");
-			throw new RpcError(
-				-32602,
-				`${res.status} ${body.text || res.statusText}`.trim(),
-				200,
-				{
-					uri,
-					status: res.status,
-					...(retry !== null && { retryAfter: retry }),
-				},
-			);
-		}
-
-		return {
-			contents: [
-				{
-					uri: this.#name(url),
-					...(live
-						? { mimeType: Mime.type.text, text: this.#stream(url) }
-						: { mimeType: type ?? Mime.type.md, ...body }),
-				},
-			],
-			...cache,
-		};
-	}
-
-	/**
-	 * @param url A page's address
-	 * @returns The page's resource name: its address, or with sign-in the same
-	 * host and path as a `page:` URI
-	 */
-	#name(url: URL) {
-		return this.#options.auth
-			? `${Mcp.#scheme}//${url.host}${url.pathname}${url.search}${url.hash}`
-			: url.href;
-	}
-
-	/**
 	 * @param url Address of a route that answers with an event stream
 	 * @returns What to tell the agent, a stream may never end so it is not read
 	 */
@@ -1389,25 +1260,46 @@ export class Mcp<P extends string = string> {
 					false,
 					{
 						type: "resource",
-						resource: { uri: this.#name(url), mimeType: type, text },
+						resource: { uri: url.href, mimeType: type, text },
 					},
 				);
 
-			return Mcp.#result(
-				[redirected && redirect(redirected), !res.ok && Mcp.#status(res), text]
-					.filter(Boolean)
-					.join("\n\n"),
-				!res.ok,
-				// a file, as a person would download or see it
-				blob === undefined
-					? undefined
-					: kind === "image" || kind === "audio"
-						? { type: kind, data: blob, mimeType: type }
-						: {
-								type: "resource",
-								resource: { uri: this.#name(url), mimeType: type, blob },
-							},
-			);
+			// JSON a route answers with, such as `c.json()`, is also given as
+			// data, so a client need not parse the text. Only an object: the
+			// protocol's structured content is one
+			let data: unknown;
+			if (res.ok && text && /^application\/(.+\+)?json$/i.test(type ?? "")) {
+				try {
+					data = JSON.parse(text);
+				} catch {
+					// said to be JSON and is not, so it stays text
+				}
+			}
+
+			return {
+				...Mcp.#result(
+					[
+						redirected && redirect(redirected),
+						!res.ok && Mcp.#status(res),
+						text,
+					]
+						.filter(Boolean)
+						.join("\n\n"),
+					!res.ok,
+					// a file, as a person would download or see it
+					blob === undefined
+						? undefined
+						: kind === "image" || kind === "audio"
+							? { type: kind, data: blob, mimeType: type }
+							: {
+									type: "resource",
+									resource: { uri: url.href, mimeType: type, blob },
+								},
+				),
+				...(data !== null &&
+					typeof data === "object" &&
+					!Array.isArray(data) && { structuredContent: data }),
+			};
 		}
 	}
 

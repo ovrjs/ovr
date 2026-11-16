@@ -410,7 +410,7 @@ const connect = Route.get("/connect").use(async (c) => {
 			<h1>Connect {request.client.name}?</h1>
 			<p>
 				Published by {new URL(request.client.id).origin}. It will be able to do
-				anything you can do in this app. You will return to {request.redirect}.
+				anything you can do in this app. You will return to {request.returns}.
 			</p>
 			<request.Form />
 		</>
@@ -420,7 +420,7 @@ const connect = Route.get("/connect").use(async (c) => {
 app.use(new Mcp({ auth }), connect);
 ```
 
-`request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, offering only theirs in the browser's picker, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified. `request.client.id` is the address of its metadata document, so its origin is who publishes the agent: show it, with where the user will return and what the agent can do. `auth.consent(c)` also sets headers that stop other sites from framing the page.
+`request.Form` renders Allow and Deny buttons. Allow asks for the user's passkey, offering only theirs in the browser's picker, so a script or agent driving a signed-in browser cannot approve an agent for them, and the passkey must belong to the user who was asked. Deny needs no passkey. Pass your own buttons as `children`: the form's submit button allows, and a deny button submits to `/oauth/deny` with `formaction="/oauth/deny"`. The client name is chosen by the agent and not verified. `request.client.id` is the address of its metadata document, so its origin is who publishes the agent: show it, with `request.returns`, the host the user goes back to, and what the agent can do. `auth.consent(c)` also sets headers that stop other sites from framing the page.
 
 Auth then serves an OAuth 2.1 authorization server. Apps without an MCP endpoint given `auth` have none of these endpoints.
 
@@ -456,7 +456,7 @@ Some agents publish no document and ask for a client ID when a user adds your ap
 }
 ```
 
-Take the callback address from the agent's own documentation, never from a request: whoever receives a user there gets their token. The consent page then names your origin as the publisher, since you vouch for the document.
+Take the callback address from the agent's own documentation, never from a request: whoever receives a user there gets their token. The client ID is then on your own origin, so "Published by" would name your app, as if it were the one asking. Show `request.returns`, the agent's own host, in its place when `new URL(request.client.id).origin` is your origin.
 
 Anyone can send a client ID, so downloads are limited: each IP can make 30 authorization requests per minute and download 10 documents per minute from one host, a host serves at most 300 downloads per minute in all, and an instance downloads at most 16 documents at once, 2 for one IP. Requests for the same agent share one download, a found agent is kept for 5 minutes, and a client ID without a valid document is remembered for a minute. When a download is refused, or fails in a way that may pass, such as a timeout or a 5xx response, an agent found in the last hour is served from its last document, so floods of made-up client IDs or a short outage cannot lock out agents users already connect. A final answer, such as a 404 or an invalid document, forgets the agent at once. Errors in an authorization request are answered with a 400 page, not redirected to the agent, since anyone can publish a document naming any callback.
 

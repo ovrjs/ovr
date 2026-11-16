@@ -708,7 +708,7 @@ export function oauth(
 
 			return {
 				client: { id: pending.client, name: pending.name },
-				redirect: new URL(pending.redirect).host || pending.redirect,
+				returns: new URL(pending.redirect).host || pending.redirect,
 				Form: (props) =>
 					Form({
 						...props,
