@@ -23,6 +23,7 @@
     "choices-for-agents",
     "choices-return-source",
     "confirm-passkey",
+    "constraints",
     "enum-types",
     "escape",
     "every-choice",
