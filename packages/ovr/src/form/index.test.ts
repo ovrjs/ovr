@@ -2078,6 +2078,24 @@ describe("a list", () => {
 		Ingredients.Control;
 	});
 
+	test("a group in a list's cell is a fieldset, named by its column and described to agents", async () => {
+		const grouped = new Form({
+			items: Field.list({
+				name: Field.text(),
+				size: Field.radio(["s", "m"]).label("Size").describe("How big"),
+			}),
+		});
+		const html = await new Render({
+			markup: grouped.Field({ name: "items" }),
+		}).string();
+
+		expect(html).toContain(
+			'<td><fieldset toolparamdescription="Size: How big" aria-labelledby="items.size-label">' +
+				'<div><input id="items.0.size-s" aria-describedby="items.size-description" type="radio" name="items.0.size" value="s"><label for="items.0.size-s">s</label></div>',
+		);
+		expect(html).not.toContain('role="group"');
+	});
+
 	test("a row laid out by hand is not read with a description it may not render", async () => {
 		const described = new Form({
 			items: Field.list({ name: Field.text().describe("What to buy") }),

@@ -1592,12 +1592,10 @@ class FieldSchema<
 																field.type === "hidden" &&
 																field[render](row[key]![1], row[key]![2]),
 														),
+													// a group is a fieldset here too, named by its
+													// column's heading in place of a legend
 													group
-														? jsx("div", {
-																role: "group",
-																...labelled,
-																children: body,
-															})
+														? parts.Root({ ...labelled, children: body })
 														: body,
 													parts.Issue(),
 												],
