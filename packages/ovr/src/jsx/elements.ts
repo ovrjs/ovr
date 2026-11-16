@@ -356,6 +356,8 @@ type FormAttributes = Attributes<{
 	toolname: string;
 	/** WebMCP tool description, required with `toolname` */
 	tooldescription: string;
+	/** WebMCP tool title, what a person is shown the tool as */
+	tooltitle: string;
 	/** Lets a browser agent submit the form without the user clicking */
 	toolautosubmit: boolean;
 }>;

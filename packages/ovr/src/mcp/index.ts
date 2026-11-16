@@ -650,12 +650,9 @@ export class Mcp<P extends string = string> {
 				required.add(param);
 			}
 
-			// what a person is shown the tool as: the description's first sentence
-			const title = tool.description.trim().split(/[.!?](?:\s|$)/, 1)[0]!;
-
 			tools.push({
 				name,
-				title,
+				title: tool.title,
 				description: tool.description,
 				inputSchema: {
 					type: "object",
@@ -668,7 +665,7 @@ export class Mcp<P extends string = string> {
 				// a tool that writes may change or delete what is there, unless
 				// its route says it only adds, so a client may confirm it
 				annotations: {
-					title,
+					title: tool.title,
 					readOnlyHint: read,
 					destructiveHint: tool.destructive,
 					openWorldHint: false,

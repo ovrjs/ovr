@@ -840,11 +840,17 @@ describe("chained routes", () => {
 
 		// a form that may change data waits for the user to submit it
 		const create = Route.post("/posts")
-			.describe("Create a post")
-			.fields({ title: Field.text() });
+			.describe("Create a post. It starts as a draft.")
+			.fields({
+				title: Field.text().label("Title").describe("Shown in the list"),
+			});
 		const created = await render(create.Form({}));
 		expect(created).toContain(
-			'toolname="post_posts" tooldescription="Create a post"',
+			'toolname="post_posts" tooltitle="Create a post" tooldescription="Create a post. It starts as a draft."',
+		);
+		// what the label does not say, for the agent that fills it in
+		expect(created).toContain(
+			'toolparamdescription="Title: Shown in the list"',
 		);
 		expect(created).not.toContain("toolautosubmit");
 
@@ -853,7 +859,7 @@ describe("chained routes", () => {
 			.describe("Search posts")
 			.fields({ q: Field.search() });
 		expect(await render(search.Form({}))).toContain(
-			'toolname="get_search" tooldescription="Search posts" toolautosubmit',
+			'toolname="get_search" tooltitle="Search posts" tooldescription="Search posts" toolautosubmit',
 		);
 
 		// a form per record would repeat the name, and only described routes are tools
@@ -1054,6 +1060,7 @@ describe("chained routes", () => {
 		expect(remove.description).toBe("Delete a post");
 		expect(remove.tool).toEqual({
 			name: "post_posts_id_delete",
+			title: "Delete a post",
 			description: "Delete a post",
 			read: false,
 			destructive: true,

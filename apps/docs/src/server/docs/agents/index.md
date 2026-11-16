@@ -127,7 +127,7 @@ A tool's name is generated from the method and pattern, for example `post_posts_
 
 A name is public: clients save it and directories list it. Moving a route renames its tool, so treat the pattern of a described route as you would a published URL.
 
-`route.tool` is the name and description a route is called with, whether it only reads, and whether it is destructive, or `undefined` when it is not a tool.
+`route.tool` is the name, title, and description a route is called with, whether it only reads, and whether it is destructive, or `undefined` when it is not a tool.
 
 #### Titles and hints
 
@@ -289,12 +289,21 @@ The endpoint is tested with the official [MCP conformance suite](https://github.
 	method="POST"
 	enctype="multipart/form-data"
 	toolname="post_posts"
+	tooltitle="Create a blog post"
 	tooldescription="Create a blog post"
 >
-	<!-- the route's fields and submit button -->
+	<label for="title">Title</label>
+	<input
+		id="title"
+		name="title"
+		toolparamdescription="Title: Shown in the list"
+	/>
+	<!-- the route's other fields and submit button -->
 </form>
 ```
 
+The browser builds the tool's input from the form's controls and reads each one's label. A field with a [description](/schema#post-forms) adds `toolparamdescription`, its label and description, never its `hint`, and so does each cell of a [list](/schema#lists), which is named by its column's heading. A list is an argument for each cell on the page, such as `ingredients.0.name`, where the MCP endpoint takes an array.
+
 A form that may change data waits for the user to submit it, after the agent fills it in. GET forms, such as a search, add `toolautosubmit`, so the agent submits them itself and sees the results. Forms of routes with parameters, like a delete button in each row, would repeat the name, so they are not annotated; when one is the only form on its page, pass `toolname` and `tooldescription` yourself. Undescribed routes are never annotated, so an agent cannot sign in or approve itself.
 
-Browsers without WebMCP ignore the attributes. It is in a Chrome origin trial, so add your trial token to pages to enable it for users.
+Browsers without WebMCP ignore the attributes. It is in a Chrome origin trial, so add your trial token to pages to enable it for users. The page's tools are at `document.modelContext`: `await document.modelContext.getTools()` in the console lists them.

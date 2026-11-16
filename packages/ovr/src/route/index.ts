@@ -143,6 +143,8 @@ export namespace Route {
 	export type Tool = {
 		/** Tool name, for example `post_posts_id_delete` */
 		readonly name: string;
+		/** What a person is shown the tool as: the description's first sentence */
+		readonly title: string;
 		/** What the tool does */
 		readonly description: string;
 		/** Only reads, a GET; other tools may change data, so agents can confirm them */
@@ -584,7 +586,13 @@ export class Route<
 		if (name.length > 64)
 			name = `${name.slice(0, 56)}_${Checksum.djb2(`${method} ${pattern}`).slice(0, 7)}`;
 
-		return { name, description, read, destructive: !read && this.#destructive };
+		return {
+			name,
+			title: description.trim().split(/[.!?](?:\s|$)/, 1)[0]!,
+			description,
+			read,
+			destructive: !read && this.#destructive,
+		};
 	}
 
 	/**
@@ -823,6 +831,7 @@ export class Route<
 					...(tool &&
 						!/[:*]/.test(route.pattern) && {
 							toolname: tool.name,
+							tooltitle: tool.title,
 							tooldescription: tool.description,
 							// a form that may change data waits for the user to submit it
 							toolautosubmit: tool.read,

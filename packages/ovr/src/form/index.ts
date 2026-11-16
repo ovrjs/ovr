@@ -1241,11 +1241,30 @@ class FieldSchema<
 		const description = this.#shown();
 		const descriptionId =
 			description && !hidden ? `${props.name}-description` : undefined;
+		// what an agent in the browser reads the argument as. It reads a
+		// control's label by itself, so this is for what a label does not
+		// say: the field's description, never its hint, and a list's cell,
+		// which is named by its column's heading and has no label
+		const titled =
+			this.#config.label ??
+			// its key in a list, not a row's number or the field's own name
+			(named === props.name || /^\d+$/.test(named) ? undefined : named);
+		const told =
+			typeof titled === "string"
+				? this.description
+					? `${titled}: ${this.description}`
+					: titled
+				: this.description;
 		const control = {
 			id: hidden ? undefined : props.name,
 			required: this.#required(),
 			autofocus: issue && state?.issues?.[0] === issue,
 			"aria-invalid": issue && "true",
+			// a control with a label and nothing more to say needs none
+			toolparamdescription:
+				!hidden && (this.description || named !== props.name)
+					? told
+					: undefined,
 			// read with the control: its description, then what is wrong with it
 			"aria-describedby":
 				[described === true ? descriptionId : described, issueId]
@@ -1335,6 +1354,7 @@ class FieldSchema<
 				autofocus: control.autofocus,
 				"aria-invalid": control["aria-invalid"],
 				"aria-describedby": control["aria-describedby"],
+				toolparamdescription: control.toolparamdescription,
 				...this.#config.props,
 				name,
 			};

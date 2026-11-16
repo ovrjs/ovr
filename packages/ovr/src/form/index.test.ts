@@ -657,7 +657,7 @@ describe("Form schema", () => {
 
 		// people: a paragraph after the control, which the control points to
 		expect(await Markup.string(form.Field({ name: "url" }))).toBe(
-			'<div><label for="url">URL</label><input id="url" required aria-describedby="url-description" type="url" name="url"><p id="url-description" data-description>An http or https address.</p></div>',
+			'<div><label for="url">URL</label><input id="url" required toolparamdescription="URL: An http or https address." aria-describedby="url-description" type="url" name="url"><p id="url-description" data-description>An http or https address.</p></div>',
 		);
 		// a group's after its legend, before its options, and nothing for a
 		// hidden field or without one
@@ -728,7 +728,7 @@ describe("Form schema", () => {
 		const form = new Form({ title: field });
 
 		expect(await Markup.string(form.Field({ name: "title" }))).toBe(
-			'<div><label for="title">Title</label><input id="title" aria-describedby="title-description" type="text" placeholder="Title" name="title"><p id="title-description" data-description>A short name</p></div>',
+			'<div><label for="title">Title</label><input id="title" toolparamdescription="Title: A short name" aria-describedby="title-description" type="text" placeholder="Title" name="title"><p id="title-description" data-description>A short name</p></div>',
 		);
 		expect(
 			Schema.object(form.shape).toJsonSchema({ io: "input" }).properties,
@@ -1380,11 +1380,11 @@ test("a hint is what people read, where the description is what agents read", as
 	});
 
 	expect(await Markup.string(form.Field({ name: "grams" }))).toBe(
-		'<div><label for="grams">grams</label><input id="grams" aria-describedby="grams-description" type="number" name="grams"><p id="grams-description" data-description>For cups and spoons</p></div>',
+		'<div><label for="grams">grams</label><input id="grams" toolparamdescription="Weight in grams for cups and spoons. Empty for counts." aria-describedby="grams-description" type="number" name="grams"><p id="grams-description" data-description>For cups and spoons</p></div>',
 	);
 	// an empty hint shows nothing, and the control names nothing
 	expect(await Markup.string(form.Field({ name: "notes" }))).toBe(
-		'<div><label for="notes">notes</label><input id="notes" type="text" name="notes"></div>',
+		'<div><label for="notes">notes</label><input id="notes" toolparamdescription="Free text, for the cook" type="text" name="notes"></div>',
 	);
 
 	const items = await Markup.string(form.Field({ name: "items" }));
@@ -1395,9 +1395,12 @@ test("a hint is what people read, where the description is what agents read", as
 		'<p data-description><span>amount</span>: <span id="items.amount-description">As written</span></p>',
 	);
 	expect(items).toContain(
-		'<input id="items.0.unit" type="text" name="items.0.unit" aria-labelledby="items.unit-label">',
+		'<input id="items.0.unit" toolparamdescription="unit: Singular, for an agent" type="text" name="items.0.unit" aria-labelledby="items.unit-label">',
 	);
-	expect(items).not.toContain("agent");
+	// what an agent reads is in no text a person sees
+	expect(items.replace(/ toolparamdescription="[^"]*"/g, "")).not.toContain(
+		"agent",
+	);
 
 	expect(
 		Schema.object(form.shape).toJsonSchema({ io: "input" }).properties,
@@ -1906,13 +1909,13 @@ describe("a list", () => {
 				'<th id="ingredients.organic-label" scope="col">organic</th>' +
 				"</tr></thead><tbody>" +
 				"<tr>" +
-				'<td><input type="hidden" name="ingredients.0.id" value="7"><input id="ingredients.0.amount" type="number" name="ingredients.0.amount" aria-labelledby="ingredients.amount-label" value="2"></td>' +
-				'<td><input id="ingredients.0.name" type="text" name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"></td>' +
-				'<td><input id="ingredients.0.organic" type="checkbox" name="ingredients.0.organic" aria-labelledby="ingredients.organic-label" checked></td>' +
+				'<td><input type="hidden" name="ingredients.0.id" value="7"><input id="ingredients.0.amount" toolparamdescription="amount" type="number" name="ingredients.0.amount" aria-labelledby="ingredients.amount-label" value="2"></td>' +
+				'<td><input id="ingredients.0.name" toolparamdescription="name" type="text" name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"></td>' +
+				'<td><input id="ingredients.0.organic" toolparamdescription="organic" type="checkbox" name="ingredients.0.organic" aria-labelledby="ingredients.organic-label" checked></td>' +
 				"</tr><tr>" +
-				'<td><input type="hidden" name="ingredients.1.id"><input id="ingredients.1.amount" type="number" name="ingredients.1.amount" aria-labelledby="ingredients.amount-label"></td>' +
-				'<td><input id="ingredients.1.name" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"></td>' +
-				'<td><input id="ingredients.1.organic" type="checkbox" name="ingredients.1.organic" aria-labelledby="ingredients.organic-label"></td>' +
+				'<td><input type="hidden" name="ingredients.1.id"><input id="ingredients.1.amount" toolparamdescription="amount" type="number" name="ingredients.1.amount" aria-labelledby="ingredients.amount-label"></td>' +
+				'<td><input id="ingredients.1.name" toolparamdescription="name" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"></td>' +
+				'<td><input id="ingredients.1.organic" toolparamdescription="organic" type="checkbox" name="ingredients.1.organic" aria-labelledby="ingredients.organic-label"></td>' +
 				"</tr></tbody></table></div>" +
 				"</fieldset>",
 		);
@@ -1941,7 +1944,7 @@ describe("a list", () => {
 			'name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"',
 		);
 		expect(html).toContain(
-			'<input id="ingredients.1.name" autofocus aria-invalid="true" aria-describedby="ingredients.1.name-issue" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"><p id="ingredients.1.name-issue" data-issue="0">Required field</p>',
+			'<input id="ingredients.1.name" autofocus aria-invalid="true" toolparamdescription="name" aria-describedby="ingredients.1.name-issue" type="text" name="ingredients.1.name" aria-labelledby="ingredients.name-label"><p id="ingredients.1.name-issue" data-issue="0">Required field</p>',
 		);
 		// the list has no issue of its own
 		expect(html.match(/data-issue/g)).toHaveLength(1);
@@ -1992,7 +1995,7 @@ describe("a list", () => {
 		expect(
 			await Markup.string(row!.amount.Control({ "aria-label": "Amount" })),
 		).toBe(
-			'<input id="ingredients.0.amount" type="number" name="ingredients.0.amount" aria-label="Amount">',
+			'<input id="ingredients.0.amount" toolparamdescription="amount" type="number" name="ingredients.0.amount" aria-label="Amount">',
 		);
 		expectTypeOf(row!.name.Label)
 			.parameter(0)
@@ -2013,16 +2016,16 @@ describe("a list", () => {
 		const table = await Markup.string(described.Field({ name: "items" }));
 		expect(table).toContain('<th id="items.name-label" scope="col">name</th>');
 		expect(table).toContain(
-			'<input id="items.0.name" aria-describedby="items.name-description" type="text" name="items.0.name" aria-labelledby="items.name-label">',
+			'<input id="items.0.name" toolparamdescription="name: What to buy" aria-describedby="items.name-description" type="text" name="items.0.name" aria-labelledby="items.name-label">',
 		);
 		expect(table).toContain(
 			'</table></div><p data-description><span>name</span>: <span id="items.name-description">What to buy</span></p></fieldset>',
 		);
-		expect(table.match(/What to buy/g)).toHaveLength(1);
+		expect(table.match(/>What to buy</g)).toHaveLength(1);
 
 		const [row] = described.component({ name: "items" }).rows;
 		expect(await Markup.string(row!.name.Control())).toBe(
-			'<input id="items.0.name" type="text" name="items.0.name">',
+			'<input id="items.0.name" toolparamdescription="name: What to buy" type="text" name="items.0.name">',
 		);
 		// its issue is still read with it
 		const persisted = new Form({
@@ -2112,7 +2115,7 @@ describe("a list", () => {
 		expect(
 			await Markup.string(styled.Field({ name: "items", class: "wide" })),
 		).toContain(
-			'<input id="items.0.name" type="text" name="items.0.name" aria-labelledby="items.name-label">',
+			'<input id="items.0.name" toolparamdescription="name" type="text" name="items.0.name" aria-labelledby="items.name-label">',
 		);
 
 		const Items = styled.component({ name: "items", class: "wide" });
