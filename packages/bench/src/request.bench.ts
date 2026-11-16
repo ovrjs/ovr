@@ -156,13 +156,13 @@ expect((await app.fetch(origin + "/search?q=ovr&page=2")).status).toBe(200);
 expect(parsed).toEqual({ q: "ovr", page: 2 });
 
 // the same page, written the same, before and after
-expect(await o.Render.markup(page(jsx, "7")).string()).toBe(
+expect(await new o.Render({ markup: page(jsx, "7") }).string()).toBe(
 	await MarkupBefore.string(page(JsxBefore.jsx, "7")),
 );
-expect(await text(o.Render.markup(page(jsx, "7")).stream())).toBe(
+expect(await text(new o.Render({ markup: page(jsx, "7") }).stream())).toBe(
 	await text(MarkupBefore.stream(page(JsxBefore.jsx, "7"))),
 );
-expect(await o.Render.markdown(page(jsx, "7")).string()).toBe(
+expect(await new o.Render({ markdown: page(jsx, "7") }).string()).toBe(
 	await MarkdownBefore.string(page(JsxBefore.jsx, "7")),
 );
 
@@ -212,7 +212,7 @@ describe("small page to an HTML string", () => {
 	bench(
 		"after",
 		async () => {
-			await o.Render.markup(page(jsx, "7")).string();
+			await new o.Render({ markup: page(jsx, "7") }).string();
 		},
 		options,
 	);
@@ -230,7 +230,7 @@ describe("small page to an HTML stream", () => {
 	bench(
 		"after",
 		async () => {
-			await text(o.Render.markup(page(jsx, "7")).stream());
+			await text(new o.Render({ markup: page(jsx, "7") }).stream());
 		},
 		options,
 	);
@@ -248,7 +248,7 @@ describe("small page to a Markdown string", () => {
 	bench(
 		"after",
 		async () => {
-			await o.Render.markdown(page(jsx, "7")).string();
+			await new o.Render({ markdown: page(jsx, "7") }).string();
 		},
 		options,
 	);
@@ -266,7 +266,7 @@ describe("small page to a Markdown stream", () => {
 	bench(
 		"after",
 		async () => {
-			await text(o.Render.markdown(page(jsx, "7")).stream());
+			await text(new o.Render({ markdown: page(jsx, "7") }).stream());
 		},
 		options,
 	);

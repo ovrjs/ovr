@@ -1477,13 +1477,13 @@ class Blocks {
 
 /**
  * Renders an element to Markdown, as an `AsyncIterable` of blocks, a stream,
- * or a string, from the same elements `Markup` renders. Made with
- * `Render.markdown`. Each top level block is
+ * or a string, from the same elements `Markup` renders. Internal to ovr,
+ * made with `new Render`. Each top level block is
  * written as soon as it closes, and when the page has a `<main>` element, only
  * its contents are kept. Raw HTML is written as it is.
  *
  * ```tsx
- * const markdown = await Render.markdown(<Post post={post} />, { base: url }).string();
+ * const markdown = await new Render({ markdown: <Post post={post} /> }, { base: url }).string();
  * ```
  */
 export class Markdown {

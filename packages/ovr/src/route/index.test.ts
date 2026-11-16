@@ -1,6 +1,7 @@
 import { App } from "../app/index.js";
 import { Field, Form, forms } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
+import type { JSX } from "../jsx/index.js";
 import { Mcp } from "../mcp/index.js";
 import { Render } from "../render/index.js";
 import { Schema } from "../schema/index.js";
@@ -181,7 +182,7 @@ describe("Route schema helpers", () => {
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
 
-		const html = await Render.markup(profile.Form({})).string();
+		const html = await new Render({ markup: profile.Form({}) }).string();
 
 		expect(html.includes('action="/profile"')).toBe(true);
 		expect(html.includes('method="GET"')).toBe(true);
@@ -196,7 +197,7 @@ describe("Route schema helpers", () => {
 		const state = new URL(
 			"http://localhost:5173/signup?tab=profile&_form=stale&_return=%2Fold#details",
 		);
-		const html = await Render.markup(submit.Form({ state })).string();
+		const html = await new Render({ markup: submit.Form({ state }) }).string();
 
 		expect(
 			html.includes(
@@ -647,9 +648,9 @@ describe("editing records", () => {
 			file: "not a file",
 			note: null,
 		};
-		const html = await Render.markup(
-			update.Form({ params: { id: "1" }, values: post }),
-		).string();
+		const html = await new Render({
+			markup: update.Form({ params: { id: "1" }, values: post }),
+		}).string();
 
 		expect(html).toContain('value="Draft"');
 		expect(html).toContain(">Text</textarea>");
@@ -668,9 +669,9 @@ describe("editing records", () => {
 		if (!result.issues) throw new Error("Expected issues");
 		const state = new URL("http://localhost:5173/posts/1");
 		state.search = new URLSearchParams(result.search).toString();
-		const restored = await Render.markup(
-			persisted.Form({ params: { id: "1" }, values: post, state }),
-		).string();
+		const restored = await new Render({
+			markup: persisted.Form({ params: { id: "1" }, values: post, state }),
+		}).string();
 
 		expect(restored).toContain('value="Typed"');
 		expect(restored).toContain(">Text</textarea>");
@@ -691,16 +692,18 @@ describe("editing records", () => {
 		const form = new Form(shape);
 
 		for (const html of [
-			await Render.markup(
-				update.Form({ params: { id: "1" }, values, state }),
-			).string(),
-			await Render.markup(form.Fields({ values, state })).string(),
+			await new Render({
+				markup: update.Form({ params: { id: "1" }, values, state }),
+			}).string(),
+			await new Render({ markup: form.Fields({ values, state }) }).string(),
 		]) {
 			expect(html).toContain('name="id" value="1"');
 			expect(html).toContain('value="Draft"');
 		}
 
-		const filled = await Render.markup(search.Form({ values, state })).string();
+		const filled = await new Render({
+			markup: search.Form({ values, state }),
+		}).string();
 
 		expect(filled).toContain('name="id" value="2"');
 		expect(filled).toContain('value="Typed"');
@@ -710,10 +713,12 @@ describe("editing records", () => {
 		const update = Route.post("/posts/:id")
 			.fields(fields)
 			.use((c) => c.text("ok"));
-		const html = await Render.markup([
-			update.Form({ params: { id: "1" }, submit: "Save changes" }),
-			update.Form({ params: { id: "1" } }),
-		]).string();
+		const html = await new Render({
+			markup: [
+				update.Form({ params: { id: "1" }, submit: "Save changes" }),
+				update.Form({ params: { id: "1" } }),
+			],
+		}).string();
 
 		expect(html).toContain("<button>Save changes</button>");
 		expect(html).toContain("<button>Submit</button>");
@@ -723,19 +728,19 @@ describe("editing records", () => {
 	test("a Form without fields is still a button to submit, unless given children", async () => {
 		const remove = Route.post("/posts/:id/delete").use((c) => c.text("ok"));
 		expect(
-			await Render.markup(
-				remove.Form({ params: { id: "1" }, submit: "Delete" }),
-			).string(),
+			await new Render({
+				markup: remove.Form({ params: { id: "1" }, submit: "Delete" }),
+			}).string(),
 		).toBe(
 			'<form action="/posts/1/delete" method="POST" enctype="multipart/form-data"><button>Delete</button></form>',
 		);
 		expect(
-			await Render.markup(
-				remove.Form({
+			await new Render({
+				markup: remove.Form({
 					params: { id: "1" },
 					children: jsx("button", { children: "Remove" }),
 				}),
-			).string(),
+			}).string(),
 		).toBe(
 			'<form action="/posts/1/delete" method="POST" enctype="multipart/form-data"><button>Remove</button></form>',
 		);
@@ -743,10 +748,12 @@ describe("editing records", () => {
 
 	test("Field and component accept initial values too", async () => {
 		const form = new Form(fields);
-		const html = await Render.markup([
-			form.Field({ name: "title", values: { title: "One" } }),
-			form.component({ name: "body", values: { body: "Two" } }).Control(),
-		]).string();
+		const html = await new Render({
+			markup: [
+				form.Field({ name: "title", values: { title: "One" } }),
+				form.component({ name: "body", values: { body: "Two" } }).Control(),
+			],
+		}).string();
 
 		expect(html).toContain('value="One"');
 		expect(html).toContain(">Two</textarea>");
@@ -757,9 +764,9 @@ describe("editing records", () => {
 			.fields({ body: Field.textarea() })
 			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
-		const html = await Render.markup(
-			update.Form({ params: { id: "1" }, values: { body } }),
-		).string();
+		const html = await new Render({
+			markup: update.Form({ params: { id: "1" }, values: { body } }),
+		}).string();
 
 		expect(html).toContain(`>${body}</textarea>`);
 	});
@@ -781,9 +788,12 @@ describe("editing records", () => {
 				: parsed.invalid({ email: "Already registered" });
 			const state = new URL("https://example.com/edit");
 			for (const pair of result.search ?? []) state.searchParams.set(...pair);
-			const html = await Render.markup(
-				form.Fields({ state, values: { title: "Old title", tags: ["a"] } }),
-			).string();
+			const html = await new Render({
+				markup: form.Fields({
+					state,
+					values: { title: "Old title", tags: ["a"] },
+				}),
+			}).string();
 
 			expect(html).not.toContain('value="Old title"');
 			expect(html).not.toContain("selected");
@@ -838,7 +848,7 @@ describe("invalid after parsing", () => {
 describe("chained routes", () => {
 	test("forms are WebMCP tools for browser agents", async () => {
 		const render = (element: unknown) =>
-			Render.markup(element as Parameters<typeof Render.markup>[0]).string();
+			new Render({ markup: element as JSX.Element }).string();
 
 		// a form that may change data waits for the user to submit it
 		const create = Route.post("/posts")
@@ -1021,11 +1031,12 @@ describe("chained routes", () => {
 		);
 
 		// components build their URLs the same way
-		const html = await Render.markup(
-			page.Anchor({ params: { name: "a/b" }, children: "Hi" }) as Parameters<
-				typeof Render.markup
-			>[0],
-		).string();
+		const html = await new Render({
+			markup: page.Anchor({
+				params: { name: "a/b" },
+				children: "Hi",
+			}) as JSX.Element,
+		}).string();
 		expect(html).toContain('href="/hello/a%2Fb"');
 
 		// the route matches it, with the original value

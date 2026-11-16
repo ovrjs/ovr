@@ -83,36 +83,36 @@ const sized = async (stream: ReadableStream<Uint8Array>, peak: Peak) => {
 };
 
 await scenario(`HTML, ${rows}-row table, rows in an array`, (peak) =>
-	sized(Render.markup(table(false)).stream(), peak),
+	sized(new Render({ markup: table(false) }).stream(), peak),
 );
 console.log(`  output ${mb(size)} MB`);
 await scenario(`HTML, ${rows}-row table, rows from a generator`, (peak) =>
-	sized(Render.markup(table(true)).stream(), peak),
+	sized(new Render({ markup: table(true) }).stream(), peak),
 );
 await scenario(`Markdown, ${rows}-row table in <main>`, (peak) =>
-	sized(Render.markdown(main(table(false))).stream(), peak),
+	sized(new Render({ markdown: main(table(false)) }).stream(), peak),
 );
 console.log(`  output ${mb(size)} MB`);
 await scenario(
 	`Markdown, ${rows}-row table in <main>, rows from a generator, sampled before </table>`,
 	(peak) =>
 		sized(
-			Render.markdown(main(table(true, () => peak.sample()))).stream(),
+			new Render({ markdown: main(table(true, () => peak.sample())) }).stream(),
 			peak,
 		),
 );
 await scenario(`Markdown, ${rows}-row table, no <main>`, (peak) =>
-	sized(Render.markdown(table(false)).stream(), peak),
+	sized(new Render({ markdown: table(false) }).stream(), peak),
 );
 await scenario("HTML, 5 MB of paragraphs in an array", (peak) =>
-	sized(Render.markup(page()).stream(), peak),
+	sized(new Render({ markup: page() }).stream(), peak),
 );
 console.log(`  output ${mb(size)} MB`);
 await scenario("Markdown, 5 MB of paragraphs in <main>", (peak) =>
-	sized(Render.markdown(main(page())).stream(), peak),
+	sized(new Render({ markdown: main(page()) }).stream(), peak),
 );
 await scenario("Markdown, 5 MB of paragraphs, no <main>", (peak) =>
-	sized(Render.markdown(page()).stream(), peak),
+	sized(new Render({ markdown: page() }).stream(), peak),
 );
 console.log(`  output ${mb(size)} MB`);
 await scenario(
@@ -136,13 +136,13 @@ const time = async (name: string, render: () => Promise<unknown>, runs = 5) => {
 };
 
 await time(`HTML string, ${rows}-row table in an array`, () =>
-	Render.markup(table(false)).string(),
+	new Render({ markup: table(false) }).string(),
 );
 await time("HTML string, 5 MB of paragraphs in an array", () =>
-	Render.markup(page()).string(),
+	new Render({ markup: page() }).string(),
 );
 await time(`Markdown string, ${rows}-row table in <main>`, () =>
-	Render.markdown(main(table(false))).string(),
+	new Render({ markdown: main(table(false)) }).string(),
 );
 
 /** @returns After 20 ms */
@@ -152,14 +152,19 @@ for (const count of [100, 2_000, 10_000]) {
 	await time(
 		`${count} list items each waiting 20 ms in the item (<li><Async /></li>)`,
 		() =>
-			Render.markup(
-				Array.from({ length: count }, () => jsx("li", { children: later })),
-			).string(),
+			new Render({
+				markup: Array.from({ length: count }, () =>
+					jsx("li", { children: later }),
+				),
+			}).string(),
 		3,
 	);
 	await time(
 		`${count} list items each waiting 20 ms as the item (<Async />)`,
-		() => Render.markup(Array.from({ length: count }, () => later)).string(),
+		() =>
+			new Render({
+				markup: Array.from({ length: count }, () => later),
+			}).string(),
 		3,
 	);
 }

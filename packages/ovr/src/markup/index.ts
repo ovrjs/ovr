@@ -224,8 +224,8 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	}
 }
 
-/** Internal protocol for a render, to read the element a `Markup` renders. */
-const source = Symbol("source");
+/** Internal protocol for a render, to read the element it renders. */
+export const source = Symbol("source");
 
 /** One step of a render: a chunk, a wait before the next step, or nothing once it is done */
 export type Step = Chunk | Promise<unknown> | undefined;
@@ -343,9 +343,10 @@ export class Renderer {
 						return new Tag(tag, props, closed);
 					}
 
-					if (element instanceof Markup) {
-						// its element, which its strings would be escaped as text
-						this.#element = element[source];
+					if (source in element) {
+						// a render as a child: its element, which its strings would
+						// be escaped as text
+						this.#element = (element as { [source]: unknown })[source];
 						this.#next = 1;
 						continue;
 					}
@@ -748,7 +749,7 @@ export namespace Markup {
 /**
  * Renders an element to markup, such as HTML, SVG, or XML, as an
  * `AsyncIterable` of strings, a stream, or a string. `Markdown` renders the
- * same elements to Markdown. Made with `Render.markup`.
+ * same elements to Markdown. Internal to ovr, made with `new Render`.
  */
 export class Markup {
 	/** Regex to find escape character for attributes */
@@ -777,7 +778,7 @@ export class Markup {
 		this.#options = options;
 	}
 
-	/** @returns The element, rendered in place where a `Markup` is a child */
+	/** @returns The element, rendered in place where a render is a child */
 	get [source]() {
 		return this.#element;
 	}

@@ -8,11 +8,39 @@ const deferred = () => {
 	return { promise: new Promise<string>((r) => (resolve = r)), resolve };
 };
 
+test("a render is made for markup or for Markdown, with one or the other", async () => {
+	const element = () => jsx("p", { children: "a < b" });
+
+	expect(await new Render({ markup: element() }).string()).toBe(
+		"<p>a &lt; b</p>",
+	);
+	expect(await new Render({ markdown: element() }).string()).toBe("a \\< b\n");
+	// text that is not markup, as it is
+	expect(await new Render({ markup: "a < b" }, { raw: true }).string()).toBe(
+		"a < b",
+	);
+	// a render as a child renders its element in place
+	expect(
+		await new Render({
+			markup: jsx("div", { children: new Render({ markdown: element() }) }),
+		}).string(),
+	).toBe("<div><p>a &lt; b</p></div>");
+
+	// @ts-expect-error neither
+	void (() => new Render({}));
+	// @ts-expect-error an option of the other
+	void (() => new Render({ markup: "" }, { base: "https://example.com" }));
+});
+
 test("raw is for the page, for agents, or for both", async () => {
 	const both = (chunk: Render.Chunk) =>
 		Promise.all([
-			Render.markup(jsx("p", { children: ["a", chunk, "b"] })).string(),
-			Render.markdown(jsx("p", { children: ["a", chunk, "b"] })).string(),
+			new Render({
+				markup: jsx("p", { children: ["a", chunk, "b"] }),
+			}).string(),
+			new Render({
+				markdown: jsx("p", { children: ["a", chunk, "b"] }),
+			}).string(),
 		]);
 
 	// markup alone is what agents get too, since Markdown can hold it
@@ -66,7 +94,7 @@ test("escaped Markdown reads as the text it was", async () => {
 			markdown: `**${escape(title)}**`,
 		}),
 	});
-	expect(await Render.markdown(page).string()).toBe(
+	expect(await new Render({ markdown: page }).string()).toBe(
 		"**Soup \\*with\\* \\[a link\\](https://example.com)**\n",
 	);
 
@@ -83,7 +111,7 @@ test("a script takes a media type for a block of data", async () => {
 		children: Render.raw({ markup: '{"@type":"Recipe"}' }),
 	};
 
-	expect(await Render.markup(JSX.jsx("script", props)).string()).toBe(
+	expect(await new Render({ markup: JSX.jsx("script", props) }).string()).toBe(
 		'<script type="application/ld+json">{"@type":"Recipe"}</script>',
 	);
 });
@@ -113,15 +141,15 @@ test("generators preserve trusted HTML and escape ordinary children", async () =
 		yield "<&";
 	}
 	for (const element of [sync(), async()]) {
-		expect((await Array.fromAsync(Render.markup(element))).join("")).toBe(
-			"<b>trusted</b>&lt;&amp;",
-		);
+		expect(
+			(await Array.fromAsync(new Render({ markup: element }))).join(""),
+		).toBe("<b>trusted</b>&lt;&amp;");
 	}
 });
 
 test("a render of markup yields strings", async () => {
 	const chunks = await Array.fromAsync(
-		Render.markup(jsx("p", { children: "<b>" })),
+		new Render({ markup: jsx("p", { children: "<b>" }) }),
 	);
 
 	expectTypeOf(chunks).toEqualTypeOf<string[]>();
@@ -129,27 +157,29 @@ test("a render of markup yields strings", async () => {
 });
 
 test("a render of markup as a child renders its element in place", async () => {
-	const child = Render.markup(jsx("b", { children: "x & y" }));
+	const child = new Render({ markup: jsx("b", { children: "x & y" }) });
 
-	expect(await Render.markup(jsx("div", { children: child })).string()).toBe(
-		"<div><b>x &amp; y</b></div>",
-	);
+	expect(
+		await new Render({ markup: jsx("div", { children: child }) }).string(),
+	).toBe("<div><b>x &amp; y</b></div>");
 });
 
 test("parallel children render in source order", async () => {
 	const first = deferred();
 	const second = deferred();
 	const started: number[] = [];
-	const render = Render.markup([
-		() => {
-			started.push(1);
-			return first.promise;
-		},
-		() => {
-			started.push(2);
-			return second.promise;
-		},
-	])[Symbol.asyncIterator]();
+	const render = new Render({
+		markup: [
+			() => {
+				started.push(1);
+				return first.promise;
+			},
+			() => {
+				started.push(2);
+				return second.promise;
+			},
+		],
+	})[Symbol.asyncIterator]();
 	const pending = render.next();
 
 	await vi.waitFor(() => expect(started).toStrictEqual([1, 2]));
@@ -175,12 +205,14 @@ test("parallel child errors close sibling generators", async () => {
 
 	await expect(
 		Array.fromAsync(
-			Render.markup([
-				async () => {
-					throw new Error("failed");
-				},
-				sibling(),
-			]),
+			new Render({
+				markup: [
+					async () => {
+						throw new Error("failed");
+					},
+					sibling(),
+				],
+			}),
 		),
 	).rejects.toThrow("failed");
 	expect(closed).toBe(true);
@@ -191,8 +223,10 @@ test("a chunk rendered more than once is never changed", async () => {
 	const later = new Promise((resolve) => setTimeout(() => resolve("a"), 5));
 
 	// the second child renders while the first waits, so its chunks are queued
-	expect(await Render.markup([later, [star, "b"]]).string()).toBe("a★b");
-	expect(await Render.markup([star, star]).string()).toBe("★★");
+	expect(await new Render({ markup: [later, [star, "b"]] }).string()).toBe(
+		"a★b",
+	);
+	expect(await new Render({ markup: [star, star] }).string()).toBe("★★");
 });
 
 const { jsx } = JSX;
@@ -230,12 +264,12 @@ describe("elements", () => {
 			yield element;
 		}
 
-		expect(await Render.markup(twice()).string()).toBe("<p>x</p>");
-		expect(await Render.markup(element).string()).toBe("");
+		expect(await new Render({ markup: twice() }).string()).toBe("<p>x</p>");
+		expect(await new Render({ markup: element }).string()).toBe("");
 
 		const returned = jsx("p", { children: "x" });
 		await returned.return();
-		expect(await Render.markup(returned).string()).toBe("");
+		expect(await new Render({ markup: returned }).string()).toBe("");
 	});
 
 	test("a component is called when it is rendered, not when it is created", async () => {
@@ -246,40 +280,47 @@ describe("elements", () => {
 		}, {});
 
 		expect(calls).toBe(0);
-		expect(await Render.markup(element).string()).toBe("x");
+		expect(await new Render({ markup: element }).string()).toBe("x");
 		expect(calls).toBe(1);
 	});
 
 	test("an element is markup in content that is not, and escapes its own text", async () => {
 		expect(
-			await Render.markup(["<b>", jsx("p", { children: "<i>" })], {
-				raw: true,
-			}).string(),
+			await new Render(
+				{ markup: ["<b>", jsx("p", { children: "<i>" })] },
+				{ raw: true },
+			).string(),
 		).toBe("<b><p>&lt;i></p>");
 	});
 
 	test("a void element with children is written with its end tag", async () => {
-		expect(await Render.markup(jsx("link", {})).string()).toBe("<link>");
-		expect(await Render.markup(jsx("link", { children: "x" })).string()).toBe(
-			"<link>x</link>",
+		expect(await new Render({ markup: jsx("link", {}) }).string()).toBe(
+			"<link>",
 		);
+		expect(
+			await new Render({ markup: jsx("link", { children: "x" }) }).string(),
+		).toBe("<link>x</link>");
 	});
 
 	test("only the element itself is called or awaited, not what it resolves to", async () => {
 		const inner = () => "x";
 
-		expect(await Render.markup(() => inner).string()).toBe(String(inner));
-		expect(await Render.markup(Promise.resolve(inner)).string()).toBe(
+		expect(await new Render({ markup: () => inner }).string()).toBe(
 			String(inner),
 		);
-		expect(await Render.markup(() => Promise.resolve("x")).string()).toBe("x");
+		expect(await new Render({ markup: Promise.resolve(inner) }).string()).toBe(
+			String(inner),
+		);
+		expect(
+			await new Render({ markup: () => Promise.resolve("x") }).string(),
+		).toBe("x");
 	});
 
 	test("renders elements nested far deeper than the call stack", async () => {
 		let element: JSX.Element = "x";
 		for (let i = 0; i < 20_000; i++) element = jsx("b", { children: element });
 
-		const markup = await Render.markup(element).string();
+		const markup = await new Render({ markup: element }).string();
 
 		expect(markup.length).toBe(20_000 * 7 + 1);
 		expect(markup.startsWith("<b><b>")).toBe(true);
@@ -295,7 +336,7 @@ describe("order and laziness", () => {
 			for (;;) yield jsx("li", { children: read++ });
 		}
 
-		const render = Render.markup(jsx("ul", { children: rows() }))[
+		const render = new Render({ markup: jsx("ul", { children: rows() }) })[
 			Symbol.asyncIterator
 		]();
 
@@ -313,10 +354,12 @@ describe("order and laziness", () => {
 			for (;;) yield String(read++);
 		}
 
-		const render = Render.markup([
-			jsx("header", { children: ["a", "b", "c", "d", "e", "f"] }),
-			rows(),
-		])[Symbol.asyncIterator]();
+		const render = new Render({
+			markup: [
+				jsx("header", { children: ["a", "b", "c", "d", "e", "f"] }),
+				rows(),
+			],
+		})[Symbol.asyncIterator]();
 
 		for (let i = 0; i < 4; i++) await render.next();
 
@@ -329,17 +372,19 @@ describe("order and laziness", () => {
 		const first = deferred();
 		let started = false;
 
-		const pending = Render.markup([
-			first.promise,
-			jsx("section", {
-				children: jsx("div", {
-					children: async () => {
-						started = true;
-						return "second";
-					},
+		const pending = new Render({
+			markup: [
+				first.promise,
+				jsx("section", {
+					children: jsx("div", {
+						children: async () => {
+							started = true;
+							return "second";
+						},
+					}),
 				}),
-			}),
-		]).string();
+			],
+		}).string();
 
 		await vi.waitFor(() => expect(started).toBe(true));
 		first.resolve("first");
@@ -366,7 +411,7 @@ describe("order and laziness", () => {
 			return jsx(Second, {});
 		};
 
-		const render = Render.markup([first.promise, jsx(First, {})])[
+		const render = new Render({ markup: [first.promise, jsx(First, {})] })[
 			Symbol.asyncIterator
 		]();
 		const pending = render.next();
@@ -383,15 +428,17 @@ describe("order and laziness", () => {
 			new Promise<string>((resolve) => setTimeout(() => resolve(text), ms));
 
 		expect(
-			await Render.markup([
-				[
-					slow("a", 6),
-					"b",
-					[slow("c", 1), jsx("i", { children: slow("d", 3) })],
+			await new Render({
+				markup: [
+					[
+						slow("a", 6),
+						"b",
+						[slow("c", 1), jsx("i", { children: slow("d", 3) })],
+					],
+					jsx("p", { children: ["e", slow("f", 2), ["g", slow("h", 4)]] }),
+					"i",
 				],
-				jsx("p", { children: ["e", slow("f", 2), ["g", slow("h", 4)]] }),
-				"i",
-			]).string(),
+			}).string(),
 		).toBe("abc<i>d</i><p>efgh</p>i");
 	});
 
@@ -400,9 +447,11 @@ describe("order and laziness", () => {
 		const wait = () =>
 			new Promise<string>((resolve) => setTimeout(() => resolve("x"), 5));
 		const started = performance.now();
-		const markup = await Render.markup(
-			Array.from({ length: count }, () => jsx("li", { children: wait })),
-		).string();
+		const markup = await new Render({
+			markup: Array.from({ length: count }, () =>
+				jsx("li", { children: wait }),
+			),
+		}).string();
 
 		// looking at every child as each one resolves takes seconds
 		expect(performance.now() - started).toBeLessThan(1000);
@@ -412,8 +461,8 @@ describe("order and laziness", () => {
 
 describe("failing and stopping", () => {
 	test("an error is thrown after the chunks before it", async () => {
-		const render = Render.markup(
-			jsx("p", {
+		const render = new Render({
+			markup: jsx("p", {
 				children: [
 					"before",
 					() => {
@@ -421,7 +470,7 @@ describe("failing and stopping", () => {
 					},
 				],
 			}),
-		)[Symbol.asyncIterator]();
+		})[Symbol.asyncIterator]();
 
 		expect(String((await render.next()).value)).toBe("<p>");
 		await expect(Array.fromAsync(render)).rejects.toThrow("failed");
@@ -449,12 +498,14 @@ describe("failing and stopping", () => {
 		}
 
 		await expect(
-			Render.markup([
-				jsx("div", { children: [sync(), jsx("p", { children: waiting() })] }),
-				new Promise((_, reject) =>
-					setTimeout(() => reject(new Error("failed")), 1),
-				),
-			]).string(),
+			new Render({
+				markup: [
+					jsx("div", { children: [sync(), jsx("p", { children: waiting() })] }),
+					new Promise((_, reject) =>
+						setTimeout(() => reject(new Error("failed")), 1),
+					),
+				],
+			}).string(),
 		).rejects.toThrow("failed");
 		expect(closed.sort()).toStrictEqual(["sync", "waiting"]);
 	});
@@ -470,9 +521,9 @@ describe("failing and stopping", () => {
 			}
 		}
 
-		const render = Render.markup(jsx("ul", { children: [rows(), rows()] }))[
-			Symbol.asyncIterator
-		]();
+		const render = new Render({
+			markup: jsx("ul", { children: [rows(), rows()] }),
+		})[Symbol.asyncIterator]();
 
 		for (let i = 0; i < 3; i++) await render.next();
 		await render.return();
@@ -494,7 +545,7 @@ describe("failing and stopping", () => {
 			}
 		}
 
-		const reader = Render.markup(events()).stream().getReader();
+		const reader = new Render({ markup: events() }).stream().getReader();
 		await reader.read();
 		await reader.cancel();
 
@@ -512,12 +563,14 @@ describe("failing and stopping", () => {
 		}
 
 		await expect(
-			Render.markup([
-				new Promise((_, reject) =>
-					setTimeout(() => reject(new Error("failed")), 1),
-				),
-				later(),
-			]).string(),
+			new Render({
+				markup: [
+					new Promise((_, reject) =>
+						setTimeout(() => reject(new Error("failed")), 1),
+					),
+					later(),
+				],
+			}).string(),
 		).rejects.toThrow("failed");
 		expect(yielded).toBe(true);
 
@@ -529,14 +582,14 @@ describe("failing and stopping", () => {
 describe("stream", () => {
 	test("sends what renders without waiting together, and what is waited for when it resolves", async () => {
 		const later = deferred();
-		const reader = Render.markup(
-			jsx("ul", {
+		const reader = new Render({
+			markup: jsx("ul", {
 				children: [
 					jsx("li", { children: "a" }),
 					jsx("li", { children: later.promise }),
 				],
 			}),
-		)
+		})
 			.stream()
 			.getReader();
 		const decoder = new TextDecoder();
@@ -559,7 +612,7 @@ describe("stream", () => {
 			for (;;) yield jsx("li", { children: `row ${read++}` });
 		}
 
-		const reader = Render.markup(jsx("ul", { children: rows() }))
+		const reader = new Render({ markup: jsx("ul", { children: rows() }) })
 			.stream()
 			.getReader();
 		const first = (await reader.read()).value!;
@@ -574,26 +627,30 @@ describe("stream", () => {
 	test("an empty chunk is not sent, a stream of bytes rejects one", async () => {
 		expect(
 			await chunks(
-				Render.markup([
-					"a",
-					Render.raw({ markup: "" }),
-					"b",
-					Render.raw({ markup: "" }),
-				]).stream(),
+				new Render({
+					markup: [
+						"a",
+						Render.raw({ markup: "" }),
+						"b",
+						Render.raw({ markup: "" }),
+					],
+				}).stream(),
 			),
 		).toStrictEqual(["ab"]);
 		expect(
-			await chunks(Render.markup(Render.raw({ markup: "" })).stream()),
+			await chunks(new Render({ markup: Render.raw({ markup: "" }) }).stream()),
 		).toStrictEqual([]);
 	});
 
 	test("an error ends the stream after the markup before it", async () => {
-		const reader = Render.markup([
-			"before",
-			new Promise((_, reject) =>
-				setTimeout(() => reject(new Error("failed")), 1),
-			),
-		])
+		const reader = new Render({
+			markup: [
+				"before",
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error("failed")), 1),
+				),
+			],
+		})
 			.stream()
 			.getReader();
 

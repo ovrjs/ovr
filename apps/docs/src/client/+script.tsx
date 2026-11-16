@@ -47,7 +47,7 @@ if (import.meta.env.DEV) {
 		}
 	}
 
-	const render = o.Render.markup(<Component />);
+	const render = new o.Render({ markup: <Component /> });
 
 	const time = performance.now();
 	for await (const _chunk of render);

@@ -7,7 +7,7 @@ import { tools } from "./index.js";
 import { describe, expect, test } from "vitest";
 
 const md = (element: JSX.Element, options?: Render.Markdown.Options) =>
-	Render.markdown(element, options).string();
+	new Render({ markdown: element }, options).string();
 
 /** Element with props and children, like JSX */
 const h = (
@@ -190,7 +190,7 @@ describe("Markdown", () => {
 		const output = await md(table());
 		expect(output.match(/One/g)).toHaveLength(512);
 		expect(output.length).toBeLessThan(
-			10 * (await Render.markup(table()).string()).length,
+			10 * (await new Render({ markup: table() }).string()).length,
 		);
 	});
 
@@ -963,19 +963,21 @@ describe("Markdown", () => {
 		const page = () => [h("h1", null, "One"), h("p", null, "Two")];
 		const expected = "# One\n\nTwo\n";
 
-		expect((await Array.fromAsync(Render.markdown(page()))).join("")).toBe(
-			expected,
-		);
-		expect(await new Response(Render.markdown(page()).stream()).text()).toBe(
-			expected,
-		);
-		expect(await Render.markdown(page()).string()).toBe(expected);
+		expect(
+			(await Array.fromAsync(new Render({ markdown: page() }))).join(""),
+		).toBe(expected);
+		expect(
+			await new Response(new Render({ markdown: page() }).stream()).text(),
+		).toBe(expected);
+		expect(await new Render({ markdown: page() }).string()).toBe(expected);
 	});
 
 	test("writes each block once it closes", async () => {
 		let release!: (value: JSX.Element) => void;
 		const rest = new Promise<JSX.Element>((resolve) => (release = resolve));
-		const reader = Render.markdown(h("main", null, h("h1", null, "One"), rest))
+		const reader = new Render({
+			markdown: h("main", null, h("h1", null, "One"), rest),
+		})
 			.stream()
 			.getReader();
 		const decoder = new TextDecoder();
@@ -1050,10 +1052,12 @@ describe("Markdown responses", () => {
 
 	test("a render of Markdown streams", async () => {
 		const text = await new Response(
-			Render.markdown([
-				jsx("h2", { children: "Hi" }),
-				Promise.resolve(jsx("p", { children: "later" })),
-			]).stream(),
+			new Render({
+				markdown: [
+					jsx("h2", { children: "Hi" }),
+					Promise.resolve(jsx("p", { children: "later" })),
+				],
+			}).stream(),
 		).text();
 
 		expect(text).toBe("## Hi\n\nlater\n");
@@ -1135,7 +1139,7 @@ describe("raw Markdown", () => {
 		});
 
 	test("a page shows the HTML", async () => {
-		expect(await Render.markup(page()).string()).toBe(
+		expect(await new Render({ markup: page() }).string()).toBe(
 			`<main><h1>Buns</h1><section><h2>Steps</h2>${html}</section><p>Serve <em>warm</em>.</p></main>`,
 		);
 	});
@@ -1154,28 +1158,28 @@ describe("raw Markdown", () => {
 				}),
 			});
 
-		expect(await Render.markdown(item()).string()).toBe(
+		expect(await new Render({ markdown: item() }).string()).toBe(
 			"- Claude · Anthropic\n",
 		);
-		expect(await Render.markup(item()).string()).toBe(
+		expect(await new Render({ markup: item() }).string()).toBe(
 			"<ul><li><span>Claude</span><span>Anthropic</span><button>More</button></li></ul>",
 		);
 		// a line that stands for a block is one
 		expect(
-			await Render.markdown(
-				jsx("div", {
+			await new Render({
+				markdown: jsx("div", {
 					children: [
 						"Before",
 						Render.raw({ markup: "<h2>Steps</h2>", markdown: "## Steps" }),
 						"After",
 					],
 				}),
-			).string(),
+			}).string(),
 		).toBe("Before\n\n## Steps\n\nAfter\n");
 	});
 
 	test("an agent reads the source, as its own block or in its sentence", async () => {
-		expect(await Render.markdown(page()).string()).toBe(
+		expect(await new Render({ markdown: page() }).string()).toBe(
 			`# Buns\n\n## Steps\n\n${steps}\n\nServe *warm*.\n`,
 		);
 	});

@@ -4,22 +4,17 @@ import {
 	Chunk as ChunkClass,
 	Markup as MarkupRender,
 	Source,
+	source,
 } from "../markup/index.js";
 
 export namespace Render {
 	/** A piece of a render, an interface so declaration files name it */
 	export interface Chunk extends ChunkClass {}
 
-	/** A render of markup: an `AsyncIterable` of strings, a stream, or a string */
-	export interface Markup extends MarkupRender {}
-
 	export namespace Markup {
 		/** Markup options */
 		export type Options = MarkupRender.Options;
 	}
-
-	/** A render of Markdown: an `AsyncIterable` of strings, a stream, or a string */
-	export interface Markdown extends MarkdownRender {}
 
 	export namespace Markdown {
 		/** Markdown options */
@@ -67,15 +62,90 @@ export namespace Render {
 }
 
 /**
- * Renders elements, to markup such as HTML for browsers and to Markdown for
- * agents, and writes what is already rendered as it is.
+ * A render of an element, to markup such as HTML for browsers or to Markdown
+ * for agents: an `AsyncIterable` of strings, a stream, or a string. Its
+ * static methods write what is already rendered as it is.
  *
  * ```tsx
- * const html = await Render.markup(<Page />).string();
- * const markdown = await Render.markdown(<Page />).string();
+ * const html = await new Render({ markup: <Page /> }).string();
+ * const markdown = await new Render({ markdown: <Page /> }).string();
+ *
+ * for await (const chunk of new Render({ markup: <Page /> })) {
+ * 	// each string as the element resolves
+ * }
  * ```
  */
 export class Render {
+	/** Element to render */
+	readonly #element: JSX.Element;
+
+	/** What renders it */
+	readonly #render: MarkupRender | MarkdownRender;
+
+	/**
+	 * @param element The element, by what to render it to: `markup`, such as
+	 * HTML, SVG, or XML
+	 * @param options Markup options
+	 */
+	constructor(
+		element: { readonly markup: JSX.Element },
+		options?: Render.Markup.Options,
+	);
+	/**
+	 * @param element The element, by what to render it to: `markdown`, as
+	 * agents that ask for it read a page. Each top level block is written as
+	 * soon as it closes, and when the page has a `<main>` element, only its
+	 * contents are kept
+	 * @param options Markdown options
+	 */
+	constructor(
+		element: { readonly markdown: JSX.Element },
+		options?: Render.Markdown.Options,
+	);
+	constructor(
+		element:
+			{ readonly markup: JSX.Element } | { readonly markdown: JSX.Element },
+		options?: Render.Markup.Options & Render.Markdown.Options,
+	) {
+		if ("markdown" in element) {
+			this.#element = element.markdown;
+			this.#render = new MarkdownRender(this.#element, options);
+		} else {
+			this.#element = element.markup;
+			this.#render = new MarkupRender(this.#element, options);
+		}
+	}
+
+	/** @returns The element, rendered in place where a render is a child */
+	get [source]() {
+		return this.#element;
+	}
+
+	/** @returns Strings of the render, as the element resolves */
+	[Symbol.asyncIterator]() {
+		return this.#render[Symbol.asyncIterator]();
+	}
+
+	/**
+	 * The render piped into a `ReadableStream`. Iterate it when possible, to
+	 * avoid the overhead of the stream.
+	 *
+	 * @returns `ReadableStream` of the render
+	 */
+	stream() {
+		return this.#render.stream();
+	}
+
+	/**
+	 * The whole render as one string, which buffers it and gives up the
+	 * benefits of streaming.
+	 *
+	 * @returns The render, concatenated
+	 */
+	string() {
+		return this.#render.string();
+	}
+
 	/**
 	 * Writes markup, Markdown, or both as they are, dangerously bypassing
 	 * escaping, so both must be safe.
@@ -116,41 +186,5 @@ export class Render {
 			: text.attr !== undefined
 				? MarkupRender.escape(text.attr, true)
 				: MarkupRender.escape(text.markup);
-	}
-
-	/**
-	 * Renders an element to markup, such as HTML, SVG, or XML.
-	 *
-	 * ```tsx
-	 * for await (const chunk of Render.markup(<Page />)) {
-	 * 	// each string as the element resolves
-	 * }
-	 * ```
-	 *
-	 * @param element Element to render
-	 * @param options Markup options
-	 * @returns The render, to iterate, `stream()`, or `string()`
-	 */
-	static markup(
-		element: JSX.Element,
-		options?: Render.Markup.Options,
-	): Render.Markup {
-		return new MarkupRender(element, options);
-	}
-
-	/**
-	 * Renders an element to Markdown, as agents that ask for it read a page.
-	 * Each top level block is written as soon as it closes, and when the page
-	 * has a `<main>` element, only its contents are kept.
-	 *
-	 * @param element Element to render
-	 * @param options Markdown options
-	 * @returns The render, to iterate, `stream()`, or `string()`
-	 */
-	static markdown(
-		element: JSX.Element,
-		options?: Render.Markdown.Options,
-	): Render.Markdown {
-		return new MarkdownRender(element, options);
 	}
 }

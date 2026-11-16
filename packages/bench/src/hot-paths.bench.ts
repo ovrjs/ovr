@@ -26,7 +26,7 @@ function page(jsx: Create, count = 500) {
 }
 
 expect((await Array.fromAsync(new Before(page(Original.jsx)))).join("")).toBe(
-	(await Array.fromAsync(o.Render.markup(page(jsx)))).join(""),
+	(await Array.fromAsync(new o.Render({ markup: page(jsx) }))).join(""),
 );
 
 const paths = [
@@ -98,17 +98,17 @@ describe("rendering hot path", () => {
 		bench(
 			`render ${count} sibling elements`,
 			async () => {
-				for await (const _ of o.Render.markup(page(jsx, count)));
+				for await (const _ of new o.Render({ markup: page(jsx, count) }));
 			},
 			options,
 		);
 	}
 
 	bench("render 100 fragments", async () => {
-		for await (const _ of o.Render.markup(
-			Array.from({ length: 100 }, (_, i) =>
+		for await (const _ of new o.Render({
+			markup: Array.from({ length: 100 }, (_, i) =>
 				jsx(Fragment, { children: ["Hello, world!", i] }),
 			),
-		));
+		}));
 	});
 });

@@ -91,7 +91,7 @@ function Page() {
 
 ## Data types
 
-You can `return` or `yield` most data types from a component, they will be rendered as you might expect. Each of these data types can also be rendered on its own, with [`Render.markup`](#markup) or [`Render.markdown`](#markdown).
+You can `return` or `yield` most data types from a component, they will be rendered as you might expect. Each of these data types can also be rendered on its own, as [markup](#markup) or [Markdown](#markdown).
 
 ```tsx
 function* DataTypes() {
@@ -113,7 +113,7 @@ function* DataTypes() {
 
 ## Markup
 
-To render any element on its own (for example, if you aren't returning it from `Middleware` or need to call it separately), use `Render.markup`. It renders HTML, and other markup such as SVG or an XML sitemap. The render it returns is an async iterable, with a `stream()` and a `string()`.
+To render any element on its own (for example, if you aren't returning it from `Middleware` or need to call it separately), use `new Render({ markup: element })`. It renders HTML, and other markup such as SVG or an XML sitemap. A render is an async iterable, with a `stream()` and a `string()`.
 
 ### Async iterable
 
@@ -126,35 +126,37 @@ function Component() {
 	return <p>element</p>;
 }
 
-const markup = Render.markup(<Component />);
+const markup = new Render({ markup: <Component /> });
 
 for await (const html of markup) {
 	console.log(html); // <p>element</p>
 }
 ```
 
-> Any of the supported [data types](#data-types) can also be rendered directly without JSX. For example, the following array can be passed into `Render.markup` running all async operations in parallel.
+> Any of the supported [data types](#data-types) can also be rendered directly without JSX. For example, the following array can be rendered, running all async operations in parallel.
 
 ```ts
-const markup = Render.markup([
-	async () => "hello",
-	"world",
-	[
-		async function* () {
-			yield "!";
-		},
+const markup = new Render({
+	markup: [
+		async () => "hello",
+		"world",
+		[
+			async function* () {
+				yield "!";
+			},
+		],
 	],
-]);
+});
 
 for await (const html of markup) {
 	console.log(html);
 }
 ```
 
-Set `Render.Markup.Options.raw` to `true` to skip escaping, for content that is not markup, such as plain text or server-sent events.
+Set the `raw` option to `true` to skip escaping, for content that is not markup, such as plain text or server-sent events.
 
 ```ts
-Render.markup(element, { raw: true });
+new Render({ markup: element }, { raw: true });
 ```
 
 ### Stream
@@ -170,7 +172,7 @@ function Component() {
 	return <p>element</p>;
 }
 
-const stream = Render.markup(<Component />).stream();
+const stream = new Render({ markup: <Component /> }).stream();
 
 const response = new Response(stream, {
 	headers: { "content-type": "text/html; charset=utf-8" },
@@ -188,7 +190,7 @@ function Component() {
 	return <p>element</p>;
 }
 
-const str = await Render.markup(<Component />).string();
+const str = await new Render({ markup: <Component /> }).string();
 ```
 
 ### Raw
@@ -239,7 +241,7 @@ Escaped Markdown reads as the text it was: its syntax characters are escaped, an
 
 ## Markdown
 
-`Render.markdown` renders the same elements to Markdown, with the same ways out: an async iterable, a stream, and a string. Text is escaped, so a page's content, such as a user's comment, cannot write Markdown of its own. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use `Render.markdown` to render it yourself, such as to write files or answer with part of a page.
+`new Render({ markdown: element })` renders the same elements to Markdown, with the same ways out: an async iterable, a stream, and a string. Text is escaped, so a page's content, such as a user's comment, cannot write Markdown of its own. Pages already render as Markdown for [agents that ask for it](/agents#markdown), use it to render Markdown yourself, such as to write files or answer with part of a page.
 
 ```tsx
 import { Render } from "ovr";
@@ -255,9 +257,10 @@ function Post() {
 	);
 }
 
-const md = await Render.markdown(<Post />, {
-	base: "https://example.com",
-}).string();
+const md = await new Render(
+	{ markdown: <Post /> },
+	{ base: "https://example.com" },
+).string();
 // # Hello
 //
 // Read the [docs](https://example.com/docs).
