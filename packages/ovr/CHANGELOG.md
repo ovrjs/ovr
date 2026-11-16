@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.33
+
+### Patch Changes
+
+- c5defc5: `Markdown.raw(markdown, html)` with one line of source stays in its line, such as a separator only agents read, `Markdown.raw(" · ", "")`, inside a list item. It was always its own block, which broke the line apart anywhere but a paragraph. Source of several lines, or whose HTML starts with a block element, is still its own block.
+
 ## 7.0.0-next.32
 
 ### Minor Changes

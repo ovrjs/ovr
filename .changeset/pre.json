@@ -26,6 +26,7 @@
     "every-choice",
     "groups",
     "hints",
+    "inline-source",
     "joined-descriptions",
     "json-tool-arguments",
     "list-findings",
