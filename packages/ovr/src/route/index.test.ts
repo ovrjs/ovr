@@ -195,11 +195,11 @@ describe("Route schema helpers", () => {
 		expect(typeof form.Anchor).toBe("function");
 		expect(typeof form.Form).toBe("function");
 		expect(typeof form.Button).toBe("function");
-		// its fields are the form's, as a request sees it
+		// its fields are the form's, for the request it is rendered for
 		expect(typeof form.form).toBe("function");
 	});
 
-	test("a route's Form defaults to its fields and a submit button, bound or not", async () => {
+	test("a route's Form defaults to its fields and a submit button, with a request or without", async () => {
 		const profile = Route.get("/profile")
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
@@ -215,7 +215,7 @@ describe("Route schema helpers", () => {
 		expect(html.includes(">Submit</button>")).toBe(true);
 	});
 
-	test("a bound Route.post Form returns a refused submission to its page", async () => {
+	test("a Route.post Form rendered for a page returns a refused submission to it", async () => {
 		const submit = Route.post("/submit")
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));

@@ -577,7 +577,7 @@ describe("Form schema", () => {
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
-	test("invalid URL _form state is ignored when rendering fields", async () => {
+	test("kept state that is not the form's is ignored when rendering fields", async () => {
 		const form = new Form({
 			name: Field.text(),
 			email: Field.email(),
@@ -920,7 +920,7 @@ describe("Form schema", () => {
 		expect(inStock.includes("checked")).toBe(true);
 	});
 
-	test("query params fill GET form state alongside _form issues", async () => {
+	test("query params fill a GET form alongside kept issues", async () => {
 		const form = new Form({
 			q: Field.search().min(2),
 			sort: Field.select(["relevance", "newest"]),
@@ -1018,7 +1018,7 @@ describe("Form schema", () => {
 		expect(state.values?.avatar).toBeUndefined();
 	});
 
-	test("malformed URL _form issues are ignored when rendering fields", async () => {
+	test("malformed kept issues are ignored when rendering fields", async () => {
 		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
@@ -2324,7 +2324,7 @@ describe("a list", () => {
 		);
 	});
 
-	test("reads many rows in one pass, and state in a URL sets no hidden value or extra row", async () => {
+	test("reads many rows in one pass, and kept state sets no hidden value or extra row", async () => {
 		const wide = new Form({
 			items: Field.list({
 				id: Field.hidden().optional(),
@@ -2345,7 +2345,7 @@ describe("a list", () => {
 		expect(performance.now() - started).toBeLessThan(2000);
 		expect(result.issues[0]?.message).toBe("At most 3");
 
-		// anyone can write the state in a URL
+		// a cookie can be forged, so kept state is not trusted
 		const forged = await pack(
 			Codec.encode(
 				JSON.stringify({

@@ -10,12 +10,6 @@ import type { Util } from "../util/index.js";
 /** Finishes a route's configuration, `app.use(route)` calls it */
 export const freeze = Symbol("freeze");
 
-/** Each route's own form, which its `Form` renders the fields of */
-const bounds = new WeakMap<
-	object,
-	{ readonly Form: (props: any, c?: View) => JSX.Element }
->();
-
 /**
  * Matches a pattern's parameters, as the router reads them: `:name` up to the
  * next slash, anywhere in a segment, and a final `*`, the wildcard, which
@@ -216,7 +210,7 @@ export namespace Route {
 	};
 
 	/**
-	 * What a route with fields adds: its form, as a request sees it.
+	 * What a route with fields adds: its form, with the values it starts from.
 	 *
 	 * @template Pattern Route pattern
 	 * @template S Form field shape
@@ -724,11 +718,11 @@ export class Route<
 			};
 		};
 
-		// the route's own, which its `Form` renders
+		// the route's own, which is its `Form` now that it has fields
 		const own = bind();
-		bounds.set(this, own);
 
 		return Object.assign(this, {
+			Form: own.Form,
 			form: (values?: Field.Value.Initial<S>) =>
 				values === undefined ? own : bind(values),
 		}) as any;
@@ -851,10 +845,8 @@ export class Route<
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: ((props, c) =>
-				// with its fields, when it has any, and what was refused of them
-				bounds.get(route)?.Form(props, c) ??
-				Route.#form(route, props)) as Route.Form<Pattern>,
+			// a button to submit, until `fields()` gives the route a form
+			Form: ((props) => Route.#form(route, props)) as Route.Form<Pattern>,
 		});
 	}
 

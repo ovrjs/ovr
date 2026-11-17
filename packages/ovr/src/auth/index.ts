@@ -2,7 +2,7 @@ import { type App, agents, mount } from "../app/index.js";
 import { type Context as ContextType, sessions } from "../context/index.js";
 import type { Context as View } from "../context/read.js";
 import { type Database, references } from "../database/index.js";
-import type { Field, Form } from "../form/index.js";
+import { type Field, Form } from "../form/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Mcp } from "../mcp/index.js";
@@ -10,7 +10,7 @@ import type { Middleware } from "../middleware/index.js";
 import type { Route } from "../route/index.js";
 import type { Schema } from "../schema/index.js";
 import type { Table } from "../table/index.js";
-import { Codec, noStore } from "../util/index.js";
+import { Codec, Method, noStore } from "../util/index.js";
 import { configure } from "./configure.js";
 import { Metadata } from "./metadata.js";
 import { lifetime, oauth } from "./oauth.js";
@@ -510,13 +510,16 @@ export class Auth<
 			if (await this.#state(c).session()) return handler(c as never, next);
 
 			// a page is asked for by its address, a form names the page it was on
-			const read = c.req.method === "GET" || c.req.method === "HEAD";
+			const read = c.req.method === Method.get || c.req.method === Method.head;
+			const [param] = Form.params;
 			const back = read
 				? c.url.pathname + c.url.search
-				: c.url.searchParams.get("_return");
+				: c.url.searchParams.get(param);
 
 			return c.redirect(
-				back ? `${this.#page}?_return=${encodeURIComponent(back)}` : this.#page,
+				back
+					? `${this.#page}?${param}=${encodeURIComponent(back)}`
+					: this.#page,
 				303,
 			);
 		};

@@ -586,24 +586,16 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 		initial?: Field.Value.Initial<Shape>,
 		source?: (c: View) => Form.Source,
 	): Form.Bound<Shape> => {
-		/** Without a request: the initial values */
-		let alone: Promise<Field.State<Shape> | undefined> | undefined;
-
-		/**
-		 * @param c Request context
-		 * @returns What the fields show for the request, read once for it
-		 */
-		const shown = async (c: View) =>
-			this.#over(await c.memo(this.#kept)(source!, c), initial);
-
 		/**
 		 * @param c Request context, of a component rendered for one
-		 * @returns What the fields show
+		 * @returns What the fields show: the initial values, under what the
+		 * request kept
 		 */
-		const state = (c: View | undefined) =>
-			c && source
-				? c.memo(shown)(c)
-				: (alone ??= Promise.resolve(this.#over(undefined, initial)));
+		const state = async (c: View | undefined) =>
+			this.#over(
+				c && source ? await c.memo(this.#kept)(source, c) : undefined,
+				initial,
+			);
 
 		return {
 			Field: async (props, c) =>
@@ -637,7 +629,8 @@ export namespace Form {
 	};
 
 	/**
-	 * A form as one request sees it.
+	 * A form with the values it starts from. Its components read the request
+	 * they are rendered for.
 	 *
 	 * @template Shape Form field shape type
 	 */

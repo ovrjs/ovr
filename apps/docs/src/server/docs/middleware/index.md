@@ -206,12 +206,10 @@ ovr does not catch what your code throws, and it never logs. Without the first m
 [Auth](/auth#rate-limiting) limits sign-in and agent sign-in for you. Add a `Limiter` to your own routes that are expensive, such as ones that send email or call an AI model. It stores token buckets in your Postgres [database](/database), so every server counts together.
 
 ```ts
-import { Limiter, type Middleware, Route } from "ovr";
+import { Limiter, Route } from "ovr";
 
-const signedIn: Middleware = async (c, next) => {
-	if (!(await c.session())) return c.redirect("/login", 303);
-	return next();
-};
+// redirects anyone who is not signed in, see auth.guard
+const signedIn = auth.guard((c, next) => next());
 
 // 10 per minute for each signed-in user
 const generate = new Limiter("generate", {

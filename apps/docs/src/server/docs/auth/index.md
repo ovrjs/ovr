@@ -191,13 +191,14 @@ The form has one optional field, the passkey's name, such as "Laptop", and its b
 ```ts
 const remove = Route.post("/account/passkeys/remove")
 	.fields({ id: Field.hidden() })
-	.use(async (c) => {
-		if (!(await c.session())) return c.redirect("/login", 303);
-		const result = await c.data();
-		if (!result.issues) await auth.remove(c, result.data.id);
+	.use(
+		auth.guard(async (c) => {
+			const result = await c.data();
+			if (!result.issues) await auth.remove(c, result.data.id);
 
-		return c.redirect("/account/passkeys", 303);
-	});
+			return c.redirect("/account/passkeys", 303);
+		}),
+	);
 ```
 
 Both throw when nobody is signed in.
@@ -310,7 +311,7 @@ A redirect is the route's to make, before the page starts: a component runs once
 
 To bring the user back after they sign in yourself, link to the page with `_return`, such as `/login?_return=/recipes/1`. `auth.forms(c)` reads it, and after registration or login the user goes there instead of `redirect`. Only a path of your own origin is followed; any other is ignored.
 
-A session is `{ id, user, expiration }`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
+A session is `{ id, user, expiration }`, typed `Context.Session`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 
 A session ends after a week without use, and renews while it is used: reading it moves its end out by another week, at most once a day. However often it is used, it ends 30 days after sign-in, and the user signs in again. Set these with `idle` and `lifetime`. Each request checks the database, so revocation and renewal apply across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.
 
@@ -339,7 +340,7 @@ await database.sql`
 
 `auth.login(c, user)` is available for other flows where your application has already authenticated the user; passkey handlers call it automatically.
 
-Resolve sessions and prepare forms before returning JSX. Doing this inside an async component is too late to reliably set cookies, redirects, or response status.
+Prepare forms with `auth.forms(c)`, and make any redirect, in the handler before returning JSX. A component runs once the response has begun, which is too late to set a cookie or redirect, so its `Context` has no way to: `auth.forms(c)` there is a type error. Reading `c.session()` in a component is fine.
 
 ## Storage
 
@@ -437,22 +438,24 @@ Agents such as Claude or ChatGPT connect to the app's [MCP endpoint](/agents) an
 Pass `auth` to the [MCP endpoint](/agents#sign-in), which mounts the OAuth endpoints agents sign in with, and create the page where users approve them, `/connect` unless you set `consent`:
 
 ```tsx
-const connect = Route.get("/connect").use(async (c) => {
-	if (!(await c.session())) return c.redirect("/login", 303);
-	const request = await auth.consent(c);
-	if (!request) return c.text("This request expired. Connect again.", 400);
+const connect = Route.get("/connect").use(
+	auth.guard(async (c) => {
+		const request = await auth.consent(c);
+		if (!request) return c.text("This request expired. Connect again.", 400);
 
-	return (
-		<>
-			<h1>Connect {request.client.name}?</h1>
-			<p>
-				Published by {new URL(request.client.id).origin}. It will be able to do
-				anything you can do in this app. You will return to {request.returns}.
-			</p>
-			<request.Form />
-		</>
-	);
-});
+		return (
+			<>
+				<h1>Connect {request.client.name}?</h1>
+				<p>
+					Published by {new URL(request.client.id).origin}. It will be able to
+					do anything you can do in this app. You will return to{" "}
+					{request.returns}.
+				</p>
+				<request.Form />
+			</>
+		);
+	}),
+);
 
 app.use(new Mcp({ auth }), connect);
 ```
@@ -541,4 +544,4 @@ Use HTTPS and browsers with native WebAuthn JSON support. JavaScript is required
 
 Every instance must use the same database and signing secrets. Set up network overload protection at your edge.
 
-Auth operations enforce the configured origin: on another host, `c.session()` returns `null`, signing in or out and preparing forms throw, and Auth's endpoints answer 421. Generated POST routes also require a same-origin `Sec-Fetch-Site` or matching `Origin`, even with `App` CSRF protection disabled. Cookies are host-wide, so use one authentication system per hostname. This implementation registers an account with a discoverable ES256/P-256 passkey, adds more with [`Add`](#add-a-passkey), and signs a user in once with a [sign-in link](#sign-in-link) you make for them. There is no self-service recovery, such as by email.
+Auth operations enforce the configured origin: on another host, `c.session()` returns `null`, signing in or out and preparing forms throw, and Auth's endpoints answer 421. Generated POST routes also require a same-origin `Sec-Fetch-Site` or matching `Origin`, even with `App` CSRF protection disabled. Cookies are host-wide, so use one authentication system per hostname. This implementation registers an account with a discoverable ES256/P-256 passkey, adds more with [`add.Form`](#add-a-passkey), and signs a user in once with a [sign-in link](#sign-in-link) you make for them. There is no self-service recovery, such as by email.

@@ -166,7 +166,7 @@ The `Anchor`, `Button`, and `Form` components of `Route.get` and `Route.post` ta
 - `search` - [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/URLSearchParams) to append to the URL, passed into `URLSearchParams` constructor to create the query string.
 - `hash` - [fragment hash](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) appended with a `#` at the end of the URL.
 
-`Form` also takes `submit`, the label of its button, and for routes with [`fields`](/schema#post-forms), `state`, the current page's `c.url` so an invalid submission returns to it, and `values`, a record's current values to [edit](/schema#edit-a-record).
+`Form` also takes `submit`, the label of its button. To fill a form with a record's values, use [`route.form(values)`](/schema#edit-a-record).
 
 ```tsx
 const page = Route.get("/hello/:name").use(() => {
@@ -203,7 +203,7 @@ Route.post("/posts").describe("Create a post", { destructive: false });
 
 GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
 
-A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages by checking the session. See [Agents](/agents) for how tools and pages are served to agents.
+A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages with [`auth.guard`](/auth#sessions). See [Agents](/agents) for how tools and pages are served to agents.
 
 ## Properties
 

@@ -8,7 +8,7 @@ const { id, title, url } = bookmarks.shape;
 /** What a person fills in: the rest of a bookmark is the server's */
 const editable = { title, url };
 
-/** Shared document shell. Resolve authentication and data before rendering. */
+/** Shared document shell. */
 function Page({ title, children }: { title: string; children: JSX.Element }) {
 	return (
 		<html lang="en">

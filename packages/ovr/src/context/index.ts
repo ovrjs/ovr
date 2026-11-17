@@ -98,7 +98,11 @@ export namespace Context {
 		Field.Parse.Result<
 			S,
 			{
-				/** URL with invalid field values encoded into a search parameter. */
+				/**
+				 * URL to return to: the page the form is on. Its `_form` names
+				 * the cookie that keeps what was refused; a GET form's own URL
+				 * holds its fields.
+				 */
 				readonly url: URL;
 			}
 		>
@@ -316,13 +320,14 @@ export class Context<
 	}
 
 	/**
-	 * Read the signed-in user's session before returning JSX, or `null` when
-	 * nobody is signed in. In an agent's tool call, it is the session of the
-	 * user who approved the agent. Requires `app.use(auth)`.
+	 * Read the signed-in user's session, or `null` when nobody is signed
+	 * in. A component can read it too. In an agent's tool call, it is the
+	 * session of the user who approved the agent. Requires `app.use(auth)`.
+	 * For a route that needs someone signed in, use `auth.guard`.
 	 *
 	 * ```ts
 	 * const session = await c.session();
-	 * if (!session) return c.redirect("/login", 303);
+	 * if (session) session.user;
 	 * ```
 	 *
 	 * @returns The session, or `null`
