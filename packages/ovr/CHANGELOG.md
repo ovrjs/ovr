@@ -1,5 +1,13 @@
 # ovr
 
+## 7.0.0-next.63
+
+### Patch Changes
+
+- 439b767: Forms at one address are told apart by their hidden values.
+
+  A page of rows that each post to the same route with the same parameters, and differ only by a hidden field such as the row's ID, showed a refused submission in every row. A form given a hidden field's value in `values` now shows only a refusal that was sent with that value.
+
 ## 7.0.0-next.62
 
 ### Patch Changes
