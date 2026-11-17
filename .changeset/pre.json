@@ -67,6 +67,7 @@
     "read-redirect",
     "recent-sign-in",
     "registration-messages",
+    "render-ahead",
     "render-class",
     "render-options",
     "render",
