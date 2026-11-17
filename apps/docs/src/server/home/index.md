@@ -83,8 +83,8 @@ const add = Route.post("/todos")
 	tooldescription="Add a todo"
 >
 	<div>
-		<label for="text">Todo</label>
-		<input id="text" required type="text" name="text" />
+		<label for="post_todos-text">Todo</label>
+		<input id="post_todos-text" required type="text" name="text" />
 	</div>
 	<button>Add</button>
 </form>

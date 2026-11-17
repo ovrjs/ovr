@@ -309,9 +309,9 @@ The endpoint is tested with the official [MCP conformance suite](https://github.
 	tooltitle="Create a blog post"
 	tooldescription="Create a blog post"
 >
-	<label for="title">Title</label>
+	<label for="post_posts-title">Title</label>
 	<input
-		id="title"
+		id="post_posts-title"
 		name="title"
 		toolparamdescription="Title: Shown in the list"
 	/>

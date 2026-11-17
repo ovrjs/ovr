@@ -943,9 +943,16 @@ describe("a refused submission", () => {
 		const ids = Array.from(html.matchAll(/ id="([^"]+)"/g), ([, id]) => id);
 		const labels = Array.from(html.matchAll(/ for="([^"]+)"/g), ([, id]) => id);
 
-		// the first keeps the field's name, and each after it is numbered
-		expect(ids).toEqual(["name", "f2-name", "f3-name", "f4-name"]);
+		// each starts with the form's method and address, as a tool's name does
+		expect(ids).toEqual([
+			"post_items_1_rename-name",
+			"post_items_2_rename-name",
+			"post_items_3_rename-name",
+			"post_notes_2_rename-name",
+		]);
 		expect(labels).toEqual(ids);
+		// the same on every request, whatever renders first
+		expect(await (await app.fetch("http://localhost/items")).text()).toBe(html);
 	});
 
 	test("is read outside its form, by the page around it", async () => {
@@ -1014,7 +1021,7 @@ describe("a refused submission", () => {
 
 		// the message is there for the person, since the control is not
 		expect(html).toContain(
-			'<p id="recipe-issue" data-issue="0">Choose a recipe</p>',
+			'<p id="post_pick-recipe-issue" data-issue="0">Choose a recipe</p>',
 		);
 		expect(html).toContain('<input type="hidden" name="recipe" value="x">');
 		expect(html).not.toContain("aria-invalid");

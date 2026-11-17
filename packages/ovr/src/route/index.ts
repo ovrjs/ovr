@@ -16,9 +16,6 @@ import type { Util } from "../util/index.js";
 /** Finishes a route's configuration, `app.use(route)` calls it */
 export const freeze = Symbol("freeze");
 
-/** @returns A request's count of the forms rendered for it, kept by `c.memo` */
-const counted = () => ({ forms: 0 });
-
 /** Internal protocol for an app and its endpoints, whether a route is a tool. */
 export const tooled = Symbol("tooled");
 
@@ -683,6 +680,37 @@ export class Route<
 	}
 
 	/**
+	 * A name for a method and a path, such as `post_posts_id_delete`: a
+	 * route's tool name from its pattern, and the start of its form's field
+	 * IDs from the address the form posts to.
+	 *
+	 * @param method HTTP method
+	 * @param path A pattern, or a path with its parameters filled in
+	 * @returns The name
+	 */
+	static #named(method: string, path: string) {
+		const segments = path
+			.split("/")
+			.filter(Boolean)
+			.map((segment) =>
+				segment === "*" ? "wildcard" : segment.replace(/^:/, ""),
+			);
+
+		// punctuation, such as the `@` of `/@:username`, is a `_`. Two patterns
+		// whose names are then the same, such as `/a/b` and `/a_b`, are told
+		// apart when they are mounted: `app.use()` throws
+		const name = `${method.toLowerCase()}_${segments.join("_") || "index"}`
+			.replace(/[^A-Za-z0-9-]+/g, "_")
+			.replace(/_$/, "");
+
+		// a name cut to the 64 characters a tool's may have ends with the
+		// path's hash, so two long paths that start alike differ
+		return name.length > 64
+			? `${name.slice(0, 56)}_${Checksum.djb2(`${method} ${path}`).slice(0, 7)}`
+			: name;
+	}
+
+	/**
 	 * The tool agents call the route as, through MCP and the route's `Form`.
 	 * Only described routes are tools, so mounting a route never lets agents
 	 * call it; GET tools are read-only.
@@ -701,25 +729,7 @@ export class Route<
 		};
 
 		const read = method === Method.get;
-
-		const segments = pattern
-			.split("/")
-			.filter(Boolean)
-			.map((segment) =>
-				segment === "*" ? "wildcard" : segment.replace(/^:/, ""),
-			);
-
-		// punctuation, such as the `@` of `/@:username`, is a `_`. Two patterns
-		// whose names are then the same, such as `/a/b` and `/a_b`, are told
-		// apart when they are mounted: `app.use()` throws
-		let name = `${method.toLowerCase()}_${segments.join("_") || "index"}`
-			.replace(/[^A-Za-z0-9-]+/g, "_")
-			.replace(/_$/, "");
-
-		// a name cut to the 64 characters a tool's may have ends with the
-		// pattern's hash, so two long patterns that start alike differ
-		if (name.length > 64)
-			name = `${name.slice(0, 56)}_${Checksum.djb2(`${method} ${pattern}`).slice(0, 7)}`;
+		const name = Route.#named(method, pattern);
 
 		return {
 			name: () => {
@@ -869,14 +879,14 @@ export class Route<
 				},
 				c?: View,
 			) => {
-				// counted as the form is reached, before anything is waited for, so
-				// a page's forms are numbered in its order
-				const nth = c ? ++c.memo(counted)().forms : 1;
+				const address = to(props.params);
 				const parts = form.bind(
 					values,
-					c && (await form.read(c, source, to(props.params), values)),
-					// the first keeps its fields' names as their IDs
-					nth > 1 ? `f${nth}-` : undefined,
+					c && (await form.read(c, source, address, values)),
+					// its fields' IDs start with its method and address, named as a
+					// tool is, so two forms on a page never share one, and a form's
+					// are the same on every request
+					`${Route.#named(this.method, address)}-`,
 				);
 
 				return Route.#form(

@@ -87,12 +87,14 @@ The route's `Form` renders the `<form>` _and_ the fields inside by default, and 
 ```html
 <form action="/signup" method="POST" enctype="multipart/form-data">
 	<div>
-		<label for="name">name</label>
-		<input id="name" required type="text" name="name" />
+		<label for="post_signup-name">name</label>
+		<input id="post_signup-name" required type="text" name="name" />
 	</div>
 	<button>Submit</button>
 </form>
 ```
+
+Each field's `id` starts with the form's method and the address it posts to, named as a [tool](/route#describe) is, so two forms on a page never share one. Select fields by `name`.
 
 A control is `required` when leaving it empty fails validation, so browsers and screen readers know before submitting, and agents reading the page as Markdown see it too. Fields made `.optional()` or given a `.default()` are not required. A lone `Field.checkbox()` never is, since unchecked is `false`, and neither are the boxes of `Field.checkboxes()`, where `required` would mean every box. Pass `required={false}` to leave it to the server, or add `novalidate` to the form to show only the server's messages.
 
