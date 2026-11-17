@@ -1,5 +1,6 @@
 import { type App, agents, mount } from "../app/index.js";
 import { type Context as ContextType, sessions } from "../context/index.js";
+import type { Context as View } from "../context/read.js";
 import { type Database, references } from "../database/index.js";
 import type { Field, Form } from "../form/index.js";
 import type { JSX } from "../jsx/index.js";
@@ -447,6 +448,15 @@ export class Auth<
 		];
 	}
 
+	/**
+	 * @param c Request context, a component's or a handler's
+	 * @returns Its session
+	 */
+	#session(c: View) {
+		// a component's is the handler's own, typed without what answers
+		return this.#state(c as unknown as State.Context).session();
+	}
+
 	#state(c: State.Context) {
 		return this.#states.getOrInsertComputed(
 			c,
@@ -524,10 +534,8 @@ export class Auth<
 	 * @returns Each passkey, oldest first
 	 * @throws When nobody is signed in
 	 */
-	readonly passkeys = async (
-		c: Pick<Auth.Context, "url" | "cookie" | "res">,
-	): Promise<Auth.Passkey[]> => {
-		const session = await this.#state(c).session();
+	readonly passkeys = async (c: View): Promise<Auth.Passkey[]> => {
+		const session = await this.#session(c);
 		if (!session) throw new Error("Sign in to list passkeys");
 
 		return (await this.#storage.passkeys.list(session.user)).map((row) => ({
@@ -550,11 +558,8 @@ export class Auth<
 	 * passkey or not one of theirs
 	 * @throws When nobody is signed in
 	 */
-	readonly remove = async (
-		c: Pick<Auth.Context, "url" | "cookie" | "res">,
-		id: string,
-	) => {
-		const session = await this.#state(c).session();
+	readonly remove = async (c: View, id: string) => {
+		const session = await this.#session(c);
 		if (!session) throw new Error("Sign in to remove a passkey");
 
 		return this.#storage.passkeys.remove(session.user, id);
@@ -607,10 +612,8 @@ export class Auth<
 	 * @returns Each agent once, by its latest connection
 	 * @throws When nobody is signed in
 	 */
-	readonly agents = async (
-		c: Pick<Auth.Context, "url" | "cookie" | "res">,
-	): Promise<Auth.Agent[]> => {
-		const session = await this.#state(c).session();
+	readonly agents = async (c: View): Promise<Auth.Agent[]> => {
+		const session = await this.#session(c);
 		if (!session) throw new Error("Sign in to list agents");
 
 		return (await this.#storage.tokens.agents(session.user)).map((row) => ({
@@ -632,11 +635,8 @@ export class Auth<
 	 * @param client Agent's client ID, an agent's `id` from `auth.agents(c)`
 	 * @throws When nobody is signed in
 	 */
-	readonly disconnect = async (
-		c: Pick<Auth.Context, "url" | "cookie" | "res">,
-		client: string,
-	) => {
-		const session = await this.#state(c).session();
+	readonly disconnect = async (c: View, client: string) => {
+		const session = await this.#session(c);
 		if (!session) throw new Error("Sign in to disconnect an agent");
 		await this.#storage.tokens.revoke(session.user, client);
 	};

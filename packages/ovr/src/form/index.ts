@@ -1,4 +1,4 @@
-import type { Context } from "../context/index.js";
+import type { Context as View } from "../context/read.js";
 import { Fragment, type JSX, jsx } from "../jsx/index.js";
 import type { Multipart } from "../multipart/index.js";
 import {
@@ -308,8 +308,8 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @param c Request context
 	 */
 	readonly #kept = async (
-		source: (c: Context) => Form.Source,
-		c: Context,
+		source: (c: View) => Form.Source,
+		c: View,
 	): Promise<Field.State<Shape> | undefined> =>
 		this.#unplaced(await this.#restore(source(c)));
 
@@ -584,7 +584,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 */
 	bind = (
 		initial?: Field.Value.Initial<Shape>,
-		source?: (c: Context) => Form.Source,
+		source?: (c: View) => Form.Source,
 	): Form.Bound<Shape> => {
 		/** Without a request: the initial values */
 		let alone: Promise<Field.State<Shape> | undefined> | undefined;
@@ -593,14 +593,14 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 		 * @param c Request context
 		 * @returns What the fields show for the request, read once for it
 		 */
-		const shown = async (c: Context) =>
+		const shown = async (c: View) =>
 			this.#over(await c.memo(this.#kept)(source!, c), initial);
 
 		/**
 		 * @param c Request context, of a component rendered for one
 		 * @returns What the fields show
 		 */
-		const state = (c: Context | undefined) =>
+		const state = (c: View | undefined) =>
 			c && source
 				? c.memo(shown)(c)
 				: (alone ??= Promise.resolve(this.#over(undefined, initial)));
@@ -654,7 +654,7 @@ export namespace Form {
 		 */
 		readonly Field: (
 			props: Field.Component.Props<Shape>,
-			c?: Context,
+			c?: View,
 		) => JSX.Element;
 
 		/**
@@ -673,7 +673,7 @@ export namespace Form {
 				/** Each field's own: give them to its `Field` or `component` */
 				options?: never;
 			},
-			c?: Context,
+			c?: View,
 		) => JSX.Element;
 
 		/**
@@ -692,7 +692,7 @@ export namespace Form {
 		 * @returns The field's parts
 		 */
 		readonly component: <N extends ShapeUtil.Name<Shape>>(
-			c: Context,
+			c: View,
 			props: { name: N } & Field.Component.Props<Shape>,
 		) => Promise<Field.Component<Shape[N]>>;
 
@@ -701,16 +701,14 @@ export namespace Form {
 		 * @returns What was wrong with a refused submission, `undefined`
 		 * without one
 		 */
-		readonly issues: (c: Context) => Promise<Schema.Issue.List | undefined>;
+		readonly issues: (c: View) => Promise<Schema.Issue.List | undefined>;
 
 		/**
 		 * @param c Request context of the page the form is on
 		 * @returns The values the fields show: the initial ones, under what a
 		 * refused submission sent
 		 */
-		readonly values: (
-			c: Context,
-		) => Promise<Field.Value.Map<Shape> | undefined>;
+		readonly values: (c: View) => Promise<Field.Value.Map<Shape> | undefined>;
 	};
 }
 

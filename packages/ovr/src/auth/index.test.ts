@@ -1,5 +1,5 @@
 import { App, mount, agents as signin } from "../app/index.js";
-import type { Context } from "../context/index.js";
+import type { Context } from "../context/read.js";
 import { Database, owned } from "../database/index.js";
 import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
@@ -5021,6 +5021,28 @@ describe("a guarded route", () => {
 		expect(
 			await (await ross.fetch(add, { data: { title: "Chili" } })).text(),
 		).toBe("ross added Chili");
+	});
+
+	test("a component reads the user's own with its context, and makes no forms", async () => {
+		const Keys = async (_props: {}, c: Context) => {
+			// @ts-expect-error forms set a cookie, so they are the handler's to make
+			void (() => auth.forms(c));
+			// @ts-expect-error
+			void (() => auth.logout(c));
+
+			return `${(await auth.passkeys(c)).length} ${(await auth.agents(c)).length}`;
+		};
+		const keys = Route.get("/keys").use(auth.guard(() => jsx(Keys, {})));
+		await engine.exec("INSERT INTO users VALUES ('ross', 'ross@example.com')");
+
+		expect(
+			await (
+				await new Tester({
+					app: new App().use(auth, keys),
+					user: "ross",
+				}).fetch(keys)
+			).text(),
+		).toBe("0 0");
 	});
 
 	test("sends anyone else to sign in, and back to the page they asked for", async () => {

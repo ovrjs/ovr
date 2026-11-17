@@ -3,7 +3,7 @@ import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
-import type { Context } from "./index.js";
+import type { Context } from "./read.js";
 import { expect, expectTypeOf, test, vi } from "vitest";
 
 /** Writes the path of the request it is rendered for */
@@ -48,6 +48,37 @@ test("a component given as a value is typed with or without the context", async 
 	// only for routes with these parameters, so not any component
 	expectTypeOf<
 		(props: {}, c: Context<{ id: string }>) => string
+	>().not.toExtend<JSX.Component>();
+});
+
+test("a component's context reads the request, and cannot answer it", () => {
+	void ((c: Context) => {
+		c.cookie.get("theme");
+		void [c.req, c.ip, c.url, c.params, c.route, c.session, c.memo];
+
+		// @ts-expect-error a redirect is the route's to make
+		c.redirect("/");
+		// @ts-expect-error and a cookie its to set
+		c.cookie.set("theme", "dark");
+		// @ts-expect-error the response has begun
+		void c.res;
+		// @ts-expect-error
+		c.html("");
+		// @ts-expect-error
+		c.etag("1");
+		// @ts-expect-error the route parses the request
+		void c.data();
+	});
+
+	// a handler's fits wherever a context is asked for
+	expectTypeOf<Middleware.Context>().toExtend<Context>();
+	expectTypeOf<Middleware.Context<{ id: string }>>().toExtend<
+		Context<{ id: string }>
+	>();
+	expectTypeOf<Context>().not.toExtend<Middleware.Context>();
+	// and a component is not given one
+	expectTypeOf<
+		(props: {}, c: Middleware.Context) => string
 	>().not.toExtend<JSX.Component>();
 });
 

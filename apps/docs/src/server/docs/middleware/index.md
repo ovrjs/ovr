@@ -11,7 +11,7 @@ Middleware are functions that are composed together to handle requests. Most mid
 import type { Middleware } from "ovr";
 
 const mw: Middleware = async (c, next) => {
-	c; // Context - request context
+	c; // Middleware.Context - request context
 	await next(); // Middleware.Next - dispatch the next middleware in the stack
 };
 ```
@@ -53,13 +53,22 @@ app.use(
 
 ## Context
 
-For each request, ovr creates a `Context` object _(abbreviated as `c` in these docs)_ and passes it as the first argument to every middleware function. Import the `Context` type to write a function that takes one.
+For each request, ovr creates a `Context` object _(abbreviated as `c` in these docs)_ and passes it as the first argument to every middleware function.
+
+There are two types for it, for a function of your own that takes one:
+
+- `Context` reads the request: `req`, `ip`, `url`, `params`, `route`, `session()`, `memo()`, and `cookie.get()`. It is what a [component](/render#context) is given.
+- `Middleware.Context` is the one a middleware is given, which can also answer the request: set headers and cookies, redirect, and parse the body.
 
 ```ts
-import type { Context } from "ovr";
+import type { Context, Middleware } from "ovr";
 
 const signedIn = async (c: Context) => Boolean(await c.session());
+
+const gone = (c: Middleware.Context) => c.text("Gone", 410);
 ```
+
+A middleware's `c` fits wherever a `Context` is asked for, so write a function for `Context` unless it answers the request.
 
 ## Properties
 
@@ -80,7 +89,7 @@ Route.get("/api/:id").use((c) => {
 });
 ```
 
-Each [component](/render#context) on the page is given the same `Context` as its second argument, and [`c.memo`](/render#shared-reads) shares what they read.
+Each [component](/render#context) on the page is given the request's `Context` as its second argument, and [`c.memo`](/render#shared-reads) shares what they read.
 
 > On [routes with fields](/schema#post-forms), `Context.data` parses typed form data from the request body. On [GET routes](/schema#get-forms) it parses typed search params. Routes without fields return `null`.
 

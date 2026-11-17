@@ -1,4 +1,4 @@
-import type { Context } from "../context/index.js";
+import type { Context as View } from "../context/read.js";
 import type { JSX } from "../jsx/index.js";
 import {
 	Blocks,
@@ -30,7 +30,7 @@ export namespace Render {
 			 * Context of the request the element is rendered for, which each
 			 * component is given as its second argument
 			 */
-			context?: Context<any, any> | undefined;
+			context?: View<any> | undefined;
 		};
 
 		/** Options of a render of Markdown */

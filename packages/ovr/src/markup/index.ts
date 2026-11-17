@@ -1,4 +1,4 @@
-import type { Context } from "../context/index.js";
+import type { Context as View } from "../context/read.js";
 import type { JSX } from "../jsx/index.js";
 import { Codec, Size } from "../util/index.js";
 
@@ -192,7 +192,7 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	 * that iterates the element gives, and anything else has none of
 	 * @returns The generator, the same one however often it is asked for
 	 */
-	chunks(context?: Context): AsyncGenerator<Chunk, void, unknown> {
+	chunks(context?: View): AsyncGenerator<Chunk, void, unknown> {
 		return (this.#chunks ??= (async function* (element) {
 			const render = new Renderer(element, undefined, context);
 
@@ -233,7 +233,7 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
  * A component: called with its props, and the context of the request it is
  * rendered for.
  */
-type Component = (props: any, c: Context<any, any>) => JSX.Element;
+type Component = (props: any, c: View<any>) => JSX.Element;
 
 /** Internal protocol for a render, to read the element it renders. */
 export const source = Symbol("source");
@@ -272,7 +272,7 @@ export class Renderer {
 	readonly #raw: boolean | undefined;
 
 	/** Request the element is rendered for, given to each component */
-	readonly #context: Context | undefined;
+	readonly #context: View | undefined;
 
 	/** What follows the element: end tags, and iterators and children in progress */
 	#stack: (Tag | Sequence | Parallel)[] | undefined;
@@ -288,7 +288,7 @@ export class Renderer {
 	constructor(
 		element: unknown,
 		raw: boolean | undefined,
-		context: Context | undefined,
+		context: View | undefined,
 	) {
 		this.#element = element;
 		this.#raw = raw;
@@ -520,7 +520,7 @@ class Parallel {
 	constructor(
 		elements: Iterable<JSX.Element>,
 		raw: boolean | undefined,
-		context: Context | undefined,
+		context: View | undefined,
 	) {
 		this.#children = [];
 

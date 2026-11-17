@@ -1,4 +1,4 @@
-import type { Context } from "../context/index.js";
+import type { Context as View } from "../context/read.js";
 import type { JSX } from "../jsx/index.js";
 import { type Chunk, Group, Renderer, Source, Tag } from "../markup/index.js";
 
@@ -56,7 +56,7 @@ export type Options = {
 	 * Context of the request the element is rendered for, which each
 	 * component is given as its second argument
 	 */
-	readonly context?: Context<any, any> | undefined;
+	readonly context?: View<any> | undefined;
 
 	/**
 	 * Finds the tool that submits a form, if there is one, set by

@@ -73,7 +73,7 @@ function NavLink(props: { href: string; children: JSX.Element }, c: Context) {
 <NavLink href="/recipes">Recipes</NavLink>;
 ```
 
-By the time a component runs the response has started, so read from the context there, and set headers, cookies, and redirects in the route. A [render made on its own](#markup) gives its components the `context` it is given, and without one it has none to give.
+By the time a component runs the response has started, so a header, a cookie, or a redirect from one would be lost. A component's `Context` has no way to make them, which makes it a type error: it reads the request, with `req`, `ip`, `url`, `params`, `route`, `session()`, `memo()`, and `cookie.get()`. The route's own `c`, a [`Middleware.Context`](/middleware#context), is the one that answers. A [render made on its own](#markup) gives its components the `context` it is given, and without one it has none to give.
 
 ```tsx
 const html = await new Render({ markup: <Page /> }, { context: c }).string();

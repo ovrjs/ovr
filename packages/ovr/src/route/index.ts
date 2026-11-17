@@ -1,4 +1,4 @@
-import type { Context } from "../context/index.js";
+import type { Context as View } from "../context/read.js";
 import { type Field, Form as FormSchema, forms, query } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
@@ -13,7 +13,7 @@ export const freeze = Symbol("freeze");
 /** Each route's own form, which its `Form` renders the fields of */
 const bounds = new WeakMap<
 	object,
-	{ readonly Form: (props: any, c?: Context) => JSX.Element }
+	{ readonly Form: (props: any, c?: View) => JSX.Element }
 >();
 
 /**
@@ -472,7 +472,7 @@ export namespace Route {
 				/** Label of the generated submit button, defaults to "Submit" */
 				submit?: JSX.Element | undefined;
 			},
-		c?: Context,
+		c?: View,
 	) => JSX.Element;
 
 	/**
@@ -692,7 +692,7 @@ export class Route<
 		 * @param c Request context of the page the form is on
 		 * @returns What a refused submission kept, for the page its redirect names
 		 */
-		const source = (c: Context) => {
+		const source = (c: View) => {
 			const [, name] = FormSchema.params;
 			const id = c.url.searchParams.get(name);
 			const held = id ? c.cookie.get(name) : undefined;
