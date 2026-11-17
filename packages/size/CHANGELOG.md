@@ -1,5 +1,12 @@
 # @ovrjs/size
 
+## 0.0.2-next.55
+
+### Patch Changes
+
+- Updated dependencies [41feaa6]
+  - ovr@7.0.0-next.55
+
 ## 0.0.2-next.54
 
 ### Patch Changes

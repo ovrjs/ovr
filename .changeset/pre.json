@@ -61,6 +61,7 @@
     "render",
     "review-fixes",
     "script-types",
+    "session-no-store",
     "step",
     "taken-fields",
     "tester-auth",
