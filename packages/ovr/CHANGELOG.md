@@ -1,5 +1,43 @@
 # ovr
 
+## 7.0.0-next.56
+
+### Minor Changes
+
+- a5d086a: `auth.guard` wraps a route that needs someone signed in.
+
+  ```tsx
+  Route.get("/recipes").use(auth.guard(() => <Book />));
+
+  Route.post("/recipes").use(
+  	auth.guard(async (c) => {
+  		const { user } = await c.session(); // never null here
+  	}),
+  );
+  ```
+
+  Anyone else is redirected to the authentication `page`, and comes back once they sign in: to the page they asked for, or to the page the form they sent was on.
+
+- a5d086a: A route's form reads the request itself, so `route.form` takes no `c`, and the route's own `Form` shows a refused submission.
+
+  ```tsx
+  // the simplest form now shows what was refused
+  <signup.Form />;
+
+  // to lay out the fields, or start from a record
+  const save = update.form(recipe);
+
+  <save.Form params={{ id }}>
+  	<save.Field name="title" />
+  	<button>Save</button>
+  </save.Form>;
+  ```
+
+  - `route.form(values)` is not awaited and takes no `c`. Its `Form`, `Field`, and `Fields` are components, which read the request from the context they are rendered for.
+  - What a page reads outside of a component takes `c`: `await save.issues(c)`, `await save.values(c)`, and `await save.component(c, { name })`.
+  - `<route.Form />` returns a refused submission to the page it is on, with what was sent and what was wrong.
+  - Forms of one route on a page, such as one in every row, read what was refused once.
+
 ## 7.0.0-next.55
 
 ### Patch Changes
