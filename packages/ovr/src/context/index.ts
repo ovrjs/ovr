@@ -351,10 +351,10 @@ export class Context<
 	 * reading them to pass down.
 	 *
 	 * ```tsx
-	 * const friendsOf = (user: string) => sql`...`.parse(friends);
+	 * const userOf = (id: string) => sql`...`.parse(users);
 	 *
-	 * async function Share(props: { user: string }, c: Context) {
-	 * 	const friends = await c.memo(friendsOf)(props.user);
+	 * async function Byline(props: { user: string }, c: Context) {
+	 * 	const [user] = await c.memo(userOf)(props.user);
 	 * }
 	 * ```
 	 *

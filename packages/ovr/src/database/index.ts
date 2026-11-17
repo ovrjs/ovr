@@ -65,6 +65,32 @@ export namespace Database {
 					: T[I];
 	};
 
+	/**
+	 * A query, from `database.sql`: a lazy promise of its rows. It runs once,
+	 * the first time it is awaited, and never when it is nested in another
+	 * query. The type of a function that returns one:
+	 *
+	 * ```ts
+	 * const userOf = (id: string): Database.Query<User> => database.sql`...`;
+	 * ```
+	 *
+	 * @template Row Row type
+	 */
+	export interface Query<Row = unknown> extends Promise<Row[]> {
+		/**
+		 * Parse each returned row with a schema, throwing the issues if any
+		 * fail. The query still runs once, however many queries `parse` returns.
+		 *
+		 * @template O Row type
+		 * @param schema Row schema, for example a table
+		 * @returns Query returning parsed rows
+		 */
+		parse<O>(schema: Schema<O>): Query<O>;
+
+		/** @returns Query text and parameter values */
+		toQuery(): { text: string; values: unknown[] };
+	}
+
 	/** SQL template tag and helpers bound to a pool or transaction. */
 	export interface Tag {
 		/**
@@ -73,7 +99,7 @@ export namespace Database {
 		 * Tables and columns become quoted identifiers, nested fragments are
 		 * inlined, and every other value becomes a bound parameter.
 		 */
-		(strings: TemplateStringsArray, ...values: unknown[]): Sql;
+		(strings: TemplateStringsArray, ...values: unknown[]): Query;
 
 		/**
 		 * Validate rows and build the `(columns) VALUES (...)` of an insert.
@@ -87,7 +113,7 @@ export namespace Database {
 		values<T extends Table.Any>(
 			table: T,
 			rows: Insert<T> | readonly Insert<T>[],
-		): Sql;
+		): Query;
 
 		/**
 		 * Validate values and build the assignments of an update.
@@ -97,7 +123,7 @@ export namespace Database {
 		 * @param values Columns to change
 		 * @returns Assignments
 		 */
-		set<T extends Table.Any>(table: T, values: Update<T>): Sql;
+		set<T extends Table.Any>(table: T, values: Update<T>): Query;
 	}
 
 	/**
@@ -155,7 +181,7 @@ type Convert = (value: unknown) => unknown;
  *
  * @template Row Row type
  */
-export class Sql<Row = unknown> implements Promise<Row[]> {
+export class Sql<Row = unknown> implements Database.Query<Row> {
 	/** Text segments surrounding the values. */
 	readonly #strings: readonly string[];
 
@@ -205,7 +231,7 @@ export class Sql<Row = unknown> implements Promise<Row[]> {
 	 * @param schema Row schema, for example a table
 	 * @returns Fragment returning parsed rows
 	 */
-	parse<O>(schema: Schema<O>) {
+	parse<O>(schema: Schema<O>): Database.Query<O> {
 		return new Sql<O>(
 			this.#strings,
 			this.#values,
@@ -1133,7 +1159,7 @@ class Base<T extends readonly Table.Any[]> {
 					);
 				},
 			},
-		) as Database.Tag;
+		) as unknown as Database.Tag;
 	}
 
 	/**

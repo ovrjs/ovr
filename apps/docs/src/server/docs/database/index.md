@@ -128,7 +128,7 @@ When more than one part of a page needs the same rows, write the query as a func
 ```tsx
 import type { Context } from "ovr";
 
-const userOf = async (id: string) =>
+const userOf = (id: string) =>
 	database.sql`
 		SELECT * FROM ${database.users}
 		WHERE ${database.users.columns.id} = ${id}
@@ -140,6 +140,8 @@ async function Byline(props: { author: string }, c: Context) {
 	return <p>By {author?.name ?? "someone"}</p>;
 }
 ```
+
+A query is a `Database.Query` of its rows, such as `Database.Query<User>`, for a function whose return type you write out.
 
 [Pages](/pages) covers what a route reads and what its components do.
 

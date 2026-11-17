@@ -7,130 +7,138 @@ description: What a route waits for, and what the components on its page read fo
 
 A route waits only for what decides the response: the redirect, the 404, headers and cookies, and what the head needs, such as the title. Every other part of the page is a component that takes IDs and plain values as props, reads its own data, and calls shared data functions so parts that need the same rows share one query. Writes stay in route handlers.
 
-## Before and after
+## A page
 
-A recipe page with its cook log and a way to share it. Read everything in the route, and the page waits for the slowest query before its first byte is sent:
+A post with its author, its comments, and a way to reply. The route reads the post, since a missing one is a 404 and its title is in the head. Each part reads the rest for itself:
 
 ```tsx
-const page = Route.get("/recipes/:id").use(async (c) => {
-	const session = await c.session();
-	if (!session) return c.redirect("/login", 303);
+import { type Context, Route } from "ovr";
 
-	const [[recipe], cooks, friends] = await Promise.all([
-		recipeOf(c.params.id),
-		cooksOf(c.params.id),
-		friendsOf(session.user),
-	]);
-	if (!recipe) return c.text("Not found", 404);
+const page = Route.get("/posts/:id").use(async (c) => {
+	const { id } = c.params;
+	const [post] = await c.memo(postOf)(id);
+	if (!post) return c.text("Not found", 404);
 
 	return (
-		<Layout title={recipe.title}>
-			<Recipe recipe={recipe} />
-			<CookLog cooks={cooks} />
-			<Share recipe={recipe} friends={friends} />
+		<Layout title={post.title}>
+			<Post id={id} />
+			<Comments post={id} />
+			<Reply post={id} />
 		</Layout>
 	);
 });
-```
 
-The route knows what every part needs, so a part can't go on another page without that page's route reading for it too.
-
-Let each part read what it shows, and the route waits only for what decides the response:
-
-```tsx
-const page = Route.get("/recipes/:id").use(
-	auth.guard(async (c) => {
-		const { id } = c.params;
-		const [recipe] = await c.memo(recipeOf)(id);
-		if (!recipe) return c.text("Not found", 404);
-
-		return (
-			<Layout title={recipe.title}>
-				<Recipe id={id} />
-				<CookLog recipe={id} />
-				<Share recipe={id} />
-			</Layout>
-		);
-	}),
-);
-
-async function Recipe(props: { id: string }, c: Context) {
+async function Post(props: { id: string }, c: Context) {
 	// the route's read, so no query
-	const [recipe] = await c.memo(recipeOf)(props.id);
-	if (!recipe) return;
+	const [post] = await c.memo(postOf)(props.id);
+	if (!post) return;
 
-	return <h1>{recipe.title}</h1>;
+	return (
+		<article>
+			<h1>{post.title}</h1>
+			<Byline user={post.author} />
+			<p>{post.body}</p>
+		</article>
+	);
 }
 
-async function CookLog(props: { recipe: string }, c: Context) {
-	const cooks = await c.memo(cooksOf)(props.recipe);
+async function Comments(props: { post: string }, c: Context) {
+	const comments = await c.memo(commentsOf)(props.post);
 
 	return (
 		<ul>
-			{cooks.map((cook) => (
-				<li>{cook.note}</li>
+			{comments.map((comment) => (
+				<li>
+					{comment.body}
+					<Byline user={comment.author} />
+				</li>
 			))}
 		</ul>
 	);
 }
 
-async function Share(props: { recipe: string }, c: Context) {
-	const session = await c.session();
-	if (!session) return;
+async function Byline(props: { user: string }, c: Context) {
+	// one query for each author, however many comments are theirs
+	const [user] = await c.memo(userOf)(props.user);
 
-	const friends = await c.memo(friendsOf)(session.user);
-	const form = share.form(undefined, { id: props.recipe });
+	return <p>By {user?.name ?? "someone"}</p>;
+}
 
-	return (
-		<form.Form submit="Share">
-			<form.Field
-				name="friend"
-				options={Object.fromEntries(friends.map((f) => [f.id, f.name]))}
-			/>
-		</form.Form>
-	);
+async function Reply(props: { post: string }, c: Context) {
+	if (!(await c.session())) return <a href="/login">Sign in to reply</a>;
+
+	return <reply.Form params={{ id: props.post }} submit="Reply" />;
 }
 ```
 
 - **The page starts sooner.** The document is sent as soon as the route returns, and each part follows when its own read is done.
-- **Parts read at the same time.** Components beside each other [render in parallel](/render#parallelization), so the queries are not in a line.
-- **A part goes on any page.** `<CookLog recipe={id} />` works wherever there is a recipe's ID, with no change to that page's route.
+- **Parts read at the same time.** Components beside each other [render in parallel](/render#parallelization), so their queries do not wait in a line.
+- **A part goes on any page.** `<Comments post={id} />` works wherever there is a post's ID, with no change to that page's route.
 - **Agents get the same parts.** A page read as [Markdown](/agents#markdown) renders the same components.
+
+## Compared to reading in the route
+
+A route can read everything first and pass the rows down, as a loader does in other frameworks:
+
+```tsx
+const page = Route.get("/posts/:id").use(async (c) => {
+	const [[post], comments] = await Promise.all([
+		postOf(c.params.id),
+		commentsOf(c.params.id),
+	]);
+	if (!post) return c.text("Not found", 404);
+
+	return (
+		<Layout title={post.title}>
+			<Post post={post} />
+			<Comments comments={comments} />
+		</Layout>
+	);
+});
+```
+
+It works, at two costs. Nothing is sent until the slowest read is done. And the route has to know what every part needs, so a part can't go on another page without that page's route reading for it too.
 
 ## Props are IDs
 
-Give a component the ID of what it shows, not the rows: `<CookLog recipe={id} />`, not `<CookLog cooks={rows} />`. A component that takes rows can only be used where something has read them. One that takes an ID reads for itself, and [`c.memo`](/render#shared-reads) makes a read that already happened free.
+Give a component the ID of what it shows, not the rows: `<Comments post={id} />`, not `<Comments comments={rows} />`. A component that takes rows can only be used where something has read them. One that takes an ID reads for itself, and [`c.memo`](/render#shared-reads) makes a read that already happened free.
 
 ## Data functions
 
 The functions a page reads through are the app's data layer. Write each once, outside of any component, taking IDs and other plain values, and call it from routes and components alike through `c.memo`:
 
 ```ts
-export const recipeOf = async (id: string) =>
+export const postOf = (id: string) =>
 	database.sql`
-		SELECT * FROM ${database.recipes}
-		WHERE ${database.recipes.columns.id} = ${id}
-	`.parse(database.recipes);
+		SELECT * FROM ${database.posts}
+		WHERE ${database.posts.columns.id} = ${id}
+	`.parse(database.posts);
 
-export const cooksOf = async (recipe: string) =>
+export const commentsOf = (post: string) =>
 	database.sql`
-		SELECT * FROM ${database.cooks}
-		WHERE ${database.cooks.columns.recipe} = ${recipe}
-	`.parse(database.cooks);
+		SELECT * FROM ${database.comments}
+		WHERE ${database.comments.columns.post} = ${post}
+	`.parse(database.comments);
+
+export const userOf = (id: string) =>
+	database.sql`
+		SELECT * FROM ${database.users}
+		WHERE ${database.users.columns.id} = ${id}
+	`.parse(database.users);
 ```
 
 In a larger app they are a module of their own, which every page imports.
 
 ## The head
 
-The head is why a route reads a row at all: the title, the description, and the image a link preview shows are sent first, before any part of the page. Read them in the route through the same function the component uses, as `recipeOf` is above. The route's read is the component's too, so the component costs nothing more.
+The head is why a route reads a row at all: the title, the description, and the image a link preview shows are sent first, before any part of the page. Read them in the route through the same function the component uses, as `postOf` is above. The route's read is the component's too, so the component costs nothing more.
 
 ## What stays in the route
 
-- **Redirects and 404s.** They are the response's status, which is sent before the page.
+- **Redirects and 404s.** They are the response's status, which is sent before the page. A route that needs someone signed in is wrapped in [`auth.guard`](/auth#sessions).
 - **Headers and cookies.** A component runs once the response has begun, so its [`Context`](/render#context) has no way to set them.
 - **Parsing the request**, with `c.data()`.
-- **Writes.** A POST handler changes what it must and redirects; the page it redirects to reads it again.
+- **Writes.** A POST handler changes what it must and redirects, and the page it redirects to reads again.
 
 ## Errors while a page streams
 

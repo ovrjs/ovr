@@ -112,26 +112,26 @@ function Card(props: { icon: JSX.Component<{ size: number }> }) {
 Components that fetch what they show can be put anywhere on a page, but two of them that need the same rows would each query for them. `c.memo` shares a function's result for the rest of the request: called again with the same arguments, it returns what it returned the first time.
 
 ```tsx
-const friendsOf = async (user: string) =>
+const userOf = (id: string) =>
 	database.sql`
-		SELECT * FROM ${database.friends}
-		WHERE ${database.friends.columns.user} = ${user}
-	`.parse(database.friends);
+		SELECT * FROM ${database.users}
+		WHERE ${database.users.columns.id} = ${id}
+	`.parse(database.users);
 
-async function Share(props: { user: string }, c: Context) {
-	const friends = await c.memo(friendsOf)(props.user); // queries
+async function Byline(props: { user: string }, c: Context) {
+	const [user] = await c.memo(userOf)(props.user); // queries
 	// ...
 }
 
-async function Offer(props: { user: string }, c: Context) {
-	const friends = await c.memo(friendsOf)(props.user); // the same rows, no query
+async function Avatar(props: { user: string }, c: Context) {
+	const [user] = await c.memo(userOf)(props.user); // the same row, no query
 	// ...
 }
 ```
 
 The route shares the same results through its own `c`, so what it reads to decide a redirect is not read again by the page. Nothing is kept for the next request.
 
-Functions like `friendsOf` are the app's data layer: define each once, in a module of their own in a larger app, and call them from routes and components alike. See [Pages](/pages#data-functions).
+Functions like `userOf` are the app's data layer: define each once, in a module of their own in a larger app, and call them from routes and components alike. See [Pages](/pages#data-functions).
 
 Results are kept by the function and its arguments, compared as `===` does. Define the function once, outside of the component, and give it IDs and other plain values: a function or an object made for the call never matches an earlier one. A promise is shared as it is, so components that render at the same time wait for one query.
 
