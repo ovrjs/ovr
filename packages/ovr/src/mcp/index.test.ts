@@ -1812,6 +1812,43 @@ describe("Mcp", () => {
 		expect(unknown.body.error.code).toBe(-32602);
 	});
 
+	test("a write sent on with a 307 is done where it is sent, and a wrong origin is refused on any method", async () => {
+		const { app, rpc } = setup();
+		const done: string[] = [];
+		app.use(
+			Route.post("/old")
+				.describe("Save, at its old address")
+				.fields({ title: Field.text() })
+				.use((c) => c.redirect("/new", 307)),
+			Route.post("/new")
+				.fields({ title: Field.text() })
+				.use(async (c) => {
+					const result = await c.data();
+					if (result.issues) return c.text("invalid", 422);
+					done.push(result.data.title);
+					return c.text(`Saved ${result.data.title}`);
+				}),
+		);
+
+		const { body } = await rpc("tools/call", {
+			name: "post_old",
+			arguments: { title: "Hello" },
+		});
+		expect(done).toEqual(["Hello"]);
+		expect(body.result.isError).toBe(false);
+		expect(body.result.content[0].text).toBe("Saved Hello");
+
+		for (const method of ["GET", "DELETE"]) {
+			const ours = await app.fetch("http://localhost/mcp", { method });
+			expect(ours.status).toBe(405);
+			const theirs = await app.fetch("http://localhost/mcp", {
+				method,
+				headers: { origin: "https://evil.example" },
+			});
+			expect(theirs.status).toBe(403);
+		}
+	});
+
 	test("a tool supplies a declared form field that also names a path parameter", async () => {
 		const { app, rpc } = setup();
 		app.use(

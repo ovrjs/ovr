@@ -16,6 +16,9 @@ import type { Util } from "../util/index.js";
 /** Finishes a route's configuration, `app.use(route)` calls it */
 export const freeze = Symbol("freeze");
 
+/** @returns A request's count of the forms rendered for it, kept by `c.memo` */
+const counted = () => ({ forms: 0 });
+
 /** Internal protocol for an app and its endpoints, whether a route is a tool. */
 export const tooled = Symbol("tooled");
 
@@ -866,9 +869,14 @@ export class Route<
 				},
 				c?: View,
 			) => {
+				// counted as the form is reached, before anything is waited for, so
+				// a page's forms are numbered in its order
+				const nth = c ? ++c.memo(counted)().forms : 1;
 				const parts = form.bind(
 					values,
 					c && (await form.read(c, source, to(props.params), values)),
+					// the first keeps its fields' names as their IDs
+					nth > 1 ? `f${nth}-` : undefined,
 				);
 
 				return Route.#form(

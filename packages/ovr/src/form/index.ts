@@ -656,13 +656,17 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 *
 	 * @param initial Initial values, for example the record being edited
 	 * @param kept What a refused submission sent, which takes precedence
+	 * @param scope What its elements' IDs start with, for a form that is
+	 * not the first on its page
 	 * @returns The form's components, its issues, and its values
 	 */
 	bind = (
 		initial?: Field.Value.Initial<Shape>,
 		kept?: Field.State<Shape>,
+		scope?: string,
 	): Form.Bound<Shape> => {
-		const state = this.#over(kept, initial);
+		const shown = this.#over(kept, initial);
+		const state = scope ? { id: this.#id, ...shown, scope } : shown;
 
 		return {
 			Field: (props) => this.shape[props.name]![render]({ ...props, state }),
@@ -1537,12 +1541,15 @@ class FieldSchema<
 				// a list's own, each of its cells shows its own
 				(!this.item || i.path.length === 1),
 		);
-		const issueId = issue && `${props.name}-issue`;
+		// what its elements' IDs start with: the field's name, after the
+		// form's scope when a page has more than one form
+		const dom = (state?.scope ?? "") + props.name;
+		const issueId = issue && `${dom}-issue`;
 		const hidden = this.type === "hidden";
 		const { label = named } = this.#config;
 		const description = this.#shown();
 		const descriptionId =
-			description && !hidden ? `${props.name}-description` : undefined;
+			description && !hidden ? `${dom}-description` : undefined;
 		// what an agent in the browser reads the argument as. It reads a
 		// control's label by itself, so this is for what a label does not
 		// say: the field's description, never its hint, and a list's cell,
@@ -1558,7 +1565,7 @@ class FieldSchema<
 					: titled
 				: this.description;
 		const control = {
-			id: hidden ? undefined : props.name,
+			id: hidden ? undefined : dom,
 			required: this.#required(),
 			// a hidden control takes no focus and is read by nobody: what is
 			// wrong with it is shown by its issue alone
@@ -1642,8 +1649,7 @@ class FieldSchema<
 		if (options && this.tag !== "select") {
 			// radio/checkboxes
 			// make multiple ids for the group so all don't have the same id
-			const groupId = (value: string) =>
-				`${control.name}-${value}`.toLowerCase();
+			const groupId = (value: string) => `${dom}-${value}`.toLowerCase();
 
 			// a group's own attributes, such as a class, are its fieldset's,
 			// as a list's are. Each box has those `control()` set, and if it
@@ -1850,7 +1856,8 @@ class FieldSchema<
 		const c = this[component](props) as unknown as Parts;
 		const fields = Object.entries(item);
 		const columns = fields.filter(([, field]) => field.type !== "hidden");
-		const id = (key: string, part: string) => `${props.name}.${key}-${part}`;
+		const id = (key: string, part: string) =>
+			`${props.state?.scope ?? ""}${props.name}.${key}-${part}`;
 
 		return c.Root({
 			children: [
@@ -2221,6 +2228,13 @@ export namespace Field {
 
 		/** Map of field names to possible values */
 		readonly values?: Value.Map<S>;
+
+		/**
+		 * What the IDs of the form's elements start with, for a form that is
+		 * not the first on its page, so two forms with a field of one name do
+		 * not share an ID
+		 */
+		readonly scope?: string;
 	}
 
 	export namespace Parse {

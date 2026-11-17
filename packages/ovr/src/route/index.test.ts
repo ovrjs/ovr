@@ -938,6 +938,16 @@ describe("a refused submission", () => {
 		]);
 	});
 
+	test("a page's forms with a field of one name have IDs of their own", async () => {
+		const html = await (await app.fetch("http://localhost/items")).text();
+		const ids = Array.from(html.matchAll(/ id="([^"]+)"/g), ([, id]) => id);
+		const labels = Array.from(html.matchAll(/ for="([^"]+)"/g), ([, id]) => id);
+
+		// the first keeps the field's name, and each after it is numbered
+		expect(ids).toEqual(["name", "f2-name", "f3-name", "f4-name"]);
+		expect(labels).toEqual(ids);
+	});
+
 	test("is read outside its form, by the page around it", async () => {
 		const page = Route.get("/fold").use(async (c) =>
 			c.json({

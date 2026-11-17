@@ -221,6 +221,11 @@ export class Mcp<P extends string = string> {
 			// only POST is used, there are no streams to open or sessions to end
 			...[Method.get, "DELETE"].map((method) =>
 				new Route(method, path).use((c) => {
+					// a request from another site is refused first, whatever its method
+					const origin = c.req.headers.get(Header.name.origin);
+					if (origin !== null && (origin !== c.url.origin || Mcp.#rebound(c)))
+						return c.text("Forbidden", 403);
+
 					c.res.headers.set("allow", Method.post);
 					return c.text("Method Not Allowed", 405);
 				}),
@@ -1199,6 +1204,18 @@ export class Mcp<P extends string = string> {
 				// whole list after deleting one item, is its to read if it wants
 				if (readable && i < Mcp.#redirects && !wrote) {
 					url = redirected = next;
+					continue;
+				}
+
+				// a 307 or 308 sends the write on as it is, to be done there: it
+				// is followed with its method and body, within this app
+				if (
+					wrote &&
+					(res.status === 307 || res.status === 308) &&
+					next.origin === c.url.origin &&
+					i < Mcp.#redirects
+				) {
+					url = next;
 					continue;
 				}
 
