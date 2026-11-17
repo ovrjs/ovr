@@ -58,12 +58,9 @@ async function Data() {
 A component's second argument is the [context](/middleware#context) of the request it is rendered for, so a page doesn't pass `c` down to the components that need it.
 
 ```tsx
-import type { Middleware } from "ovr";
+import type { Context, JSX } from "ovr";
 
-function NavLink(
-	props: { href: string; children: JSX.Element },
-	c: Middleware.Context,
-) {
+function NavLink(props: { href: string; children: JSX.Element }, c: Context) {
 	const current = props.href === c.url.pathname;
 
 	return (
@@ -76,7 +73,11 @@ function NavLink(
 <NavLink href="/recipes">Recipes</NavLink>;
 ```
 
-By the time a component runs the response has started, so read from the context there, and set headers, cookies, and redirects in the route. A [render made on its own](#markup) outside of a request has no context to give.
+By the time a component runs the response has started, so read from the context there, and set headers, cookies, and redirects in the route. A [render made on its own](#markup) gives its components the `context` it is given, and without one it has none to give.
+
+```tsx
+const html = await new Render({ markup: <Page /> }, { context: c }).string();
+```
 
 ## Shared reads
 
@@ -89,12 +90,12 @@ const friendsOf = (user: string) =>
 		WHERE ${database.friends.columns.user} = ${user}
 	`.parse(database.friends);
 
-async function Share(props: { user: string }, c: Middleware.Context) {
+async function Share(props: { user: string }, c: Context) {
 	const friends = await c.memo(friendsOf)(props.user); // queries
 	// ...
 }
 
-async function Offer(props: { user: string }, c: Middleware.Context) {
+async function Offer(props: { user: string }, c: Context) {
 	const friends = await c.memo(friendsOf)(props.user); // the same rows, no query
 	// ...
 }
@@ -317,4 +318,4 @@ const md = await new Render(
 // Read the [docs](https://example.com/docs).
 ```
 
-Each block, such as a paragraph or a list, is written once it closes, so a stream still sends the page as it renders. When the element has a `<main>`, only its contents are written; without one a `<main>` could still follow, so the page is written when it ends. Scripts, styles, and hidden elements are left out, forms are described by their fields, and links resolve against `base`. Raw markup from `Render.raw` is written as it is, since Markdown can contain HTML. A form in a table's cell that is only a button is written in the cell, one with fields after the table, and an element that holds blocks, such as a custom element around a card, is read as a container.
+Each block, such as a paragraph or a list, is written once it closes, so a stream still sends the page as it renders. When the element has a `<main>`, only its contents are written; without one a `<main>` could still follow, so the page is written when it ends. Scripts, styles, and hidden elements are left out, forms are described by their fields, and links resolve against `base`, which is the request's URL when the render is given a `context`. Raw markup from `Render.raw` is written as it is, since Markdown can contain HTML. A form in a table's cell that is only a button is written in the cell, one with fields after the table, and an element that holds blocks, such as a custom element around a card, is read as a container.

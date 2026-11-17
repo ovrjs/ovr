@@ -11,7 +11,7 @@ Middleware are functions that are composed together to handle requests. Most mid
 import type { Middleware } from "ovr";
 
 const mw: Middleware = async (c, next) => {
-	c; // Middleware.Context - request context
+	c; // Context - request context
 	await next(); // Middleware.Next - dispatch the next middleware in the stack
 };
 ```
@@ -53,7 +53,13 @@ app.use(
 
 ## Context
 
-For each request, ovr creates a `Context` object _(abbreviated as `c` in these docs)_ and passes it as the first argument to every middleware function.
+For each request, ovr creates a `Context` object _(abbreviated as `c` in these docs)_ and passes it as the first argument to every middleware function. Import the `Context` type to write a function that takes one.
+
+```ts
+import type { Context } from "ovr";
+
+const signedIn = async (c: Context) => Boolean(await c.session());
+```
 
 ## Properties
 

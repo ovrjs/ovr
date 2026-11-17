@@ -1,7 +1,7 @@
 import { App, agents } from "../app/index.js";
+import type { Context } from "../context/index.js";
 import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
-import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Mcp } from "./index.js";
@@ -1206,7 +1206,7 @@ describe("Mcp", () => {
 			amount: Schema.string(),
 		});
 		const received: unknown[] = [];
-		const answer = async (c: Middleware.Context) => {
+		const answer = async (c: Context) => {
 			const result = await c.data();
 			if (!result || result.issues) return c.json(result?.issues, 422);
 			received.push(result.data);

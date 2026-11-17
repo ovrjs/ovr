@@ -1,5 +1,6 @@
 export { App } from "./app/index.js";
 export { Auth } from "./auth/index.js";
+export type { Context } from "./context/index.js";
 export { Database } from "./database/index.js";
 export { Limiter } from "./limiter/index.js";
 export { Mcp } from "./mcp/index.js";

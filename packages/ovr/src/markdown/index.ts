@@ -1,13 +1,6 @@
 import type { Context } from "../context/index.js";
 import type { JSX } from "../jsx/index.js";
-import {
-	type Chunk,
-	Group,
-	Renderer,
-	Source,
-	Tag,
-	request,
-} from "../markup/index.js";
+import { type Chunk, Group, Renderer, Source, Tag } from "../markup/index.js";
 
 /** Parsed element */
 type Node = {
@@ -53,11 +46,17 @@ export const tools = Symbol("tools");
 
 /** Markdown conversion options */
 export type Options = {
-	/** Resolves relative links and form actions, usually the request URL */
+	/**
+	 * Resolves relative links and form actions, usually the request URL,
+	 * which it is when `context` is given
+	 */
 	readonly base?: string | URL | undefined;
 
-	/** Request the page is rendered for, set by its context */
-	readonly [request]?: Context | undefined;
+	/**
+	 * Context of the request the element is rendered for, which each
+	 * component is given as its second argument
+	 */
+	readonly context?: Context<any, any> | undefined;
 
 	/**
 	 * Finds the tool that submits a form, if there is one, set by
@@ -196,9 +195,13 @@ class Writer {
 	/** Blocks written */
 	#count = 0;
 
+	/** What relative links and form actions resolve against */
+	readonly #base: string | URL | undefined;
+
 	/** @param options Conversion options */
 	constructor(options: Options = {}) {
 		this.#options = options;
+		this.#base = options.base ?? options.context?.url;
 	}
 
 	/** @returns The rest of the Markdown */
@@ -1238,7 +1241,7 @@ class Writer {
 	#url(href: string) {
 		try {
 			// parsed first, browsers remove characters such as tabs from the scheme
-			const url = new URL(href, this.#options.base ?? "http://localhost/");
+			const url = new URL(href, this.#base ?? "http://localhost/");
 			if (Writer.#schemes.has(url.protocol)) return url;
 		} catch {}
 	}
@@ -1260,7 +1263,7 @@ class Writer {
 	 * @returns Relative when there is no base
 	 */
 	#href(url: URL) {
-		return this.#options.base ? url.href : url.pathname + url.search + url.hash;
+		return this.#base ? url.href : url.pathname + url.search + url.hash;
 	}
 
 	/** Raw HTML that starts with a block element, or a comment */
@@ -1448,7 +1451,7 @@ export class Blocks {
 	 * @param options Markdown options
 	 */
 	constructor(element: JSX.Element, options?: Options) {
-		this.#render = new Renderer(element, undefined, options?.[request]);
+		this.#render = new Renderer(element, undefined, options?.context);
 		this.#writer = new Writer(options);
 	}
 

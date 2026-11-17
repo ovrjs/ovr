@@ -235,9 +235,6 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
  */
 type Component = (props: any, c: Context<any, any>) => JSX.Element;
 
-/** Internal protocol for a request's context, to render a page for it. */
-export const request = Symbol("request");
-
 /** Internal protocol for a render, to read the element it renders. */
 export const source = Symbol("source");
 
@@ -345,7 +342,7 @@ export class Renderer {
 
 						if (typeof tag === "function") {
 							// component or fragment
-							// a render outside a request has no context to give
+							// a render that is not given a context has none to give
 							this.#element = tag(props, this.#context!);
 							this.#next = 1;
 							continue;

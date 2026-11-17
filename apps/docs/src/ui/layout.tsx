@@ -121,7 +121,7 @@ export const HomeLayout = (props: {
 	);
 };
 
-const TOC = (_props: {}, c: o.Middleware.Context) => {
+const TOC = (_props: {}, c: o.Context) => {
 	const result = content.get(c.url.pathname.slice(1));
 	if (!result) return;
 
@@ -175,7 +175,7 @@ const NavHeading = (props: { children: o.JSX.Element }) => {
 	);
 };
 
-const Nav = (_props: {}, c: o.Middleware.Context) => {
+const Nav = (_props: {}, c: o.Context) => {
 	return (
 		<>
 			<hr />
@@ -236,7 +236,7 @@ const NavLink = (
 		current?: boolean;
 		children: o.JSX.Element;
 	},
-	c: o.Middleware.Context,
+	c: o.Context,
 ) => {
 	const current = props.current ?? props.href === c.url.pathname;
 

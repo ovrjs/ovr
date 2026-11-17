@@ -1,8 +1,7 @@
 import type { App } from "../app/index.js";
-import { Cookie } from "../cookie/index.js";
+import { Cookie, type Cookie as CookieType } from "../cookie/index.js";
 import { type Field, Form as FormSchema, forms, kept } from "../form/index.js";
 import { type Options, tools } from "../markdown/index.js";
-import { request } from "../markup/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
@@ -60,6 +59,11 @@ class PreparedResponse {
 export const sessions = Symbol("sessions");
 
 export namespace Context {
+	export namespace Cookie {
+		/** Options of a cookie */
+		export type Options = CookieType.Options;
+	}
+
 	/** A signed-in user's revocable session. */
 	export interface Session {
 		/**
@@ -338,7 +342,7 @@ export class Context<
 	 * ```tsx
 	 * const friendsOf = (user: string) => sql`...`.parse(friends);
 	 *
-	 * async function Share(props: { user: string }, c: Middleware.Context) {
+	 * async function Share(props: { user: string }, c: Context) {
 	 * 	const friends = await c.memo(friendsOf)(props.user);
 	 * }
 	 * ```
@@ -529,11 +533,7 @@ export class Context<
 				) {
 					res.body = new Render(
 						{ markdown: r },
-						{
-							base: this.url,
-							[tools]: agent.get(this.req)?.tool,
-							[request]: this,
-						},
+						{ context: this, [tools]: agent.get(this.req)?.tool },
 					).stream();
 					res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
 					return;
@@ -545,7 +545,7 @@ export class Context<
 				{
 					// other defined types are not markup, so they are not escaped
 					raw: Boolean(mime && !Mime.markup(mime)),
-					[request]: this,
+					context: this,
 				},
 			).stream();
 

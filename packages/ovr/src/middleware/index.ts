@@ -1,25 +1,7 @@
-import type { Context as ContextType } from "../context/index.js";
-import type { Cookie as CookieType } from "../cookie/index.js";
+import type { Context } from "../context/index.js";
 import type { Field } from "../form/index.js";
 
 export namespace Middleware {
-	export namespace Context {
-		export namespace Cookie {
-			export type Options = CookieType.Options;
-		}
-	}
-
-	/**
-	 * Middleware context.
-	 *
-	 * @template Params Parameters created from a route match
-	 * @template Shape Parsed form data shape
-	 */
-	export type Context<
-		Params extends Record<string, unknown> = Record<string, unknown>,
-		Shape extends Field.Shape = any,
-	> = ContextType<Params, Shape>;
-
 	/** Dispatches the next middleware in the stack */
 	export type Next = () => Promise<void>;
 }
@@ -36,4 +18,4 @@ export namespace Middleware {
 export type Middleware<
 	Params extends Record<string, unknown> = Record<string, unknown>,
 	Shape extends Field.Shape = any,
-> = (context: ContextType<Params, Shape>, next: Middleware.Next) => any;
+> = (context: Context<Params, Shape>, next: Middleware.Next) => any;

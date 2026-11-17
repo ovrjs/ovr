@@ -1,6 +1,6 @@
 import type { FrontmatterSchema } from "@/lib/md";
 import type { Result } from "@robino/md";
-import type { Middleware } from "ovr";
+import type { Context } from "ovr";
 
 const pages = import.meta.glob<Result<typeof FrontmatterSchema>>(
 	`@/server/docs/*/index.md`,
@@ -63,7 +63,7 @@ export const demos = {
  *
  * @param c Request context
  */
-export const cache = (c: Pick<Middleware.Context, "res">) =>
+export const cache = (c: Pick<Context, "res">) =>
 	c.res.headers.set("cache-control", "public, max-age=0, s-maxage=31536000");
 
 export const md = (result: Result<typeof FrontmatterSchema>) => {

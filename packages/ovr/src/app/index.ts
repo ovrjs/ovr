@@ -266,7 +266,7 @@ export class App {
 	}
 
 	/** Answers a body the client got wrong, where the route read it */
-	static async #body(c: Middleware.Context, next: Middleware.Next) {
+	static async #body(c: Context, next: Middleware.Next) {
 		try {
 			await next();
 		} catch (error) {
@@ -302,7 +302,7 @@ export class App {
 	}
 
 	/** Basic CSRF middleware */
-	static #csrf(c: Middleware.Context, next: Middleware.Next) {
+	static #csrf(c: Context, next: Middleware.Next) {
 		const { headers, method } = c.req;
 		const site = headers.get(Header.name.fetch);
 		const origin = headers.get(Header.name.origin);

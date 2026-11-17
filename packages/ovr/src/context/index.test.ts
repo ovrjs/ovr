@@ -3,11 +3,11 @@ import { jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
+import type { Context } from "./index.js";
 import { expect, expectTypeOf, test, vi } from "vitest";
 
 /** Writes the path of the request it is rendered for */
-const Path = (_props: {}, c: Middleware.Context) =>
-	jsx("i", { children: c.url.pathname });
+const Path = (_props: {}, c: Context) => jsx("i", { children: c.url.pathname });
 
 /**
  * @param page What the page at `/page` returns
@@ -75,8 +75,33 @@ test("in a render that is a child of the page", async () => {
 	).toBe("<div><i>/page</i></div>");
 });
 
-test("a render on its own has no context to give", async () => {
-	const Given = (_props: {}, c: Middleware.Context) => String(c);
+test("a render on its own gives the context it is given", async () => {
+	const Link = (_props: {}, c: Context) =>
+		jsx("a", { href: "?page=2", children: c.url.pathname });
+	const page: Middleware = async (c) => {
+		const element = () => jsx(Link, {});
+
+		return c.json([
+			await new Render({ markup: element() }, { context: c }).string(),
+			// links resolve against the request
+			await new Render({ markdown: element() }, { context: c }).string(),
+			// unless a base is given
+			await new Render(
+				{ markdown: element() },
+				{ context: c, base: "https://other.example/" },
+			).string(),
+		]);
+	};
+
+	expect(JSON.parse(await read(page))).toEqual([
+		'<a href="?page=2">/page</a>',
+		"[/page](https://example.com/page?page=2)\n",
+		"[/page](https://other.example/?page=2)\n",
+	]);
+});
+
+test("without one, it has no context to give", async () => {
+	const Given = (_props: {}, c: Context) => String(c);
 
 	expect(await new Render({ markup: jsx(Given, {}) }).string()).toBe(
 		"undefined",
@@ -91,9 +116,9 @@ test("components that read the same thing share one read", async () => {
 		await new Promise((resolve) => setTimeout(resolve, 5));
 		return [`${user}'s friend`];
 	});
-	const Share = async (props: { user: string }, c: Middleware.Context) =>
+	const Share = async (props: { user: string }, c: Context) =>
 		jsx("p", { children: await c.memo(friendsOf)(props.user) });
-	const Offer = async (props: { user: string }, c: Middleware.Context) =>
+	const Offer = async (props: { user: string }, c: Context) =>
 		jsx("p", { children: await c.memo(friendsOf)(props.user) });
 	const page: Middleware = async (c) => [
 		// the page reads it too, before anything renders
@@ -191,7 +216,7 @@ test("memo runs a function that throws again", () => {
 
 /** @returns The context of a request, as a page is given it */
 function context() {
-	let given!: Middleware.Context;
+	let given!: Context;
 
 	void new App()
 		.use(Route.get("/").use((c) => void (given = c)))
