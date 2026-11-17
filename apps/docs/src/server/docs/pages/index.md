@@ -148,7 +148,7 @@ So keep what can fail the request in the route, and make each component safe for
 
 - Check that the record exists, and that the user may see it, in the route. That is the 404 and the redirect.
 - A component that finds nothing renders nothing, or says so: an empty list is not an error.
-- A read that can fail on its own, such as another service, is caught where it is made, and the component renders what to show without it.
+- A read that can fail on its own, such as another service, is caught where it is made. The component reports the error, since nothing else will, and renders what to show without it.
 
 ```tsx
 async function Weather(props: { city: string }) {
@@ -157,7 +157,9 @@ async function Weather(props: { city: string }) {
 		const { summary } = (await res.json()) as { summary: string };
 
 		return <p>{summary}</p>;
-	} catch {
+	} catch (error) {
+		console.error(error); // or your error tracker
+
 		return <p>The weather is unavailable.</p>;
 	}
 }
