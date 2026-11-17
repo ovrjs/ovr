@@ -176,6 +176,8 @@ export namespace Route {
 		readonly read: boolean;
 		/** May change or delete what is there, so agents can confirm it; never a tool that reads */
 		readonly destructive: boolean;
+		/** Called again with the same arguments, leaves the same result, so a client can retry it; always a tool that reads */
+		readonly idempotent: boolean;
 	};
 
 	/**
@@ -353,6 +355,13 @@ export namespace Route {
 		 * changes or deletes what is there
 		 */
 		readonly destructive?: boolean;
+
+		/**
+		 * `true` for a route that leaves the same result when it is called
+		 * again with the same arguments, such as one that sets a value, so an
+		 * agent's client can retry it after a failure
+		 */
+		readonly idempotent?: boolean;
 	};
 
 	/** Components a route has: GET routes add an `<Anchor>` */
@@ -590,6 +599,9 @@ export class Route<
 	/** Whether the route may change or delete what is there, see `describe` */
 	#destructive = true;
 
+	/** Whether calling the route again with the same arguments changes nothing more */
+	#idempotent = false;
+
 	/** Schemas that check and convert pattern parameters */
 	#paramSchemas?: Readonly<Record<string, ValueSchema<unknown>>>;
 
@@ -727,6 +739,7 @@ export class Route<
 			},
 			read,
 			destructive: !read && this.#destructive,
+			idempotent: read || this.#idempotent,
 		};
 	}
 
@@ -773,6 +786,7 @@ export class Route<
 		this.#configure("describe");
 		this.#description = description as string | Route.Description;
 		this.#destructive = options?.destructive ?? true;
+		this.#idempotent = options?.idempotent ?? false;
 		return this;
 	}
 

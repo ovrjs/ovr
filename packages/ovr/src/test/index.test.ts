@@ -449,6 +449,69 @@ describe("fetch", () => {
 });
 
 describe("call", () => {
+	test("a route knows which agent is calling, and that a person is none", async () => {
+		const who = Route.post("/who")
+			.describe("Say who is calling", { idempotent: true })
+			.use(async (c) => c.json({ agent: (await c.session())?.agent ?? null }));
+		const auth = new Auth({ secret: "s".repeat(32), origin, database, users });
+		const app = new App().use(
+			auth,
+			new Mcp({
+				auth,
+				name: "who",
+				title: "Who",
+				version: "2.3.0",
+				description: "Says who is calling",
+				websiteUrl: "https://example.com",
+				icons: [{ src: "https://example.com/icon.png", sizes: ["48x48"] }],
+			}),
+			who,
+		);
+		const ross = new Tester({ app, user: "ross" });
+
+		expect((await ross.call(who)).structuredContent).toEqual({
+			agent: { id: "https://tester.test", name: "Tester" },
+		});
+		expect(await (await ross.fetch(who, { data: {} })).json()).toEqual({
+			agent: null,
+		});
+		expect(who.tool.idempotent).toBe(true);
+
+		// the server says what it is, as it was given
+		const open = new App().use(
+			new Mcp({
+				name: "who",
+				title: "Who",
+				version: "2.3.0",
+				description: "Says who is calling",
+				websiteUrl: "https://example.com",
+				icons: [{ src: "https://example.com/icon.png", sizes: ["48x48"] }],
+			}),
+		);
+		const hello = await open.fetch(
+			new Request(`${origin}/mcp`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					accept: "application/json, text/event-stream",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "initialize",
+					params: {
+						protocolVersion: "2025-06-18",
+						capabilities: {},
+						clientInfo: { name: "test", version: "1" },
+					},
+				}),
+			}),
+		);
+		expect(await hello.text()).toContain(
+			'"serverInfo":{"name":"who","version":"2.3.0","title":"Who","description":"Says who is calling","websiteUrl":"https://example.com","icons":[{"src":"https://example.com/icon.png","sizes":["48x48"]}]}',
+		);
+	});
+
 	test("calls a tool as the user's agent", async () => {
 		const { app, whoami } = setup();
 		const result = await new Tester({ app, user: "ross" }).call(whoami);

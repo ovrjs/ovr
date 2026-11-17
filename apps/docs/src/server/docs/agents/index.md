@@ -91,6 +91,11 @@ app.use(mcp);
 | Option         | Default        | Purpose                                                     |
 | -------------- | -------------- | ----------------------------------------------------------- |
 | `name`         | The app's host | Server name shown in clients                                |
+| `title`        | None           | Name shown to people, where `name` is one a program reads   |
+| `version`      | `1.0.0`        | Version of the app                                          |
+| `description`  | None           | What the app is, in a sentence                              |
+| `websiteUrl`   | None           | Address of the app's site                                   |
+| `icons`        | None           | Icons clients show: `[{ src, mimeType, sizes, theme }]`     |
 | `instructions` | None           | Guidance for agents on how to use the app                   |
 | `path`         | `/mcp`         | Endpoint path, a fixed path of the app's own                |
 | `auth`         | None           | `Auth` service agents sign in with, see [Sign in](#sign-in) |
@@ -145,7 +150,7 @@ A name is public: clients save it and directories list it. Moving a route rename
 
 A tool's `title`, which a client shows people, is the description's first sentence, so start with a short line such as "Delete a post" and put detail in a second sentence.
 
-A tool that only reads is marked `readOnlyHint`, and one that writes `destructiveHint`, since it may change or delete what is there, so a client may ask the person before calling it. A route that only adds says so with [`destructive: false`](/route#describe).
+A tool that only reads is marked `readOnlyHint`, and one that writes `destructiveHint`, since it may change or delete what is there, so a client may ask the person before calling it. A route that only adds says so with [`destructive: false`](/route#describe). A route that leaves the same result when it is called again with the same arguments, such as one that sets a value, says so with `idempotent: true`, so a client can retry it after a failure. A tool that reads always is.
 
 #### Arguments
 

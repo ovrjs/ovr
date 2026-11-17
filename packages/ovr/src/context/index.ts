@@ -81,6 +81,13 @@ export namespace Context {
 		readonly user: string;
 		/** Time in milliseconds the session ends unless it is used, which renews it. */
 		readonly expiration: number;
+		/**
+		 * The agent making the request for the user, through a tool call:
+		 * its client ID, which `auth.disconnect` takes, and the name it gave
+		 * itself when the user approved it, which is not verified. A person's
+		 * own request has none.
+		 */
+		readonly agent?: { readonly id: string; readonly name: string };
 	}
 
 	/**

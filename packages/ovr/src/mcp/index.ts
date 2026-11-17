@@ -62,6 +62,18 @@ class RpcError extends Error {
 }
 
 export namespace Mcp {
+	/** An icon a client shows beside the app */
+	export type Icon = {
+		/** Address of the image */
+		readonly src: string;
+		/** Media type, such as `image/png` */
+		readonly mimeType?: string;
+		/** Sizes it has, such as `["48x48"]`, or `["any"]` for an SVG */
+		readonly sizes?: readonly string[];
+		/** The theme it is drawn for, any without it */
+		readonly theme?: "light" | "dark";
+	};
+
 	/**
 	 * MCP server options
 	 *
@@ -74,6 +86,25 @@ export namespace Mcp {
 		 * @default The app's host
 		 */
 		readonly name?: string;
+
+		/** Name shown to people, where `name` is one a program reads */
+		readonly title?: string;
+
+		/**
+		 * Version of the app, shown in clients.
+		 *
+		 * @default "1.0.0"
+		 */
+		readonly version?: string;
+
+		/** What the app is, in a sentence, shown where clients list servers */
+		readonly description?: string;
+
+		/** Address of the app's site, for a person to open */
+		readonly websiteUrl?: string;
+
+		/** Icons clients show beside the app, each a URL with its type and sizes */
+		readonly icons?: readonly Mcp.Icon[];
 
 		/** Guidance for agents on how to use the app */
 		readonly instructions?: string;
@@ -578,10 +609,16 @@ export class Mcp<P extends string = string> {
 	 * @returns Server name and version
 	 */
 	#info(c: Context) {
+		const { title, description, websiteUrl, icons } = this.#options;
+
 		return {
 			name: this.#options.name ?? c.url.host,
 			// required by the protocol, and only shown in clients
-			version: "1.0.0",
+			version: this.#options.version ?? "1.0.0",
+			...(title && { title }),
+			...(description && { description }),
+			...(websiteUrl && { websiteUrl }),
+			...(icons?.length && { icons }),
 		};
 	}
 
@@ -686,6 +723,7 @@ export class Mcp<P extends string = string> {
 					title: tool.title,
 					readOnlyHint: read,
 					destructiveHint: tool.destructive,
+					idempotentHint: tool.idempotent,
 					openWorldHint: false,
 				},
 			});

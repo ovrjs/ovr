@@ -207,7 +207,7 @@ A GET route is a read-only tool. Any other route may change or delete something,
 Route.post("/posts").describe("Create a post", { destructive: false });
 ```
 
-A route that edits a record overwrites what was there, so leave it as it is.
+A route that edits a record overwrites what was there, so leave it as it is. If calling it again with the same arguments changes nothing more, add `idempotent: true`, and a client can retry it after a failure.
 
 `route.tool.name()` is a route's tool name, to use anywhere, as `route.url()` is its address. To name a route in a description before that route is written, give `describe` a function. It is called once every route exists, so two routes can name each other:
 

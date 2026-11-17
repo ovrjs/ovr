@@ -1056,6 +1056,8 @@ describe("Mcp", () => {
 				title: "List posts",
 				readOnlyHint: true,
 				destructiveHint: false,
+				// a read can always be called again
+				idempotentHint: true,
 				openWorldHint: false,
 			},
 		});
@@ -1073,6 +1075,7 @@ describe("Mcp", () => {
 			title: create.description,
 			readOnlyHint: false,
 			destructiveHint: false,
+			idempotentHint: false,
 			openWorldHint: false,
 		});
 		expect(remove.inputSchema).toEqual({

@@ -750,6 +750,7 @@ export function oauth(
 				id: await Storage.hash(token),
 				user: row.user,
 				expiration: row.expiration,
+				agent: { id: row.client, name: row.name },
 			};
 		},
 	};

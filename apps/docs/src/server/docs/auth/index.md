@@ -313,6 +313,8 @@ To bring the user back after they sign in yourself, link to the page with `_retu
 
 A session is `{ id, user, expiration }`, typed `Context.Session`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 
+When an [agent](/agents#sign-in) makes the request for the user, the session also has `agent`: its `id`, which [`auth.disconnect`](#agents) takes, and the `name` it gave itself. A person's own request has none, so a handler can tell the two apart, such as to keep a log of what each connected agent changed.
+
 A session ends after a week without use, and renews while it is used: reading it moves its end out by another week, at most once a day. However often it is used, it ends 30 days after sign-in, and the user signs in again. Set these with `idle` and `lifetime`. Each request checks the database, so revocation and renewal apply across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.
 
 A response to a browser that sends the session cookie is `Cache-Control: no-store`, set before the route runs, so no cache keeps a signed-in page. That holds wherever the session is read: a [component](/render#context) can read it with `c.session()` while the page streams. A route that reads no session can set its own `Cache-Control`, such as for an image.

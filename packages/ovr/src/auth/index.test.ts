@@ -917,7 +917,7 @@ describe("form contracts", () => {
 		for (const name of ["routes", "bearer", "origin"])
 			expect(name in auth).toBe(false);
 		expectTypeOf<keyof Auth.Session>().toEqualTypeOf<
-			"id" | "user" | "expiration"
+			"id" | "user" | "expiration" | "agent"
 		>();
 		expectTypeOf<keyof Auth.Credential>().toEqualTypeOf<
 			| "id"
