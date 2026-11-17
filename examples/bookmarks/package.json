@@ -6,7 +6,7 @@
 		"check": "tsc"
 	},
 	"dependencies": {
-		"ovr": "7.0.0-next.49",
+		"ovr": "7.0.0-next.50",
 		"pg": "^8.23.1"
 	},
 	"devDependencies": {

@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.50
+
+### Patch Changes
+
+- 1f57f56: A route's own `Form` renders the route's fields again, so the shortest form needs no `const`: `<add.Form submit="Add" />`. It is the same for every request. The form that shows what a refused submission sent is still `route.form(c)`.
+
 ## 7.0.0-next.49
 
 ### Minor Changes
