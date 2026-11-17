@@ -49,6 +49,7 @@
     "json-tool-arguments",
     "list-findings",
     "list-layout",
+    "list-row-ids",
     "list-rows",
     "list-table-wrapper",
     "lists",
