@@ -79,6 +79,16 @@ By the time a component runs the response has started, so read from the context 
 const html = await new Render({ markup: <Page /> }, { context: c }).string();
 ```
 
+To take a component as a value, such as a prop that is one, type it with `JSX.Component`. A component fits it whether or not it reads the context.
+
+```tsx
+import type { JSX } from "ovr";
+
+function Card(props: { icon: JSX.Component<{ size: number }> }) {
+	return <props.icon size={16} />;
+}
+```
+
 ## Shared reads
 
 Components that fetch what they show can be put anywhere on a page, but two of them that need the same rows would each query for them. `c.memo` shares a function's result for the rest of the request: called again with the same arguments, it returns what it returned the first time.

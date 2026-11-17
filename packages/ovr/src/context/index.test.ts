@@ -1,5 +1,5 @@
 import { App } from "../app/index.js";
-import { jsx } from "../jsx/index.js";
+import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
@@ -26,6 +26,29 @@ const read = async (
 
 test("a component is given the context of the request it is rendered for", async () => {
 	expect(await read(() => jsx(Path, {}))).toBe("<i>/page</i>");
+});
+
+test("a component given as a value is typed with or without the context", async () => {
+	const Card = (props: { icon: JSX.Component<{ size: number }> }) =>
+		jsx(props.icon, { size: 16 });
+	const Plain = (props: { size: number }) => jsx("b", { children: props.size });
+	const Reads = (props: { size: number }, c: Context) =>
+		jsx("b", { children: [props.size, c.url.pathname] });
+
+	expect(
+		await read(() => [jsx(Card, { icon: Plain }), jsx(Card, { icon: Reads })]),
+	).toBe("<b>16</b><b>16/page</b>");
+
+	// @ts-expect-error other props
+	void (() => jsx(Card, { icon: (props: { name: string }) => props.name }));
+	// @ts-expect-error called without the context it may read
+	void ((icon: JSX.Component) => icon({}));
+	// one that takes no props
+	expectTypeOf<() => string>().toExtend<JSX.Component>();
+	// only for routes with these parameters, so not any component
+	expectTypeOf<
+		(props: {}, c: Context<{ id: string }>) => string
+	>().not.toExtend<JSX.Component>();
 });
 
 test("wherever it is in the page", async () => {

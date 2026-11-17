@@ -39,6 +39,21 @@ export namespace JSX {
 	export type Props = Record<string, JSX.Element>;
 
 	/**
+	 * A component: a function of its props, and the context of the request
+	 * it is rendered for. Use it to take a component as a value, such as a
+	 * prop that is one. A component that takes only props fits it too.
+	 *
+	 * ```tsx
+	 * function Card(props: { icon: JSX.Component<{ size: number }> }) {
+	 * 	return <props.icon size={16} />;
+	 * }
+	 * ```
+	 *
+	 * @template P Props of the component
+	 */
+	export type Component<P = {}> = (props: P, c: Context) => JSX.Element;
+
+	/**
 	 * What a tag can be: an element's name, or a component, which is a
 	 * function of its props and the context of the request it is rendered
 	 * for. A class is not one, so `<Form />` with the `Form` class is a type
