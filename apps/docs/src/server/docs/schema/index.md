@@ -112,7 +112,7 @@ A description written to be complete for an agent can be more than a person need
 
 - `signup.Fields` renders all the fields _without_ the outer `<form>` shell
 - `signup.Field` renders one field by `name` (each key in the shape)
-- `signup.component` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
+- `await signup.component(…)` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
 
 ---
 
@@ -181,7 +181,7 @@ const signup = Route.post("/signup")
 			RETURNING *
 		`.parse(database.users);
 		if (!user) {
-			const invalid = result.invalid({ email: "Already registered" });
+			const invalid = await result.invalid({ email: "Already registered" });
 			return c.redirect(invalid.url, 303);
 		}
 
@@ -280,10 +280,14 @@ A list's `options` are those of each row's choices made from a schema, so a week
 />
 ```
 
-`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
+`await save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
 
 ```tsx
-const Items = save.component({ name: "ingredients", values, state: c.url });
+const Items = await save.component({
+	name: "ingredients",
+	values,
+	state: c.url,
+});
 
 <Items.Root>
 	<Items.Legend />
@@ -395,13 +399,15 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 
 The state is compressed, since it is in a URL, and is at most 5 KB there. That holds a long form: a recipe of 50 ingredients, its steps, and its notes. A list shows no more rows from a URL than its `max()`, and never a row's hidden value. When the state is larger, values are left out, from the form's last field back, until it fits. The issues are kept unless they alone are too long, so the person sees what was wrong, but not what they typed in the fields left out. Text that does not compress, or a form of many long fields, can still be too much: keep those values another way, such as by saving a draft.
 
-`route.state(url)` reads the state a URL holds for the route's form: its `issues`, and the `values` kept. It is `undefined` when the URL holds none of the form's own. Use it to act on a refused submission outside the form's components, such as opening the `<details>` the form is in:
+`await route.state(url)` reads the state a URL holds for the route's form: its `issues`, and the `values` kept. It is `undefined` when the URL holds none of the form's own. Use it to act on a refused submission outside the form's components, such as opening the `<details>` the form is in:
 
 ```tsx
-<details open={Boolean(create.state(c.url)?.issues)}>
+const refused = await create.state(c.url);
+
+<details open={Boolean(refused?.issues)}>
 	<summary>Add a recipe</summary>
 	<create.Form state={c.url} />
-</details>
+</details>;
 ```
 
 Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.

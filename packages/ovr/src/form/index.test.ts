@@ -46,13 +46,13 @@ const formInvalid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 	return result as FormInvalid<S>;
 };
 
-const decodeState = <S extends Field.Shape>(
+const decodeState = async <S extends Field.Shape>(
 	search: Field.Parse.Result.Search,
 ) => {
 	if (!search) throw new Error("Expected _form search state");
 
 	return JSON.parse(
-		Codec.decode(unpack(search[0][1], 1 << 20)!),
+		Codec.decode((await unpack(search[0][1], 1 << 20))!),
 	) as Field.State<S>;
 };
 
@@ -447,7 +447,7 @@ describe("Form schema", () => {
 		data.append("avatar", file);
 
 		const result = formInvalid(await form.parse(data));
-		const state = decodeState(result.search);
+		const state = await decodeState(result.search);
 
 		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values).toBeUndefined();
@@ -468,7 +468,7 @@ describe("Form schema", () => {
 		data.set("password", "secret");
 
 		const result = formInvalid(await form.parse(data));
-		const state = decodeState(result.search);
+		const state = await decodeState(result.search);
 
 		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values?.name).toBe("x");
@@ -489,7 +489,7 @@ describe("Form schema", () => {
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		const state = decodeState(result.search);
+		const state = await decodeState(result.search);
 
 		expect(state.values?.name).toBe("");
 		expect(state.values?.role).toBe("owner");
@@ -506,7 +506,7 @@ describe("Form schema", () => {
 		params.set("role", "owner");
 
 		const result = formInvalid(await form.parse(params));
-		const state = decodeState(result.search);
+		const state = await decodeState(result.search);
 
 		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values).toBeUndefined();
@@ -525,7 +525,7 @@ describe("Form schema", () => {
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		const state = decodeState(result.search);
+		const state = await decodeState(result.search);
 
 		expect(result.search?.[0]?.[0]).toBe("_form");
 		expect(state.values).toBeUndefined();
@@ -546,13 +546,16 @@ describe("Form schema", () => {
 
 		const result = formInvalid(await form.parse(data));
 		const tampered = {
-			...decodeState(result.search),
+			...(await decodeState(result.search)),
 			issues: undefined,
 			values: { name: { bad: true } },
 		};
 		const url = new URL("https://example.com/form");
 
-		url.searchParams.set("_form", pack(Codec.encode(JSON.stringify(tampered))));
+		url.searchParams.set(
+			"_form",
+			await pack(Codec.encode(JSON.stringify(tampered))),
+		);
 
 		const html = await new Render({
 			markup: form.Field({ name: "name", state: url }),
@@ -712,7 +715,7 @@ describe("Form schema", () => {
 		);
 
 		// a part of its own, for a custom layout
-		const part = form.component({ name: "url" });
+		const part = await form.component({ name: "url" });
 		expect(
 			await new Render({
 				markup: part.Description({ class: "muted" }),
@@ -920,10 +923,10 @@ describe("Form schema", () => {
 
 		url.searchParams.set(
 			"_form",
-			pack(
+			await pack(
 				Codec.encode(
 					JSON.stringify({
-						...decodeState(result.search),
+						...(await decodeState(result.search)),
 						values: {
 							name: "ross",
 							email: "ross@example.com",
@@ -968,7 +971,7 @@ describe("Form schema", () => {
 		);
 
 		const result = formInvalid(await form.parse(data));
-		const state = decodeState(result.search);
+		const state = await decodeState(result.search);
 
 		expect(state.values?.name).toBe("ross");
 		expect(state.values?.avatar).toBeUndefined();
@@ -985,12 +988,12 @@ describe("Form schema", () => {
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		const state = decodeState(result.search);
+		const state = await decodeState(result.search);
 		const url = new URL("https://example.com/form");
 
 		url.searchParams.set(
 			"_form",
-			pack(Codec.encode(JSON.stringify({ ...state, issues: [{}] }))),
+			await pack(Codec.encode(JSON.stringify({ ...state, issues: [{}] }))),
 		);
 
 		const html = await new Render({
@@ -1233,7 +1236,7 @@ describe("choices a schema checks", () => {
 		expect(tags).not.toContain("spring");
 
 		// a custom layout labels each choice
-		const Photos = form.component({ name: "photos", options: [a] });
+		const Photos = await form.component({ name: "photos", options: [a] });
 		expect(Photos.options).toEqual([a]);
 		expect(
 			await new Render({
@@ -1351,7 +1354,7 @@ describe("choices people call by another name", () => {
 		).toContain('<label for="tags-winter">Winter</label>');
 
 		// a custom layout gets them too, and may still say its own
-		const Meal = form.component({ name: "meal" });
+		const Meal = await form.component({ name: "meal" });
 		expect(Meal.options).toEqual(["dinner", "crockpot"]);
 		expect(
 			await new Render({ markup: Meal.Option({ value: "crockpot" }) }).string(),
@@ -1547,7 +1550,7 @@ test("what is passed to a group is its fieldset's, and each box has what control
 			"</fieldset>",
 	);
 
-	const Size = form.component({ name: "size", class: "sizes" });
+	const Size = await form.component({ name: "size", class: "sizes" });
 	expect(await new Render({ markup: Size.Root() }).string()).toBe(
 		'<fieldset class="sizes"></fieldset>',
 	);
@@ -1572,17 +1575,20 @@ test("a long form is kept compressed, and what cannot fit is left out from the l
 
 	// more than 3,000 characters, where a value once had 512 and the state 4 KB
 	const kept = await parse({ steps: steps.join("\n"), note });
-	expect(decodeState<typeof form.shape>(kept).values).toEqual({ steps, note });
+	expect((await decodeState<typeof form.shape>(kept)).values).toEqual({
+		steps,
+		note,
+	});
 	expect(kept![0][1].length).toBeLessThan(5 * 1024);
 	expect(kept![0][1]).toMatch(/^[\w-]+$/);
 
 	// text that does not compress is left out, and the fields before it stay
 	const cut = await parse({ steps: steps.join("\n"), note: noise(8_000) });
-	expect(decodeState<typeof form.shape>(cut).values).toEqual({ steps });
+	expect((await decodeState<typeof form.shape>(cut)).values).toEqual({ steps });
 
 	// a value that could never fit is not compressed to find that out
 	const huge = await parse({ steps: "ok", note: "y".repeat(200_000) });
-	expect(decodeState<typeof form.shape>(huge).values).toEqual({
+	expect((await decodeState<typeof form.shape>(huge)).values).toEqual({
 		steps: ["ok"],
 	});
 });
@@ -2015,7 +2021,9 @@ describe("a list", () => {
 		data.set("ingredients.3.amount", "2");
 
 		const invalid = formInvalid(await form.parse(data));
-		expect(decodeState<typeof form.shape>(invalid.search).values).toEqual({
+		expect(
+			(await decodeState<typeof form.shape>(invalid.search)).values,
+		).toEqual({
 			ingredients: [
 				{ name: "onion", organic: false },
 				{ amount: "2", organic: false },
@@ -2056,7 +2064,7 @@ describe("a list", () => {
 	});
 
 	test("gives a custom layout each row's components", async () => {
-		const Dinners = form.component({
+		const Dinners = await form.component({
 			name: "dinners",
 			values: { dinners: [b] },
 			rows: 2,
@@ -2078,7 +2086,7 @@ describe("a list", () => {
 			"<legend>dinners</legend>",
 		);
 
-		const Ingredients = form.component({ name: "ingredients" });
+		const Ingredients = await form.component({ name: "ingredients" });
 		const [row] = Ingredients.rows;
 		expect(
 			await new Render({
@@ -2133,7 +2141,7 @@ describe("a list", () => {
 		);
 		expect(table.match(/>What to buy</g)).toHaveLength(1);
 
-		const [row] = described.component({ name: "items" }).rows;
+		const [row] = (await described.component({ name: "items" })).rows;
 		expect(await new Render({ markup: row!.name.Control() }).string()).toBe(
 			'<input id="items.0.name" toolparamdescription="name: What to buy" type="text" name="items.0.name">',
 		);
@@ -2147,12 +2155,14 @@ describe("a list", () => {
 		const sent = new FormData();
 		sent.set("items.0.note", "ripe");
 		const invalid = formInvalid(await persisted.parse(sent));
-		const [again] = persisted.component({
-			name: "items",
-			state: new URL(
-				`http://localhost/?${new URLSearchParams(invalid.search)}`,
-			),
-		}).rows;
+		const [again] = (
+			await persisted.component({
+				name: "items",
+				state: new URL(
+					`http://localhost/?${new URLSearchParams(invalid.search)}`,
+				),
+			})
+		).rows;
 		expect(
 			await new Render({ markup: again!.name.Control() }).string(),
 		).toContain('aria-describedby="items.0.name-issue"');
@@ -2234,7 +2244,7 @@ describe("a list", () => {
 			'<input id="items.0.name" toolparamdescription="name" type="text" name="items.0.name" aria-labelledby="items.name-label">',
 		);
 
-		const Items = styled.component({ name: "items", class: "wide" });
+		const Items = await styled.component({ name: "items", class: "wide" });
 		expect(await new Render({ markup: Items.Root({ id: "x" }) }).string()).toBe(
 			'<fieldset class="wide" id="x"></fieldset>',
 		);
@@ -2263,10 +2273,10 @@ describe("a list", () => {
 		expect(result.issues[0]?.message).toBe("At most 3");
 
 		// anyone can write the state in a URL
-		const forged = pack(
+		const forged = await pack(
 			Codec.encode(
 				JSON.stringify({
-					id: decodeState<typeof wide.shape>(result.search).id,
+					id: (await decodeState<typeof wide.shape>(result.search)).id,
 					values: {
 						items: Array.from({ length: 50 }, () => ({ id: "theirs", a: "x" })),
 					},

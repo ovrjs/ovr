@@ -141,7 +141,7 @@ try {
 	await database.sql`UPDATE ${database.posts} SET ${database.sql.set(database.posts, result.updates)} WHERE ...`;
 } catch (error) {
 	if (Database.unique(error, "posts_author_title_key")) {
-		const invalid = result.invalid({ title: "Already used" });
+		const invalid = await result.invalid({ title: "Already used" });
 		return c.redirect(invalid.url, 303);
 	}
 	throw error;

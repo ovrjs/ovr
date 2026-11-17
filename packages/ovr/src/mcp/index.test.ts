@@ -85,7 +85,10 @@ function setup() {
 			const result = await c.data();
 			if (result.issues) return c.redirect(result.url, 303);
 			if (result.data.title === "Taken")
-				return c.redirect(result.invalid({ title: "Already used" }).url, 303);
+				return c.redirect(
+					(await result.invalid({ title: "Already used" })).url,
+					303,
+				);
 			posts.set(String(posts.size + 1), result.data.title);
 			return c.redirect(list, 303);
 		});

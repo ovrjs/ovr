@@ -54,12 +54,12 @@ test("saves a recipe", async () => {
 
 ### A refused submission
 
-A route that refuses a submission redirects with the form's [state](/schema#persisted-form-state). `route.state(url)` reads it back: the issues found, and the values kept.
+A route that refuses a submission redirects with the form's [state](/schema#persisted-form-state). `await route.state(url)` reads it back: the issues found, and the values kept.
 
 ```ts
 test("a recipe needs a title", async () => {
 	const refused = await ross.fetch(recipes.create, { data: { title: "" } });
-	const state = recipes.create.state(refused.headers.get("location")!);
+	const state = await recipes.create.state(refused.headers.get("location")!);
 
 	assert.deepEqual(
 		state?.issues?.map((issue) => issue.path),

@@ -43,6 +43,15 @@ const maxStateChars = 5 * Size.kb;
 const maxStateText = maxStateChars * 6;
 
 /**
+ * A URL's state, decompressed once for every form and field that reads it
+ * as a page renders
+ */
+const unpacked = new WeakMap<
+	URL,
+	{ encoded: string; bytes: Promise<Uint8Array | undefined> }
+>();
+
+/**
  * Form schema with JSX rendering capabilities.
  *
  * Parses `FormData` or `URLSearchParams` and generates form field
@@ -281,11 +290,11 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @param stateInput Current page URL
 	 * @param initial Initial values, submitted values take precedence
 	 */
-	#decode(
+	async #decode(
 		stateInput?: URL,
 		initial?: Field.Value.Initial<Shape>,
-	): Field.State<Shape> | undefined {
-		const state = this.#unplaced(this.#restore(stateInput));
+	): Promise<Field.State<Shape> | undefined> {
+		const state = this.#unplaced(await this.#restore(stateInput));
 		// initial values come from the server, not the URL, so no size limit
 		const values = this.#sanitize(initial, false, false);
 
@@ -301,14 +310,16 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * `<details>` the form is in, or to check one in a test.
 	 *
 	 * ```tsx
-	 * <details open={Boolean(create.state(c.url)?.issues)}>
+	 * const refused = await create.state(c.url);
+	 *
+	 * <details open={Boolean(refused?.issues)}>
 	 * ```
 	 *
 	 * @param url The page's URL, or an address such as the one a refused
 	 * submission redirects to
 	 * @returns The form's state, `undefined` when the URL holds none of its own
 	 */
-	state = (url: URL | string): Field.State<Shape> | undefined =>
+	state = (url: URL | string): Promise<Field.State<Shape> | undefined> =>
 		this.#restore(
 			// only the search is read, so a path of the app's own needs no origin
 			typeof url === "string" ? new URL(url, "http://localhost") : url,
@@ -319,7 +330,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 *
 	 * @param stateInput Current page URL
 	 */
-	#restore(stateInput?: URL): Field.State<Shape> | undefined {
+	async #restore(stateInput?: URL): Promise<Field.State<Shape> | undefined> {
 		if (stateInput) {
 			const { searchParams } = stateInput;
 			const values = this.#sanitize(
@@ -344,10 +355,15 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 			);
 			const encoded = searchParams.get(Form.params[1]);
 
-			const state =
-				encoded && encoded.length <= maxStateChars
-					? unpack(encoded, maxStateText * 3)
-					: undefined;
+			let held = unpacked.get(stateInput);
+			if (encoded && encoded.length <= maxStateChars) {
+				if (held?.encoded !== encoded)
+					unpacked.set(
+						stateInput,
+						(held = { encoded, bytes: unpack(encoded, maxStateText * 3) }),
+					);
+			} else held = undefined;
+			const state = await held?.bytes;
 
 			if (state) {
 				try {
@@ -413,7 +429,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @param values Submitted values, only persisted fields are kept
 	 * @returns Invalid result with its encoded search param
 	 */
-	#invalid(issues: Schema.Issue[], values: Record<string, unknown>) {
+	async #invalid(issues: Schema.Issue[], values: Record<string, unknown>) {
 		const result = new Schema.AggregateIssue(issues, this.#sanitize(values));
 		const persisted = result.values;
 		let search: Field.Parse.Result.Search;
@@ -430,7 +446,9 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 			} satisfies Field.State);
 			// only what could fit is compressed
 			const state =
-				text.length <= maxStateText ? pack(Codec.encode(text)) : undefined;
+				text.length <= maxStateText
+					? await pack(Codec.encode(text))
+					: undefined;
 
 			if (state !== undefined && state.length <= maxStateChars) {
 				search = [[Form.params[1], state]];
@@ -582,7 +600,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * <User.Field name="username" />
 	 * ```
 	 */
-	Field = ({
+	Field = async ({
 		values,
 		...props
 	}: Field.Component.Props<Shape> & {
@@ -590,7 +608,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	}) =>
 		this.shape[props.name]![render]({
 			...props,
-			state: this.#decode(props.state, values),
+			state: await this.#decode(props.state, values),
 		});
 
 	/**
@@ -603,7 +621,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * <User.Fields />
 	 * ```
 	 */
-	Fields = ({
+	Fields = async ({
 		values,
 		...props
 	}: // partial because name is not required
@@ -612,7 +630,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 		/** Each field's own: give them to its `Field` or `component` */
 		options?: never;
 	} = {}) => {
-		const state = this.#decode(props.state, values); // pulled out to not call each map iteration
+		const state = await this.#decode(props.state, values); // pulled out to not call each map iteration
 
 		return this.names.map((name) =>
 			this.shape[name]![render]({ ...props, name, state }),
@@ -627,21 +645,21 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @example
 	 *
 	 * ```tsx
-	 * const Radio = User.component({ name: "radio" });
+	 * const Radio = await User.component({ name: "radio" });
 	 *
 	 * <Radio.Label />
 	 * <Radio.Control />
 	 * ```
 	 */
-	component = <N extends ShapeUtil.Name<Shape>>({
+	component = async <N extends ShapeUtil.Name<Shape>>({
 		values,
 		...props
 	}: { name: N } & Field.Component.Props<Shape> & {
 			values?: Field.Value.Initial<Shape> | undefined;
-		}): Field.Component<Shape[N]> =>
+		}): Promise<Field.Component<Shape[N]>> =>
 		this.shape[props.name]![component]({
 			...props,
-			state: this.#decode(props.state, values),
+			state: await this.#decode(props.state, values),
 		});
 }
 
@@ -2212,7 +2230,7 @@ export namespace Field {
 				 */
 				readonly invalid: (
 					messages: Messages<S>,
-				) => Schema.Parse.Invalid & Result.Invalid<M>;
+				) => Promise<Schema.Parse.Invalid & Result.Invalid<M>>;
 			}
 		>;
 

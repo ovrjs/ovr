@@ -751,7 +751,9 @@ describe("editing records", () => {
 		const html = await new Render({
 			markup: [
 				form.Field({ name: "title", values: { title: "One" } }),
-				form.component({ name: "body", values: { body: "Two" } }).Control(),
+				(
+					await form.component({ name: "body", values: { body: "Two" } })
+				).Control(),
 			],
 		}).string();
 
@@ -785,7 +787,7 @@ describe("editing records", () => {
 			const parsed = await form.parse(input);
 			const result = parsed.issues
 				? parsed
-				: parsed.invalid({ email: "Already registered" });
+				: await parsed.invalid({ email: "Already registered" });
 			const state = new URL("https://example.com/edit");
 			for (const pair of result.search ?? []) state.searchParams.set(...pair);
 			const html = await new Render({
@@ -813,7 +815,7 @@ describe("invalid after parsing", () => {
 
 				// for example, a unique constraint rejected the insert
 				return c.redirect(
-					result.invalid({ email: "Already registered" }).url,
+					(await result.invalid({ email: "Already registered" })).url,
 					303,
 				);
 			});

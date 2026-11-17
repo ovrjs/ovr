@@ -58,7 +58,9 @@ const create = Route.post("/bookmarks")
 		`.parse(bookmarks);
 
 		if (!bookmark) {
-			const invalid = result.invalid({ url: "You already saved this URL" });
+			const invalid = await result.invalid({
+				url: "You already saved this URL",
+			});
 			return c.redirect(invalid.url, 303);
 		}
 
@@ -86,7 +88,9 @@ const update = Route.post("/bookmarks/:id")
 		} catch (error) {
 			// Match the specific constraint, not every database failure.
 			if (Database.unique(error, "bookmarks_owner_url")) {
-				const invalid = result.invalid({ url: "You already saved this URL" });
+				const invalid = await result.invalid({
+					url: "You already saved this URL",
+				});
 				return c.redirect(invalid.url, 303);
 			}
 			throw error;

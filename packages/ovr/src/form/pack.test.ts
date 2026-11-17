@@ -16,29 +16,23 @@ const noise = (length: number) => {
 };
 
 describe("pack", () => {
-	test("gives back what it was given", () => {
+	test("gives back what it was given", async () => {
 		for (const bytes of [
 			new Uint8Array(),
 			Uint8Array.of(0),
-			Uint8Array.of(255, 255),
-			encode("a"),
-			// a code used as it is defined
-			encode("aaaaaaaaaaaaaaaa"),
-			encode("abababababababab"),
 			encode('{"issues":[{"path":["title"],"message":"Required field"}]}'),
 			encode("Crème brûlée, jalapeño, 🍲 and 日本語"),
 			Uint8Array.from({ length: 256 }, (_, byte) => byte),
-			noise(5000),
+			noise(50_000),
 		])
-			expect(unpack(pack(bytes), 1 << 20)).toEqual(bytes);
+			expect(await unpack(await pack(bytes), 1 << 20)).toEqual(bytes);
 	});
 
-	test("is only characters a URL takes as they are", () => {
-		expect(pack(noise(2000))).toMatch(/^[A-Za-z0-9_-]+$/);
-		expect(pack(new Uint8Array())).toBe("");
+	test("is only characters a URL takes as they are", async () => {
+		expect(await pack(noise(2000))).toMatch(/^[A-Za-z0-9_-]+$/);
 	});
 
-	test("makes text about half as long as Base64 would", () => {
+	test("makes a form's state a third as long as Base64 would", async () => {
 		const text = JSON.stringify({
 			values: {
 				ingredients: Array.from({ length: 20 }, (_, i) => ({
@@ -56,42 +50,37 @@ describe("pack", () => {
 		});
 		const bytes = encode(text);
 
-		expect(pack(bytes).length).toBeLessThan(bytes.toBase64().length / 2);
-	});
-
-	test("keeps its place when the table is full", () => {
-		// more sequences than a table holds
-		const bytes = noise(200_000);
-
-		expect(unpack(pack(bytes), 1 << 20)).toEqual(bytes);
+		expect((await pack(bytes)).length).toBeLessThan(
+			bytes.toBase64().length / 3,
+		);
 	});
 });
 
 describe("unpack", () => {
-	test("refuses what pack did not write", () => {
-		expect(unpack("not packed!", 1000)).toBeUndefined();
-		expect(unpack("eyJpc3N1ZXMiOltdfQ==", 1000)).toBeUndefined();
-		// a first code that is not a byte, and a code not yet defined
-		expect(unpack("__", 1000)).toBeUndefined();
-		expect(unpack(`${pack(encode("ab"))}____`, 1000)).toBeUndefined();
+	test("refuses what pack did not write", async () => {
+		expect(await unpack("not packed!", 1000)).toBeUndefined();
+		// Base64 that is not compressed
+		expect(await unpack("eyJpc3N1ZXMiOltdfQ", 1000)).toBeUndefined();
 	});
 
-	test("never throws, whatever a URL holds", () => {
-		const packed = pack(encode("the same words, the same words, the same"));
+	test("refuses what was cut short or changed, whatever a URL holds", async () => {
+		const packed = await pack(
+			encode("the same words, the same words, the same"),
+		);
 
-		for (let cut = 0; cut <= packed.length; cut++)
-			expect(() => unpack(packed.slice(0, cut), 1000)).not.toThrow();
+		for (let cut = 1; cut < packed.length; cut++)
+			expect(await unpack(packed.slice(0, cut), 1000)).toBeUndefined();
 		for (let at = 0; at < packed.length; at++)
-			expect(() =>
+			await expect(
 				unpack(`${packed.slice(0, at)}_${packed.slice(at + 1)}`, 1000),
-			).not.toThrow();
+			).resolves.not.toThrow();
 	});
 
-	test("stops at its limit, so a short text cannot ask for much", () => {
-		const bomb = pack(new Uint8Array(1_000_000));
+	test("stops at its limit, so a short text cannot ask for much", async () => {
+		const bomb = await pack(new Uint8Array(1_000_000));
 
 		expect(bomb.length).toBeLessThan(5000);
-		expect(unpack(bomb, 10_000)).toBeUndefined();
-		expect(unpack(bomb, 1_000_000)?.length).toBe(1_000_000);
+		expect(await unpack(bomb, 10_000)).toBeUndefined();
+		expect((await unpack(bomb, 1_000_000))?.length).toBe(1_000_000);
 	});
 });

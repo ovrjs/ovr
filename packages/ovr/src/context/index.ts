@@ -383,8 +383,8 @@ export class Context<
 			const create = result.invalid;
 
 			return Object.assign(result, {
-				invalid: (messages: Field.Parse.Messages<Field.Shape>) => {
-					const result = create(messages);
+				invalid: async (messages: Field.Parse.Messages<Field.Shape>) => {
+					const result = await create(messages);
 					this.#agentIssues(result.issues);
 					return invalid(result);
 				},

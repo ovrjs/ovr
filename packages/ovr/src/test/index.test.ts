@@ -249,13 +249,13 @@ describe("fetch", () => {
 		expect(res.status).toBe(303);
 		expect(location.startsWith(`${origin}/recipes/new?_form=`)).toBe(true);
 
-		const state = create.state(location);
+		const state = await create.state(location);
 		expect(state?.issues?.map((issue) => issue.path.join("."))).toEqual([
 			"title",
 			"ingredients.0.name",
 		]);
 		// another form's state is not this one's
-		expect(update.state(location)).toBeUndefined();
+		expect(await update.state(location)).toBeUndefined();
 	});
 
 	test("a route's parameters and search are its URL's", async () => {
@@ -462,12 +462,12 @@ describe("call", () => {
 });
 
 describe("route.state", () => {
-	test("is undefined for a URL without the form's state", () => {
+	test("is undefined for a URL without the form's state", async () => {
 		const { create } = setup();
 
-		expect(create.state("/recipes/new")).toBeUndefined();
+		expect(await create.state("/recipes/new")).toBeUndefined();
 		expect(
-			create.state(new URL("/recipes/new?_form=nonsense", origin)),
+			await create.state(new URL("/recipes/new?_form=nonsense", origin)),
 		).toBeUndefined();
 	});
 
@@ -476,7 +476,9 @@ describe("route.state", () => {
 		const res = await new Tester({ app, user: "ross" }).fetch(create, {
 			data: { title: "Chili", servings: "many" },
 		});
-		const state = create.state(new URL(res.headers.get("location")!, origin));
+		const state = await create.state(
+			new URL(res.headers.get("location")!, origin),
+		);
 
 		expect(state?.values).toEqual({ title: "Chili" });
 		expect(state?.issues?.map((issue) => issue.path.join("."))).toEqual([
