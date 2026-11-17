@@ -1,11 +1,9 @@
 import * as seoContent from "@/server/demo/seo/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
-export const seo = ovr.Route.get("/demo/seo").use((c) => {
-	const Layout = createLayout(c);
-
+export const seo = ovr.Route.get("/demo/seo").use(() => {
 	return (
 		<Layout head={<Meta {...seoContent.frontmatter} />}>
 			<h1>{seoContent.frontmatter.title}</h1>

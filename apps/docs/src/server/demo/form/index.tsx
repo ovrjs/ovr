@@ -1,5 +1,5 @@
 import * as formContent from "@/server/demo/form/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Field, Render, Route } from "ovr";
 
@@ -47,7 +47,6 @@ export const enroll = Route.post("/demo/form")
 	});
 
 export const form = Route.get("/demo/form").use(async (c) => {
-	const Layout = createLayout(c);
 	const student = await enroll.form(c);
 
 	return (

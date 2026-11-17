@@ -1,11 +1,9 @@
 import * as parallelContent from "@/server/demo/parallel/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
-export const parallel = ovr.Route.get("/demo/parallel").use((c) => {
-	const Layout = createLayout(c);
-
+export const parallel = ovr.Route.get("/demo/parallel").use(() => {
 	async function Delay({ ms }: { ms: number }) {
 		await new Promise((res) => setTimeout(res, ms));
 		return (

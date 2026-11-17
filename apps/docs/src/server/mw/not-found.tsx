@@ -1,4 +1,4 @@
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as o from "ovr";
 
@@ -7,8 +7,6 @@ export const notFound: o.Middleware = async (c, next) => {
 
 	if (c.res.body === undefined) {
 		c.res.status = 404;
-
-		const Layout = createLayout(c);
 
 		return (
 			<Layout

@@ -1,5 +1,13 @@
+import type { Context } from "../context/index.js";
 import type { JSX } from "../jsx/index.js";
-import { type Chunk, Group, Renderer, Source, Tag } from "../markup/index.js";
+import {
+	type Chunk,
+	Group,
+	Renderer,
+	Source,
+	Tag,
+	request,
+} from "../markup/index.js";
 
 /** Parsed element */
 type Node = {
@@ -47,6 +55,9 @@ export const tools = Symbol("tools");
 export type Options = {
 	/** Resolves relative links and form actions, usually the request URL */
 	readonly base?: string | URL | undefined;
+
+	/** Request the page is rendered for, set by its context */
+	readonly [request]?: Context | undefined;
 
 	/**
 	 * Finds the tool that submits a form, if there is one, set by
@@ -1437,7 +1448,7 @@ export class Blocks {
 	 * @param options Markdown options
 	 */
 	constructor(element: JSX.Element, options?: Options) {
-		this.#render = new Renderer(element, undefined);
+		this.#render = new Renderer(element, undefined, options?.[request]);
 		this.#writer = new Writer(options);
 	}
 

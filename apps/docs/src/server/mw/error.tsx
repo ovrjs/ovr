@@ -1,4 +1,4 @@
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as o from "ovr";
 
@@ -12,8 +12,6 @@ export const error: o.Middleware = async (c, next) => {
 		c.res.status = 500;
 		// a type the route set before it failed, such as XML
 		c.res.headers.delete("content-type");
-
-		const Layout = createLayout(c);
 
 		return (
 			<Layout

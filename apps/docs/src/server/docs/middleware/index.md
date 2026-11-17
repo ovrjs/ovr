@@ -70,8 +70,11 @@ Route.get("/api/:id").use((c) => {
 	c.cookie.get(name); // get cookie
 	c.multipart(); // multipart form data, part by part
 	c.data(); // the route's fields, parsed
+	c.memo(fn); // fn, run once for each set of arguments
 });
 ```
+
+Each [component](/render#context) on the page is given the same `Context` as its second argument, and [`c.memo`](/render#shared-reads) shares what they read.
 
 > On [routes with fields](/schema#post-forms), `Context.data` parses typed form data from the request body. On [GET routes](/schema#get-forms) it parses typed search params. Routes without fields return `null`.
 

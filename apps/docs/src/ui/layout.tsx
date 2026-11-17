@@ -45,55 +45,56 @@ const Document = (props: { head: o.JSX.Element; children: o.JSX.Element }) => {
 };
 
 /** A docs page, with the nav beside it and its table of contents. */
-export const createLayout =
-	(c: o.Middleware.Context<any, any>) =>
-	(props: { head: o.JSX.Element; children: o.JSX.Element }) => {
-		return (
-			<Document head={props.head}>
-				{/* the logo sits where the home page puts it, so it holds still between them */}
-				<header class="flex items-center justify-between gap-4 px-2 py-2.5 md:hidden">
-					<HomeLink />
-					<nav>
-						<Popover
-							title="ovr"
-							titleHref="/"
-							titleContent={
-								<span class="home-link flex items-center">
-									<Mark class="size-6" />
-								</span>
-							}
-							trigger={{
-								children: <span class="icon-[lucide--align-justify]"></span>,
-							}}
-						>
-							<div class="flex flex-col gap-4">
-								<Nav c={c} />
-							</div>
-						</Popover>
+export const Layout = (props: {
+	head: o.JSX.Element;
+	children: o.JSX.Element;
+}) => {
+	return (
+		<Document head={props.head}>
+			{/* the logo sits where the home page puts it, so it holds still between them */}
+			<header class="flex items-center justify-between gap-4 px-2 py-2.5 md:hidden">
+				<HomeLink />
+				<nav>
+					<Popover
+						title="ovr"
+						titleHref="/"
+						titleContent={
+							<span class="home-link flex items-center">
+								<Mark class="size-6" />
+							</span>
+						}
+						trigger={{
+							children: <span class="icon-[lucide--align-justify]"></span>,
+						}}
+					>
+						<div class="flex flex-col gap-4">
+							<Nav />
+						</div>
+					</Popover>
+				</nav>
+			</header>
+			<div class="flex">
+				<div>
+					<nav class="sticky top-0 z-10 hidden h-dvh min-w-52 flex-col gap-4 overflow-y-auto p-4 md:flex">
+						<HomeLink />
+						<Nav />
 					</nav>
-				</header>
-				<div class="flex">
-					<div>
-						<nav class="sticky top-0 z-10 hidden h-dvh min-w-52 flex-col gap-4 overflow-y-auto p-4 md:flex">
-							<HomeLink />
-							<Nav c={c} />
-						</nav>
-					</div>
-					{/* the contents sit beside the page, centered together */}
-					<div class="flex w-full min-w-0 justify-center xl:gap-8">
-						{/* the page's own content, which agents read as Markdown */}
-						<main
-							id="content"
-							class="prose mb-16 w-full max-w-3xl min-w-0 px-4 pt-3.5 pb-4"
-						>
-							{props.children}
-						</main>
-						<TOC c={c} />
-					</div>
 				</div>
-			</Document>
-		);
-	};
+				{/* the contents sit beside the page, centered together */}
+				<div class="flex w-full min-w-0 justify-center xl:gap-8">
+					{/* the page's own content, which agents read as Markdown */}
+					<main
+						id="content"
+						class="prose mb-16 w-full max-w-3xl min-w-0 px-4 pt-3.5 pb-4"
+					>
+						{props.children}
+					</main>
+					<TOC />
+				</div>
+			</div>
+		</Document>
+	);
+};
 
 /** The home page, full width without the docs nav. */
 export const HomeLayout = (props: {
@@ -120,7 +121,7 @@ export const HomeLayout = (props: {
 	);
 };
 
-const TOC = ({ c }: { c: o.Middleware.Context }) => {
+const TOC = (_props: {}, c: o.Middleware.Context) => {
 	const result = content.get(c.url.pathname.slice(1));
 	if (!result) return;
 
@@ -174,7 +175,7 @@ const NavHeading = (props: { children: o.JSX.Element }) => {
 	);
 };
 
-const Nav = ({ c }: { c: o.Middleware.Context }) => {
+const Nav = (_props: {}, c: o.Middleware.Context) => {
 	return (
 		<>
 			<hr />
@@ -186,14 +187,12 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 						<NavHeading>{section.name}</NavHeading>
 						<NavList>
 							{section.slugs.map((slug) => (
-								<NavLink href={`/${slug}`} c={c}>
+								<NavLink href={`/${slug}`}>
 									{content.get(slug)!.frontmatter.title}
 								</NavLink>
 							))}
 							{section.name === "Reference" && (
-								<NavLink href={docs.llms.url()} c={c}>
-									llms.txt
-								</NavLink>
+								<NavLink href={docs.llms.url()}>llms.txt</NavLink>
 							)}
 						</NavList>
 					</section>
@@ -205,7 +204,6 @@ const Nav = ({ c }: { c: o.Middleware.Context }) => {
 			<NavList>
 				<NavLink
 					href={demoList.url()}
-					c={c}
 					current={c.url.pathname.startsWith(demoList.url())}
 				>
 					Demos
@@ -231,14 +229,16 @@ const NavList = (props: { children: o.JSX.Element }) => {
 	return <ul class="grid gap-0.5">{props.children}</ul>;
 };
 
-const NavLink = (props: {
-	href: string;
-	c: o.Middleware.Context;
-	/** Defaults to the link being the current page. */
-	current?: boolean;
-	children: o.JSX.Element;
-}) => {
-	const current = props.current ?? props.href === props.c.url.pathname;
+const NavLink = (
+	props: {
+		href: string;
+		/** Defaults to the link being the current page. */
+		current?: boolean;
+		children: o.JSX.Element;
+	},
+	c: o.Middleware.Context,
+) => {
+	const current = props.current ?? props.href === c.url.pathname;
 
 	return (
 		<li>

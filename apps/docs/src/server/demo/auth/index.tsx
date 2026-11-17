@@ -1,6 +1,6 @@
 import { type Store, users } from "./store";
 import * as content from "@/server/demo/auth/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Auth, Render, Route } from "ovr";
 
@@ -37,7 +37,6 @@ async function account(database: Store, id: string) {
 export function routes(database: Store, service: ReturnType<typeof configure>) {
 	/** Landing page for register/login passkey flows. */
 	const auth = Route.get("/demo/auth").use(async (c) => {
-		const Layout = createLayout(c);
 		const session = await c.session();
 		const user = session ? await account(database, session.user) : null;
 
@@ -87,7 +86,6 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 			return c.redirect(auth, 303);
 		}
 		const { logout } = service.forms(c);
-		const Layout = createLayout(c);
 		const credentials = await database.sql`
 			SELECT * FROM ${database.auth_credentials}
 			WHERE ${database.auth_credentials.columns.user} = ${user.id} ORDER BY id

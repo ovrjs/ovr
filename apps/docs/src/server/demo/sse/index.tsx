@@ -1,11 +1,9 @@
 import * as sseContent from "@/server/demo/sse/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
-export const ssePage = ovr.Route.get("/demo/sse").use((c) => {
-	const Layout = createLayout(c);
-
+export const ssePage = ovr.Route.get("/demo/sse").use(() => {
 	return (
 		<Layout head={<Meta {...sseContent.frontmatter} />}>
 			<h1>{sseContent.frontmatter.title}</h1>

@@ -1,5 +1,5 @@
 import * as content from "@/lib/content";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { Route } from "ovr";
 
@@ -9,9 +9,7 @@ const meta = {
 };
 
 /** Every demo, linked from the docs nav instead of listing each one there. */
-export const demoList = Route.get("/demo").use((c) => {
-	const Layout = createLayout(c);
-
+export const demoList = Route.get("/demo").use(() => {
 	const demos = Object.entries(content.demos)
 		.map(([path, result]) => ({
 			href: `/${path.split("/").slice(2, 4).join("/")}`,

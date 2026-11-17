@@ -1,3 +1,4 @@
+import type { Context } from "../context/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Codec, Size } from "../util/index.js";
 
@@ -157,7 +158,7 @@ const voids = new Set([
  */
 export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	/** Tag name, or component */
-	readonly tag: string | ((props: any) => JSX.Element);
+	readonly tag: string | Component;
 
 	/** Props */
 	readonly props: JSX.Props;
@@ -172,7 +173,7 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	 * @param tag Tag name, or component
 	 * @param props Props
 	 */
-	constructor(tag: string | ((props: any) => JSX.Element), props: JSX.Props) {
+	constructor(tag: string | Component, props: JSX.Props) {
 		this.tag = tag;
 		this.props = props;
 	}
@@ -186,10 +187,14 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	 * Generator of the element's chunks, empty if it was already rendered.
 	 * Chunks, not strings, so a render it is part of keeps its tags and what
 	 * is already escaped.
+	 *
+	 * @param context Request the element is rendered for, which a render
+	 * that iterates the element gives, and anything else has none of
+	 * @returns The generator, the same one however often it is asked for
 	 */
-	get #generator(): AsyncGenerator<Chunk, void, unknown> {
+	chunks(context?: Context): AsyncGenerator<Chunk, void, unknown> {
 		return (this.#chunks ??= (async function* (element) {
-			const render = new Renderer(element, undefined);
+			const render = new Renderer(element, undefined, context);
 
 			try {
 				for (let result: Step; (result = render.step());) {
@@ -204,15 +209,15 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 	}
 
 	next() {
-		return this.#generator.next();
+		return this.chunks().next();
 	}
 
 	return(value: void | PromiseLike<void>) {
-		return this.#generator.return(value);
+		return this.chunks().return(value);
 	}
 
 	throw(error: unknown) {
-		return this.#generator.throw(error);
+		return this.chunks().throw(error);
 	}
 
 	[Symbol.asyncIterator]() {
@@ -223,6 +228,15 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 		await this.return();
 	}
 }
+
+/**
+ * A component: called with its props, and the context of the request it is
+ * rendered for.
+ */
+type Component = (props: any, c: Context<any, any>) => JSX.Element;
+
+/** Internal protocol for a request's context, to render a page for it. */
+export const request = Symbol("request");
 
 /** Internal protocol for a render, to read the element it renders. */
 export const source = Symbol("source");
@@ -260,6 +274,9 @@ export class Renderer {
 	/** Disables escaping, for content that is not markup */
 	readonly #raw: boolean | undefined;
 
+	/** Request the element is rendered for, given to each component */
+	readonly #context: Context | undefined;
+
 	/** What follows the element: end tags, and iterators and children in progress */
 	#stack: (Tag | Sequence | Parallel)[] | undefined;
 
@@ -269,10 +286,16 @@ export class Renderer {
 	/**
 	 * @param element Element to render
 	 * @param raw Set to `true` to disable escaping
+	 * @param context Request the element is rendered for
 	 */
-	constructor(element: unknown, raw: boolean | undefined) {
+	constructor(
+		element: unknown,
+		raw: boolean | undefined,
+		context: Context | undefined,
+	) {
 		this.#element = element;
 		this.#raw = raw;
+		this.#context = context;
 	}
 
 	/**
@@ -322,7 +345,8 @@ export class Renderer {
 
 						if (typeof tag === "function") {
 							// component or fragment
-							this.#element = tag(props);
+							// a render outside a request has no context to give
+							this.#element = tag(props, this.#context!);
 							this.#next = 1;
 							continue;
 						}
@@ -354,9 +378,13 @@ export class Renderer {
 					if (Symbol.asyncIterator in element) {
 						// any async iterable - lazily resolve
 						(this.#stack ??= []).push({
-							iterator: (element as AsyncIterable<JSX.Element>)[
-								Symbol.asyncIterator
-							](),
+							iterator:
+								element instanceof Element
+									? // in content that is not markup, or already taken
+										element.chunks(this.#context)
+									: (element as AsyncIterable<JSX.Element>)[
+											Symbol.asyncIterator
+										](),
 							async: true,
 						});
 						continue;
@@ -373,7 +401,11 @@ export class Renderer {
 										async: false,
 									}
 								: // other iterable - array, set, etc.
-									new Parallel(element as Iterable<JSX.Element>, this.#raw),
+									new Parallel(
+										element as Iterable<JSX.Element>,
+										this.#raw,
+										this.#context,
+									),
 						);
 						continue;
 					}
@@ -486,13 +518,18 @@ class Parallel {
 	/**
 	 * @param elements Children
 	 * @param raw Set to `true` to disable escaping
+	 * @param context Request the children are rendered for
 	 */
-	constructor(elements: Iterable<JSX.Element>, raw: boolean | undefined) {
+	constructor(
+		elements: Iterable<JSX.Element>,
+		raw: boolean | undefined,
+		context: Context | undefined,
+	) {
 		this.#children = [];
 
 		// each child starts before any is waited for
 		for (const element of elements) {
-			const child = new Renderer(element, raw);
+			const child = new Renderer(element, raw, context);
 			const chunk = this.#advance(child);
 
 			if (chunk) child.queue = [chunk];

@@ -1,6 +1,6 @@
 import * as content from "@/lib/content";
 import * as homeResult from "@/server/home/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import { clsx } from "clsx";
 import * as ovr from "ovr";
@@ -31,8 +31,6 @@ export const page = ovr.Route.get("/:slug")
 		content.cache(c);
 		// agents read the page's source
 		if (c.markdown(content.md(result))) return;
-
-		const Layout = createLayout(c);
 
 		return (
 			<Layout head={<Meta {...result.frontmatter} />}>

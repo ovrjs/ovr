@@ -1,3 +1,4 @@
+import type { Context } from "../context/index.js";
 import { type Chunk, Element } from "../markup/index.js";
 import type { IntrinsicElements as IE } from "./elements.js";
 
@@ -39,10 +40,12 @@ export namespace JSX {
 
 	/**
 	 * What a tag can be: an element's name, or a component, which is a
-	 * function. A class is not one, so `<Form />` with the `Form` class is a
-	 * type error instead of failing as it renders.
+	 * function of its props and the context of the request it is rendered
+	 * for. A class is not one, so `<Form />` with the `Form` class is a type
+	 * error instead of failing as it renders.
 	 */
-	export type ElementType = string | ((props: any) => unknown);
+	export type ElementType =
+		string | ((props: any, c: Context<any, any>) => unknown);
 }
 
 /** ovr JSX */
@@ -57,7 +60,7 @@ export class JSX {
 	 * @returns Generator of the element's `Chunk`s of HTML
 	 */
 	static jsx<P extends JSX.Props = JSX.Props>(
-		tag: ((props: P) => JSX.Element) | string,
+		tag: ((props: P, c: Context<any, any>) => JSX.Element) | string,
 		props: P,
 	): AsyncGenerator<Chunk, void, unknown> {
 		// this function doesn't need to be called recursively

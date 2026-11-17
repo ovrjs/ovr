@@ -1,3 +1,4 @@
+import type { Context } from "../context/index.js";
 import type { JSX } from "../jsx/index.js";
 import {
 	Blocks,
@@ -12,6 +13,7 @@ import {
 	type Step,
 	escape as markup,
 	readable,
+	request,
 	source,
 } from "../markup/index.js";
 
@@ -24,6 +26,9 @@ export namespace Render {
 		export type Markup = {
 			/** Set to `true` to disable escaping, for content that is not markup */
 			raw?: boolean;
+
+			/** Request the page is rendered for, set by its context */
+			readonly [request]?: Context | undefined;
 		};
 
 		/** Options of a render of Markdown */
@@ -134,7 +139,11 @@ export class Render {
 	#steps() {
 		return this.#markdown
 			? new Blocks(this.#element, this.#options)
-			: new Renderer(this.#element, this.#options?.raw);
+			: new Renderer(
+					this.#element,
+					this.#options?.raw,
+					this.#options?.[request],
+				);
 	}
 
 	/** @yields Strings of the render, as the element resolves */

@@ -2,6 +2,7 @@ import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
 import { type Field, Form as FormSchema, forms, kept } from "../form/index.js";
 import { type Options, tools } from "../markdown/index.js";
+import { request } from "../markup/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
@@ -24,6 +25,12 @@ export const agent = new WeakMap<
 		readonly tool?: Options[typeof tools];
 	}
 >();
+
+/** Key of a memoized function's result, among those of its next arguments */
+const returned = Symbol("returned");
+
+/** A memoized function's results: by each argument in turn, then `returned` */
+type Results = Map<unknown, unknown>;
 
 /** Properties to build the final `Response` with once middleware has run. */
 class PreparedResponse {
@@ -141,6 +148,9 @@ export class Context<
 
 	/** Cached result from `data()` to avoid re-reading request bodies. */
 	#parsed?: Promise<Context.Result<Shape>>;
+
+	/** Functions memoized for the request, each with its results by argument */
+	readonly #memos = new Map<Function, Function>();
 
 	/** Session reader, set by `app.use(auth)` */
 	[sessions]?: () => Promise<Context.Session | null>;
@@ -320,6 +330,54 @@ export class Context<
 	}
 
 	/**
+	 * Shares a function's result for the rest of the request: called again
+	 * with the same arguments, it returns what it returned the first time. So
+	 * components that each read the same rows query once, without the page
+	 * reading them to pass down.
+	 *
+	 * ```tsx
+	 * const friendsOf = (user: string) => sql`...`.parse(friends);
+	 *
+	 * async function Share(props: { user: string }, c: Middleware.Context) {
+	 * 	const friends = await c.memo(friendsOf)(props.user);
+	 * }
+	 * ```
+	 *
+	 * Results are kept by the function and its arguments, compared as `===`
+	 * does, so give it a function defined once, and not an object made for
+	 * the call. A promise is shared as it is, so calls made at the same time
+	 * wait for one result, and one that rejects does for each of them.
+	 *
+	 * @param fn Function to share the results of
+	 * @returns The function, which runs once for each set of arguments
+	 */
+	memo<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+		let memoized = this.#memos.get(fn) as ((...args: A) => R) | undefined;
+
+		if (!memoized) {
+			const root: Results = new Map();
+
+			memoized = (...args) => {
+				let results = root;
+
+				for (const arg of args) {
+					let next = results.get(arg) as Results | undefined;
+					if (!next) results.set(arg, (next = new Map()));
+					results = next;
+				}
+
+				if (!results.has(returned)) results.set(returned, fn(...args));
+
+				return results.get(returned) as R;
+			};
+
+			this.#memos.set(fn, memoized);
+		}
+
+		return memoized;
+	}
+
+	/**
 	 * Parse route form data: from the search params of a GET or HEAD request,
 	 * and from the multipart body of any other.
 	 *
@@ -471,7 +529,11 @@ export class Context<
 				) {
 					res.body = new Render(
 						{ markdown: r },
-						{ base: this.url, [tools]: agent.get(this.req)?.tool },
+						{
+							base: this.url,
+							[tools]: agent.get(this.req)?.tool,
+							[request]: this,
+						},
 					).stream();
 					res.headers.set(Header.name.type, Header.utf8(Mime.type.md));
 					return;
@@ -483,6 +545,7 @@ export class Context<
 				{
 					// other defined types are not markup, so they are not escaped
 					raw: Boolean(mime && !Mime.markup(mime)),
+					[request]: this,
 				},
 			).stream();
 

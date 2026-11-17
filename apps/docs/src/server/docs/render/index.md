@@ -53,6 +53,57 @@ async function Data() {
 }
 ```
 
+## Context
+
+A component's second argument is the [context](/middleware#context) of the request it is rendered for, so a page doesn't pass `c` down to the components that need it.
+
+```tsx
+import type { Middleware } from "ovr";
+
+function NavLink(
+	props: { href: string; children: JSX.Element },
+	c: Middleware.Context,
+) {
+	const current = props.href === c.url.pathname;
+
+	return (
+		<a href={props.href} aria-current={current ? "page" : undefined}>
+			{props.children}
+		</a>
+	);
+}
+
+<NavLink href="/recipes">Recipes</NavLink>;
+```
+
+By the time a component runs the response has started, so read from the context there, and set headers, cookies, and redirects in the route. A [render made on its own](#markup) outside of a request has no context to give.
+
+## Shared reads
+
+Components that fetch what they show can be put anywhere on a page, but two of them that need the same rows would each query for them. `c.memo` shares a function's result for the rest of the request: called again with the same arguments, it returns what it returned the first time.
+
+```tsx
+const friendsOf = (user: string) =>
+	database.sql`
+		SELECT * FROM ${database.friends}
+		WHERE ${database.friends.columns.user} = ${user}
+	`.parse(database.friends);
+
+async function Share(props: { user: string }, c: Middleware.Context) {
+	const friends = await c.memo(friendsOf)(props.user); // queries
+	// ...
+}
+
+async function Offer(props: { user: string }, c: Middleware.Context) {
+	const friends = await c.memo(friendsOf)(props.user); // the same rows, no query
+	// ...
+}
+```
+
+The route shares the same results through its own `c`, so what it reads to decide a redirect is not read again by the page. Nothing is kept for the next request.
+
+Results are kept by the function and its arguments, compared as `===` does. Define the function once, outside of the component, and give it IDs and other plain values: a function or an object made for the call never matches an earlier one. A promise is shared as it is, so components that render at the same time wait for one query.
+
 ## Generator components
 
 Components can also be generator functions for more fine grained control and [memory optimization](/demo/memory). When utilizing generators `yield` values instead of returning them.

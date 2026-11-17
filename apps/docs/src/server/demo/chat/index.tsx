@@ -1,5 +1,5 @@
 import * as chatContent from "@/server/demo/chat/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
@@ -20,9 +20,7 @@ async function* Poet(props: { message: string }) {
 	}
 }
 
-export const chat = ovr.Route.get("/demo/chat").use((c) => {
-	const Layout = createLayout(c);
-
+export const chat = ovr.Route.get("/demo/chat").use(() => {
 	return (
 		<Layout head={<Meta {...chatContent.frontmatter} />}>
 			<h1>{chatContent.frontmatter.title}</h1>
@@ -49,8 +47,6 @@ export const chat = ovr.Route.get("/demo/chat").use((c) => {
 export const stream = ovr.Route.post("/demo/chat")
 	.fields({ message: ovr.Field.text() })
 	.use(async (c) => {
-		const Layout = createLayout(c);
-
 		const { data } = await c.data();
 
 		return (

@@ -1,11 +1,9 @@
 import * as memoryContent from "@/server/demo/memory/index.md";
-import { createLayout } from "@/ui/layout";
+import { Layout } from "@/ui/layout";
 import { Meta } from "@/ui/meta";
 import * as ovr from "ovr";
 
-export const memory = ovr.Route.get("/demo/memory").use(async (c) => {
-	const Layout = createLayout(c);
-
+export const memory = ovr.Route.get("/demo/memory").use(async () => {
 	function* OverNineThousand() {
 		// const time = performance.now();
 
