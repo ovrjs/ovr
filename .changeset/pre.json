@@ -35,6 +35,7 @@
     "escape",
     "every-choice",
     "form-address",
+    "form-function-child",
     "form-without-context",
     "group-descriptions",
     "groups",
