@@ -13,19 +13,25 @@ import { App } from "ovr";
 const app = new App();
 ```
 
-The `App` API is inspired by and works similar to frameworks such as [Express](http://expressjs.com), [Koa](https://koajs.com), and [Hono](https://hono.dev/).
-
 ## Options
 
 The following values can be configured when creating the `App`.
 
-### Trailing Slash
+### Trailing slash
 
-ovr handles [trailing slash](https://bjornlu.com/blog/trailing-slash-for-frameworks) redirects automatically, you can customize the redirect preference. A request no route matches is redirected with `308` when the other spelling of its path, with or without the slash, matches one; a matched route always answers, so `/style.css` works in `"always"` mode.
+When no route matches a path, ovr tries it with the [trailing slash](https://bjornlu.com/blog/trailing-slash-for-frameworks) added or removed, and redirects there with a `308` if that matches. `trailingSlash` sets which form the redirect goes to:
+
+| Value               | A request that matches no route                  |
+| ------------------- | ------------------------------------------------ |
+| `"never"` (default) | `/about/` redirects to `/about`                  |
+| `"always"`          | `/about` redirects to `/about/`                  |
+| `"ignore"`          | No redirect, so each form is a different address |
 
 ```ts
 new App({ trailingSlash: "always" });
 ```
+
+A route that matches always answers, so `/style.css` works in every mode.
 
 ### CSRF
 
@@ -101,19 +107,24 @@ const response = await app.fetch("https://example.com");
 
 ### Client IP
 
-Server adapters can pass a trusted client IP with `app.fetch(request, { ip })`. It becomes `c.ip` for [rate limiting](/middleware#rate-limiting) and [authentication](/auth). A standard Fetch `Request` cannot identify its socket peer, so your server must supply this metadata. Passing only `ip` preserves the original `Request` object; normal `RequestInit` options such as `method` and `headers` remain available in the same argument.
-
-For a Node server with [srvx](https://srvx.h3.dev/guide/handler), use the connection's address:
+A `Request` doesn't say who sent it, so the server passes the client's IP: `app.fetch(request, { ip })`. It becomes `c.ip`, which [rate limiting](/middleware#rate-limiting) and [Auth](/auth) count by.
 
 ```ts
-import { serve } from "srvx";
-
+// Node, with srvx
 serve({ fetch: (request) => app.fetch(request, { ip: request.ip }) });
+
+// a Cloudflare Worker
+export default {
+	fetch(request: Request) {
+		const ip = request.headers.get("CF-Connecting-IP");
+		return app.fetch(request, ip ? { ip } : {});
+	},
+};
 ```
 
-Behind a reverse proxy, the socket peer identifies the proxy. Accept connections only from your proxy and use a client header that it overwrites. Passing the proxy's address makes all users share one rate-limit bucket.
+Behind a reverse proxy the connection's address is the proxy's, and passing it would put every user in one rate-limit bucket. Accept connections only from the proxy, and take the IP from a header the proxy overwrites.
 
-A proxy that ends TLS also hands your server an `http` URL. Give `app.fetch` the request with its public URL, here too from a header your proxy overwrites, and not in middleware: [Auth](/auth#deployment) compares each request's origin with its own, and the endpoints [agents](/agents#mcp) use run before your middleware does.
+A proxy that ends TLS also hands the server an `http` URL. Give `app.fetch` the request with its public URL, since [Auth](/auth#deployment) compares each request's origin with its own:
 
 ```ts
 serve({
@@ -125,22 +136,3 @@ serve({
 	},
 });
 ```
-
-For a Cloudflare Worker reached through its Internet-facing edge, with Worker subrequests blocked by your edge policy:
-
-```ts
-export default {
-	fetch(request: Request) {
-		const ip = request.headers.get("CF-Connecting-IP");
-		return app.fetch(request, ip ? { ip } : {});
-	},
-};
-```
-
-Cloudflare supplies that identity at its edge. Same-zone Worker subrequests can reflect a caller-modified `x-real-ip`; cross-zone subrequests use a fixed address. If those callers are allowed, use an authenticated identity policy instead. Cloudflare documents blocking Worker subrequests with `cf.worker.upstream_zone`. [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/), [blocking Worker subrequests](https://developers.cloudflare.com/waf/custom-rules/use-cases/block-worker-subrequests/).
-
-Never copy an arbitrary forwarded header into `ip`. Missing or invalid identity denies rate-limited requests; it does not disable the limiter.
-
-## Head requests
-
-ovr automatically handles [`HEAD`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/HEAD) requests, each will be routed to the corresponding `GET` route. Middleware will execute but `Context.res.body` will cleaned up and set to `null` before building the final response.

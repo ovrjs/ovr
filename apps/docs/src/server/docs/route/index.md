@@ -36,7 +36,7 @@ const update = Route.post("/posts/:id")
 
 Create a parameter for a route by prefixing a segment with a colon `:`.
 
-The pattern `/api/:id` sets `Context.params.id` to the actual path segment requested, for example `/api/123`, decoded, so `/api/a%20b` gives `"a b"`. The name of the parameter is extracted from the pattern using TypeScript to ensure `Context.params` always has the correct type.
+The pattern `/api/:id` sets `c.params.id` to the path segment requested, decoded. The parameter's name is read from the pattern by TypeScript, so `c.params` always has the correct type.
 
 ```ts
 new Route("GET", "/api/:id").use((c) => {
@@ -58,7 +58,7 @@ const post = Route.get("/posts/:id/:slug")
 	});
 ```
 
-The 404 has an empty body, so global middleware that renders a not found page renders it here too. A table's columns are schemas, so `params({ id: posts.shape.id })` checks an ID the same way the database does.
+A table's columns are schemas, so `params({ id: posts.shape.id })` checks an ID the same way the database does.
 
 ## Wildcard
 
@@ -70,9 +70,9 @@ new Route("GET", "/files/*").use((c) => {
 });
 ```
 
-The wildcard is decoded too, except for encoded `/` and `\`, so a request cannot add segments to the path: `/files/..%2Fsecret` gives `"..%2Fsecret"`, not `"../secret"`. It never starts with `/`, so `/files//etc/passwd` gives `"etc/passwd"`.
-
 It can follow other text in its segment, as in `/files-*`, but not a parameter: nothing would tell where `/:id*` ends the parameter and starts the wildcard, so the pattern is a type error. Use `/:id/*`.
+
+A wildcard is decoded like a parameter, except for an encoded `/` or `\`, which stays encoded so a request cannot add segments to the path: `/files/..%2Fsecret` gives `"..%2Fsecret"`. Check it before using it as a file path.
 
 ## Prioritization
 
@@ -197,13 +197,15 @@ const remove = Route.post("/posts/:id/delete")
 	});
 ```
 
-An agent's client may ask the person before it calls a route that writes, since it could change or delete something. A route that only adds, such as one that creates a record, says so, and is not confirmed that way. One that edits a record overwrites what was there, so it stays destructive:
+The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
+
+A GET route is a read-only tool. Any other route may change or delete something, so an agent's client can ask the person before calling it. A route that only adds, such as one that creates a record, says so, and is not confirmed that way:
 
 ```ts
 Route.post("/posts").describe("Create a post", { destructive: false });
 ```
 
-GET routes are read-only tools. Every other tool may change data, so agents' clients can ask the user before calling it. The tool's name is generated from the method and pattern, for example `post_posts_id_delete`.
+A route that edits a record overwrites what was there, so leave it as it is.
 
 A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages with [`auth.guard`](/auth#sessions). See [Agents](/agents) for how tools and pages are served to agents.
 
@@ -267,7 +269,7 @@ page.url({ params: { id: "world" } });
 // Error: property 'name' is missing in type '{ id: string; }'
 ```
 
-> You can create a list of exact paths for given params:
+Create a list of exact paths for given params:
 
 ```ts
 const params = [

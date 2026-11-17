@@ -141,7 +141,7 @@ const TOC = (_props: {}, c: o.Context) => {
 						return (
 							<li>
 								<a
-									class="nav-link text-muted-foreground hover:text-foreground block truncate px-3 py-1.5 text-sm capitalize"
+									class="nav-link text-muted-foreground hover:text-foreground block truncate px-3 py-1.5 text-sm"
 									href={`#${heading.id}`}
 								>
 									{heading.name}
@@ -169,7 +169,7 @@ const HomeLink = () => {
 
 const NavHeading = (props: { children: o.JSX.Element }) => {
 	return (
-		<h2 class="text-muted-foreground font-ui my-0 pl-2 text-xs font-normal tracking-wide lowercase">
+		<h2 class="text-muted-foreground/70 font-ui my-0 pl-2 text-xs font-light tracking-wide lowercase">
 			{props.children}
 		</h2>
 	);

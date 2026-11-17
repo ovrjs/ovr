@@ -21,7 +21,7 @@ export const page = o.Route.get("/")
 					<p class="mb-8 max-w-2xl text-xl">{result.frontmatter.description}</p>
 					<div class="flex gap-3">
 						<a href="/get-started" class="button h-11 px-5 text-base">
-							Get Started
+							Get started
 						</a>
 						<a href="/demo" class="button h-11 px-5 text-base outline">
 							Demo
@@ -93,7 +93,7 @@ export const page = o.Route.get("/")
 					<div>
 						<h2 class="mt-0 mb-6">Build your first route</h2>
 						<a href="/get-started" class="button h-11 w-fit px-5 text-base">
-							Get Started
+							Get started
 						</a>
 					</div>
 					<div class="grid min-w-0 justify-items-start gap-2 lg:justify-self-end">

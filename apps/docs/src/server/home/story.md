@@ -8,11 +8,17 @@ description: The todo routes the home page story walks through.
 const list = Route.get("/todos")
 	.describe("List the todos")
 	.use(() => (
-		<main>
-			<h1>Todos</h1>
-			<Todos />
-			<add.Form submit="Add" />
-		</main>
+		<html>
+			<head>
+				<title>Todos</title>
+				<link rel="stylesheet" href="/style.css" />
+			</head>
+			<main>
+				<h1>Todos</h1>
+				<Todos />
+				<add.Form submit="Add" />
+			</main>
+		</html>
 	));
 
 async function Todos() {

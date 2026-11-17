@@ -11,11 +11,17 @@ Most apps are built twice: a website for people, then an API or MCP server for a
 const list = Route.get("/todos")
 	.describe("List the todos")
 	.use(() => (
-		<main>
-			<h1>Todos</h1>
-			<Todos />
-			<add.Form submit="Add" />
-		</main>
+		<html>
+			<head>
+				<title>Todos</title>
+				<link rel="stylesheet" href="/style.css" />
+			</head>
+			<main>
+				<h1>Todos</h1>
+				<Todos />
+				<add.Form submit="Add" />
+			</main>
+		</html>
 	));
 
 async function Todos() {
@@ -55,6 +61,10 @@ const add = Route.post("/todos")
 ### People get a page
 
 ```html
+<head>
+	<title>Todos</title>
+	<link rel="stylesheet" href="/style.css" />
+</head>
 <h1>Todos</h1>
 <ul>
 	<li>
@@ -80,7 +90,7 @@ const add = Route.post("/todos")
 </form>
 ```
 
-The form also names its tool for [WebMCP](/agents#webmcp), so an agent in the browser can fill it in.
+The head is sent first, so the browser starts on the stylesheet while the list is still being read. The form also names its tool for [WebMCP](/agents#webmcp), so an agent in the browser can fill it in.
 
 ### Agents read it as Markdown
 
@@ -171,4 +181,4 @@ These docs are an ovr app. Connect your agent to them:
 claude mcp add --transport http ovr https://ovrjs.com/mcp
 ```
 
-Continue with [Get Started](/get-started).
+Continue with [Get started](/get-started).

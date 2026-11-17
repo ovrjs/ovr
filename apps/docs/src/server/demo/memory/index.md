@@ -1,5 +1,5 @@
 ---
-title: Memory Optimization
+title: Memory optimization
 description: Demo of using sync generators to optimize memory usage.
 ---
 

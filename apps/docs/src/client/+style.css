@@ -138,12 +138,11 @@
 		--border-radius: 2px;
 
 		--font-family-serif: "Geist Serif", serif;
-		/* the body text, which uico calls sans, is the serif */
-		--font-family-sans: var(--font-family-serif);
+		--font-family-sans: "Geist Variable", sans-serif;
 		--font-family-mono: "Geist Mono Variable", monospace;
-		/* serif for reading, sans for the interface, mono for code */
+		/* sans for reading and the interface, serif for headings and large text, mono for code */
 		--font-family-headings: var(--font-family-serif);
-		--font-family-ui: "Geist Variable", sans-serif;
+		--font-family-ui: var(--font-family-sans);
 
 		--shiki-foreground: var(--base-100);
 		--shiki-background: var(--base-900);
@@ -164,7 +163,7 @@
 	}
 
 	body {
-		@apply font-serif font-light;
+		@apply font-sans font-normal;
 	}
 
 	input,
@@ -181,7 +180,7 @@
 		@apply m-0 rounded-none px-4 text-sm leading-relaxed sm:rounded-b-md;
 	}
 
-	/* the mono a little lighter than the serif's one weight, so code doesn't look heavy beside it */
+	/* the mono a little lighter than the text, so code doesn't look heavy beside it */
 	:where(pre, code, kbd, samp) {
 		font-weight: 250;
 	}
@@ -213,9 +212,7 @@
 
 	/* inline code sits on a small plate of brushed silver, a little smaller than the text */
 	:not(pre) > code {
-		box-shadow:
-			inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
-			inset 0 0 0 1px color-mix(in oklab, var(--silver) 32%, transparent);
+		border: none;
 		background-image: linear-gradient(
 			to bottom,
 			color-mix(in oklab, var(--silver) 22%, transparent),
@@ -275,9 +272,9 @@
 		);
 	}
 
-	/* the nav and contents are plain serif links, underlined in silver when pointed at or current */
+	/* the nav and contents are plain links, underlined in silver when pointed at or current */
 	.nav-link {
-		@apply text-foreground font-serif no-underline;
+		@apply text-foreground font-sans no-underline;
 
 		&:is(:hover, :focus-visible, [aria-current="page"]) {
 			@apply underline;
@@ -290,8 +287,11 @@
 		text-decoration-thickness: 2px;
 	}
 
+	/* selected text is set in ink on a light plate, in a dark panel too, where
+	   the text is light and would vanish on it */
 	::selection {
-		background-color: color-mix(in oklab, var(--silver) 45%, transparent);
+		background-color: light-dark(var(--base-200), var(--base-700));
+		color: light-dark(var(--base-950), var(--base-50));
 	}
 
 	p,
@@ -315,11 +315,6 @@
 		p {
 			margin: 0;
 		}
-	}
-
-	/* the border defines the light monospace face against the text around it */
-	code:not(pre code) {
-		@apply border-secondary border;
 	}
 
 	h1,

@@ -1,73 +1,21 @@
 ---
-title: Get Started
+title: Get started
 description: Install ovr and build a first app that people and agents both use.
 ---
 
-## Installation
+## First app
 
-Install the `ovr` package from [npm](https://www.npmjs.com/package/ovr) using your preferred package manager.
-
-```bash
-npm i ovr
-```
-
-Alternatively, you can setup ovr with a pre-configured template using Vite with [domco](https://domco.robino.dev):
+Create an app with [domco](https://domco.robino.dev), which sets up ovr with Vite and a dev server:
 
 ```bash
 npx create-domco@latest --framework=ovr
 ```
 
-## JSX configuration
-
-To utilize JSX, add the following options to your `tsconfig.json` to enable the JSX transform. TypeScript, Vite, or esbuild will pickup the option from this file.
-
-```json
-{ "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "ovr" } }
-```
-
-Or you can use a comment if you are using ovr in conjunction with another framework to specify the import source for a specific module where you are using ovr.
+Then replace the app with a todo list: a page, and a form to add to it. Each route is [described](/route#describe), and the app has an [MCP endpoint](/agents#mcp), so agents can use it too.
 
 ```tsx
-/** @jsxImportSource ovr */
-```
-
-> While the ovr package does not depend on React, it uses the same JSX transform as React. This transform is built into `tsc` and other build tools.
-
-## First app
-
-A todo list with a page and a form to add to it. Each route is [described](/route#describe), and the app has an [MCP endpoint](/agents#mcp), so agents can use it too.
-
-In a new folder, install ovr, [srvx](https://srvx.h3.dev/) to serve it on Node, and TypeScript to compile it:
-
-```bash
-npm i ovr srvx && npm i -D typescript @types/node
-```
-
-```json
-// package.json, beside the dependencies npm added
-{ "type": "module" }
-```
-
-```json
-// tsconfig.json
-{
-	"compilerOptions": {
-		"target": "ESNext",
-		"module": "NodeNext",
-		"strict": true,
-		"skipLibCheck": true,
-		"rootDir": "src",
-		"outDir": "dist",
-		"jsx": "react-jsx",
-		"jsxImportSource": "ovr"
-	}
-}
-```
-
-```tsx
-// src/index.tsx
+// src/server/+app.tsx
 import { App, Field, Mcp, Route } from "ovr";
-import { serve } from "srvx";
 
 const todos: string[] = [];
 
@@ -104,32 +52,27 @@ const add = Route.post("/todos")
 		c.redirect(list, 303);
 	});
 
-const app = new App().use(list, add, new Mcp({ name: "todos" }));
-
-// the client IP is for rate limits and Auth, see /app#client-ip
-serve({ fetch: (req) => app.fetch(req, { ip: req.ip }) });
+export default new App().use(list, add, new Mcp({ name: "todos" }));
 ```
 
-See [Compatibility](#compatibility) for other runtimes. Compile it and start the server:
-
 ```bash
-npx tsc && node dist/index.js
+npm run dev
 ```
 
 The todos are kept in memory, so they reset when the server restarts. Store them with [Database](/database) in a real app.
 
-The route only puts the page together, and `Todos` reads the list it shows. Build every page this way: a route waits only for what decides the response, such as a redirect or a 404, and each part of the page is a component that reads its own data. [Pages](/pages) explains why, with a larger example.
+The route only puts the page together, and `Todos` reads the list it shows. Build every page this way: a route waits only for what decides the response, such as a redirect or a 404, and each part of the page is a component that reads its own data. See [Pages](/pages).
 
 ### People
 
-Open `http://localhost:3000`. The page has a form that adds a todo, and works without client-side JavaScript. The field is required, so a submission without it returns to the page with "Required field" beside the input, instead of adding a todo. Browsers stop an empty submission themselves; the server checks too, for anything that reaches it.
+Open `http://localhost:5173`. The page has a form that adds a todo, and works without client-side JavaScript. The field is required, so a submission without it returns to the page with "Required field" beside the input, instead of adding a todo. Browsers stop an empty submission themselves; the server checks too, for anything that reaches it.
 
 ### Agents
 
 After adding "Buy milk", request the same page as Markdown:
 
 ```bash
-curl -H "Accept: text/markdown" http://localhost:3000
+curl -H "Accept: text/markdown" http://localhost:5173
 ```
 
 ```md
@@ -137,39 +80,50 @@ curl -H "Accept: text/markdown" http://localhost:3000
 
 - Buy milk
 
-**Form:** `POST http://localhost:3000/todos?_return=%2F` as `multipart/form-data`
+**Form:** `POST http://localhost:5173/todos?_return=%2F` as `multipart/form-data`
 
 - Todo `text` (text, required)
 
 Submit: Add
 ```
 
-Or connect an agent to the MCP endpoint, where the two routes are the tools `get_index` and `post_todos`:
+Or connect an agent to the MCP endpoint, where the two routes are the tools `get_index` and `post_todos`. Ask the agent to do it:
 
-```bash
-claude mcp add --transport http todos http://localhost:3000/mcp
+```md
+Add the MCP server at http://localhost:5173/mcp as a connector named "todos",
+then add a todo to it.
 ```
 
-Ask it to add a todo, and it calls `post_todos` with `{ "text": "..." }`. The same handler runs, and the agent reads the list it redirects to as Markdown.
+It calls `post_todos` with `{ "text": "..." }`. The same handler runs, and the agent reads the list it redirects to as Markdown.
 
 To try an ovr app without building one, connect an agent to these docs, which are an ovr app too:
 
-```bash
-claude mcp add --transport http ovr https://ovrjs.com/mcp
+```md
+Add the MCP server at https://ovrjs.com/mcp as a connector named "ovr".
 ```
 
-### Next
+## Without a template
 
-[App](/app), [Route](/route), and [Middleware](/middleware) cover handling requests, and [Not found and errors](/middleware#not-found-and-errors) the two middleware most apps start with. [Render](/render) covers components, [Pages](/pages) how to split a page between its route and its components, and [Schema](/schema) the fields and forms. [Agents](/agents) explains what agents get from each route.
+Install the `ovr` package from [npm](https://www.npmjs.com/package/ovr):
+
+```bash
+npm i ovr
+```
+
+Add the JSX options to your `tsconfig.json`, which TypeScript, Vite, and esbuild read:
+
+```json
+{ "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "ovr" } }
+```
+
+Or set the import source for one module with a comment, such as beside another framework:
+
+```tsx
+/** @jsxImportSource ovr */
+```
+
+An `App` is served by anything that takes a Fetch handler, with [`app.fetch`](/app#fetch). [Nitro](https://nitro.build/) is another full-stack setup, with an [example](https://github.com/rossrobino/nitro-ovr).
 
 ## Compatibility
 
-ovr supports only the latest Node.js LTS release and current browsers. Other Fetch-compatible runtimes must provide the modern standard APIs it uses, including `Uint8Array.fromBase64()`, `Uint8Array.prototype.toBase64()`, `Map.prototype.getOrInsertComputed()`, and `WeakMap.prototype.getOrInsertComputed()`. Your hosting provider must support that runtime baseline.
-
-The ovr `App` server can be used in any Fetch API compatible runtime via [`App.fetch`](/app#fetch). Here are a few ways to create a Fetch based HTTP server in various JavaScript runtimes.
-
-- [domco](https://domco.robino.dev) - run `npm create domco` and select `ovr` framework
-- [Nitro](https://nitro.build/) - [example repo](https://github.com/rossrobino/nitro-ovr)
-- [Cloudflare Vite Plugin](https://developers.cloudflare.com/workers/vite-plugin/get-started/) + [vite-ssr-components](https://github.com/yusukebe/vite-ssr-components)
-- [Node + srvx](https://srvx.h3.dev/)
-- [Bun HTTP server](https://bun.sh/docs/api/http)
+ovr supports the latest versions of popular server runtimes and browsers.

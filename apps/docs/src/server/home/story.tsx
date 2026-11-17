@@ -50,11 +50,17 @@ const outputs = (async () => {
 	const list = o.Route.get("/todos")
 		.describe("List the todos")
 		.use(() => (
-			<main>
-				<h1>Todos</h1>
-				<Todos />
-				<add.Form submit="Add" />
-			</main>
+			<html>
+				<head>
+					<title>Todos</title>
+					<link rel="stylesheet" href="/style.css" />
+				</head>
+				<main>
+					<h1>Todos</h1>
+					<Todos />
+					<add.Form submit="Add" />
+				</main>
+			</html>
 		));
 
 	async function Todos() {
@@ -355,26 +361,26 @@ export const Story = async () => {
 				<div>
 					<Step
 						n={1}
-						lines={[[1, 24]]}
-						snippet={[[1, 24]]}
+						lines={[[1, 30]]}
+						snippet={[[1, 30]]}
 						caption="person and agent · GET /todos"
 						title="One route, two requests"
 						figure={<Stream html={html} md={md} await={waits} />}
 					>
 						<p>
 							The list route renders once and streams both ways: HTML for a
-							browser, Markdown when the request accepts{" "}
-							<code>text/markdown</code>.
+							browser, head first so it can start on the stylesheet, and
+							Markdown when the request accepts <code>text/markdown</code>.
 						</p>
 					</Step>
 
 					<Step
 						n={2}
 						lines={[
-							[17, 20],
-							[26, 31],
+							[23, 26],
+							[32, 37],
 						]}
-						snippet={[[26, 31]]}
+						snippet={[[32, 37]]}
 						caption="person · text/html · POST /todos/1/done"
 						title="People see it and click Done"
 						figure={<Browser click />}
@@ -390,7 +396,7 @@ export const Story = async () => {
 						n={3}
 						lines={[
 							[2, 2],
-							[27, 27],
+							[33, 33],
 						]}
 						caption="agent · text/markdown · POST /mcp"
 						title="Agents read it and call a tool"

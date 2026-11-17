@@ -1,29 +1,27 @@
-export const bytes = 124339;
-export const kb = 124.34;
+export const bytes = 147938;
+export const kb = 147.94;
 
-export const App = { bytes: 53599, kb: 53.6 } as const;
+export const App = { bytes: 67216, kb: 67.22 } as const;
 
-export const Auth = { bytes: 87339, kb: 87.34 } as const;
+export const Auth = { bytes: 106741, kb: 106.74 } as const;
 
-export const Database = { bytes: 24252, kb: 24.25 } as const;
+export const Database = { bytes: 25705, kb: 25.71 } as const;
 
-export const Field = { bytes: 22248, kb: 22.25 } as const;
+export const Field = { bytes: 30516, kb: 30.52 } as const;
 
-export const Limiter = { bytes: 17029, kb: 17.03 } as const;
+export const Limiter = { bytes: 18482, kb: 18.48 } as const;
 
-export const Markdown = { bytes: 18086, kb: 18.09 } as const;
-
-export const Markup = { bytes: 6083, kb: 6.08 } as const;
-
-export const Mcp = { bytes: 41163, kb: 41.16 } as const;
+export const Mcp = { bytes: 51238, kb: 51.24 } as const;
 
 export const Multipart = { bytes: 7842, kb: 7.84 } as const;
 
-export const Route = { bytes: 27362, kb: 27.36 } as const;
+export const Render = { bytes: 20457, kb: 20.46 } as const;
 
-export const Schema = { bytes: 11080, kb: 11.08 } as const;
+export const Route = { bytes: 37060, kb: 37.06 } as const;
 
-export const Table = { bytes: 13324, kb: 13.32 } as const;
+export const Schema = { bytes: 12450, kb: 12.45 } as const;
+
+export const Table = { bytes: 14777, kb: 14.78 } as const;
 
 export const sizes = {
 	App,
@@ -31,10 +29,9 @@ export const sizes = {
 	Database,
 	Field,
 	Limiter,
-	Markdown,
-	Markup,
 	Mcp,
 	Multipart,
+	Render,
 	Route,
 	Schema,
 	Table,

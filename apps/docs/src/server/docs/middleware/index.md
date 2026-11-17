@@ -68,11 +68,11 @@ const signedIn = async (c: Context) => Boolean(await c.session());
 const gone = (c: Middleware.Context) => c.text("Gone", 410);
 ```
 
-A middleware's `c` fits wherever a `Context` is asked for, so write a function for `Context` unless it answers the request.
+Type a function of your own with `Context` when it only reads the request, as `signedIn` does. A handler can pass its `c` to it, since a `Middleware.Context` has everything a `Context` has. Use `Middleware.Context` only when the function answers the request, as `gone` does.
 
 ## Properties
 
-`Context` exposes the current `Request` on `req`, the parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) on `url`, type-safe route [`params`](/route#parameters), the matched `route`, the signed-in [session](/auth#sessions), and helpers for cookies and request parsing.
+A middleware's context has the `Request`, its parsed [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL), the route's [parameters](/route#parameters), the matched route, the [session](/auth#sessions), cookies, and the request's parsed [fields](/schema#post-forms).
 
 ```ts
 Route.get("/api/:id").use((c) => {
@@ -88,8 +88,6 @@ Route.get("/api/:id").use((c) => {
 	c.memo(fn); // fn, run once for each set of arguments
 });
 ```
-
-Each [component](/render#context) on the page is given the request's `Context` as its second argument, and [`c.memo`](/render#shared-reads) shares what they read.
 
 > On [routes with fields](/schema#post-forms), `Context.data` parses typed form data from the request body. On [GET routes](/schema#get-forms) it parses typed search params. Routes without fields return `null`.
 
@@ -144,7 +142,7 @@ app.use(() => new Response("Hello world"));
 
 #### Stream
 
-Any value that is returned from middleware will be rendered to a stream with [`Render`](/render#stream), as markup, or as [Markdown](/render#markdown) when the request asks for Markdown, and assigned to `Context.res.body`.
+Any value that is returned from middleware will be rendered to a stream with [`Render`](/render#stream), as markup, or as [Markdown](/render#markdown-output) when the request asks for Markdown, and assigned to `Context.res.body`.
 
 Returning a value sets the `content-type` header to `html` unless it has already been set. Markup content types such as `html`, `xml`, and `svg` will be escaped during the render while other content types will not.
 
@@ -225,26 +223,25 @@ app.use(
 );
 ```
 
-Without `key`, a limiter counts each client IP, which your server passes with `app.fetch(request, { ip })`, see [client IP examples](/app#client-ip).
+Without `key`, a limiter counts each client IP, which your server passes with [`app.fetch(request, { ip })`](/app#client-ip). A `key` that returns nothing throws, so put a limiter keyed by user after a sign-in check, as above.
 
-A limiter counts agents too, as it counts people: by the requests that reach your routes. The [MCP endpoint](/agents#mcp) makes a request to the route for each [tool call](/agents#tools), and a read follows a redirect as a browser does. A write that redirects is one request for an agent, which is told where the redirect goes and does not read it, and two for a person. A limiter passed to `app.use` does not see the endpoint's own requests, such as listing tools; limit those at your server or proxy if you need to.
+| Option     | Value                                           |
+| ---------- | ----------------------------------------------- |
+| `database` | Where the buckets are stored, required          |
+| `limit`    | Requests in each interval, 60 by default        |
+| `interval` | Milliseconds, a minute by default               |
+| `key`      | Who a request counts against, the IP by default |
 
-The default key is the trusted `c.ip`, with IPv6 grouped by `/64` and mapped IPv4 addresses sharing their IPv4 budget. A `key` that returns nothing throws, so put a limiter keyed by user after a sign-in check, as above. Cookies and forwarded headers are never used as fallback identities. Exhausted buckets return HTTP 429 with `Retry-After` and `Cache-Control: no-store`. A missing or invalid identity, or a storage failure, throws: the request is not admitted, and your app's error handling sees the error like one from your own handler.
+- **Over the limit** the response is a 429 with `Retry-After`.
+- **Every server counts together**, since the buckets are in your database. A request that can't be counted, such as when the database is down, is not let through: it throws, and your error handling sees it.
+- **The first argument names the buckets.** Give each limiter its own name, and keep it across deploys, since a new name starts everyone with a full budget.
+- **Agents are counted as people are**, by the requests that reach your routes: the [MCP endpoint](/agents#mcp) makes one for each [tool call](/agents#tools). It does not count the endpoint's own requests, such as listing tools.
+- **`await limiter.check(c, scope)`** checks without the middleware, and returns `true` or the `Date` to retry at. Each scope has its own budget.
 
-The first argument names the limiter's buckets. Name each limiter: two with the same name and policy share their buckets, which is how separate servers using one database count together, but two limiters stacked on one route would then spend a request's tokens twice. Keep the name when you deploy, since a new name starts every client with a full budget.
-
-`database` is required. Optional settings are `limit` (default 60), `interval` (milliseconds, default a minute), and `key`. IPv6 addresses are grouped by `/64`, the network one home or office gets; NAT64 and other translated addresses may share one, so use a custom key when those are the peers your deployment sees. IPv4 metadata must use four decimal octets without leading zeroes; ambiguous or abbreviated forms are rejected. `await limiter.check(c, scope)` returns `true` or a retry `Date`, and different scopes have independent budgets. The algorithm uses continuously replenished token buckets to avoid fixed-window boundary bursts.
-
-Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/database#migrate) creates it before your own migrations; `new Limiter()` is a type error when it is missing. `Auth.tables` already includes it, so an app using Auth adds nothing.
+Buckets are stored in `Limiter.table`, named `rate_limits`. Include it in your database's tables, and [`database.migrate()`](/database#migrate) creates it. `Auth.tables` already includes it.
 
 ```ts
 const database = new Database(pool, [posts, Limiter.table]);
 ```
 
-Each admitted request refills and consumes a token in one atomic statement, so every worker shares one budget and a fresh function instance does not receive a fresh budget. Expired buckets are deleted periodically as new ones are written. Database failures fail closed. Keys include `name`, `limit`, and `interval`, so different policies never interpret the same token balance. Identical policies with the same name, scope, and identity intentionally share a budget, so give independent route quotas distinct names. Changing a policy creates a fresh bucket.
-
-Network-level and distributed abuse protection still belong at your deployment edge.
-
-A limiter mounted for every route with `app.use(limiter.middleware)` also counts Auth's requests, in its own budget, apart from Auth's limits; a sign-in then spends from both. Limiting selected routes avoids that.
-
-When composing client and aggregate middleware, check the client policy before tighter shared quotas. Every successful check consumes its token even if a later policy denies, so placing a tight aggregate quota first lets an already-blocked client drain shared capacity.
+A limiter given to `app.use` for every route also counts Auth's requests, apart from Auth's own limits. With more than one limiter on a route, put the one for each client first: every check that passes spends a token, even when a later one refuses.

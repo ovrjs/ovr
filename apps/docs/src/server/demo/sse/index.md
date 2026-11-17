@@ -1,5 +1,5 @@
 ---
-title: Server Sent Events
+title: Server-sent events
 description: How to create server sent events using generator functions.
 ---
 

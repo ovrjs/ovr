@@ -3,9 +3,13 @@ title: Pages
 description: What a route waits for, and what the components on its page read for themselves.
 ---
 
-## The rule
+## The rules
 
-A route waits only for what decides the response: the redirect, the 404, headers and cookies, and what the head needs, such as the title. Every other part of the page is a component that takes IDs and plain values as props, reads its own data, and calls shared data functions so parts that need the same rows share one query. Writes stay in route handlers.
+- **A route waits only for what decides the response:** the redirect, the 404, headers and cookies, and what the head needs, such as the title.
+- **Every other part of the page is a component that reads its own data.**
+- **A component takes IDs and plain values as props,** not the data itself.
+- **Reads go through shared data functions,** so parts that need the same data read it once.
+- **Writes stay in route handlers.**
 
 ## A page
 
@@ -78,7 +82,7 @@ async function Reply(props: { post: string }, c: Context) {
 
 ## Compared to reading in the route
 
-A route can read everything first and pass the rows down, as a loader does in other frameworks:
+A route can read everything first and pass the data down, as a loader does in other frameworks:
 
 ```tsx
 const page = Route.get("/posts/:id").use(async (c) => {
@@ -101,7 +105,7 @@ It works, at two costs. Nothing is sent until the slowest read is done. And the 
 
 ## Props are IDs
 
-Give a component the ID of what it shows, not the rows: `<Comments post={id} />`, not `<Comments comments={rows} />`. A component that takes rows can only be used where something has read them. One that takes an ID reads for itself, and [`c.memo`](/render#shared-reads) makes a read that already happened free.
+Give a component the ID of what it shows, not the data: `<Comments post={id} />`, not `<Comments comments={comments} />`. A component that takes data can only be used where something has read it. One that takes an ID reads for itself, and [`c.memo`](/render#shared-reads) makes a read that already happened free.
 
 ## Data functions
 
