@@ -73,18 +73,22 @@ const todos: string[] = [];
 
 const list = Route.get("/")
 	.describe("List the todos")
-	.use((c) => (
-		<main>
-			<h1>Todos</h1>
-			<ul>
-				{todos.map((todo) => (
-					<li>{todo}</li>
-				))}
-			</ul>
-			{/* state returns a failed submission here, with its message */}
-			<add.Form state={c.url} submit="Add" />
-		</main>
-	));
+	.use(async (c) => {
+		// the add route's form, with what a refused submission sent
+		const entry = await add.form(c);
+
+		return (
+			<main>
+				<h1>Todos</h1>
+				<ul>
+					{todos.map((todo) => (
+						<li>{todo}</li>
+					))}
+				</ul>
+				<entry.Form submit="Add" />
+			</main>
+		);
+	});
 
 const add = Route.post("/todos")
 	.describe("Add a todo")

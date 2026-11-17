@@ -103,12 +103,9 @@ Close the exported `pool` during shutdown. For a public deployment, add an
 aggregate limit on authentication at your edge, as the Auth guide describes. No
 pagination is included; the list deliberately shows only the latest 50 bookmarks.
 
-The sample persists short, non-sensitive bookmark titles and public URLs after
-validation errors. The routes choose `.persist()` for the table's fields, which
-stores these in the return URL, while the table keeps only their validation. For
-private titles, secret links, or long documents, remove that opt-in and choose a
-form state strategy that does not expose those values in URLs. `no-store` and
-`no-referrer` do not remove URLs from browser history or server logs.
+A form that is refused shows what was sent again, with what was wrong. ovr
+keeps it for an hour in a cookie only that page is sent, so a bookmark's title
+and URL are never in an address, a history, or a log.
 
 ## What this shows about the API
 

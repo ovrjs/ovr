@@ -91,7 +91,7 @@ function setup() {
 	const create = Route.post("/recipes")
 		.describe("Add a recipe", { destructive: false })
 		.fields({
-			title: Field.text().min(1).persist(),
+			title: Field.text().min(1),
 			servings: Field.number().optional(),
 			vegan: Field.checkbox(),
 			steps: Field.textarea().lines().optional(),
@@ -157,11 +157,28 @@ function setup() {
 			return c.redirect("/agents", 303);
 		});
 
+	/** The page the form is on, which says what it would show */
+	const add = Route.get("/recipes/new").use(async (c) => {
+		const form = await create.form(c, { title: "Untitled" });
+
+		return c.json({
+			issues: form.issues?.map((issue) => issue.path.join(".")) ?? null,
+			values: form.values ?? null,
+		});
+	});
+	const edit = Route.get("/recipes/:id/edit").use(async (c) => {
+		const form = await update.form(c);
+
+		return c.json({ issues: form.issues ?? null });
+	});
+
 	const routes = {
 		whoami,
 		page,
 		search,
 		create,
+		add,
+		edit,
 		update,
 		remove,
 		file,
@@ -237,25 +254,69 @@ describe("fetch", () => {
 		expect(got.data).toEqual({ title: "Chili", vegan: false });
 	});
 
-	test("a refused submission redirects with the form's state", async () => {
-		const { app, create, update } = setup();
+	test("a refused submission comes back to its page, which shows it", async () => {
+		const { app, create, add } = setup();
 		const ross = new Tester({ app, user: "ross" });
 		const res = await ross.fetch(create, {
-			data: { title: "", ingredients: [{ amount: "1 lb" }] },
+			data: { title: "", servings: 4, ingredients: [{ amount: "1 lb" }] },
 			search: { _return: "/recipes/new" },
 		});
 		const location = res.headers.get("location")!;
 
 		expect(res.status).toBe(303);
-		expect(location.startsWith(`${origin}/recipes/new?_form=`)).toBe(true);
+		// the address names the submission, and holds nothing that was sent
+		expect(location).toMatch(
+			new RegExp(`^${origin}/recipes/new\\?_form=[0-9a-f]{8}$`),
+		);
+		// it is kept in a cookie only that page is sent, and no script reads
+		const [cookie] = res.headers.getSetCookie();
+		expect(cookie).toMatch(/^_form=[0-9a-f]{8}\.[\w-]+; Path=\/recipes\/new; /);
+		expect(cookie).toContain("HttpOnly");
+		expect(cookie).toContain("SameSite=Strict");
+		expect(cookie).toContain("Secure");
+		expect(cookie).toContain("Max-Age=3600");
 
-		const state = await create.state(location);
-		expect(state?.issues?.map((issue) => issue.path.join("."))).toEqual([
-			"title",
-			"ingredients.0.name",
-		]);
-		// another form's state is not this one's
-		expect(await update.state(location)).toBeUndefined();
+		expect(await (await ross.fetch(location)).json()).toEqual({
+			issues: ["title", "ingredients.0.name"],
+			// what was sent, over the values the page starts from
+			values: {
+				title: "",
+				servings: "4",
+				vegan: false,
+				steps: "",
+				ingredients: [{ amount: "1 lb" }],
+			},
+		});
+		// the page opened again without the submission starts over
+		expect(await (await ross.fetch(add)).json()).toEqual({
+			issues: null,
+			values: { title: "Untitled" },
+		});
+	});
+
+	test("a refused submission is shown only to who sent it, on its own form", async () => {
+		const { app, create, edit } = setup();
+		const ross = new Tester({ app, user: "ross" });
+		const res = await ross.fetch(create, {
+			data: { title: "" },
+			search: { _return: "/recipes/new" },
+		});
+		const location = res.headers.get("location")!;
+
+		// someone else with the address has no cookie
+		expect(
+			await (await new Tester({ app, user: "sam" }).fetch(location)).json(),
+		).toEqual({ issues: null, values: { title: "Untitled" } });
+
+		// and another form on a page under the same path is not this one's
+		const other = await ross.fetch(create, {
+			data: { title: "" },
+			search: { _return: "/recipes/7/edit" },
+		});
+		expect(
+			await (await ross.fetch(other.headers.get("location")!)).json(),
+		).toEqual({ issues: null });
+		expect(edit.pattern).toBe("/recipes/:id/edit");
 	});
 
 	test("a route's parameters and search are its URL's", async () => {
@@ -457,32 +518,6 @@ describe("call", () => {
 
 		expect((await new Tester({ app }).call(hello)).content).toEqual([
 			{ type: "text", text: "hello" },
-		]);
-	});
-});
-
-describe("route.state", () => {
-	test("is undefined for a URL without the form's state", async () => {
-		const { create } = setup();
-
-		expect(await create.state("/recipes/new")).toBeUndefined();
-		expect(
-			await create.state(new URL("/recipes/new?_form=nonsense", origin)),
-		).toBeUndefined();
-	});
-
-	test("holds the issues and the values kept", async () => {
-		const { app, create } = setup();
-		const res = await new Tester({ app, user: "ross" }).fetch(create, {
-			data: { title: "Chili", servings: "many" },
-		});
-		const state = await create.state(
-			new URL(res.headers.get("location")!, origin),
-		);
-
-		expect(state?.values).toEqual({ title: "Chili" });
-		expect(state?.issues?.map((issue) => issue.path.join("."))).toEqual([
-			"servings",
 		]);
 	});
 });

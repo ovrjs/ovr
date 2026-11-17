@@ -39,30 +39,37 @@ export namespace Auth {
 	 * @template Shape Registration fields of the users table
 	 */
 	export interface Forms<Shape extends Field.Shape> {
-		Register: Route.Form<string> & {
-			Field: Form<Shape>["Field"];
-			Fields: Form<Shape>["Fields"];
-			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+		/** Creates an account with a passkey, from the users table's fields. */
+		readonly register: {
+			readonly Form: Route.Form<string>;
+			readonly Field: Form.Bound<Shape>["Field"];
+			readonly Fields: Form.Bound<Shape>["Fields"];
+			readonly Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
-		Login: Route.Form<string> & {
-			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+		/** Signs in with a passkey. */
+		readonly login: {
+			readonly Form: Route.Form<string>;
+			readonly Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
 		/**
 		 * Adds another passkey to the account signed in, such as on a new
-		 * device. Pass `state={c.url}` to return to the page it is on.
+		 * device, and returns to the page it is on.
 		 */
-		Add: Route.Form<string> & {
-			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+		readonly add: {
+			readonly Form: Route.Form<string>;
+			readonly Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
 		/**
 		 * Signs in with a link from `auth.link`, on the authentication `page`
 		 * the link opens. It is a button, so only a person uses the link, and
 		 * renders nothing on a page opened without one.
 		 */
-		Link: ((props: JSX.IntrinsicElements["form"]) => JSX.Element) & {
-			Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
+		readonly link: {
+			readonly Form: (props: JSX.IntrinsicElements["form"]) => JSX.Element;
+			readonly Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
-		Logout: Route.Form<string>;
+		/** Signs out. */
+		readonly logout: { readonly Form: Route.Form<string> };
 	}
 
 	/** A revocable session with a fixed lifetime, from `c.session()`. */
@@ -304,7 +311,7 @@ export class Auth<
 	 * Make a link that signs a user in once, for when they have no passkey
 	 * where they need one: at another origin that shares the users table,
 	 * such as production after registering on `localhost`, or after losing
-	 * their device. It opens the authentication `page`, where `<Link />` from
+	 * their device. It opens the authentication `page`, where `<link.Form />` from
 	 * `auth.forms(c)` signs them in, and they add a passkey.
 	 *
 	 * Anyone who has the link is the user until it is used or expires, so

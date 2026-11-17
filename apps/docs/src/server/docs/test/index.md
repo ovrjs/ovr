@@ -54,19 +54,21 @@ test("saves a recipe", async () => {
 
 ### A refused submission
 
-A route that refuses a submission redirects with the form's [state](/schema#persisted-form-state). `await route.state(url)` reads it back: the issues found, and the values kept.
+A route that refuses a submission redirects to the page its form is on, and keeps what was [refused](/schema#a-refused-submission) in a cookie for that page. The tester sends the cookie back as a browser does, so request the page to see what a person sees. Send `_return` as the form on the page does, so the redirect goes there.
 
 ```ts
 test("a recipe needs a title", async () => {
-	const refused = await ross.fetch(recipes.create, { data: { title: "" } });
-	const state = await recipes.create.state(refused.headers.get("location")!);
+	const refused = await ross.fetch(recipes.create, {
+		data: { title: "" },
+		search: { _return: "/recipes/new" },
+	});
+	const page = await ross.fetch(refused.headers.get("location")!);
 
-	assert.deepEqual(
-		state?.issues?.map((issue) => issue.path),
-		[["title"]],
-	);
+	assert.match(await page.text(), /Required field/);
 });
 ```
+
+An agent is told each issue by its field, so `tester.call` is the shorter check of what a route refuses.
 
 ## As an agent
 

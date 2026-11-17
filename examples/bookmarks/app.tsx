@@ -5,8 +5,8 @@ import { App, Database, type JSX, Mcp, Route } from "ovr";
 const { bookmarks } = database;
 const { id, title, url } = bookmarks.shape;
 
-/** Short, public values, so these forms refill them after an error */
-const editable = { title: title.persist(), url: url.persist() };
+/** What a person fills in: the rest of a bookmark is the server's */
+const editable = { title, url };
 
 /** Shared document shell. Resolve authentication and data before rendering. */
 function Page({ title, children }: { title: string; children: JSX.Element }) {
@@ -29,14 +29,14 @@ function Page({ title, children }: { title: string; children: JSX.Element }) {
 
 const login = Route.get("/login").use(async (c) => {
 	if (await c.session()) return c.redirect(list, 303);
-	const { Register, Login } = auth.forms(c);
+	const { register, login } = auth.forms(c);
 
 	return (
 		<Page title="Your bookmarks">
 			<h2>Log in</h2>
-			<Login />
+			<login.Form />
 			<h2>Create account</h2>
-			<Register />
+			<register.Form />
 		</Page>
 	);
 });
@@ -120,7 +120,8 @@ const list = Route.get("/bookmarks")
 	.use(async (c) => {
 		const session = await c.session();
 		if (!session) return c.redirect(login, 303);
-		const { Logout } = auth.forms(c);
+		const { logout } = auth.forms(c);
+		const add = await create.form(c);
 		const rows = await database.sql`
 			SELECT * FROM ${bookmarks} WHERE owner = ${session.user}
 			ORDER BY created DESC, id DESC LIMIT 50
@@ -128,9 +129,9 @@ const list = Route.get("/bookmarks")
 
 		return (
 			<Page title="Your bookmarks">
-				<Logout />
+				<logout.Form />
 				<h2>Add a bookmark</h2>
-				<create.Form state={c.url} submit="Add bookmark" />
+				<add.Form submit="Add bookmark" />
 				<h2>Latest 50 bookmarks</h2>
 				{rows.length ? (
 					<ul>
@@ -164,14 +165,11 @@ const edit = Route.get("/bookmarks/:id/edit")
 
 		if (!bookmark) return c.text("Not Found", 404);
 
+		const save = await update.form(c, bookmark);
+
 		return (
 			<Page title="Edit bookmark">
-				<update.Form
-					params={{ id: bookmark.id }}
-					values={bookmark}
-					state={c.url}
-					submit="Save changes"
-				/>
+				<save.Form params={{ id: bookmark.id }} submit="Save changes" />
 				<list.Anchor>Back to bookmarks</list.Anchor>
 			</Page>
 		);

@@ -113,7 +113,7 @@ const page = Route.get("/").use(() => {
 
 ## Post
 
-`Route.post` creates a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route with `Form` and `Button` components. Use `Form` whenever a page submits to the route. It sets `enctype="multipart/form-data"`, and renders the route's [`fields`](/schema#post-forms) and a submit button, labelled with `submit`:
+`Route.post` creates a [POST](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST) route with `Form` and `Button` components. Use a form whenever a page submits to the route. It sets `enctype="multipart/form-data"`, and has a submit button, labelled with `submit`. A route with [`fields`](/schema#post-forms) gives its form for the request with `route.form(c)`, which renders them too, with what a refused submission sent:
 
 ```tsx
 const create = Route.post("/posts")
@@ -123,13 +123,15 @@ const create = Route.post("/posts")
 		// ...
 	});
 
-const page = Route.get("/").use((c) => (
+const page = Route.get("/").use(async (c) => {
+	const add = await create.form(c);
+
 	// the title field and an "Add post" button
-	<create.Form state={c.url} submit="Add post" />
-));
+	return <add.Form submit="Add post" />;
+});
 ```
 
-A route without fields, such as a delete, renders just the button. Patterns can have parameters, like any route, and the components take their values with [`params`](#props).
+A route's own `Form` renders just the button, for a route without fields, such as a delete. Patterns can have parameters, like any route, and the components take their values with [`params`](#props).
 
 ```tsx
 const remove = Route.post("/posts/:id/delete").use((c) => {
@@ -140,17 +142,19 @@ const remove = Route.post("/posts/:id/delete").use((c) => {
 <remove.Form params={{ id: post.id }} submit="Delete" />;
 ```
 
-Pass children to write the form's contents yourself, for example with [`Fields` or `Field`](/schema#post-forms) for a custom layout; they replace the generated fields and button.
+Pass children to write the form's contents yourself, for example with the form's [`Fields` or `Field`](/schema#post-forms) for a custom layout; they replace the generated fields and button.
 
 `Button` is for a second action inside another form: a submit button whose `formaction` sends that form to this route instead. Like any `formaction` button, it does nothing outside a `<form>`, so use the route's `Form` for a standalone button.
 
 ```tsx
-<update.Form params={{ id: post.id }} state={c.url}>
-	<update.Fields values={post} state={c.url} />
+const save = await update.form(c, post);
+
+<save.Form params={{ id: post.id }}>
+	<save.Fields />
 	<button>Save</button>
 	{/* submits the same form to /posts/1/preview */}
 	<preview.Button params={{ id: post.id }}>Preview</preview.Button>
-</update.Form>
+</save.Form>;
 ```
 
 ## Props

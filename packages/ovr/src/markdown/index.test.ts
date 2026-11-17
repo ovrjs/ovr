@@ -9,6 +9,12 @@ import { describe, expect, test } from "vitest";
 const md = (element: JSX.Element, options?: Render.Options.Markdown) =>
 	new Render({ markdown: element }, options).string();
 
+/** The request a page's forms read: its address, and no cookie */
+const page = {
+	url: new URL("https://example.com/"),
+	cookie: { get: () => undefined },
+} as unknown as Parameters<NonNullable<Route.Post["form"]>>[0];
+
 /** Element with props and children, like JSX */
 const h = (
 	tag: string,
@@ -262,7 +268,11 @@ describe("Markdown", () => {
 						"tr",
 						null,
 						h("td", null, "Post 3"),
-						h("td", null, rename.Form({ params: { id: "3" } })),
+						h(
+							"td",
+							null,
+							(await rename.form(page)).Form({ params: { id: "3" } }),
+						),
 					),
 				),
 			),
@@ -275,7 +285,7 @@ describe("Markdown", () => {
 					"| Post 2 | Delete: `POST /posts/2/delete` |",
 					"| Post 3 |  |",
 				].join("\n"),
-				"**Form:** `POST /posts/3` as `multipart/form-data`",
+				"**Form:** `POST /posts/3?_return=%2F` as `multipart/form-data`",
 				"- title `title` (text, required)",
 				"Submit: Submit\n",
 			].join("\n\n"),
@@ -601,15 +611,14 @@ describe("Markdown", () => {
 		expect(
 			await md(
 				jsx("main", {
-					children: route.Form({
-						values: { title: "Hello", kind: "b" },
-						submit: "Save",
-					}),
+					children: (
+						await route.form(page, { title: "Hello", kind: "b" })
+					).Form({ submit: "Save" }),
 				}),
 			),
 		).toBe(
 			[
-				"**Form:** `POST /bookmarks` as `multipart/form-data`",
+				"**Form:** `POST /bookmarks?_return=%2F` as `multipart/form-data`",
 				"",
 				"- Title `title` (text, required), value: `Hello`",
 				"- kind `kind` (select, required), options: `a`, `b`, value: `b`",

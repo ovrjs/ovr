@@ -1,6 +1,6 @@
 import type { App } from "../app/index.js";
 import { Cookie } from "../cookie/index.js";
-import { type Field, Form as FormSchema, forms } from "../form/index.js";
+import { type Field, Form as FormSchema, forms, kept } from "../form/index.js";
 import { type Options, tools } from "../markdown/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -345,13 +345,13 @@ export class Context<
 			);
 
 			/**
-			 * Add the URL to return to with the encoded invalid state.
+			 * Adds the URL to return to, and keeps what was refused for the page
+			 * there to show: in a cookie only that page is sent, named in the URL,
+			 * so nothing a person typed is in an address.
 			 *
-			 * @template R Parse result, with its search parameters
+			 * @template R Parse result, with its state
 			 */
-			const invalid = <R extends { search: Field.Parse.Result.Search }>(
-				result: R,
-			) => {
+			const invalid = <R extends { state: string | undefined }>(result: R) => {
 				let url = new URL(this.url);
 
 				if (post) {
@@ -370,7 +370,26 @@ export class Context<
 
 				for (const param of FormSchema.params) url.searchParams.delete(param);
 
-				if (result.search) url.searchParams.set(...result.search[0]);
+				// an agent is given the issues, and renders no page
+				if (!agent.get(this.req)) {
+					const [, name] = FormSchema.params;
+
+					// a GET form's submission is the URL, which holds it all
+					if (post) {
+						// tells this submission from another tab's, or an earlier one
+						const id = crypto.randomUUID().slice(0, 8);
+						url.searchParams.set(name, id);
+
+						if (result.state !== undefined)
+							this.cookie.set(name, `${id}.${result.state}`, {
+								path: url.pathname,
+								maxAge: kept,
+								httpOnly: true,
+								sameSite: "Strict",
+								secure: url.protocol === "https:",
+							});
+					}
+				}
 
 				return Object.assign(result, { url });
 			};

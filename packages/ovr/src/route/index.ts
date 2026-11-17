@@ -1,3 +1,4 @@
+import type { Context } from "../context/index.js";
 import { type Field, Form as FormSchema, forms, query } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
@@ -204,42 +205,66 @@ export namespace Route {
 	};
 
 	/**
-	 * The components a route with fields renders them with.
+	 * What a route with fields adds: its form, as a request sees it.
 	 *
+	 * @template Pattern Route pattern
 	 * @template S Form field shape
 	 */
-	type Components<S extends Field.Shape> = Pick<
-		FormSchema<S>,
-		"Field" | "Fields" | "component" | "state"
-	>;
-
-	/**
-	 * Omits `component` so schema-specific `component` signatures are not widened when a
-	 * concrete shape is intersected onto the route type.
-	 */
-	type FormMethods = Omit<Components<any>, "component">;
-
-	/**
-	 * Optional form helper methods available when a route may have a schema.
-	 *
-	 * Function members are wrapped with bivariant parameters so routes can be
-	 * structurally assigned across compatible generic instances.
-	 */
-	type MaybeForm = {
-		// maybe schema assigned - makes route.Fields?.() possible
-		[K in keyof FormMethods]?: FormMethods[K] extends (...args: any[]) => any
-			? Util.Bivariant<FormMethods[K]>
-			: FormMethods[K];
+	type WithFields<Pattern extends string, S extends Field.Shape> = {
+		/**
+		 * The route's form as this request sees it: its components, with what
+		 * a refused submission kept and the values to start from.
+		 *
+		 * ```tsx
+		 * const save = await update.form(c, recipe);
+		 *
+		 * <save.Form params={{ id }}>
+		 * 	<save.Field name="title" />
+		 * 	<button>Save</button>
+		 * </save.Form>
+		 * ```
+		 *
+		 * @param c Request context of the page the form is on
+		 * @param values Initial values, for example the record being edited.
+		 * What a refused submission sent takes precedence
+		 * @returns The form's components, its issues, and its values
+		 */
+		readonly form: (
+			c: Pick<Context, "url" | "cookie">,
+			values?: Field.Value.Initial<S>,
+		) => Promise<Route.Bound<Pattern, S>>;
 	};
 
 	/**
-	 * Schema helpers once `route.fields()` sets a shape.
+	 * A route's form once `route.fields()` sets a shape. A route that may
+	 * have one, typed without its shape, may have `form`.
 	 *
+	 * @template Pattern Route pattern
 	 * @template Shape Form field shape
 	 */
-	type WithSchema<Shape extends Field.Shape> = [Field.Shape] extends [Shape]
-		? MaybeForm
-		: Components<Shape>;
+	type WithSchema<Pattern extends string, Shape extends Field.Shape> = [
+		Field.Shape,
+	] extends [Shape]
+		? { readonly form?: Util.Bivariant<WithFields<Pattern, any>["form"]> }
+		: WithFields<Pattern, Shape>;
+
+	/**
+	 * A route's form as one request sees it, from `route.form(c)`.
+	 *
+	 * @template Pattern Route pattern
+	 * @template S Form field shape
+	 */
+	export type Bound<
+		Pattern extends string,
+		S extends Field.Shape,
+	> = Field.Bound<S> & {
+		/**
+		 * `<form>` that submits to the route, with its fields and a submit
+		 * button unless it is given children. A refused submission comes back to
+		 * the page it is on.
+		 */
+		readonly Form: Route.Form<Pattern>;
+	};
 
 	/**
 	 * GET route type with route components and optional schema helpers.
@@ -256,7 +281,7 @@ export namespace Route {
 		WithAnchor<Pattern> &
 		WithButton<Pattern> &
 		WithForm<Pattern> &
-		WithSchema<Shape>;
+		WithSchema<Pattern, Shape>;
 
 	/**
 	 * POST route type with route components and optional schema helpers.
@@ -272,7 +297,7 @@ export namespace Route {
 	> = Route<Pattern, Params, Shape, "post"> &
 		WithButton<Pattern> &
 		WithForm<Pattern> &
-		WithSchema<Shape>;
+		WithSchema<Pattern, Shape>;
 
 	/** Components a route has: GET routes add an `<Anchor>` */
 	export type Kind = "get" | "post" | "plain";
@@ -436,10 +461,6 @@ export namespace Route {
 	export type Form<Pattern extends string> = (
 		props: JSX.IntrinsicElements["form"] &
 			URLOptions<ExtractParams<Pattern>> & {
-				/** Current page URL, restores the state of an invalid submission */
-				state?: URL | undefined;
-				/** Initial field values, for example the record being edited */
-				values?: Readonly<Record<string, unknown>> | undefined;
 				/** Label of the generated submit button, defaults to "Submit" */
 				submit?: JSX.Element | undefined;
 			},
@@ -657,9 +678,33 @@ export class Route<
 		// a GET form's submission is the URL, so its fields read from it
 		if (this.method === Method.get) form = form[query]();
 		forms.set(this, form);
-		const { Field, Fields, component, state } = form;
 
-		return Object.assign(this, { Field, Fields, component, state }) as any;
+		return Object.assign(this, {
+			form: async (
+				c: Pick<Context, "url" | "cookie">,
+				values?: Field.Value.Initial<S>,
+			) => {
+				// what a refused submission kept, for the page its redirect names
+				const [, name] = FormSchema.params;
+				const id = c.url.searchParams.get(name);
+				const held = id ? c.cookie.get(name) : undefined;
+				const bound = await form.bind(
+					{
+						url: c.url,
+						state: held?.startsWith(`${id}.`)
+							? held.slice(id!.length + 1)
+							: undefined,
+					},
+					values,
+				);
+
+				return {
+					...bound,
+					Form: (props: Parameters<Route.Form<Pattern>>[0]) =>
+						Route.#form(this, props, c.url, bound.Fields()),
+				};
+			},
+		}) as any;
 	}
 
 	/**
@@ -779,66 +824,75 @@ export class Route<
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: (({
-				params,
+			Form: ((props) => Route.#form(route, props)) as Route.Form<Pattern>,
+		});
+	}
+
+	/**
+	 * @template Pattern Route pattern
+	 * @param route Route the form submits to
+	 * @param props The form's props
+	 * @param page The page the form is on, where a refused submission returns
+	 * @param fields The route's fields, a form of its own has none
+	 * @returns The `<form>`, with a submit button unless it is given children
+	 */
+	static #form<Pattern extends string>(
+		route: Route<Pattern>,
+		{
+			params,
+			search,
+			hash,
+			submit = "Submit",
+			...rest
+		}: Parameters<Route.Form<Pattern>>[0],
+		page?: URL,
+		fields?: JSX.Element,
+	) {
+		let query: URLSearchParams | undefined;
+
+		if (route.method === Method.post && page) {
+			const target = new URL(page);
+
+			for (const param of FormSchema.params) {
+				target.searchParams.delete(param);
+			}
+
+			query = new URLSearchParams(
+				// @ts-expect-error - see type above
 				search,
+			);
+
+			query.set(
+				FormSchema.params[0],
+				target.pathname + target.search + target.hash,
+			);
+		}
+
+		const { tool } = route;
+
+		return jsx("form", {
+			action: route.url({
+				params,
+				search: query ?? search,
 				hash,
-				state,
-				values,
-				submit = "Submit",
-				...rest
-			}) => {
-				let query: URLSearchParams | undefined;
-
-				if (route.method === Method.post && state) {
-					const target = new URL(state);
-
-					for (const param of FormSchema.params) {
-						target.searchParams.delete(param);
-					}
-
-					query = new URLSearchParams(
-						// @ts-expect-error - see type above
-						search,
-					);
-
-					query.set(
-						FormSchema.params[0],
-						target.pathname + target.search + target.hash,
-					);
-				}
-
-				const { Fields } = route as Route.Post<Pattern>;
-				const { tool } = route;
-
-				return jsx("form", {
-					action: route.url({
-						params,
-						search: query ?? search,
-						hash,
-					} as Route.URLOptions<ExtractParams<Pattern>>),
-					method: route.method,
-					enctype,
-					// default to the fields, if any, and a submit button, so a form
-					// without fields, such as a delete, is still one to submit
-					children: [
-						Fields?.({ state, values }),
-						jsx("button", { children: submit }),
-					],
-					// WebMCP, browser agents call the form as the route's tool. A form
-					// bound to a parameter, like a delete form in each row, would repeat
-					// the name, so those set the attributes themselves when they are unique
-					...(tool &&
-						!/[:*]/.test(route.pattern) && {
-							toolname: tool.name,
-							tooltitle: tool.title,
-							tooldescription: tool.description,
-							// a form that may change data waits for the user to submit it
-							toolautosubmit: tool.read,
-						}),
-					...rest,
-				});
-			}) as Route.Form<Pattern>,
+			} as Route.URLOptions<ExtractParams<Pattern>>),
+			method: route.method,
+			enctype: route.method === Method.post ? Mime.type.mp : undefined,
+			// default to the fields, if any, and a submit button, so a form
+			// without fields, such as a delete, is still one to submit
+			children: [fields, jsx("button", { children: submit })],
+			// WebMCP, browser agents call the form as the route's tool. A form
+			// bound to a parameter, like a delete form in each row, would repeat
+			// the name, so those set the attributes themselves when they are unique
+			...(tool &&
+				!/[:*]/.test(route.pattern) && {
+					toolname: tool.name,
+					tooltitle: tool.title,
+					tooldescription: tool.description,
+					// a form that may change data waits for the user to submit it
+					toolautosubmit: tool.read,
+				}),
+			...rest,
 		});
 	}
 

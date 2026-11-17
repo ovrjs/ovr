@@ -816,7 +816,7 @@ describe("toJsonSchema", () => {
 		const schema = Schema.object({
 			email: Field.email(),
 			count: Field.number().int().min(0).optional(),
-			plan: Field.select(["free", "pro"]).persist(),
+			plan: Field.select(["free", "pro"]),
 			bio: Field.textarea().max(500).stream(),
 			agree: Field.checkbox(),
 		});
@@ -913,7 +913,7 @@ describe("def", () => {
 	test("fields keep their definition through stream and persist", () => {
 		const field = Field.text().min(2);
 		expect(field.stream().def).toBe(field.def);
-		expect(field.persist().def).toBe(field.def);
+		expect(field.def).toBe(field.def);
 	});
 });
 

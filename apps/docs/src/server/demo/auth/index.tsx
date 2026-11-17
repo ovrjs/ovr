@@ -41,7 +41,7 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 		const session = await c.session();
 		const user = session ? await account(database, session.user) : null;
 
-		const { Register, Login } = service.forms(c);
+		const { register, login } = service.forms(c);
 
 		return (
 			<Layout head={<Meta {...content.frontmatter} />}>
@@ -52,16 +52,16 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 				<div class="mt-8 flex justify-center">
 					<div>
 						<h2>Log in</h2>
-						<Login />
+						<login.Form />
 
 						<hr />
 
 						<h2>Create account</h2>
-						<Register>
-							<Register.Field name="email" />
-							<Register.Issue class="text-red-700" />
+						<register.Form>
+							<register.Field name="email" />
+							<register.Issue class="text-red-700" />
 							<button>Create account</button>
-						</Register>
+						</register.Form>
 
 						{user && (
 							<>
@@ -86,7 +86,7 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 			await service.logout(c);
 			return c.redirect(auth, 303);
 		}
-		const { Logout } = service.forms(c);
+		const { logout } = service.forms(c);
 		const Layout = createLayout(c);
 		const credentials = await database.sql`
 			SELECT * FROM ${database.auth_credentials}
@@ -117,9 +117,9 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 					))}
 				</ul>
 
-				<Logout>
+				<logout.Form>
 					<button>Log out</button>
-				</Logout>
+				</logout.Form>
 			</Layout>
 		);
 	});

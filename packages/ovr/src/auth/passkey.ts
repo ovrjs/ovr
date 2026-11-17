@@ -1,5 +1,5 @@
 import type { Context as ContextType } from "../context/index.js";
-import { Field } from "../form/index.js";
+import { Field, Form as FormSchema, forms } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
@@ -28,10 +28,7 @@ export namespace Passkey {
 	 *
 	 * @template Pattern Route pattern
 	 */
-	export interface Post<Pattern extends string> extends Pick<
-		Route.Post,
-		"Fields"
-	> {
+	export interface Post<Pattern extends string> {
 		pattern: Pattern;
 		Form: Route.Form<Pattern>;
 		url: Route<Pattern>["url"];
@@ -46,6 +43,8 @@ export namespace Passkey {
 		readonly fields?: string;
 		/** Text of the form's own button, in place of the method's. */
 		readonly submit?: string;
+		/** The page the form is on, when what it does returns there. */
+		readonly page?: URL;
 		/**
 		 * Where the form confirms the person with a passkey they have, when
 		 * its ceremony asks for a recent sign-in: the options endpoint, and the
@@ -157,13 +156,32 @@ export class Passkey {
 					fields: options.fields,
 				}),
 			);
+		/** The page to return to, as a route's own form names it */
+		const back = () => {
+			if (!options.page) return;
+
+			const target = new URL(options.page);
+			for (const param of FormSchema.params) target.searchParams.delete(param);
+			return target.pathname + target.search + target.hash;
+		};
 		const Form: Passkey.Component<Pattern> = Object.assign(
 			(props: Parameters<Route.Form<Pattern>>[0]) =>
 				route.Form({
 					...props,
+					...(options.page && {
+						search: [
+							...new URLSearchParams(props.search as never),
+							[FormSchema.params[0], back()!],
+						] as [string, string][],
+					}),
 					children: [
 						props.children ?? [
-							route.Fields?.(),
+							// the route's own fields: what is filled in, and the hidden
+							// ones the ceremony fills. No submission is kept for them
+							forms
+								.get(route)
+								?.bind()
+								.then((bound) => bound.Fields()),
 							jsx("button", {
 								children:
 									options.submit ??

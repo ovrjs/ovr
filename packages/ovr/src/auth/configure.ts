@@ -412,6 +412,13 @@ export function configure<U extends Auth.Users>(
 			// is where they go after logging in
 			const back = c.url.searchParams.get(Form.params[0]);
 			if (back) state(c).remember(back);
+			// registration's own fields, which no submission is kept for: a
+			// refusal says the same whatever was sent
+			const own = fields.bind();
+			const Field: Form.Bound<Shape>["Field"] = (props) =>
+				own.then((bound) => bound.Field(props));
+			const Fields: Form.Bound<Shape>["Fields"] = (props) =>
+				own.then((bound) => bound.Fields(props));
 			const Register = passkey.form(register, "register", {
 				...props,
 				endpoint: registration.url(),
@@ -451,6 +458,8 @@ export function configure<U extends Auth.Users>(
 				endpoint: adding.url(),
 				submit: "Add passkey",
 				confirm: { endpoint: confirming.url(), action: paths.confirm },
+				// it is on a page of the account, where the person stays
+				page: c.url,
 			});
 			Register.Issue = error("register", Register.Issue);
 			Login.Issue = error("login", Login.Issue);
@@ -479,18 +488,18 @@ export function configure<U extends Auth.Users>(
 				},
 			);
 			return {
-				Register: Object.assign(Register, {
-					Field: fields.Field,
-					Fields: fields.Fields,
-				}),
-				Login,
-				Add,
-				Link,
-				Logout: (props: Parameters<typeof logout.Form>[0]) =>
-					jsx(logout.Form, {
-						...props,
-						children: props.children ?? jsx("button", { children: "Log out" }),
-					}),
+				register: { Form: Register, Field, Fields, Issue: Register.Issue },
+				login: { Form: Login, Issue: Login.Issue },
+				add: { Form: Add, Issue: Add.Issue },
+				link: { Form: Link, Issue: Link.Issue },
+				logout: {
+					Form: (props: Parameters<typeof logout.Form>[0]) =>
+						jsx(logout.Form, {
+							...props,
+							children:
+								props.children ?? jsx("button", { children: "Log out" }),
+						}),
+				},
 			};
 		},
 	};

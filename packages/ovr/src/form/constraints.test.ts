@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest";
 const control = async (field: Field.Any) => {
 	const form = new Form({ value: field });
 	const html = await new Render({
-		markup: form.Field({ name: "value" }),
+		markup: (await form.bind()).Field({ name: "value" }),
 	}).string();
 
 	return /<(?:input|textarea)[^>]*>/.exec(html)![0];

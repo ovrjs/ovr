@@ -408,18 +408,19 @@ describe("Mcp", () => {
 			archive,
 			Route.get("/notes/:id")
 				.describe("Show a note")
-				.use((c) =>
-					jsx("main", {
+				.use(async (c) => {
+					const [title, gone] = await Promise.all([
+						rename.form(c, { title: "Groceries" }),
+						archive.form(c),
+					]);
+
+					return jsx("main", {
 						children: [
-							rename.Form({
-								params: { id: c.params.id },
-								values: { title: "Groceries" },
-								submit: "Save",
-							}),
-							archive.Form({ params: { id: c.params.id } }),
+							title.Form({ params: { id: c.params.id }, submit: "Save" }),
+							gone.Form({ params: { id: c.params.id } }),
 						],
-					}),
-				),
+					});
+				}),
 		);
 		const { body } = await rpc("tools/call", {
 			name: "get_notes_id",
@@ -454,11 +455,11 @@ describe("Mcp", () => {
 		const logout = Route.post("/logout").use(() => {});
 		const page = Route.get("/bookmarks")
 			.describe("Bookmarks")
-			.use(() =>
+			.use(async (c) =>
 				jsx("main", {
 					children: [
 						logout.Form({ submit: "Log out" }),
-						add.Form({ submit: "Add" }),
+						(await add.form(c)).Form({ submit: "Add" }),
 						jsx("ul", {
 							children: ["a1", "b2"].map((id) =>
 								jsx("li", {
@@ -522,11 +523,10 @@ describe("Mcp", () => {
 			save,
 			Route.get("/bookmarks/:id")
 				.describe("A bookmark")
-				.use((c) =>
+				.use(async (c) =>
 					jsx("main", {
-						children: save.Form({
+						children: (await save.form(c, { url: "https://ovrjs.com" })).Form({
 							params: { id: c.params.id },
-							values: { url: "https://ovrjs.com" },
 						}),
 					}),
 				),
@@ -621,15 +621,17 @@ describe("Mcp", () => {
 			publish,
 			Route.get("/recipes/:slug")
 				.describe("A recipe")
-				.use((c) =>
-					publish.Form({
+				.use(async (c) => {
+					const form = await publish.form(c);
+
+					return form.Form({
 						params: { slug: c.params.slug },
 						children: [
-							publish.Field({ name: "photos", options: [a] }),
-							publish.Field({ name: "tags" }),
+							form.Field({ name: "photos", options: [a] }),
+							form.Field({ name: "tags" }),
 						],
-					}),
-				),
+					});
+				}),
 		);
 		const { body } = await rpc("tools/call", {
 			name: "get_recipes_slug",
@@ -681,31 +683,26 @@ describe("Mcp", () => {
 			save,
 			Route.get("/recipes/:id")
 				.describe("A recipe")
-				.use((c) =>
-					save.Form({
+				.use(async (c) => {
+					const form = await save.form(c, {
+						steps: ["Chop", "Fry"],
+						dinners: [b, a],
+						ingredients: [
+							{ id: "7", amount: 2, unit: "cup", name: "flour" },
+							{ id: "8", name: "salt", organic: true },
+						],
+					});
+
+					return form.Form({
 						params: { id: c.params.id },
 						children: [
-							save.Field({ name: "steps", values: { steps: ["Chop", "Fry"] } }),
-							save.Field({ name: "tags" }),
-							save.Field({
-								name: "dinners",
-								options: [a, b],
-								values: { dinners: [b, a] },
-								rows: 4,
-							}),
-							save.Field({
-								name: "ingredients",
-								options: ["cup", "tsp"],
-								values: {
-									ingredients: [
-										{ id: "7", amount: 2, unit: "cup", name: "flour" },
-										{ id: "8", name: "salt", organic: true },
-									],
-								},
-							}),
+							form.Field({ name: "steps" }),
+							form.Field({ name: "tags" }),
+							form.Field({ name: "dinners", options: [a, b], rows: 4 }),
+							form.Field({ name: "ingredients", options: ["cup", "tsp"] }),
 						],
-					}),
-				),
+					});
+				}),
 		);
 
 		const { body: listed } = await rpc("tools/list");
@@ -894,7 +891,7 @@ describe("Mcp", () => {
 			route,
 			Route.get("/preferences")
 				.describe("Edit preferences")
-				.use(() => route.Form({ values: { tags: ["news"] } })),
+				.use(async (c) => (await route.form(c, { tags: ["news"] })).Form({})),
 		);
 		const { body } = await rpc("tools/call", {
 			name: "get_preferences",

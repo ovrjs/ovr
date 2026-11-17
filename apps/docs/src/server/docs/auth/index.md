@@ -62,27 +62,27 @@ Call `auth.forms(c)` in the route handler, before returning JSX. This lets ovr s
 ```tsx
 app.use(
 	Route.get("/login").use((c) => {
-		const { Register, Login } = auth.forms(c);
+		const { register, login } = auth.forms(c);
 
 		return (
 			<>
 				<h2>Log in</h2>
-				<Login />
+				<login.Form />
 				<h2>Create account</h2>
-				<Register />
+				<register.Form />
 			</>
 		);
 	}),
 );
 ```
 
-`Register` includes your registration fields, a submit button, and an accessible error message. `Login` opens the passkey picker without asking for an email or password. Both establish a session and redirect after success. `auth.forms(c)` also has `Add`, `Link`, and `Logout`, each described below.
+`register.Form` includes your registration fields, a submit button, and an accessible error message. `login.Form` opens the passkey picker without asking for an email or password. Both establish a session and redirect after success. `auth.forms(c)` also has `add`, `link`, and `logout`, each described below. Each is a form as a [route's](/schema#post-forms) is: its `Form`, and the parts to lay it out yourself.
 
 The forms automatically load a same-origin JavaScript module. It handles the passkey prompt, validation, errors, retries, and normal form submission, including forms arriving in a streamed response.
 
 ### Register
 
-With the email field configured above, `<Register />` generates this HTML. Generated script IDs and signed bootstrap values are abbreviated in these examples.
+With the email field configured above, `<register.Form />` generates this HTML. Generated script IDs and signed bootstrap values are abbreviated in these examples.
 
 ```html
 <form action="/auth/register" method="POST" enctype="multipart/form-data">
@@ -115,7 +115,7 @@ The hidden `credential` and `ceremony` inputs are filled by the browser script.
 
 ### Login
 
-`<Login />` generates a form without account fields:
+`<login.Form />` generates a form without account fields:
 
 ```html
 <form action="/auth/login" method="POST" enctype="multipart/form-data">
@@ -142,7 +142,7 @@ The hidden `credential` and `ceremony` inputs are filled by the browser script.
 
 ### Add a passkey
 
-An account has the passkey it registered with. `<Add />` adds another to the account signed in, such as for a second device, or one that replaces a device that was lost. Render it on a page of the account, with `state` to return there:
+An account has the passkey it registered with. `<add.Form />` adds another to the account signed in, such as for a second device, or one that replaces a device that was lost. Render it on a page of the account, which it returns to:
 
 ```tsx
 app.use(
@@ -150,7 +150,7 @@ app.use(
 		const session = await c.session();
 		if (!session) return c.redirect("/login", 303);
 
-		const { Add } = auth.forms(c);
+		const { add } = auth.forms(c);
 		const passkeys = await database.sql`
 			SELECT * FROM ${database.auth_credentials}
 			WHERE ${database.auth_credentials.columns.user} = ${session.user}
@@ -159,14 +159,14 @@ app.use(
 		return (
 			<>
 				<p>{passkeys.length} passkeys</p>
-				<Add state={c.url} />
+				<add.Form />
 			</>
 		);
 	}),
 );
 ```
 
-The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `Add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. A passkey outlasts the session that adds it, so adding one asks for a recent sign-in: within ten minutes, in that browser. After that, the form first asks for a passkey the person already has, which starts their session again, and they press the button once more to add the new one. They do not sign out. Without a session the prompt is refused with a 401.
+The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. A passkey outlasts the session that adds it, so adding one asks for a recent sign-in: within ten minutes, in that browser. After that, the form first asks for a passkey the person already has, which starts their session again, and they press the button once more to add the new one. They do not sign out. Without a session the prompt is refused with a 401.
 
 Each passkey has what tells it apart in a list: its `name`, if it was added with one, `created`, a time in milliseconds, and the `origin` it was made at.
 
@@ -194,18 +194,18 @@ const link = await auth.link(session.user, {
 });
 ```
 
-`origin` must be an HTTPS origin with no path, or `auth.link` throws. The link opens your authentication `page` at that origin, and its address holds the token, so keep other sites' scripts off that page. Render `<Link />` there, from `auth.forms(c)`: it is a "Sign in" button, so opening the link signs nobody in, and a preview or a prefetch cannot use it up. On a page opened without a link it renders nothing.
+`origin` must be an HTTPS origin with no path, or `auth.link` throws. The link opens your authentication `page` at that origin, and its address holds the token, so keep other sites' scripts off that page. Render `<link.Form />` there, from `auth.forms(c)`: it is a "Sign in" button, so opening the link signs nobody in, and a preview or a prefetch cannot use it up. On a page opened without a link it renders nothing.
 
 ```tsx
-const { Login, Link } = auth.forms(c);
+const { login, link } = auth.forms(c);
 
 <>
-	<Link />
-	<Login />
+	<link.Form />
+	<login.Form />
 </>;
 ```
 
-A link works once, for five minutes, only at the origin it was made for, and only its hash is stored, in `auth_links`. A link that is used, expired, or for another origin returns to the page, where `Link.Issue` says so. Anyone who has the link is the user until then: make one only for a user your code has already identified, and send it the way you would a password.
+A link works once, for five minutes, only at the origin it was made for, and only its hash is stored, in `auth_links`. A link that is used, expired, or for another origin returns to the page, where `link.Issue` says so. Anyone who has the link is the user until then: make one only for a user your code has already identified, and send it the way you would a password.
 
 A link signs in without a passkey, so it is the weakest way into an account. Keep it for yourself: make links from a script or an admin page, such as to move your own account from `localhost` to production, or to let someone back in after you have checked who they are. A form that lets any signed-in user make one is probably not worth having in production, since whoever takes over a session there can make a way in that outlasts it.
 
@@ -214,16 +214,16 @@ A link signs in without a passkey, so it is the weakest way into an account. Kee
 Supply children to control the markup and styling:
 
 ```tsx
-<Register class="stack">
-	<Register.Field name="email" />
-	<Register.Issue class="error" />
+<register.Form class="stack">
+	<register.Field name="email" />
+	<register.Issue class="error" />
 	<button>Create account</button>
-</Register>
+</register.Form>
 ```
 
-`Register.Field` renders one typed field; `Register.Fields` renders them all. `Login.Issue` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/schema#post-forms) as ordinary forms.
+`register.Field` renders one typed field; `register.Fields` renders them all. `login.Issue` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/schema#post-forms) as ordinary forms.
 
-`<Register.Issue class="error" />` generates the following element. `Login.Issue` uses the same markup:
+`<register.Issue class="error" />` generates the following element. `login.Issue` uses the same markup:
 
 ```html
 <p role="status" aria-live="polite" class="error" data-passkey-error></p>
@@ -262,12 +262,12 @@ app.use(
 		const session = await c.session();
 		if (!session) return c.redirect("/login", 303);
 
-		const { Logout } = auth.forms(c);
+		const { logout } = auth.forms(c);
 
 		return (
 			<>
 				<p>Signed in as {session.user}</p>
-				<Logout />
+				<logout.Form />
 			</>
 		);
 	}),
@@ -284,7 +284,7 @@ A session ends after a week without use, and renews while it is used: reading it
 
 ### Logout
 
-`<Logout />` generates a normal form that revokes the current session. It needs no client script:
+`<logout.Form />` generates a normal form that revokes the current session. It needs no client script:
 
 ```html
 <form action="/auth/logout" method="POST" enctype="multipart/form-data">

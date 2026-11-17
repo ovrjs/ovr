@@ -79,12 +79,14 @@ export const signup = Route.post("/signup")
 		return <p>Welcome, {result.data.name}.</p>;
 	});
 
-export const page = Route.get("/signup").use((c) => (
-	<signup.Form state={c.url} />
-));
+export const page = Route.get("/signup").use(async (c) => {
+	const join = await signup.form(c);
+
+	return <join.Form />;
+});
 ```
 
-`signup.Form` renders the `<form>` _and_ the fields inside by default. The button is labelled "Submit"; pass `submit` to change it, for example `<signup.Form submit="Sign up" />`.
+`signup.form(c)` is the route's form as this request sees it: its components, with what a [refused submission](#a-refused-submission) sent. Its `Form` renders the `<form>` _and_ the fields inside by default. The button is labelled "Submit"; pass `submit` to change it, for example `<join.Form submit="Sign up" />`. Name the form for what it does, such as `join` or `save`: a handler often has the record under the more obvious name.
 
 ```html
 <form
@@ -104,35 +106,37 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 > Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, give the field a label: `Field.text().label("Full Name")`.
 
-`describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `signup.component` to place it yourself.
+`describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `join.component` to place it yourself.
 
 A description written to be complete for an agent can be more than a person needs under a control. `hint` is what people read in its place, and agents still read the description: `Field.number().describe("Weight in grams for cups and spoons. Empty for counts and liquids.").hint("For cups and spoons")`. An empty hint shows people nothing.
 
-`control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<signup.Field name="name" autofocus />`.
+`control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<join.Field name="name" autofocus />`.
 
-- `signup.Fields` renders all the fields _without_ the outer `<form>` shell
-- `signup.Field` renders one field by `name` (each key in the shape)
-- `await signup.component(…)` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
+- `join.Fields` renders all the fields _without_ the outer `<form>` shell
+- `join.Field` renders one field by `name` (each key in the shape)
+- `join.component({ name })` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
+- `join.issues` and `join.values` are what a refused submission found and sent, `undefined` without one
 
 ---
 
-The `state` prop for each component takes the current page `c.url`. The URL contains a same-origin `_return` query param on the action URL so invalid redirects can return to the page that rendered the form.
+The form returns a refused submission to the page it is on: its action carries the page's address in a same-origin `_return` query param. A route's own `Form`, such as `<remove.Form params={{ id }} />`, is a plain form with a submit button, for a route without fields or a form you fill with your own inputs.
 
 > To share fields between routes, reuse the shape object, such as `.fields({ ...shape, note: Field.textarea() })`.
 
-Routes that share fields can share the component that lays them out. Give it the route, typed as either one, such as `route: typeof create | typeof update`, and render `<route.Field name="title" />` for the fields both have. Render each route's own `Form` around it, since one may need `params` the other does not take.
+Routes that share fields can share the component that lays them out. Give it the form, typed by the fields it has, such as `form: Field.Bound<typeof fields>`, and render `<props.form.Field name="title" />`. Render each route's own `Form` around it, since one may need `params` the other does not take.
 
 ### Edit a record
 
-Pass `values` to fill the fields with a record's current values. Values restored from an invalid submission take precedence, and values a field can't render, such as dates and `null`, are skipped. `Fields`, `Field`, and `component` accept `values` too.
+Give `route.form` the record to fill the fields with its current values. What a refused submission sent takes precedence, and values a field can't render, such as dates and `null`, are skipped.
 
 ```tsx
 const update = Route.post("/posts/:id").fields(fields).use(handler);
 
 const edit = Route.get("/posts/:id/edit").use(async (c) => {
 	const post = await find(c.params.id);
+	const save = await update.form(c, post);
 
-	return <update.Form params={{ id: post.id }} values={post} state={c.url} />;
+	return <save.Form params={{ id: post.id }} />;
 });
 ```
 
@@ -166,11 +170,11 @@ A form sends every field it has, so for a person nothing is left out: an emptied
 
 ### Errors after parsing
 
-Some issues are only found after the data is valid, for example when a database constraint rejects a duplicate email. `result.invalid` puts messages on fields and returns an invalid result with the same `url` as a failed parse, keeping persisted values.
+Some issues are only found after the data is valid, for example when a database constraint rejects a duplicate email. `result.invalid` puts messages on fields and returns an invalid result with the same `url` as a failed parse, keeping what was sent.
 
 ```tsx
 const signup = Route.post("/signup")
-	.fields({ email: Field.email().persist() })
+	.fields({ email: Field.email() })
 	.use(async (c) => {
 		const result = await c.data();
 		if (result.issues) return c.redirect(result.url, 303);
@@ -215,10 +219,12 @@ const publish = Route.post("/recipes/:id/publish")
 	.fields({ photos: Field.checkboxes(Schema.string().uuid()) })
 	.use(handler);
 
-<publish.Form params={{ id }}>
-	<publish.Field name="photos" options={photos.map((photo) => photo.id)} />
+const choose = await publish.form(c);
+
+<choose.Form params={{ id }}>
+	<choose.Field name="photos" options={photos.map((photo) => photo.id)} />
 	<button>Publish</button>
-</publish.Form>;
+</choose.Form>;
 ```
 
 Agents see these as an array of the schema's values, such as UUIDs, without a fixed list.
@@ -243,7 +249,7 @@ Every option is rendered for people and listed for agents, which suits tens of c
 `Field.list()` is a list of items in order, where an item may repeat. Each item is one field, or several by name:
 
 ```tsx
-const save = Route.post("/recipes/:id")
+const update = Route.post("/recipes/:id")
 	.fields({
 		steps: Field.textarea().lines(),
 		ingredients: Field.list({
@@ -267,11 +273,11 @@ A list renders a `<fieldset>` with a row for each item, and one empty row to add
 
 Set how many rows a list shows with `control`, wherever it renders, or pass `rows` to one form, as with any field's attributes. A week's seven dinners are `Field.list(Field.select(id)).max(7).control({ rows: 7 })`, and an edit form with room to add is `<save.Field name="ingredients" rows={ingredients.length + 5} />`. Every item is always shown, and a list never shows more rows than its `max()`, so a full list has no empty row.
 
-Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. `values` takes the items as an array, as the route gets them.
+Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. The values given to `route.form` have a list's items as an array, as the route gets them.
 
-Mark a list [`.persist()`](#persisted-form-state) so an invalid submission shows its rows again, with each issue on its cell. Without it the rows that were sent are gone, as any field's value is, so the issue is shown under the list and says where it was, such as "Row 2, Ingredient: Required field", with the field's label. The same happens when the rows are too many to keep in the URL.
+An invalid submission shows a list's rows again, with each issue on its cell. When the rows are too many to [keep](#a-refused-submission), the issue is shown under the list and says where it was, such as "Row 2, Ingredient: Required field", with the field's label.
 
-A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own:
+A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own. Here `save` is the route's form, `const save = await update.form(c, recipe)`:
 
 ```tsx
 <save.Field
@@ -280,14 +286,10 @@ A list's `options` are those of each row's choices made from a schema, so a week
 />
 ```
 
-`await save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
+`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
 
 ```tsx
-const Items = await save.component({
-	name: "ingredients",
-	values,
-	state: c.url,
-});
+const Items = save.component({ name: "ingredients" });
 
 <Items.Root>
 	<Items.Legend />
@@ -388,33 +390,33 @@ ovr also normalizes a few common HTML form quirks before validation:
 - `Field.date()`, `Field.datetime()`, `Field.month()`, `Field.week()`, `Field.time()`, and `Field.color()` check that the value is in the format a browser's picker sends, and that a date is a day of the calendar. A browser sends nothing else, but an agent or a script may, and gets an issue such as "Enter a date as YYYY-MM-DD".
 - `Field.file()` and `Field.file().multiple()` treat the browser's [empty placeholder file](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set) as missing, while real zero-byte named files are still preserved.
 
-## Persisted form state
+## A refused submission
 
-ovr stores issue metadata and any values marked with `.persist()` in the `_form` search param so the next render can:
+When a route refuses a submission, `c.data()` keeps the issues and what was sent, and its `url` is the page the form is on. There, `route.form(c)` shows it again:
 
-- persist user input for fields marked with `.persist()`
-- render the matching issue message
-- set `aria-invalid` and `aria-describedby`
-- autofocus the first invalid field
+- each field has what the person typed
+- the matching issue message is under its field
+- `aria-invalid` and `aria-describedby` are set
+- the first invalid field has the focus
 
-The state is compressed, since it is in a URL, and is at most 5 KB there. That holds a long form: a recipe of 50 ingredients, its steps, and its notes. A list shows no more rows from a URL than its `max()`, and never a row's hidden value. When the state is larger, values are left out, from the form's last field back, until it fits. The issues are kept unless they alone are too long, so the person sees what was wrong, but not what they typed in the fields left out. Text that does not compress, or a form of many long fields, can still be too much: keep those values another way, such as by saving a draft.
+It is kept in a cookie, compressed, for an hour. Only the page the form is on is sent the cookie, no script can read it, and the address names it with a short ID, such as `?_form=3f9a2c1e`. So nothing a person typed is in an address, a history, or a log, and the page opened without the ID starts over. A file and a password are never kept.
 
-`await route.state(url)` reads the state a URL holds for the route's form: its `issues`, and the `values` kept. It is `undefined` when the URL holds none of the form's own. Use it to act on a refused submission outside the form's components, such as opening the `<details>` the form is in:
+A cookie holds about 4 KB, which is a long form once it is compressed: a recipe of 100 ingredients, its steps, and its notes. When there is more, values are left out, from the form's last field back, until it fits. The issues are kept, so the person sees what was wrong, but not what they typed in the fields left out. A list shows no more rows than its `max()`, and a row's hidden value, such as its ID, is the page's to give.
+
+The form has its `issues` and `values`, to act on a refused submission outside its fields, such as opening the `<details>` the form is in:
 
 ```tsx
-const refused = await create.state(c.url);
+const add = await create.form(c);
 
-<details open={Boolean(refused?.issues)}>
+<details open={Boolean(add.issues)}>
 	<summary>Add a recipe</summary>
-	<create.Form state={c.url} />
+	<add.Form />
 </details>;
 ```
 
-Only opt in non-sensitive fields. Values marked with `.persist()` are encoded into the URL-backed state and may also appear in browser history, analytics, server logs, and similar tooling. `.persist()` returns a new field, so mark a [table's](/database) fields in each route that uses them, for example `.fields({ title: title.persist() })`, and each form decides.
-
 ## GET forms
 
-`Route.get` can use the same schema helpers for GET forms that send the value as search params. `Context.data()` reads the `_form` to create a URL, or the current URL can also be used to persist the state. Only a GET route's form reads its fields from search params, since that is where it submits them. Other forms restore just what they [persisted](#persisted-form-state), so a link cannot fill in an edit form.
+`Route.get` takes fields too, for a form that sends its values as search params. Its submission is the page's URL, so `route.form(c)` fills the fields from it, and shows what is wrong with them once the URL has any. Only a GET route's form reads its fields from search params, since that is where it submits them. Other forms show just what a [refused submission](#a-refused-submission) kept, so a link cannot fill in an edit form.
 
 ```tsx
 import { Field, Route } from "ovr";
@@ -427,8 +429,9 @@ export const search = Route.get("/search")
 	})
 	.use(async (c) => {
 		const result = await c.data();
+		const find = await search.form(c);
 
-		if (result.issues) return <search.Form state={result.url} />;
+		if (result.issues) return <find.Form />;
 
 		result.data; // { q: "travel backpack", minPrice: 50, inStock: true }
 
@@ -436,11 +439,7 @@ export const search = Route.get("/search")
 
 		return (
 			<>
-				<search.Form
-					state={
-						c.url // /search?q=travel+backpack&minPrice=50&inStock=on
-					}
-				/>
+				<find.Form />
 				<h2>Results for {result.data.q || "all products"}</h2>
 			</>
 		);

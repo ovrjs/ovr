@@ -1054,23 +1054,23 @@ function managed(
 	const app = new App().use(service);
 	app.use(
 		Route.get("/login").use((c) => {
-			const { Register, Login } = service.forms(c, { nonce: "csp-nonce" });
+			const { register, login } = service.forms(c, { nonce: "csp-nonce" });
 			if (false) {
 				// @ts-expect-error Application field names remain exact.
-				Register.Field({ name: "missing" });
+				register.Field({ name: "missing" });
 				// @ts-expect-error Authentication methods live on the configured service.
 				c.auth;
 			}
 			return [
-				jsx(Register, {
+				jsx(register.Form, {
 					class: "registration",
 					children: [
-						jsx(Register.Field, { name: "email" }),
-						jsx(Register.Issue, { class: "error" }),
+						jsx(register.Field, { name: "email" }),
+						jsx(register.Issue, { class: "error" }),
 						jsx("button", { children: "Join" }),
 					],
 				}),
-				jsx(Login, {}),
+				jsx(login.Form, {}),
 			];
 		}),
 		Route.get("/whoami").use(async (c) => c.json(await c.session())),
@@ -1218,8 +1218,8 @@ describe("configured passkey callbacks", () => {
 			const app = new App().use(
 				auth,
 				Route.get("/signup").use((c) => {
-					const { Register } = auth.forms(c);
-					return Register({ children: Register.Field({ name: "email" }) });
+					const { register } = auth.forms(c);
+					return register.Form({ children: register.Field({ name: "email" }) });
 				}),
 			);
 			const page = await app.fetch(
@@ -1281,7 +1281,7 @@ describe("configured passkey callbacks", () => {
 		const auth = new Auth({ ...setup().settings, database, users: accounts });
 		const app = new App().use(
 			auth,
-			Route.get("/login").use((c) => auth.forms(c).Register({})),
+			Route.get("/login").use((c) => auth.forms(c).register.Form({})),
 		);
 		const page = await app.fetch(`${origin}/login`);
 		const html = await page.text();
@@ -1341,8 +1341,8 @@ describe("configured passkey callbacks", () => {
 		const app = new App().use(
 			auth,
 			Route.get("/signup").use((c) => {
-				const { Register } = auth.forms(c);
-				return Register({ children: Register.Field({ name: "email" }) });
+				const { register } = auth.forms(c);
+				return register.Form({ children: register.Field({ name: "email" }) });
 			}),
 		);
 		const page = await app.fetch(origin + "/signup");
@@ -1437,8 +1437,8 @@ describe("configured passkey callbacks", () => {
 		const state = managed();
 		state.app.use(
 			Route.get("/passkeys").use((c) => {
-				const { Add } = state.service.forms(c);
-				return jsx(Add, { state: c.url });
+				const { add } = state.service.forms(c);
+				return jsx(add.Form, {});
 			}),
 		);
 		const second = Codec.Base64Url.encode(Uint8Array.of(5, 6, 7, 8));
@@ -1642,8 +1642,8 @@ describe("configured passkey callbacks", () => {
 		const state = managed();
 		state.app.use(
 			Route.get("/link").use((c) => {
-				const { Link } = state.service.forms(c);
-				return [jsx("main", { children: "page" }), jsx(Link, {})];
+				const { link } = state.service.forms(c);
+				return [jsx("main", { children: "page" }), jsx(link.Form, {})];
 			}),
 		);
 		const start = await state.start("register");
@@ -2434,12 +2434,12 @@ test.each(["origin", "sec-fetch-site"])(
 	},
 );
 
-test("default Register and Login render together without duplicate IDs", async () => {
+test("the default register and login forms render together without duplicate IDs", async () => {
 	const state = managed();
 	state.app.use(
 		Route.get("/forms").use((c) => {
-			const { Register, Login } = state.service.forms(c);
-			return [jsx(Register, {}), jsx(Login, {})];
+			const { register, login } = state.service.forms(c);
+			return [jsx(register.Form, {}), jsx(login.Form, {})];
 		}),
 	);
 	const html = await (await state.app.fetch(origin + "/forms")).text();

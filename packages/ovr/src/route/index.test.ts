@@ -1,4 +1,5 @@
 import { App } from "../app/index.js";
+import type { Context } from "../context/index.js";
 import { Field, Form, forms } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import type { JSX } from "../jsx/index.js";
@@ -7,6 +8,27 @@ import { Render } from "../render/index.js";
 import { Schema } from "../schema/index.js";
 import { Route } from "./index.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
+
+/**
+ * @param url The page's address
+ * @param state What a refused submission kept, which a request has in a
+ * cookie, named in the address
+ * @returns The request `route.form(c)` reads
+ */
+const page = (url: string, state?: string) => {
+	const address = new URL(url, "http://localhost:5173");
+	if (state !== undefined) address.searchParams.set("_form", "1a2b3c4d");
+
+	return {
+		url: address,
+		cookie: {
+			get: (name: string) =>
+				name === "_form" && state !== undefined
+					? `1a2b3c4d.${state}`
+					: undefined,
+		},
+	} as unknown as Pick<Context, "url" | "cookie">;
+};
 
 describe("Route schema helpers", () => {
 	test("rejecting an oversized field cancels the remaining upload", async () => {
@@ -106,38 +128,31 @@ describe("Route schema helpers", () => {
 		expect(await res.json()).toEqual({ name: "ross", role: "admin" });
 	});
 
-	test("invalid GET schema parse uses current request URL and encoded _form", async () => {
+	test("a GET form shows what is wrong with its URL, once it was sent", async () => {
 		const search = Route.get("/search")
 			.fields({ role: Field.radio(["reader", "admin"]) })
 			.use(async (c) => {
 				const result = await c.data();
+				const form = await search.form(c);
 
-				if (result.issues) {
-					c.redirect(result.url, 303);
-					return;
-				}
-
-				c.text("ok");
+				return [form.Form({}), result.issues ? "refused" : "found"];
 			});
 		const app = new App().use(search);
+		const get = async (path: string) =>
+			(await app.fetch(new Request(`http://localhost:5173${path}`))).text();
 
-		const res = await app.fetch(
-			new Request("http://localhost:5173/search?role=owner", {
-				headers: { referer: "http://localhost:5173/source?from=referer" },
-			}),
-		);
+		// its submission is the URL, so the page that reads it shows the issue
+		const refused = await get("/search?role=owner");
+		expect(refused).toContain("Select an option");
+		expect(refused).toContain("refused");
+		expect(refused).toContain('action="/search"');
 
-		expect(res.status).toBe(303);
+		// opened without any of its fields, it was not sent
+		const opened = await get("/search?page=2");
+		expect(opened).not.toContain("Select an option");
+		expect(opened).not.toContain("aria-invalid");
 
-		const location = res.headers.get("location");
-		if (!location) throw new Error("Expected redirect location");
-
-		const url = new URL(location);
-
-		expect(url.pathname).toBe("/search");
-		expect(url.searchParams.get("role")).toBe("owner");
-		expect(url.searchParams.get("from")).toBeNull();
-		expect(url.searchParams.get("_form")).toBeTruthy();
+		expect(await get("/search?role=admin")).toContain("found");
 	});
 
 	test("schema-enabled GET handles HEAD requests without form parsing", async () => {
@@ -173,16 +188,18 @@ describe("Route schema helpers", () => {
 		expect(typeof form.Anchor).toBe("function");
 		expect(typeof form.Form).toBe("function");
 		expect(typeof form.Button).toBe("function");
-		expect(typeof form.Fields).toBe("function");
-		expect(typeof form.Field).toBe("function");
+		// its fields are the form's, as a request sees it
+		expect(typeof form.form).toBe("function");
 	});
 
-	test("schema-enabled Route.get Form defaults to Fields and submit button", async () => {
+	test("a route's bound Form defaults to its fields and a submit button", async () => {
 		const profile = Route.get("/profile")
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
 
-		const html = await new Render({ markup: profile.Form({}) }).string();
+		const html = await new Render({
+			markup: (await profile.form(page("/profile"))).Form({}),
+		}).string();
 
 		expect(html.includes('action="/profile"')).toBe(true);
 		expect(html.includes('method="GET"')).toBe(true);
@@ -190,14 +207,17 @@ describe("Route schema helpers", () => {
 		expect(html.includes(">Submit</button>")).toBe(true);
 	});
 
-	test("schema-enabled Route.post Form encodes _return from URL state", async () => {
+	test("a bound Route.post Form returns a refused submission to its page", async () => {
 		const submit = Route.post("/submit")
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
-		const state = new URL(
-			"http://localhost:5173/signup?tab=profile&_form=stale&_return=%2Fold#details",
-		);
-		const html = await new Render({ markup: submit.Form({ state }) }).string();
+		const html = await new Render({
+			markup: (
+				await submit.form(
+					page("/signup?tab=profile&_form=stale&_return=%2Fold#details"),
+				)
+			).Form({}),
+		}).string();
 
 		expect(
 			html.includes(
@@ -247,45 +267,6 @@ describe("Route schema helpers", () => {
 		expect(url.pathname).toBe("/source");
 		expect(url.searchParams.get("from")).toBe("return");
 		expect(url.searchParams.get("_form")).toBeTruthy();
-	});
-
-	test("invalid POST schema parse exposes search object for explicit page redirects", async () => {
-		const page = Route.get("/source").use((c) => c.text("source"));
-		const submit = Route.post("/submit")
-			.fields({ role: Field.radio(["reader", "admin"]) })
-			.use(async (c) => {
-				const result = await c.data();
-
-				if (result.issues) {
-					c.redirect(page.url({ search: result.search }), 303);
-					return;
-				}
-
-				c.text("ok");
-			});
-		const app = new App().use(page).use(submit);
-		const data = new FormData();
-
-		data.set("role", "owner");
-
-		const res = await app.fetch(
-			new Request("http://localhost:5173/submit", {
-				method: "POST",
-				body: data,
-				headers: { origin: "http://localhost:5173" },
-			}),
-		);
-
-		expect(res.status).toBe(303);
-
-		const location = res.headers.get("location");
-		if (!location) throw new Error("Expected redirect location");
-
-		const url = new URL(location, "http://localhost:5173");
-
-		expect(url.pathname).toBe("/source");
-		expect(url.searchParams.get("_form")).toBeTruthy();
-		expect(url.searchParams.get("_return")).toBeNull();
 	});
 
 	test("invalid POST schema parse falls back to request URL when _return is missing", async () => {
@@ -649,7 +630,9 @@ describe("editing records", () => {
 			note: null,
 		};
 		const html = await new Render({
-			markup: update.Form({ params: { id: "1" }, values: post }),
+			markup: (await update.form(page("/posts/1"), post)).Form({
+				params: { id: "1" },
+			}),
 		}).string();
 
 		expect(html).toContain('value="Draft"');
@@ -658,30 +641,30 @@ describe("editing records", () => {
 		expect(html).not.toContain("values=");
 		expect(html).not.toContain("not a file");
 
-		// a failed submission's persisted values override the record
-		const persisted = Route.post("/posts/:id")
-			.fields({ ...fields, title: fields.title.persist().min(10) })
+		// what a refused submission sent is shown over the record
+		const refused = Route.post("/posts/:id")
+			.fields({ ...fields, title: fields.title.min(10) })
 			.use((c) => c.text("ok"));
 		const body = new FormData();
 		body.set("title", "Typed");
 		body.set("body", "Other");
-		const result = await forms.get(persisted)!.parse(body);
+		const result = await forms.get(refused)!.parse(body);
 		if (!result.issues) throw new Error("Expected issues");
-		const state = new URL("http://localhost:5173/posts/1");
-		state.search = new URLSearchParams(result.search).toString();
 		const restored = await new Render({
-			markup: persisted.Form({ params: { id: "1" }, values: post, state }),
+			markup: (await refused.form(page("/posts/1", result.state), post)).Form({
+				params: { id: "1" },
+			}),
 		}).string();
 
 		expect(restored).toContain('value="Typed"');
-		expect(restored).toContain(">Text</textarea>");
+		expect(restored).toContain(">Other</textarea>");
+		// and nothing that was sent is in the address
+		expect(restored).not.toContain("Typed%");
 	});
 
 	test("a link's search params fill a GET form, and no other", async () => {
 		const shape = { id: Field.hidden(), title: Field.text() };
-		const state = new URL(
-			"http://localhost:5173/posts/1/edit?id=2&title=Typed",
-		);
+		const state = page("/posts/1/edit?id=2&title=Typed");
 		const values = { id: "1", title: "Draft" };
 		const update = Route.post("/posts/:id")
 			.fields(shape)
@@ -693,16 +676,20 @@ describe("editing records", () => {
 
 		for (const html of [
 			await new Render({
-				markup: update.Form({ params: { id: "1" }, values, state }),
+				markup: (await update.form(state, values)).Form({
+					params: { id: "1" },
+				}),
 			}).string(),
-			await new Render({ markup: form.Fields({ values, state }) }).string(),
+			await new Render({
+				markup: (await form.bind({ url: state.url }, values)).Fields(),
+			}).string(),
 		]) {
 			expect(html).toContain('name="id" value="1"');
 			expect(html).toContain('value="Draft"');
 		}
 
 		const filled = await new Render({
-			markup: search.Form({ values, state }),
+			markup: (await search.form(state, values)).Form({}),
 		}).string();
 
 		expect(filled).toContain('name="id" value="2"');
@@ -746,14 +733,12 @@ describe("editing records", () => {
 		);
 	});
 
-	test("Field and component accept initial values too", async () => {
-		const form = new Form(fields);
+	test("a bound form's Field and component have the initial values", async () => {
+		const form = await new Form(fields).bind({}, { title: "One", body: "Two" });
 		const html = await new Render({
 			markup: [
-				form.Field({ name: "title", values: { title: "One" } }),
-				(
-					await form.component({ name: "body", values: { body: "Two" } })
-				).Control(),
+				form.Field({ name: "title" }),
+				form.component({ name: "body" }).Control(),
 			],
 		}).string();
 
@@ -761,25 +746,27 @@ describe("editing records", () => {
 		expect(html).toContain(">Two</textarea>");
 	});
 
-	test("initial record values are not limited by the URL persistence budget", async () => {
+	test("initial record values are not limited by what a refused submission can keep", async () => {
 		const update = Route.post("/posts/:id")
 			.fields({ body: Field.textarea() })
 			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
 		const html = await new Render({
-			markup: update.Form({ params: { id: "1" }, values: { body } }),
+			markup: (await update.form(page("/posts/1"), { body })).Form({
+				params: { id: "1" },
+			}),
 		}).string();
 
 		expect(html).toContain(`>${body}</textarea>`);
 	});
 
 	test.each(["parse", "database"])(
-		"cleared persisted fields override initial values after a %s error",
+		"cleared fields override initial values after a %s error",
 		async (failure) => {
 			const form = new Form({
-				title: Field.text().optional().persist(),
-				tags: Field.select(["a", "b"]).multiple().optional().persist(),
-				email: Field.email().persist(),
+				title: Field.text().optional(),
+				tags: Field.select(["a", "b"]).multiple().optional(),
+				email: Field.email(),
 			});
 			const input = new FormData();
 			input.set("title", "");
@@ -788,13 +775,13 @@ describe("editing records", () => {
 			const result = parsed.issues
 				? parsed
 				: await parsed.invalid({ email: "Already registered" });
-			const state = new URL("https://example.com/edit");
-			for (const pair of result.search ?? []) state.searchParams.set(...pair);
 			const html = await new Render({
-				markup: form.Fields({
-					state,
-					values: { title: "Old title", tags: ["a"] },
-				}),
+				markup: (
+					await form.bind(
+						{ state: result.state },
+						{ title: "Old title", tags: ["a"] },
+					)
+				).Fields(),
 			}).string();
 
 			expect(html).not.toContain('value="Old title"');
@@ -804,10 +791,12 @@ describe("editing records", () => {
 });
 
 describe("invalid after parsing", () => {
-	test("puts issues on fields and keeps persisted values", async () => {
-		const page = Route.get("/signup").use((c) => signup.Form({ state: c.url }));
+	test("puts issues on fields and keeps what was sent", async () => {
+		const form = Route.get("/signup").use(async (c) =>
+			(await signup.form(c)).Form({}),
+		);
 		const signup = Route.post("/signup")
-			.fields({ email: Field.email().persist(), name: Field.text() })
+			.fields({ email: Field.email(), name: Field.text() })
 			.use(async (c) => {
 				const result = await c.data();
 
@@ -819,7 +808,7 @@ describe("invalid after parsing", () => {
 					303,
 				);
 			});
-		const app = new App().use(page, signup);
+		const app = new App().use(form, signup);
 		const data = new FormData();
 
 		data.set("email", "taken@example.com");
@@ -837,13 +826,26 @@ describe("invalid after parsing", () => {
 		expect(res.status).toBe(303);
 		expect(location.pathname).toBe("/signup");
 
-		const html = await (await app.fetch(location)).text();
+		// the address names the submission, a cookie for that page holds it
+		expect(location.search).toMatch(/^\?_form=[0-9a-f]{8}$/);
+		const [cookie] = res.headers.getSetCookie();
+		expect(cookie).toMatch(/^_form=[0-9a-f]{8}\.[\w-]+; Path=\/signup; /);
+
+		const html = await (
+			await app.fetch(location, {
+				headers: { cookie: cookie!.split(";", 1)[0]! },
+			})
+		).text();
 
 		expect(html).toContain("Already registered");
 		expect(html).toContain('value="taken@example.com"');
 		expect(html).toContain('aria-invalid="true"');
-		// name is not persisted
-		expect(html).not.toContain("Ross");
+		expect(html).toContain('value="Ross"');
+
+		// without the cookie, as for anyone else given the address, it is the form
+		const other = await (await app.fetch(location)).text();
+		expect(other).not.toContain("Already registered");
+		expect(other).not.toContain("taken@example.com");
 	});
 });
 
@@ -858,7 +860,7 @@ describe("chained routes", () => {
 			.fields({
 				title: Field.text().label("Title").describe("Shown in the list"),
 			});
-		const created = await render(create.Form({}));
+		const created = await render((await create.form(page("/posts"))).Form({}));
 		expect(created).toContain(
 			'toolname="post_posts" tooltitle="Create a post" tooldescription="Create a post. It starts as a draft."',
 		);
@@ -872,7 +874,9 @@ describe("chained routes", () => {
 		const search = Route.get("/search")
 			.describe("Search posts")
 			.fields({ q: Field.search() });
-		expect(await render(search.Form({}))).toContain(
+		expect(
+			await render((await search.form(page("/search"))).Form({})),
+		).toContain(
 			'toolname="get_search" tooltitle="Search posts" tooldescription="Search posts" toolautosubmit',
 		);
 

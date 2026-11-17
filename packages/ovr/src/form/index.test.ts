@@ -47,13 +47,55 @@ const formInvalid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 };
 
 const decodeState = async <S extends Field.Shape>(
-	search: Field.Parse.Result.Search,
+	state: string | undefined,
 ) => {
-	if (!search) throw new Error("Expected _form search state");
+	if (state === undefined) throw new Error("Expected state to keep");
 
 	return JSON.parse(
-		Codec.decode((await unpack(search[0][1], 1 << 20))!),
+		Codec.decode((await unpack(state, 1 << 20))!),
 	) as Field.State<S>;
+};
+
+/**
+ * A form's components as these tests call them: with the `values` to start
+ * from, and `state` as the page's URL, whose `_form` holds what a refused
+ * submission kept, where a request has it in a cookie.
+ *
+ * @template S Form shape
+ * @param form Form to render
+ * @returns Components that bind the form for each call
+ */
+const ui = <S extends Field.Shape>(form: Form<S>) => {
+	type Given = {
+		values?: Field.Value.Initial<S> | undefined;
+		state?: URL | undefined;
+	};
+	const bind = ({ values, state }: Given) =>
+		form.bind(
+			{ url: state, state: state?.searchParams.get("_form") ?? undefined },
+			values,
+		);
+
+	return {
+		Field: async ({
+			values,
+			state,
+			...props
+		}: Parameters<Form.Bound<S>["Field"]>[0] & Given) =>
+			(await bind({ values, state })).Field(props),
+		Fields: async ({
+			values,
+			state,
+			...props
+		}: NonNullable<Parameters<Form.Bound<S>["Fields"]>[0]> & Given = {}) =>
+			(await bind({ values, state })).Fields(props),
+		component: async <N extends Extract<keyof S, string>>({
+			values,
+			state,
+			...props
+		}: Parameters<Form.Bound<S>["component"]>[0] & Given & { name: N }) =>
+			(await bind({ values, state })).component<N>(props as never),
+	};
 };
 
 describe("Form schema", () => {
@@ -431,7 +473,7 @@ describe("Form schema", () => {
 		]);
 	});
 
-	test("invalid FormData parse encodes issues-only _form by default", async () => {
+	test("an invalid parse keeps what was sent, never a file or a password", async () => {
 		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
@@ -447,18 +489,18 @@ describe("Form schema", () => {
 		data.append("avatar", file);
 
 		const result = formInvalid(await form.parse(data));
-		const state = await decodeState(result.search);
+		const state = await decodeState(result.state);
 
-		expect(result.search?.[0]?.[0]).toBe("_form");
-		expect(state.values).toBeUndefined();
+		expect(result.state).toBeDefined();
+		expect(state.values).toEqual({ name: "ross", role: "owner" });
 		expect(state.id).toBeTruthy();
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
-	test("invalid parse persists only opted-in values", async () => {
+	test("an invalid parse keeps the values that were refused too", async () => {
 		const form = new Form({
-			name: Field.text().persist().min(2),
-			role: Field.radio(["reader", "admin"]).persist(),
+			name: Field.text().min(2),
+			role: Field.radio(["reader", "admin"]),
 			password: Field.password(),
 		});
 		const data = new FormData();
@@ -468,9 +510,9 @@ describe("Form schema", () => {
 		data.set("password", "secret");
 
 		const result = formInvalid(await form.parse(data));
-		const state = await decodeState(result.search);
+		const state = await decodeState(result.state);
 
-		expect(result.search?.[0]?.[0]).toBe("_form");
+		expect(result.state).toBeDefined();
 		expect(state.values?.name).toBe("x");
 		expect(state.values?.role).toBe("owner");
 		expect(state.values?.password).toBeUndefined();
@@ -478,10 +520,10 @@ describe("Form schema", () => {
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
-	test("blank opted-in text values are kept empty in invalid state, overriding initial values", async () => {
+	test("blank text values are kept empty in invalid state, overriding initial values", async () => {
 		const form = new Form({
-			name: Field.text().persist().min(2),
-			role: Field.radio(["reader", "admin"]).persist(),
+			name: Field.text().min(2),
+			role: Field.radio(["reader", "admin"]),
 		});
 		const data = new FormData();
 
@@ -489,13 +531,13 @@ describe("Form schema", () => {
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		const state = await decodeState(result.search);
+		const state = await decodeState(result.state);
 
 		expect(state.values?.name).toBe("");
 		expect(state.values?.role).toBe("owner");
 	});
 
-	test("invalid URLSearchParams parse encodes issues-only _form by default", async () => {
+	test("an invalid URLSearchParams parse keeps what was sent", async () => {
 		const form = new Form({
 			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
@@ -506,16 +548,16 @@ describe("Form schema", () => {
 		params.set("role", "owner");
 
 		const result = formInvalid(await form.parse(params));
-		const state = await decodeState(result.search);
+		const state = await decodeState(result.state);
 
-		expect(result.search?.[0]?.[0]).toBe("_form");
-		expect(state.values).toBeUndefined();
+		expect(result.state).toBeDefined();
+		expect(state.values).toEqual({ name: "ross", role: "owner" });
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
-	test("oversize persisted values fall back to issues-only _form state", async () => {
+	test("oversize values fall back to issues-only state", async () => {
 		const form = new Form({
-			notes: Field.textarea().persist(),
+			notes: Field.textarea(),
 			role: Field.radio(["reader", "admin"]),
 		});
 		const data = new FormData();
@@ -525,16 +567,16 @@ describe("Form schema", () => {
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		const state = await decodeState(result.search);
+		const state = await decodeState(result.state);
 
-		expect(result.search?.[0]?.[0]).toBe("_form");
+		expect(result.state).toBeDefined();
 		expect(state.values).toBeUndefined();
 		expect(state.issues?.length).toBeGreaterThan(0);
 	});
 
 	test("invalid URL _form state is ignored when rendering fields", async () => {
 		const form = new Form({
-			name: Field.text().persist(),
+			name: Field.text(),
 			email: Field.email(),
 			role: Field.radio(["reader", "admin"]),
 		});
@@ -546,7 +588,7 @@ describe("Form schema", () => {
 
 		const result = formInvalid(await form.parse(data));
 		const tampered = {
-			...(await decodeState(result.search)),
+			...(await decodeState(result.state)),
 			issues: undefined,
 			values: { name: { bad: true } },
 		};
@@ -558,7 +600,7 @@ describe("Form schema", () => {
 		);
 
 		const html = await new Render({
-			markup: form.Field({ name: "name", state: url }),
+			markup: ui(form).Field({ name: "name", state: url }),
 		}).string();
 
 		expect(html.includes('name="name"')).toBe(true);
@@ -566,9 +608,9 @@ describe("Form schema", () => {
 		expect(html.includes("aria-invalid")).toBe(false);
 	});
 
-	test("render state restores only opted-in values", async () => {
+	test("render state restores what was sent", async () => {
 		const form = new Form({
-			name: Field.text().persist(),
+			name: Field.text(),
 			email: Field.email(),
 			role: Field.radio(["reader", "admin"]),
 		});
@@ -581,17 +623,17 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const url = new URL("https://example.com/form");
 
-		url.searchParams.set("_form", result.search![0][1]);
+		url.searchParams.set("_form", result.state!);
 
 		const name = await new Render({
-			markup: form.Field({ name: "name", state: url }),
+			markup: ui(form).Field({ name: "name", state: url }),
 		}).string();
 		const email = await new Render({
-			markup: form.Field({ name: "email", state: url }),
+			markup: ui(form).Field({ name: "email", state: url }),
 		}).string();
 
 		expect(name.includes('value="ross"')).toBe(true);
-		expect(email.includes('value="ross@example.com"')).toBe(false);
+		expect(email.includes('value="ross@example.com"')).toBe(true);
 	});
 
 	test("render state autofocuses only the first invalid field", async () => {
@@ -607,10 +649,10 @@ describe("Form schema", () => {
 		const result = formInvalid(await form.parse(data));
 		const url = new URL("https://example.com/form");
 
-		url.searchParams.set("_form", result.search![0][1]);
+		url.searchParams.set("_form", result.state!);
 
 		const html = await new Render({
-			markup: form.Fields({ state: url }),
+			markup: ui(form).Fields({ state: url }),
 		}).string();
 		const autofocus = html.match(/autofocus/g) ?? [];
 
@@ -632,7 +674,7 @@ describe("Form schema", () => {
 			kinds: Field.select(["a", "b"]).multiple(),
 			token: Field.hidden(),
 		});
-		const html = await new Render({ markup: form.Fields() }).string();
+		const html = await new Render({ markup: ui(form).Fields() }).string();
 		const required = (name: string) =>
 			[...html.matchAll(/<(?:input|select|textarea)\b[^>]*>/g)]
 				.map(([tag]) => tag)
@@ -652,7 +694,7 @@ describe("Form schema", () => {
 
 		expect(
 			await new Render({
-				markup: form.Field({ name: "text", required: false }),
+				markup: ui(form).Field({ name: "text", required: false }),
 			}).string(),
 		).not.toContain("required");
 	});
@@ -664,7 +706,7 @@ describe("Form schema", () => {
 		url.searchParams.set("first", "ross");
 
 		const html = await new Render({
-			markup: form.Fields({ state: url }),
+			markup: ui(form).Fields({ state: url }),
 		}).string();
 		const autofocus = html.match(/autofocus/g) ?? [];
 
@@ -682,32 +724,32 @@ describe("Form schema", () => {
 
 		// people: a paragraph after the control, which the control points to
 		expect(
-			await new Render({ markup: form.Field({ name: "url" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "url" }) }).string(),
 		).toBe(
 			'<div><label for="url">URL</label><input id="url" required toolparamdescription="URL: An http or https address." aria-describedby="url-description" type="url" name="url"><p id="url-description" data-description>An http or https address.</p></div>',
 		);
 		// a group's after its legend, before its options, and nothing for a
 		// hidden field or without one
 		expect(
-			await new Render({ markup: form.Field({ name: "size" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "size" }) }).string(),
 		).toMatch(
 			// its fieldset is where an agent in the browser reads a group's
 			// description, and its boxes carry none
 			/^<fieldset toolparamdescription="Pick one"><legend>size<\/legend><p id="size-description" data-description>Pick one<\/p><div><input id="size-s" required aria-describedby="size-description" type="radio"/,
 		);
 		expect(
-			await new Render({ markup: form.Field({ name: "id" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "id" }) }).string(),
 		).toBe('<input type="hidden" name="id">');
 		expect(
-			await new Render({ markup: form.Field({ name: "plain" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "plain" }) }).string(),
 		).not.toContain("description");
 
 		// with an issue, the control is described by both, the description first
 		const result = formInvalid(await form.parse(new FormData()));
 		const url = new URL("https://example.com/form");
-		url.searchParams.set("_form", result.search![0][1]);
+		url.searchParams.set("_form", result.state!);
 		const invalid = await new Render({
-			markup: form.Field({ name: "url", state: url }),
+			markup: ui(form).Field({ name: "url", state: url }),
 		}).string();
 		expect(invalid).toContain('aria-describedby="url-description url-issue"');
 		expect(invalid.indexOf('id="url-description"')).toBeLessThan(
@@ -715,7 +757,7 @@ describe("Form schema", () => {
 		);
 
 		// a part of its own, for a custom layout
-		const part = await form.component({ name: "url" });
+		const part = await ui(form).component({ name: "url" });
 		expect(
 			await new Render({
 				markup: part.Description({ class: "muted" }),
@@ -758,12 +800,11 @@ describe("Form schema", () => {
 			.describe("A short name")
 			.max(40)
 			.label("Title")
-			.persist()
 			.optional();
 		const form = new Form({ title: field });
 
 		expect(
-			await new Render({ markup: form.Field({ name: "title" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "title" }) }).string(),
 		).toBe(
 			'<div><label for="title">Title</label><input id="title" toolparamdescription="Title: A short name" aria-describedby="title-description" maxlength="40" type="text" placeholder="Title" name="title"><p id="title-description" data-description>A short name</p></div>',
 		);
@@ -795,7 +836,7 @@ describe("Form schema", () => {
 			.control({ class: "wide" });
 		expect(
 			await new Render({
-				markup: new Form({ note: wide }).Field({ name: "note", rows: 8 }),
+				markup: ui(new Form({ note: wide })).Field({ name: "note", rows: 8 }),
 			}).string(),
 		).toBe(
 			'<div><label for="note">note</label><textarea id="note" required rows="8" class="wide" name="note"></textarea></div>',
@@ -821,7 +862,7 @@ describe("Form schema", () => {
 			"b.txt",
 		]);
 		expect(
-			await new Render({ markup: form.Field({ name: "colors" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "colors" }) }).string(),
 		).toContain('<select id="colors" multiple name="colors">');
 
 		void (() => {
@@ -839,10 +880,10 @@ describe("Form schema", () => {
 		});
 
 		const email = await new Render({
-			markup: form.Field({ name: "email" }),
+			markup: ui(form).Field({ name: "email" }),
 		}).string();
 		const role = await new Render({
-			markup: form.Field({ name: "role" }),
+			markup: ui(form).Field({ name: "role" }),
 		}).string();
 
 		expect(email.includes(">Email Address</label>")).toBe(true);
@@ -862,13 +903,13 @@ describe("Form schema", () => {
 		);
 
 		const q = await new Render({
-			markup: form.Field({ name: "q", state: url }),
+			markup: ui(form).Field({ name: "q", state: url }),
 		}).string();
 		const sort = await new Render({
-			markup: form.Field({ name: "sort", state: url }),
+			markup: ui(form).Field({ name: "sort", state: url }),
 		}).string();
 		const inStock = await new Render({
-			markup: form.Field({ name: "inStock", state: url }),
+			markup: ui(form).Field({ name: "inStock", state: url }),
 		}).string();
 
 		expect(q.includes('value="travel backpack"')).toBe(true);
@@ -891,22 +932,22 @@ describe("Form schema", () => {
 
 		url.searchParams.set("q", "travel backpack");
 		url.searchParams.set("sort", "oldest");
-		url.searchParams.set("_form", result.search![0][1]);
+		url.searchParams.set("_form", result.state!);
 
 		const q = await new Render({
-			markup: form.Field({ name: "q", state: url }),
+			markup: ui(form).Field({ name: "q", state: url }),
 		}).string();
 		const sort = await new Render({
-			markup: form.Field({ name: "sort", state: url }),
+			markup: ui(form).Field({ name: "sort", state: url }),
 		}).string();
 
 		expect(q.includes('value="travel backpack"')).toBe(true);
 		expect(sort.includes("aria-invalid")).toBe(true);
 	});
 
-	test("tampered _form state does not restore non-persisted fields", async () => {
+	test("state that was tampered with never restores a password", async () => {
 		const form = new Form({
-			name: Field.text().persist(),
+			name: Field.text(),
 			email: Field.email(),
 			password: Field.password(),
 			role: Field.radio(["reader", "admin"]),
@@ -926,7 +967,7 @@ describe("Form schema", () => {
 			await pack(
 				Codec.encode(
 					JSON.stringify({
-						...(await decodeState(result.search)),
+						...(await decodeState(result.state)),
 						values: {
 							name: "ross",
 							email: "ross@example.com",
@@ -938,28 +979,25 @@ describe("Form schema", () => {
 		);
 
 		const name = await new Render({
-			markup: form.Field({ name: "name", state: url }),
+			markup: ui(form).Field({ name: "name", state: url }),
 		}).string();
 		const email = await new Render({
-			markup: form.Field({ name: "email", state: url }),
+			markup: ui(form).Field({ name: "email", state: url }),
 		}).string();
 		const password = await new Render({
-			markup: form.Field({ name: "password", state: url }),
+			markup: ui(form).Field({ name: "password", state: url }),
 		}).string();
 
 		expect(name.includes('value="ross"')).toBe(true);
-		expect(email.includes('value="ross@example.com"')).toBe(false);
+		expect(email.includes('value="ross@example.com"')).toBe(true);
 		expect(password.includes('value="secret"')).toBe(false);
 	});
 
-	test("forced file persistence still does not serialize file values", async () => {
-		const avatar = (
-			Field.file() as Field.Any & { persist(): Field.Any }
-		).persist();
+	test("a file is never kept", async () => {
 		const form = new Form({
-			name: Field.text().persist(),
+			name: Field.text(),
 			role: Field.radio(["reader", "admin"]),
-			avatar,
+			avatar: Field.file(),
 		});
 		const data = new FormData();
 
@@ -971,7 +1009,7 @@ describe("Form schema", () => {
 		);
 
 		const result = formInvalid(await form.parse(data));
-		const state = await decodeState(result.search);
+		const state = await decodeState(result.state);
 
 		expect(state.values?.name).toBe("ross");
 		expect(state.values?.avatar).toBeUndefined();
@@ -988,7 +1026,7 @@ describe("Form schema", () => {
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
-		const state = await decodeState(result.search);
+		const state = await decodeState(result.state);
 		const url = new URL("https://example.com/form");
 
 		url.searchParams.set(
@@ -997,7 +1035,7 @@ describe("Form schema", () => {
 		);
 
 		const html = await new Render({
-			markup: form.Field({ name: "name", state: url }),
+			markup: ui(form).Field({ name: "name", state: url }),
 		}).string();
 
 		expect(html.includes('name="name"')).toBe(true);
@@ -1175,7 +1213,7 @@ test("a description given before multiple() describes the field", async () => {
 			items: { type: "string", enum: ["a", "b"] },
 		}),
 	});
-	expect(await new Render({ markup: form.Fields() }).string()).toContain(
+	expect(await new Render({ markup: ui(form).Fields() }).string()).toContain(
 		"Pick some",
 	);
 });
@@ -1218,25 +1256,25 @@ describe("choices a schema checks", () => {
 		});
 
 		const group = await new Render({
-			markup: form.Field({ name: "photos", options: [a, b] }),
+			markup: ui(form).Field({ name: "photos", options: [a, b] }),
 		}).string();
 		expect(group).toContain(`type="checkbox" name="photos" value="${a}"`);
 		expect(group).toContain(`value="${b}"`);
 
 		const select = await new Render({
-			markup: form.Field({ name: "recipe", options: [a] }),
+			markup: ui(form).Field({ name: "recipe", options: [a] }),
 		}).string();
 		expect(select).toContain(`<option value="${a}">${a}</option>`);
 
 		// a field of fixed choices keeps its own
 		const tags = await new Render({
-			markup: form.Field({ name: "tags", options: ["spring"] }),
+			markup: ui(form).Field({ name: "tags", options: ["spring"] }),
 		}).string();
 		expect(tags).toContain('value="fall"');
 		expect(tags).not.toContain("spring");
 
 		// a custom layout labels each choice
-		const Photos = await form.component({ name: "photos", options: [a] });
+		const Photos = await ui(form).component({ name: "photos", options: [a] });
 		expect(Photos.options).toEqual([a]);
 		expect(
 			await new Render({
@@ -1265,17 +1303,17 @@ test("a select that may be left empty starts with an empty choice", async () => 
 	});
 
 	expect(
-		await new Render({ markup: form.Field({ name: "meal" }) }).string(),
+		await new Render({ markup: ui(form).Field({ name: "meal" }) }).string(),
 	).toContain(
 		'<select id="meal" name="meal"><option value=""></option><option value="dinner">',
 	);
 	// a required one keeps the browser's choice of its first, and a
 	// multiple one is empty with nothing selected
 	expect(
-		await new Render({ markup: form.Field({ name: "course" }) }).string(),
+		await new Render({ markup: ui(form).Field({ name: "course" }) }).string(),
 	).not.toContain('value=""');
 	expect(
-		await new Render({ markup: form.Field({ name: "tags" }) }).string(),
+		await new Render({ markup: ui(form).Field({ name: "tags" }) }).string(),
 	).not.toContain('value=""');
 
 	expect(
@@ -1339,22 +1377,22 @@ describe("choices people call by another name", () => {
 
 		expect(
 			await new Render({
-				markup: form.Field({ name: "meal", values: { meal: "crockpot" } }),
+				markup: ui(form).Field({ name: "meal", values: { meal: "crockpot" } }),
 			}).string(),
 		).toBe(
 			'<div><label for="meal">meal</label><select id="meal" name="meal"><option value="">Any meal</option><option value="dinner">Dinner</option><option selected value="crockpot">Slow cooker</option></select></div>',
 		);
 		expect(
-			await new Render({ markup: form.Field({ name: "effort" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "effort" }) }).string(),
 		).toContain(
 			'<input id="effort-easy" required type="radio" name="effort" value="easy"><label for="effort-easy">Easy</label>',
 		);
 		expect(
-			await new Render({ markup: form.Field({ name: "tags" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "tags" }) }).string(),
 		).toContain('<label for="tags-winter">Winter</label>');
 
 		// a custom layout gets them too, and may still say its own
-		const Meal = await form.component({ name: "meal" });
+		const Meal = await ui(form).component({ name: "meal" });
 		expect(Meal.options).toEqual(["dinner", "crockpot"]);
 		expect(
 			await new Render({ markup: Meal.Option({ value: "crockpot" }) }).string(),
@@ -1373,7 +1411,7 @@ describe("choices people call by another name", () => {
 	test("are given with the options of a field made from a schema", async () => {
 		expect(
 			await new Render({
-				markup: form.Field({
+				markup: ui(form).Field({
 					name: "side",
 					options: { "7": "Rice", abc: "Beans" },
 					values: { side: "abc" },
@@ -1387,7 +1425,7 @@ describe("choices people call by another name", () => {
 		// a field's own choices keep their own labels
 		expect(
 			await new Render({
-				markup: form.Field({
+				markup: ui(form).Field({
 					name: "tags",
 					options: { fall: "Autumn", spring: "x" },
 				}),
@@ -1397,7 +1435,7 @@ describe("choices people call by another name", () => {
 
 	test("a select that must be chosen starts empty when it says what to choose", async () => {
 		expect(
-			await new Render({ markup: form.Field({ name: "course" }) }).string(),
+			await new Render({ markup: ui(form).Field({ name: "course" }) }).string(),
 		).toBe(
 			'<div><label for="course">course</label><select id="course" required name="course"><option value="">Choose a course</option><option value="dinner">dinner</option><option value="side">side</option></select></div>',
 		);
@@ -1446,19 +1484,19 @@ test("a hint is what people read, where the description is what agents read", as
 	});
 
 	expect(
-		await new Render({ markup: form.Field({ name: "grams" }) }).string(),
+		await new Render({ markup: ui(form).Field({ name: "grams" }) }).string(),
 	).toBe(
 		'<div><label for="grams">grams</label><input id="grams" toolparamdescription="Weight in grams for cups and spoons. Empty for counts." aria-describedby="grams-description" step="any" type="number" name="grams"><p id="grams-description" data-description>For cups and spoons</p></div>',
 	);
 	// an empty hint shows nothing, and the control names nothing
 	expect(
-		await new Render({ markup: form.Field({ name: "notes" }) }).string(),
+		await new Render({ markup: ui(form).Field({ name: "notes" }) }).string(),
 	).toBe(
 		'<div><label for="notes">notes</label><input id="notes" toolparamdescription="Free text, for the cook" type="text" name="notes"></div>',
 	);
 
 	const items = await new Render({
-		markup: form.Field({ name: "items" }),
+		markup: ui(form).Field({ name: "items" }),
 	}).string();
 	expect(items).toContain(
 		'<legend>items</legend><p id="items-description" data-description>Clear a row to remove it</p>',
@@ -1500,7 +1538,7 @@ test("a choice given as the form renders may be labelled with an element", async
 
 	expect(
 		await new Render({
-			markup: form.Field({
+			markup: ui(form).Field({
 				name: "photos",
 				options: {
 					a1: jsx("img", { src: "/a1.jpg", alt: "Card front" }),
@@ -1525,7 +1563,11 @@ test("what is passed to a group is its fieldset's, and each box has what control
 
 	expect(
 		await new Render({
-			markup: form.Field({ name: "photos", class: "photo-choice", id: "pick" }),
+			markup: ui(form).Field({
+				name: "photos",
+				class: "photo-choice",
+				id: "pick",
+			}),
 		}).string(),
 	).toBe(
 		'<fieldset class="photo-choice" id="pick"><legend>photos</legend>' +
@@ -1535,13 +1577,13 @@ test("what is passed to a group is its fieldset's, and each box has what control
 	);
 	// required stays each box's
 	expect(
-		await new Render({ markup: form.Field({ name: "size" }) }).string(),
+		await new Render({ markup: ui(form).Field({ name: "size" }) }).string(),
 	).toContain(
 		'<input id="size-s" required type="radio" name="size" value="s">',
 	);
 	expect(
 		await new Render({
-			markup: form.Field({ name: "size", required: false }),
+			markup: ui(form).Field({ name: "size", required: false }),
 		}).string(),
 	).toBe(
 		"<fieldset><legend>size</legend>" +
@@ -1550,7 +1592,7 @@ test("what is passed to a group is its fieldset's, and each box has what control
 			"</fieldset>",
 	);
 
-	const Size = await form.component({ name: "size", class: "sizes" });
+	const Size = await ui(form).component({ name: "size", class: "sizes" });
 	expect(await new Render({ markup: Size.Root() }).string()).toBe(
 		'<fieldset class="sizes"></fieldset>',
 	);
@@ -1559,8 +1601,8 @@ test("what is passed to a group is its fieldset's, and each box has what control
 test("a long form is kept compressed, and what cannot fit is left out from the last field back", async () => {
 	const form = new Form({
 		title: Field.text(),
-		steps: Field.textarea().lines().persist(),
-		note: Field.textarea().optional().persist(),
+		steps: Field.textarea().lines(),
+		note: Field.textarea().optional(),
 	});
 	const steps = Array.from(
 		{ length: 12 },
@@ -1571,24 +1613,30 @@ test("a long form is kept compressed, and what cannot fit is left out from the l
 			40,
 		);
 	const parse = async (values: Record<string, string>) =>
-		formInvalid(await form.parse(new URLSearchParams(values))).search;
+		formInvalid(await form.parse(new URLSearchParams(values))).state;
 
 	// more than 3,000 characters, where a value once had 512 and the state 4 KB
 	const kept = await parse({ steps: steps.join("\n"), note });
 	expect((await decodeState<typeof form.shape>(kept)).values).toEqual({
+		title: "",
 		steps,
 		note,
 	});
-	expect(kept![0][1].length).toBeLessThan(5 * 1024);
-	expect(kept![0][1]).toMatch(/^[\w-]+$/);
+	// what a cookie holds
+	expect(kept!.length).toBeLessThan(4 * 1024);
+	expect(kept).toMatch(/^[\w-]+$/);
 
 	// text that does not compress is left out, and the fields before it stay
 	const cut = await parse({ steps: steps.join("\n"), note: noise(8_000) });
-	expect((await decodeState<typeof form.shape>(cut)).values).toEqual({ steps });
+	expect((await decodeState<typeof form.shape>(cut)).values).toEqual({
+		title: "",
+		steps,
+	});
 
 	// a value that could never fit is not compressed to find that out
 	const huge = await parse({ steps: "ok", note: "y".repeat(200_000) });
 	expect((await decodeState<typeof form.shape>(huge)).values).toEqual({
+		title: "",
 		steps: ["ok"],
 	});
 });
@@ -1757,7 +1805,7 @@ describe("lines", () => {
 	test("render as a textarea with a line for each", async () => {
 		expect(
 			await new Render({
-				markup: form.Field({
+				markup: ui(form).Field({
 					name: "steps",
 					values: { steps: ["Chop", "Fry"] },
 				}),
@@ -1774,8 +1822,7 @@ describe("lines", () => {
 				.label("Tags")
 				.describe("One on each line")
 				.control({ rows: 3 })
-				.lines()
-				.persist(),
+				.lines(),
 		});
 
 		const invalid = formInvalid(
@@ -1786,10 +1833,10 @@ describe("lines", () => {
 		]);
 
 		const html = await new Render({
-			markup: short.Field({
+			markup: ui(short).Field({
 				name: "tags",
 				state: new URL(
-					`http://localhost/?${new URLSearchParams(invalid.search)}`,
+					`http://localhost/?${new URLSearchParams({ _form: invalid.state ?? "" })}`,
 				),
 			}),
 		}).string();
@@ -1875,8 +1922,7 @@ describe("a list", () => {
 			organic: Field.checkbox(),
 		})
 			.label("Ingredients")
-			.describe("What goes in")
-			.persist(),
+			.describe("What goes in"),
 	});
 
 	test("reads its items in order, an item may repeat, and an empty row is left out", async () => {
@@ -1962,7 +2008,7 @@ describe("a list", () => {
 		};
 
 		const dinners = await new Render({
-			markup: form.Field({ name: "dinners", values, options: [a, b] }),
+			markup: ui(form).Field({ name: "dinners", values, options: [a, b] }),
 		}).string();
 		expect(dinners).toBe(
 			"<fieldset><legend>dinners</legend>" +
@@ -1972,14 +2018,19 @@ describe("a list", () => {
 		);
 
 		const week = await new Render({
-			markup: form.Field({ name: "dinners", values, options: [a], rows: 7 }),
+			markup: ui(form).Field({
+				name: "dinners",
+				values,
+				options: [a],
+				rows: 7,
+			}),
 		}).string();
 		expect(week.match(/<select/g)).toHaveLength(7);
 		// every item is shown, however few rows are asked for
 		expect(
 			(
 				await new Render({
-					markup: form.Field({
+					markup: ui(form).Field({
 						name: "dinners",
 						values: { dinners: [a, b] },
 						rows: 1,
@@ -1989,7 +2040,7 @@ describe("a list", () => {
 		).toHaveLength(2);
 
 		const ingredients = await new Render({
-			markup: form.Field({ name: "ingredients", values }),
+			markup: ui(form).Field({ name: "ingredients", values }),
 		}).string();
 		// several fields are a table: a column each, named in its heading
 		expect(ingredients).toBe(
@@ -2022,8 +2073,10 @@ describe("a list", () => {
 
 		const invalid = formInvalid(await form.parse(data));
 		expect(
-			(await decodeState<typeof form.shape>(invalid.search)).values,
+			(await decodeState<typeof form.shape>(invalid.state)).values,
 		).toEqual({
+			// a list that was sent no items is recorded empty
+			dinners: [],
 			ingredients: [
 				{ name: "onion", organic: false },
 				{ amount: "2", organic: false },
@@ -2031,10 +2084,10 @@ describe("a list", () => {
 		});
 
 		const state = new URL(
-			`http://localhost/?${new URLSearchParams(invalid.search)}`,
+			`http://localhost/?${new URLSearchParams({ _form: invalid.state ?? "" })}`,
 		);
 		const html = await new Render({
-			markup: form.Field({ name: "ingredients", state }),
+			markup: ui(form).Field({ name: "ingredients", state }),
 		}).string();
 		expect(html).toContain(
 			'name="ingredients.0.name" aria-labelledby="ingredients.name-label" value="onion"',
@@ -2049,10 +2102,10 @@ describe("a list", () => {
 		// a list cleared after it had items stays cleared
 		const cleared = formInvalid(await form.parse(new FormData()));
 		const again = await new Render({
-			markup: form.Field({
+			markup: ui(form).Field({
 				name: "ingredients",
 				state: new URL(
-					`http://localhost/?${new URLSearchParams(cleared.search)}`,
+					`http://localhost/?${new URLSearchParams({ _form: cleared.state ?? "" })}`,
 				),
 				values: { ingredients: [{ name: "onion" }] },
 			}),
@@ -2064,7 +2117,7 @@ describe("a list", () => {
 	});
 
 	test("gives a custom layout each row's components", async () => {
-		const Dinners = await form.component({
+		const Dinners = await ui(form).component({
 			name: "dinners",
 			values: { dinners: [b] },
 			rows: 2,
@@ -2086,7 +2139,7 @@ describe("a list", () => {
 			"<legend>dinners</legend>",
 		);
 
-		const Ingredients = await form.component({ name: "ingredients" });
+		const Ingredients = await ui(form).component({ name: "ingredients" });
 		const [row] = Ingredients.rows;
 		expect(
 			await new Render({
@@ -2112,7 +2165,7 @@ describe("a list", () => {
 			}),
 		});
 		const html = await new Render({
-			markup: grouped.Field({ name: "items" }),
+			markup: ui(grouped).Field({ name: "items" }),
 		}).string();
 
 		expect(html).toContain(
@@ -2130,7 +2183,7 @@ describe("a list", () => {
 		// the default table names a column in its heading, which holds only
 		// the label, and describes it once under the table
 		const table = await new Render({
-			markup: described.Field({ name: "items" }),
+			markup: ui(described).Field({ name: "items" }),
 		}).string();
 		expect(table).toContain('<th id="items.name-label" scope="col">name</th>');
 		expect(table).toContain(
@@ -2141,7 +2194,7 @@ describe("a list", () => {
 		);
 		expect(table.match(/>What to buy</g)).toHaveLength(1);
 
-		const [row] = (await described.component({ name: "items" })).rows;
+		const [row] = (await ui(described).component({ name: "items" })).rows;
 		expect(await new Render({ markup: row!.name.Control() }).string()).toBe(
 			'<input id="items.0.name" toolparamdescription="name: What to buy" type="text" name="items.0.name">',
 		);
@@ -2150,16 +2203,16 @@ describe("a list", () => {
 			items: Field.list({
 				name: Field.text().describe("What to buy"),
 				note: Field.text().optional(),
-			}).persist(),
+			}),
 		});
 		const sent = new FormData();
 		sent.set("items.0.note", "ripe");
 		const invalid = formInvalid(await persisted.parse(sent));
 		const [again] = (
-			await persisted.component({
+			await ui(persisted).component({
 				name: "items",
 				state: new URL(
-					`http://localhost/?${new URLSearchParams(invalid.search)}`,
+					`http://localhost/?${new URLSearchParams({ _form: invalid.state ?? "" })}`,
 				),
 			})
 		).rows;
@@ -2191,11 +2244,21 @@ describe("a list", () => {
 			["ids", 0],
 		]);
 
-		const state = new URL(
-			`http://localhost/?${new URLSearchParams(invalid.search)}`,
+		// as when the rows that were sent did not fit the state
+		const state = new URL("http://localhost/");
+		state.searchParams.set(
+			"_form",
+			await pack(
+				Codec.encode(
+					JSON.stringify({
+						...(await decodeState(invalid.state)),
+						values: undefined,
+					}),
+				),
+			),
 		);
 		const items = await new Render({
-			markup: plain.Field({ name: "items", state }),
+			markup: ui(plain).Field({ name: "items", state }),
 		}).string();
 		expect(items).toContain(
 			'<p id="items-issue" data-issue="1">Row 2, Ingredient: Required field</p>',
@@ -2206,7 +2269,7 @@ describe("a list", () => {
 
 		expect(
 			await new Render({
-				markup: plain.Field({ name: "ids", state }),
+				markup: ui(plain).Field({ name: "ids", state }),
 			}).string(),
 		).toContain('<p id="ids-issue" data-issue="2">Row 1: Not an ID</p>');
 	});
@@ -2219,7 +2282,11 @@ describe("a list", () => {
 
 		expect(
 			await new Render({
-				markup: styled.Field({ name: "tags", class: "tags", id: "the-tags" }),
+				markup: ui(styled).Field({
+					name: "tags",
+					class: "tags",
+					id: "the-tags",
+				}),
 			}).string(),
 		).toBe(
 			'<fieldset class="tags" id="the-tags"><legend>tags</legend>' +
@@ -2229,7 +2296,11 @@ describe("a list", () => {
 		);
 		expect(
 			await new Render({
-				markup: styled.Field({ name: "items", class: "wide", disabled: true }),
+				markup: ui(styled).Field({
+					name: "items",
+					class: "wide",
+					disabled: true,
+				}),
 			}).string(),
 		).toContain(
 			// the table in an element of its own, to scroll alone
@@ -2238,13 +2309,13 @@ describe("a list", () => {
 		// a control of a row has none of them
 		expect(
 			await new Render({
-				markup: styled.Field({ name: "items", class: "wide" }),
+				markup: ui(styled).Field({ name: "items", class: "wide" }),
 			}).string(),
 		).toContain(
 			'<input id="items.0.name" toolparamdescription="name" type="text" name="items.0.name" aria-labelledby="items.name-label">',
 		);
 
-		const Items = await styled.component({ name: "items", class: "wide" });
+		const Items = await ui(styled).component({ name: "items", class: "wide" });
 		expect(await new Render({ markup: Items.Root({ id: "x" }) }).string()).toBe(
 			'<fieldset class="wide" id="x"></fieldset>',
 		);
@@ -2259,8 +2330,7 @@ describe("a list", () => {
 				c: Field.text().optional(),
 			})
 				.max(3)
-				.optional()
-				.persist(),
+				.optional(),
 		});
 
 		// one cell in each of many rows: every other cell is looked for
@@ -2276,7 +2346,7 @@ describe("a list", () => {
 		const forged = await pack(
 			Codec.encode(
 				JSON.stringify({
-					id: (await decodeState<typeof wide.shape>(result.search)).id,
+					id: (await decodeState<typeof wide.shape>(result.state)).id,
 					values: {
 						items: Array.from({ length: 50 }, () => ({ id: "theirs", a: "x" })),
 					},
@@ -2284,7 +2354,7 @@ describe("a list", () => {
 			),
 		);
 		const html = await new Render({
-			markup: wide.Field({
+			markup: ui(wide).Field({
 				name: "items",
 				state: new URL(`http://localhost/?_form=${forged}`),
 			}),
@@ -2295,7 +2365,7 @@ describe("a list", () => {
 		// the server's own values keep a row's hidden value
 		expect(
 			await new Render({
-				markup: wide.Field({
+				markup: ui(wide).Field({
 					name: "items",
 					values: { items: [{ id: "7", a: "x" }] },
 				}),
@@ -2333,7 +2403,7 @@ describe("a list", () => {
 		]();
 
 		const html = await new Render({
-			markup: search.Field({
+			markup: ui(search).Field({
 				name: "tags",
 				state: new URL("http://localhost/?tags.0=fall&tags.1=&tags.2=soup"),
 			}),
@@ -2354,9 +2424,9 @@ describe("a list", () => {
 			tags: Field.list(Field.text()).max(2),
 		});
 		const rows = async (
-			props: Parameters<typeof week.Field>[0],
+			props: Parameters<ReturnType<typeof ui<typeof week.shape>>["Field"]>[0],
 		): Promise<number> =>
-			(await new Render({ markup: week.Field(props) }).string()).match(
+			(await new Render({ markup: ui(week).Field(props) }).string()).match(
 				/<input/g,
 			)!.length;
 
