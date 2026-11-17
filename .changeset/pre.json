@@ -57,6 +57,7 @@
     "plain-form-fields",
     "platform-compression",
     "preprocess-message",
+    "query-type",
     "read-context",
     "recent-sign-in",
     "registration-messages",
