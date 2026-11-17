@@ -31,6 +31,7 @@
     "constraints",
     "context-export",
     "date-range",
+    "describe-function",
     "enum-types",
     "escape",
     "every-choice",
