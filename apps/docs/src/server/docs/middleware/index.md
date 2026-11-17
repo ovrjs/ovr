@@ -197,7 +197,7 @@ const app = new App().use(errors, notFound, home, posts);
 ovr does not catch what your code throws, and it never logs. Without the first middleware an error leaves `app.fetch`, where your server logs it and answers 500, so reporting the error is yours to do in the `catch`.
 
 - A request body the client got wrong is not an error of your app's: the route's [413, 415, or 400](/schema#protections) is answered before this middleware, which sees only the response.
-- An error thrown while a page streams, such as in an async component, comes after the response has started, so it ends the stream instead of reaching the middleware.
+- An error thrown while a page streams, such as in an async component, comes after the response has started, so it ends the stream instead of reaching the middleware. See [errors while a page streams](/pages#errors-while-a-page-streams) for what to keep in the route.
 - An error in the [MCP endpoint](/agents#mcp) itself or in an agent's sign-in, such as the database failing while it checks a token, is outside global middleware, so it leaves `app.fetch` for your server to report.
 - Both pages are written as Markdown for a request that asks for it, and through [MCP](/agents#tools) an agent receives the protocol's internal error in place of your error page.
 

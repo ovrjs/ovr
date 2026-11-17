@@ -15,6 +15,8 @@ import { Route } from "ovr";
 const route = new Route("GET", "/").use(() => "html");
 ```
 
+A route answers the request: it waits only for what decides the response, and the parts of its page read their own data, see [Pages](/pages).
+
 Each method adds to the route and returns it, so a route reads as a chain. `params` checks the pattern's [parameters](#parameters), `fields` declares the form `c.data()` parses (see [POST forms](/schema#post-forms)), and `describe` explains the route to [agents](#describe). `params` and `fields` set the types the middleware sees, so they come before `use`: `use` returns a `Route.Used`, on which calling either is a type error. Once `app.use()` mounts a route, it is final: changing it throws, so its tool and middleware stay as they were mounted.
 
 ```ts

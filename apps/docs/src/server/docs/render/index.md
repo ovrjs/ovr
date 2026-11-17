@@ -7,7 +7,7 @@ description: Easily parallelize async operations and render HTML or Markdown wit
 
 ovr has a built in JSX import source that can be used to parallelize component renders and output [markup](#markup), such as HTML or XML, or [Markdown](#markdown). You can also render elements on their own without using JSX.
 
-Components are functions that return a `JSX.Element`. Use them to declaratively describe and reuse parts of your HTML.
+Components are functions that return a `JSX.Element`. Each describes a part of the page, and can read the data that part shows, so a page is put together from parts that look after themselves. [Pages](/pages) covers what belongs in a route and what in a component.
 
 Define a `props` object as a parameter for a component to pass arguments to it.
 
@@ -42,16 +42,34 @@ ovr aligns with the standard (all lowercase) HTML attributes---all attributes wi
 
 ## Async components
 
-Components can be asynchronous, for example you can `fetch` directly in a component.
+Components can be asynchronous, so a component reads what it shows: give it an ID, and it queries for the rows. Its second argument is the request's [context](#context), such as for who is signed in.
 
 ```tsx
-async function Data() {
-	const res = await fetch("...");
-	const data = await res.text();
+import type { Context } from "ovr";
 
-	return <div>{data}</div>;
+async function Comments(props: { post: string }, c: Context) {
+	const session = await c.session();
+	const comments = await database.sql`
+		SELECT * FROM ${database.comments}
+		WHERE ${database.comments.columns.post} = ${props.post}
+	`.parse(database.comments);
+
+	return (
+		<ul>
+			{comments.map((comment) => (
+				<li>
+					{comment.body}
+					{comment.author === session?.user && <em> (you)</em>}
+				</li>
+			))}
+		</ul>
+	);
 }
+
+<Comments post={post.id} />;
 ```
+
+Anything that returns a promise works the same way, such as a `fetch` to another service.
 
 ## Context
 
@@ -94,7 +112,7 @@ function Card(props: { icon: JSX.Component<{ size: number }> }) {
 Components that fetch what they show can be put anywhere on a page, but two of them that need the same rows would each query for them. `c.memo` shares a function's result for the rest of the request: called again with the same arguments, it returns what it returned the first time.
 
 ```tsx
-const friendsOf = (user: string) =>
+const friendsOf = async (user: string) =>
 	database.sql`
 		SELECT * FROM ${database.friends}
 		WHERE ${database.friends.columns.user} = ${user}
@@ -112,6 +130,8 @@ async function Offer(props: { user: string }, c: Context) {
 ```
 
 The route shares the same results through its own `c`, so what it reads to decide a redirect is not read again by the page. Nothing is kept for the next request.
+
+Functions like `friendsOf` are the app's data layer: define each once, in a module of their own in a larger app, and call them from routes and components alike. See [Pages](/pages#data-functions).
 
 Results are kept by the function and its arguments, compared as `===` does. Define the function once, outside of the component, and give it IDs and other plain values: a function or an object made for the call never matches an earlier one. A promise is shared as it is, so components that render at the same time wait for one query.
 

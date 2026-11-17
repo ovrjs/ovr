@@ -40,7 +40,7 @@ app.use(
 	new o.Mcp({
 		name: "ovr",
 		instructions:
-			"Documentation for ovr, a TypeScript web framework that streams HTML and serves the same routes to people and AI agents. Read get-started first, or llms.txt for everything at once.",
+			"Documentation for ovr, a TypeScript web framework that streams HTML and serves the same routes to people and AI agents. Read get-started first, or llms.txt for everything at once. To structure an app, read pages before writing a route: a route waits only for what decides the response (the redirect, the 404, headers and cookies, the head), each other part of the page is a component that takes IDs and reads its own data through shared data functions, and writes stay in route handlers.",
 	}),
 );
 

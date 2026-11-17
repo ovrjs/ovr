@@ -102,6 +102,49 @@ const feed = await database.sql`
 `.parse(Schema.object({ title: Schema.string(), name: Schema.string() }));
 ```
 
+### In a component
+
+A query can run in the [component](/render#async-components) that shows its rows, so a part of a page reads for itself wherever it is put:
+
+```tsx
+async function Posts(props: { author: string }) {
+	const posts = await database.sql`
+		SELECT * FROM ${database.posts}
+		WHERE ${database.posts.columns.author} = ${props.author}
+	`.parse(database.posts);
+
+	return (
+		<ul>
+			{posts.map((post) => (
+				<li>{post.title}</li>
+			))}
+		</ul>
+	);
+}
+```
+
+When more than one part of a page needs the same rows, write the query as a function and call it through [`c.memo`](/render#shared-reads), which runs it once for the request:
+
+```tsx
+import type { Context } from "ovr";
+
+const userOf = async (id: string) =>
+	database.sql`
+		SELECT * FROM ${database.users}
+		WHERE ${database.users.columns.id} = ${id}
+	`.parse(database.users);
+
+async function Byline(props: { author: string }, c: Context) {
+	const [author] = await c.memo(userOf)(props.author);
+
+	return <p>By {author?.name ?? "someone"}</p>;
+}
+```
+
+[Pages](/pages) covers what a route reads and what its components do.
+
+### Conditions
+
 Write conditions in SQL. For optional filters, nest a query when the filter applies and an empty query when it doesn't:
 
 ```ts

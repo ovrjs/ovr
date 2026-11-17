@@ -71,22 +71,27 @@ import { serve } from "srvx";
 
 const todos: string[] = [];
 
+// a part of the page, which reads what it shows
+function Todos() {
+	return (
+		<ul>
+			{todos.map((todo) => (
+				<li>{todo}</li>
+			))}
+		</ul>
+	);
+}
+
 const list = Route.get("/")
 	.describe("List the todos")
-	.use(() => {
-		return (
-			<main>
-				<h1>Todos</h1>
-				<ul>
-					{todos.map((todo) => (
-						<li>{todo}</li>
-					))}
-				</ul>
-				{/* the add route's form, with what a refused submission sent */}
-				<add.Form submit="Add" />
-			</main>
-		);
-	});
+	.use(() => (
+		<main>
+			<h1>Todos</h1>
+			<Todos />
+			{/* the add route's form, with what a refused submission sent */}
+			<add.Form submit="Add" />
+		</main>
+	));
 
 const add = Route.post("/todos")
 	.describe("Add a todo")
@@ -112,6 +117,8 @@ npx tsc && node dist/index.js
 ```
 
 The todos are kept in memory, so they reset when the server restarts. Store them with [Database](/database) in a real app.
+
+The route only puts the page together, and `Todos` reads the list it shows. Build every page this way: a route waits only for what decides the response, such as a redirect or a 404, and each part of the page is a component that reads its own data. [Pages](/pages) explains why, with a larger example.
 
 ### People
 
@@ -153,7 +160,7 @@ claude mcp add --transport http ovr https://ovrjs.com/mcp
 
 ### Next
 
-[App](/app), [Route](/route), and [Middleware](/middleware) cover handling requests, and [Not found and errors](/middleware#not-found-and-errors) the two middleware most apps start with. [Render](/render) covers components, and [Schema](/schema) the fields and forms. [Agents](/agents) explains what agents get from each route.
+[App](/app), [Route](/route), and [Middleware](/middleware) cover handling requests, and [Not found and errors](/middleware#not-found-and-errors) the two middleware most apps start with. [Render](/render) covers components, [Pages](/pages) how to split a page between its route and its components, and [Schema](/schema) the fields and forms. [Agents](/agents) explains what agents get from each route.
 
 ## Compatibility
 
