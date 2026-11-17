@@ -1,4 +1,5 @@
 import { App, mount, agents as signin } from "../app/index.js";
+import type { Context } from "../context/index.js";
 import { Database, owned } from "../database/index.js";
 import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
@@ -8,6 +9,7 @@ import type { Middleware } from "../middleware/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
+import { Tester } from "../test/index.js";
 import { Codec, Time } from "../util/index.js";
 import { Auth } from "./index.js";
 import { Metadata } from "./metadata.js";
@@ -4917,5 +4919,61 @@ describe("agents", () => {
 				expect(res.status).toBe(400);
 			expect((await authorize(app, agent, "198.51.100.16")).status).toBe(303);
 		});
+	});
+});
+
+describe("a signed-in browser's responses", () => {
+	const Who = async (props: { wait?: boolean }, c: Context) => {
+		// what a component reads first, such as its own rows
+		if (props.wait) await new Promise((resolve) => setTimeout(resolve, 5));
+		return (await c.session())?.user ?? "nobody";
+	};
+	const page = Route.get("/page").use(() => jsx(Who, { wait: true }));
+	const stored = Route.get("/photo").use((c) => {
+		c.res.headers.set("cache-control", "private, max-age=60");
+		return c.text("photo");
+	});
+	const signed = Route.get("/signed").use(async (c) => {
+		c.res.headers.set("cache-control", "private, max-age=60");
+		return c.text((await c.session())?.user ?? "nobody");
+	});
+	const mounted = () =>
+		new App().use(
+			new Auth({
+				secret: "test-secret-with-at-least-32-bytes",
+				origin,
+				database: db,
+				users,
+			}),
+			page,
+			stored,
+			signed,
+		);
+	const cache = (response: Response) => response.headers.get("cache-control");
+
+	test("are not stored, though only a component reads the session", async () => {
+		await engine.exec("INSERT INTO users VALUES ('ross', 'ross@example.com')");
+		const response = await new Tester({ app: mounted(), user: "ross" }).fetch(
+			page,
+		);
+
+		expect(await response.text()).toBe("ross");
+		expect(cache(response)).toBe("no-store");
+	});
+
+	test("leave a visitor's as they are", async () => {
+		const response = await new Tester({ app: mounted() }).fetch(page);
+
+		expect(await response.text()).toBe("nobody");
+		expect(cache(response)).toBeNull();
+	});
+
+	test("are stored as a route that reads no session says", async () => {
+		await engine.exec("INSERT INTO users VALUES ('ross', 'ross@example.com')");
+		const ross = new Tester({ app: mounted(), user: "ross" });
+
+		expect(cache(await ross.fetch(stored))).toBe("private, max-age=60");
+		// reading the session is what the response then depends on
+		expect(cache(await ross.fetch(signed))).toBe("no-store");
 	});
 });

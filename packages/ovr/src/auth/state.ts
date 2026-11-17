@@ -41,6 +41,24 @@ export class State {
 	}
 
 	/**
+	 * A request that carries a session cookie gets a response no cache
+	 * stores, before its route runs. The session can then be read at any
+	 * time: a component that reads it once the page is streaming is too late
+	 * to set a header. Nothing is looked up, and a route that sets its own
+	 * `Cache-Control` afterward still decides.
+	 *
+	 * @param c Request context
+	 * @param origin Auth's origin, the only one the cookie is sent to
+	 */
+	static carried(
+		c: Pick<State.Context, "url" | "cookie" | "res">,
+		origin: string,
+	) {
+		if (c.url.origin === origin && c.cookie.get(State.#cookie))
+			noStore(c.res.headers);
+	}
+
+	/**
 	 * A request on another host has no session there, its cookies are bound to
 	 * Auth's origin, and passkeys cannot be used on it.
 	 *

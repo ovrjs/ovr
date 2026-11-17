@@ -412,6 +412,7 @@ export class Auth<
 		return [
 			(c: ContextType, next: () => Promise<void>) => {
 				c[sessions] = () => this.#state(c).session();
+				State.carried(c, this.#options.origin);
 				return next();
 			},
 			this.#host(this.#routes),

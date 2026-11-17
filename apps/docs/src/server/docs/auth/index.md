@@ -302,6 +302,8 @@ A session is `{ id, user, expiration }`. Use `user` to look up your account reco
 
 A session ends after a week without use, and renews while it is used: reading it moves its end out by another week, at most once a day. However often it is used, it ends 30 days after sign-in, and the user signs in again. Set these with `idle` and `lifetime`. Each request checks the database, so revocation and renewal apply across workers. The browser receives a signed, secure, HTTP-only cookie; session records stay in your database.
 
+A response to a browser that sends the session cookie is `Cache-Control: no-store`, set before the route runs, so no cache keeps a signed-in page. That holds wherever the session is read: a [component](/render#context) can read it with `c.session()` while the page streams. A route that reads no session can set its own `Cache-Control`, such as for an image.
+
 ### Logout
 
 `<logout.Form />` generates a normal form that revokes the current session. It needs no client script:
