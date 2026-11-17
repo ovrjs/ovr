@@ -151,14 +151,23 @@ app.use(
 		if (!session) return c.redirect("/login", 303);
 
 		const { add } = auth.forms(c);
-		const passkeys = await database.sql`
-			SELECT * FROM ${database.auth_credentials}
-			WHERE ${database.auth_credentials.columns.user} = ${session.user}
-		`.parse(database.auth_credentials);
+		const passkeys = await auth.passkeys(c);
 
 		return (
 			<>
-				<p>{passkeys.length} passkeys</p>
+				<ul>
+					{passkeys.map((passkey) => (
+						<li>
+							{passkey.name ?? "Passkey"}
+							{passkeys.length > 1 && (
+								<remove.Form>
+									<input type="hidden" name="id" value={passkey.id} />
+									<button>Remove</button>
+								</remove.Form>
+							)}
+						</li>
+					))}
+				</ul>
 				<add.Form />
 			</>
 		);
@@ -168,20 +177,31 @@ app.use(
 
 The form has one optional field, the passkey's name, such as "Laptop", and its button is "Add passkey". Its `add.Issue` is customized as the others are. With children of your own, write the field yourself, `<input name="name" maxlength="64" />`, or leave it out. The passkey is for the same account, so either signs in as it, and an authenticator that already holds one of the account's is not asked to make another. A passkey outlasts the session that adds it, so adding one asks for a recent sign-in: within ten minutes, in that browser. After that, the form first asks for a passkey the person already has, which starts their session again, and they press the button once more to add the new one. They do not sign out. Without a session the prompt is refused with a 401.
 
-Each passkey has what tells it apart in a list: its `name`, if it was added with one, `created`, a time in milliseconds, and the `origin` it was made at.
+`auth.passkeys(c)` lists the signed-in user's passkeys, oldest first. Each has what tells it apart in a list:
 
-To remove a passkey, delete its row, and keep the account's last one, since nothing else signs in as it:
+| Property  | What it holds                                                              |
+| --------- | -------------------------------------------------------------------------- |
+| `id`      | Its ID, which `remove` takes                                               |
+| `name`    | What the person called it when adding it, or `null`                        |
+| `created` | When it was made, in milliseconds                                          |
+| `origin`  | The origin it was made at, the only one it signs in at                     |
+| `synced`  | `true` when a password manager keeps a copy, so losing the device keeps it |
+
+`auth.remove(c, id)` removes one, such as for a device the person no longer has. It keeps the account's last passkey, since nothing else signs in as it, and returns `false` then, or for an ID that is not one of theirs:
 
 ```ts
-const credentials = database.auth_credentials;
+const remove = Route.post("/account/passkeys/remove")
+	.fields({ id: Field.hidden() })
+	.use(async (c) => {
+		if (!(await c.session())) return c.redirect("/login", 303);
+		const result = await c.data();
+		if (!result.issues) await auth.remove(c, result.data.id);
 
-await database.sql`
-	DELETE FROM ${credentials}
-	WHERE ${credentials.columns.id} = ${id}
-		AND ${credentials.columns.user} = ${session.user}
-		AND (SELECT count(*) FROM ${credentials} WHERE ${credentials.columns.user} = ${session.user}) > 1
-`;
+		return c.redirect("/account/passkeys", 303);
+	});
 ```
+
+Both throw when nobody is signed in.
 
 ### Sign-in link
 
@@ -350,12 +370,15 @@ await database.sql`
 `;
 ```
 
-The tables are available on your database by name, for example to list an account's passkeys:
+The tables are available on your database by name, for what Auth has no method for, such as how many passkeys every account has:
 
 ```ts
-const passkeys = await database.sql`
-	SELECT * FROM ${database.auth_credentials} WHERE ${database.auth_credentials.columns.user} = ${user}
-`.parse(database.auth_credentials);
+const { auth_credentials } = database;
+
+const counts = await database.sql`
+	SELECT ${auth_credentials.columns.user}, count(*)::int AS passkeys
+	FROM ${auth_credentials} GROUP BY ${auth_credentials.columns.user}
+`;
 ```
 
 Challenges are taken with one `DELETE ... RETURNING`, so each is used once even across instances, and credential updates match the previous record before saving. Expired challenges, sessions, sign-in links, and rate-limit buckets are deleted periodically as new ones are written. Each browser can have 10 outstanding ceremonies, see [rate limiting](#rate-limiting).

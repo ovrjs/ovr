@@ -607,6 +607,43 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		},
 	};
 
+	readonly passkeys = {
+		/**
+		 * @param user User ID
+		 * @returns The user's passkeys, oldest first
+		 */
+		list: (user: string) => {
+			const { columns } = Storage.credentials;
+			return this.#db.sql`
+				SELECT * FROM ${Storage.credentials} WHERE ${columns.user} = ${user}
+				ORDER BY ${columns.created}, ${columns.id}
+			`.parse(Storage.credentials);
+		},
+		/**
+		 * Removes one of a user's passkeys, never their last: nothing else
+		 * signs in as them.
+		 *
+		 * @param user User ID
+		 * @param id Passkey's ID
+		 * @returns `true` when it was removed
+		 */
+		remove: (user: string, id: string) =>
+			this.#db.sql(async (t) => {
+				const { columns } = Storage.credentials;
+				// one removal for a user at a time, so two at once cannot each
+				// count the other's passkey as the one that is left
+				await Storage.#lock(t.sql, Storage.credentials, user);
+				const rows = await t.sql`
+					DELETE FROM ${Storage.credentials}
+					WHERE ${columns.id} = ${id} AND ${columns.user} = ${user}
+						AND (SELECT count(*) FROM ${Storage.credentials} WHERE ${columns.user} = ${user}) > 1
+					RETURNING ${columns.id}
+				`;
+
+				return rows.length === 1;
+			}),
+	};
+
 	readonly links = {
 		/**
 		 * @param token Link's token, stored by its hash

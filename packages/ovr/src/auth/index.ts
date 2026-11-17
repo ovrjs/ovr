@@ -229,7 +229,20 @@ export namespace Auth {
 		readonly Form: (props: JSX.IntrinsicElements["form"]) => JSX.Element;
 	}
 
-	/** Stored ES256 passkey, including state updated after each login. */
+	/** One of a user's passkeys */
+	export interface Passkey {
+		/** Passkey's ID, which `remove` takes */
+		readonly id: string;
+		/** What the person called it when adding it, such as "Laptop" */
+		readonly name: string | null;
+		/** When it was made, in milliseconds */
+		readonly created: number;
+		/** Origin it was made at, the only one it signs in at */
+		readonly origin: string;
+		/** A password manager keeps a copy, so losing the device does not lose it */
+		readonly synced: boolean;
+	}
+
 	/** An agent the user has connected */
 	export interface Agent {
 		/** Client ID, the URL of the agent's metadata document, which `disconnect` takes */
@@ -446,6 +459,50 @@ export class Auth<
 	/** Revoke the current session and expire its cookie. Always await this method. */
 	readonly logout = (c: Pick<Auth.Context, "url" | "cookie" | "res">) => {
 		return this.#state(c).logout();
+	};
+
+	/**
+	 * The signed-in user's passkeys, to list on an account page with a way to
+	 * remove each.
+	 *
+	 * @param c Request context of the signed-in user
+	 * @returns Each passkey, oldest first
+	 * @throws When nobody is signed in
+	 */
+	readonly passkeys = async (
+		c: Pick<Auth.Context, "url" | "cookie" | "res">,
+	): Promise<Auth.Passkey[]> => {
+		const session = await this.#state(c).session();
+		if (!session) throw new Error("Sign in to list passkeys");
+
+		return (await this.#storage.passkeys.list(session.user)).map((row) => ({
+			id: row.id,
+			name: row.name,
+			created: row.created,
+			origin: row.origin,
+			synced: row.backedUp,
+		}));
+	};
+
+	/**
+	 * Remove one of the signed-in user's passkeys, such as one for a device
+	 * they no longer have. Their last passkey is kept, since nothing else signs
+	 * in as them.
+	 *
+	 * @param c Request context of the signed-in user
+	 * @param id Passkey's ID, a passkey's `id` from `auth.passkeys(c)`
+	 * @returns `true` when it was removed, `false` when it is their only
+	 * passkey or not one of theirs
+	 * @throws When nobody is signed in
+	 */
+	readonly remove = async (
+		c: Pick<Auth.Context, "url" | "cookie" | "res">,
+		id: string,
+	) => {
+		const session = await this.#state(c).session();
+		if (!session) throw new Error("Sign in to remove a passkey");
+
+		return this.#storage.passkeys.remove(session.user, id);
 	};
 
 	/**
