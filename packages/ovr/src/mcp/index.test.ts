@@ -1743,7 +1743,7 @@ describe("Mcp", () => {
 		// a read is the page it is sent to, as in a browser
 		const read = await rpc("tools/call", { name: "get_latest" });
 		expect(read.body.result.content[0].text).toBe(
-			"Redirected to /posts\n\n# Posts\n\n- 1: First post\n- 2: Second post\n",
+			"Read /posts\n\n# Posts\n\n- 1: First post\n- 2: Second post\n",
 		);
 	});
 

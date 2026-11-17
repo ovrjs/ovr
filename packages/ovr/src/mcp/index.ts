@@ -1224,7 +1224,8 @@ export class Mcp<P extends string = string> {
 			return {
 				...Mcp.#result(
 					[
-						redirected && redirect(redirected),
+						// the page a read was sent to, which is not a write having happened
+						redirected && `Read ${redirected.pathname}${redirected.search}`,
 						!res.ok && Mcp.#status(res),
 						text,
 					]

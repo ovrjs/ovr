@@ -176,7 +176,7 @@ A tool's input schema combines the pattern's parameters, converted by `params` s
 | An image or audio                             | `image` or `audio` content                                                      |
 | Another file, such as a PDF                   | An embedded resource with its `blob`                                            |
 | A page with `Content-Disposition: attachment` | The page's HTML as a file, not read as Markdown                                 |
-| A redirect, from a read                       | The page it leads to, when that page is described, as a browser follows it      |
+| A redirect, from a read                       | The page it leads to, when that page is described, under `Read /recipes`        |
 | A redirect, from a write                      | One line saying where, such as `Redirected to /recipes`                         |
 | A redirect to another site                    | Its URL, such as a checkout page for the user to open                           |
 | An event stream                               | Its address, to open itself; with `auth`, for the user to open in their browser |
