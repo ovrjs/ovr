@@ -10,24 +10,6 @@ export class Malformed extends TypeError {}
 export class Unsupported extends Malformed {}
 
 /** Sequence of bytes to find within the stream */
-/**
- * Node's native search for a sequence of bytes, `Buffer.prototype.indexOf`,
- * read from the global so nothing imports `node:`. Deno and Bun have a
- * `Buffer` too, but its search is many times slower there than the loop, so
- * it is used on Node only.
- */
-const native = globalThis.navigator?.userAgent?.startsWith("Node.js/")
-	? (
-			globalThis as {
-				Buffer?: {
-					prototype: {
-						indexOf(this: Uint8Array, value: Uint8Array, start: number): number;
-					};
-				};
-			}
-		).Buffer?.prototype.indexOf
-	: undefined;
-
 class Needle extends Uint8Array {
 	/** Index of the last character in the needle */
 	readonly end = this.length - 1;
@@ -480,49 +462,32 @@ export class Multipart {
 		const haystack = this.#memory;
 		const haystackLength = this.#valid;
 		const { anchor, end, length, skip } = needle;
+		const byte = needle[anchor]!;
+		const last = needle[end]!;
 
-		// the native search is faster over much, and its call costs more than
-		// the loop over little, such as one small chunk
-		if (native && haystackLength - this.#start >= 8 * Size.kb) {
-			const start = native.call(
-				haystack.subarray(0, haystackLength),
-				needle,
-				this.#start,
-			);
+		// Reading only where the needle would end skips most of the haystack.
+		// `Uint8Array.indexOf` reads every byte of it, and in V8 does so several
+		// times slower than a loop, which made large files slow to parse.
+		for (
+			let i = this.#start + end, current: number;
+			i < haystackLength;
+			i += skip[current]!
+		) {
+			current = haystack[i]!;
 
-			if (start !== -1) {
-				this.#start = start;
-				this.#end = start + length;
-				return this.#shift();
-			}
-		} else {
-			const byte = needle[anchor]!;
-			const last = needle[end]!;
+			// the anchor is checked before comparing, so a haystack of near
+			// matches costs one read for each of its bytes
+			if (current === last && haystack[i - end + anchor] === byte) {
+				const start = i - end;
 
-			// Reading only where the needle would end skips most of the haystack.
-			// `Uint8Array.indexOf` finds one byte, not a sequence, and reads every
-			// byte of it, which made large files slow to parse.
-			for (
-				let i = this.#start + end, current: number;
-				i < haystackLength;
-				i += skip[current]!
-			) {
-				current = haystack[i]!;
+				let match = 0;
+				while (match < length && needle[match] === haystack[start + match])
+					match++;
 
-				// the anchor is checked before comparing, so a haystack of near
-				// matches costs one read for each of its bytes
-				if (current === last && haystack[i - end + anchor] === byte) {
-					const start = i - end;
-
-					let match = 0;
-					while (match < length && needle[match] === haystack[start + match])
-						match++;
-
-					if (match === length) {
-						this.#start = start;
-						this.#end = start + length;
-						return this.#shift();
-					}
+				if (match === length) {
+					this.#start = start;
+					this.#end = start + length;
+					return this.#shift();
 				}
 			}
 		}
