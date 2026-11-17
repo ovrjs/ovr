@@ -2006,6 +2006,8 @@ class FieldSchema<
 		const depth = item instanceof FieldSchema ? 2 : 3;
 		const cells = {
 			id: state?.id ?? "",
+			// the form's own, so a row's controls are named as its other fields are
+			...(state?.scope && { scope: state.scope }),
 			values,
 			issues: state?.issues?.map((issue) =>
 				issue.path[0] === name && issue.path.length > 1

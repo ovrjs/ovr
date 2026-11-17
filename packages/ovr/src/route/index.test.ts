@@ -988,6 +988,31 @@ describe("a refused submission", () => {
 		void ((c: Context) => rename.issues(c));
 	});
 
+	test("a list's rows are named as the form's other fields are", async () => {
+		const save = Route.post("/lists/:id")
+			.fields({
+				items: Field.list({ name: Field.text(), amount: Field.number() }),
+			})
+			.use((c) => c.text("ok"));
+		const html = await new Render({
+			markup: [
+				jsx(save.Form, { params: { id: "1" } }),
+				jsx(save.Form, { params: { id: "2" } }),
+			],
+		}).string();
+		const ids = Array.from(html.matchAll(/ id="([^"]+)"/g), ([, id]) => id);
+		const refs = Array.from(
+			html.matchAll(/ (?:for|aria-labelledby|aria-describedby)="([^"]+)"/g),
+			([, ref]) => ref!.split(" "),
+		).flat();
+
+		expect(ids).toContain("post_lists_1-items.0.name");
+		expect(ids).toContain("post_lists_2-items.0.name");
+		// no ID repeats, and every reference names one
+		expect(new Set(ids).size).toBe(ids.length);
+		for (const ref of refs) expect(ids).toContain(ref);
+	});
+
 	test("of a hidden field shows its issue, and marks no control", async () => {
 		const pick = Route.post("/pick")
 			.fields({ recipe: Field.hidden().min(3, "Choose a recipe") })
