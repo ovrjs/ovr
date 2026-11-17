@@ -146,32 +146,31 @@ An account has the passkey it registered with. `<add.Form />` adds another to th
 
 ```tsx
 app.use(
-	Route.get("/account/passkeys").use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect("/login", 303);
+	Route.get("/account/passkeys").use(
+		auth.guard(async (c) => {
+			const { add } = auth.forms(c);
+			const passkeys = await auth.passkeys(c);
 
-		const { add } = auth.forms(c);
-		const passkeys = await auth.passkeys(c);
-
-		return (
-			<>
-				<ul>
-					{passkeys.map((passkey) => (
-						<li>
-							{passkey.name ?? "Passkey"}
-							{passkeys.length > 1 && (
-								<remove.Form>
-									<input type="hidden" name="id" value={passkey.id} />
-									<button>Remove</button>
-								</remove.Form>
-							)}
-						</li>
-					))}
-				</ul>
-				<add.Form />
-			</>
-		);
-	}),
+			return (
+				<>
+					<ul>
+						{passkeys.map((passkey) => (
+							<li>
+								{passkey.name ?? "Passkey"}
+								{passkeys.length > 1 && (
+									<remove.Form>
+										<input type="hidden" name="id" value={passkey.id} />
+										<button>Remove</button>
+									</remove.Form>
+								)}
+							</li>
+						))}
+					</ul>
+					<add.Form />
+				</>
+			);
+		}),
+	),
 );
 ```
 
@@ -274,29 +273,42 @@ Field.text().refine(
 
 ## Sessions
 
-Check the session before rendering a protected page:
+Wrap a route that needs someone signed in with `auth.guard`:
 
 ```tsx
 app.use(
-	Route.get("/account").use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect("/login", 303);
+	Route.get("/account").use(
+		auth.guard(async (c) => {
+			const session = await c.session();
+			const { logout } = auth.forms(c);
 
-		const { logout } = auth.forms(c);
-
-		return (
-			<>
-				<p>Signed in as {session.user}</p>
-				<logout.Form />
-			</>
-		);
-	}),
+			return (
+				<>
+					<p>Signed in as {session.user}</p>
+					<logout.Form />
+				</>
+			);
+		}),
+	),
 );
 ```
 
-`c.session()` returns the session, or `null` when nobody is signed in. Check it before anything private, and return a redirect to your authentication `page`; pages that are public but change for signed-in users render either way.
+Anyone who is not signed in is redirected to your authentication `page`, and comes back once they sign in: to the page they asked for, or to the page the form they sent was on. In the guard `c.session()` is never `null`, so a handler that writes for the user, such as a POST, reads them without a check.
 
-To bring the user back after they sign in, link to the page with `_return`, such as `/login?_return=/recipes/1`. `auth.forms(c)` reads it, and after registration or login the user goes there instead of `redirect`. Only a path of your own origin is followed; any other is ignored.
+`c.session()` returns the session, or `null` when nobody is signed in. Read it on a page that is public but changes for signed-in users, and in a [component](/render#context), which can be on any page:
+
+```tsx
+async function Greeting(_props: {}, c: Context) {
+	const session = await c.session();
+	if (!session) return <a href="/login">Sign in</a>;
+
+	return <p>Signed in as {session.user}</p>;
+}
+```
+
+A redirect is the route's to make, before the page starts: a component runs once the response has begun.
+
+To bring the user back after they sign in yourself, link to the page with `_return`, such as `/login?_return=/recipes/1`. `auth.forms(c)` reads it, and after registration or login the user goes there instead of `redirect`. Only a path of your own origin is followed; any other is ignored.
 
 A session is `{ id, user, expiration }`. Use `user` to look up your account record. `id` identifies the session, and `expiration` is an absolute timestamp in milliseconds.
 

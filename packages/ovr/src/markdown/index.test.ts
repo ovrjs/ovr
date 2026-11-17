@@ -1,4 +1,5 @@
 import { App } from "../app/index.js";
+import type { Context } from "../context/index.js";
 import { Field } from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import { Render } from "../render/index.js";
@@ -13,7 +14,8 @@ const md = (element: JSX.Element, options?: Render.Options.Markdown) =>
 const page = {
 	url: new URL("https://example.com/"),
 	cookie: { get: () => undefined },
-} as unknown as Parameters<NonNullable<Route.Post["form"]>>[0];
+	memo: (fn: unknown) => fn,
+} as unknown as Context;
 
 /** Element with props and children, like JSX */
 const h = (
@@ -268,11 +270,7 @@ describe("Markdown", () => {
 						"tr",
 						null,
 						h("td", null, "Post 3"),
-						h(
-							"td",
-							null,
-							(await rename.form(page)).Form({ params: { id: "3" } }),
-						),
+						h("td", null, rename.form().Form({ params: { id: "3" } }, page)),
 					),
 				),
 			),
@@ -611,9 +609,9 @@ describe("Markdown", () => {
 		expect(
 			await md(
 				jsx("main", {
-					children: (
-						await route.form(page, { title: "Hello", kind: "b" })
-					).Form({ submit: "Save" }),
+					children: route
+						.form({ title: "Hello", kind: "b" })
+						.Form({ submit: "Save" }, page),
 				}),
 			),
 		).toBe(

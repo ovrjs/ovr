@@ -4977,3 +4977,75 @@ describe("a signed-in browser's responses", () => {
 		expect(cache(await ross.fetch(signed))).toBe("no-store");
 	});
 });
+
+describe("a guarded route", () => {
+	const auth = new Auth({
+		secret: "test-secret-with-at-least-32-bytes",
+		origin,
+		database: db,
+		users,
+		page: "/enter",
+	});
+	const Who = async (_props: {}, c: Context) =>
+		(await c.session())?.user ?? "nobody";
+	const book = Route.get("/book/:shelf").use(
+		auth.guard((c) => {
+			expectTypeOf(c.params).toEqualTypeOf<{ shelf: string }>();
+
+			return [c.params.shelf, " ", jsx(Who, {})];
+		}),
+	);
+	const add = Route.post("/book")
+		.fields({ title: Field.text() })
+		.use(
+			auth.guard(async (c) => {
+				const session = await c.session();
+				const result = await c.data();
+
+				expectTypeOf(session).toEqualTypeOf<Context.Session>();
+				if (result.issues) return c.redirect(result.url, 303);
+				expectTypeOf(result.data.title).toEqualTypeOf<string>();
+
+				return c.text(`${session.user} added ${result.data.title}`);
+			}),
+		);
+	const app = new App().use(auth, book, add);
+
+	test("runs for someone signed in, whose session is there", async () => {
+		await engine.exec("INSERT INTO users VALUES ('ross', 'ross@example.com')");
+		const ross = new Tester({ app, user: "ross" });
+		const page = await ross.fetch(book, { params: { shelf: "dinner" } });
+
+		expect(await page.text()).toBe("dinner ross");
+		expect(page.headers.get("cache-control")).toBe("no-store");
+		expect(
+			await (await ross.fetch(add, { data: { title: "Chili" } })).text(),
+		).toBe("ross added Chili");
+	});
+
+	test("sends anyone else to sign in, and back to the page they asked for", async () => {
+		const response = await app.fetch(`${origin}/book/dinner?page=2`);
+
+		expect(response.status).toBe(303);
+		expect(response.headers.get("location")).toBe(
+			"/enter?_return=%2Fbook%2Fdinner%3Fpage%3D2",
+		);
+	});
+
+	test("sends a form from someone else back to the page it was on", async () => {
+		const send = (path: string) =>
+			app.fetch(
+				new Request(origin + path, {
+					method: "POST",
+					body: new FormData(),
+					headers: { origin },
+				}),
+			);
+
+		expect(
+			(await send("/book?_return=%2Fbook%2Fdinner")).headers.get("location"),
+		).toBe("/enter?_return=%2Fbook%2Fdinner");
+		// a form that names no page
+		expect((await send("/book")).headers.get("location")).toBe("/enter");
+	});
+});

@@ -1,3 +1,4 @@
+import type { Context } from "../context/index.js";
 import { Fragment, type JSX, jsx } from "../jsx/index.js";
 import type { Multipart } from "../multipart/index.js";
 import {
@@ -283,16 +284,14 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	}
 
 	/**
-	 * Decode form state, over the initial values.
-	 *
-	 * @param source What the request holds for the form
+	 * @param state What a request kept for the form
 	 * @param initial Initial values, submitted values take precedence
+	 * @returns The state over the initial values
 	 */
-	async #decode(
-		source: Form.Source,
+	#over(
+		state: Field.State<Shape> | undefined,
 		initial?: Field.Value.Initial<Shape>,
-	): Promise<Field.State<Shape> | undefined> {
-		const state = this.#unplaced(await this.#restore(source));
+	): Field.State<Shape> | undefined {
 		// initial values come from the server, so no size limit
 		const values = this.#sanitize(initial, false);
 
@@ -300,6 +299,19 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 
 		return { id: this.#id, ...state, values: { ...values, ...state?.values } };
 	}
+
+	/**
+	 * What a request kept for the form. Memoized by the request, so each of a
+	 * page's forms of the route, such as one in every row, shares one read.
+	 *
+	 * @param source Finds what the request holds for the form
+	 * @param c Request context
+	 */
+	readonly #kept = async (
+		source: (c: Context) => Form.Source,
+		c: Context,
+	): Promise<Field.State<Shape> | undefined> =>
+		this.#unplaced(await this.#restore(source(c)));
 
 	/**
 	 * Restore what a request holds for the form.
@@ -561,30 +573,55 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	};
 
 	/**
-	 * The form as one request sees it: its components, with what a refused
-	 * submission kept and the values to start from.
+	 * The form with the values to start from. Its components show what a
+	 * refused submission kept, which each reads from the context of the
+	 * request it is rendered for.
 	 *
-	 * @param source The page's URL, and the state a refused submission kept
 	 * @param initial Initial values, for example the record being edited.
 	 * What a refused submission sent takes precedence
+	 * @param source Finds what a request holds for the form, nothing without it
 	 * @returns The form's components, its issues, and its values
 	 */
-	bind = async (
-		source: Form.Source = {},
+	bind = (
 		initial?: Field.Value.Initial<Shape>,
-	): Promise<Form.Bound<Shape>> => {
-		const state = await this.#decode(source, initial);
+		source?: (c: Context) => Form.Source,
+	): Form.Bound<Shape> => {
+		/** Without a request: the initial values */
+		let alone: Promise<Field.State<Shape> | undefined> | undefined;
+
+		/**
+		 * @param c Request context
+		 * @returns What the fields show for the request, read once for it
+		 */
+		const shown = async (c: Context) =>
+			this.#over(await c.memo(this.#kept)(source!, c), initial);
+
+		/**
+		 * @param c Request context, of a component rendered for one
+		 * @returns What the fields show
+		 */
+		const state = (c: Context | undefined) =>
+			c && source
+				? c.memo(shown)(c)
+				: (alone ??= Promise.resolve(this.#over(undefined, initial)));
 
 		return {
-			Field: (props) => this.shape[props.name]![render]({ ...props, state }),
-			Fields: (props = {}) =>
-				this.names.map((name) =>
-					this.shape[name]![render]({ ...props, name, state }),
-				),
-			component: (props) =>
-				this.shape[props.name]![component]({ ...props, state }) as never,
-			issues: state?.issues,
-			values: state?.values,
+			Field: async (props, c) =>
+				this.shape[props.name]![render]({ ...props, state: await state(c) }),
+			Fields: async (props = {}, c) => {
+				const fields = await state(c);
+
+				return this.names.map((name) =>
+					this.shape[name]![render]({ ...props, name, state: fields }),
+				);
+			},
+			component: async (c, props) =>
+				this.shape[props.name]![component]({
+					...props,
+					state: await state(c),
+				}) as never,
+			issues: async (c) => (await state(c))?.issues,
+			values: async (c) => (await state(c))?.values,
 		};
 	};
 }
@@ -615,7 +652,10 @@ export namespace Form {
 		 * @param props Component props
 		 * @returns The field's label, control, description, and issue
 		 */
-		readonly Field: (props: Field.Component.Props<Shape>) => JSX.Element;
+		readonly Field: (
+			props: Field.Component.Props<Shape>,
+			c?: Context,
+		) => JSX.Element;
 
 		/**
 		 * Render all form fields.
@@ -633,34 +673,44 @@ export namespace Form {
 				/** Each field's own: give them to its `Field` or `component` */
 				options?: never;
 			},
+			c?: Context,
 		) => JSX.Element;
 
 		/**
 		 * Access the parts of a field, to lay it out yourself.
 		 *
 		 * ```tsx
-		 * const Radio = signup.component({ name: "radio" });
+		 * const Radio = await signup.component(c, { name: "radio" });
 		 *
 		 * <Radio.Label />
 		 * <Radio.Control />
 		 * ```
 		 *
 		 * @template N Type of the form field name
+		 * @param c Request context of the page the form is on
 		 * @param props Field component props
 		 * @returns The field's parts
 		 */
 		readonly component: <N extends ShapeUtil.Name<Shape>>(
+			c: Context,
 			props: { name: N } & Field.Component.Props<Shape>,
-		) => Field.Component<Shape[N]>;
-
-		/** What was wrong with a refused submission, `undefined` without one */
-		readonly issues: Schema.Issue.List | undefined;
+		) => Promise<Field.Component<Shape[N]>>;
 
 		/**
-		 * The values the fields show: the initial ones, under what a refused
-		 * submission sent
+		 * @param c Request context of the page the form is on
+		 * @returns What was wrong with a refused submission, `undefined`
+		 * without one
 		 */
-		readonly values: Field.Value.Map<Shape> | undefined;
+		readonly issues: (c: Context) => Promise<Schema.Issue.List | undefined>;
+
+		/**
+		 * @param c Request context of the page the form is on
+		 * @returns The values the fields show: the initial ones, under what a
+		 * refused submission sent
+		 */
+		readonly values: (
+			c: Context,
+		) => Promise<Field.Value.Map<Shape> | undefined>;
 	};
 }
 
@@ -2061,7 +2111,7 @@ export namespace Field {
 	export type Shape = Record<string, Field.Any>;
 
 	/**
-	 * A form's fields as one request sees them, from `route.form(c)`: the type
+	 * A form's fields with the values they start from, from `route.form()`: the type
 	 * of a prop that takes a form to lay its fields out, whichever route's it
 	 * is.
 	 *

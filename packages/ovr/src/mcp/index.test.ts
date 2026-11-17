@@ -410,8 +410,8 @@ describe("Mcp", () => {
 				.describe("Show a note")
 				.use(async (c) => {
 					const [title, gone] = await Promise.all([
-						rename.form(c, { title: "Groceries" }),
-						archive.form(c),
+						rename.form({ title: "Groceries" }),
+						archive.form(),
 					]);
 
 					return jsx("main", {
@@ -455,11 +455,11 @@ describe("Mcp", () => {
 		const logout = Route.post("/logout").use(() => {});
 		const page = Route.get("/bookmarks")
 			.describe("Bookmarks")
-			.use(async (c) =>
+			.use(async () =>
 				jsx("main", {
 					children: [
 						logout.Form({ submit: "Log out" }),
-						(await add.form(c)).Form({ submit: "Add" }),
+						jsx(add.Form, { submit: "Add" }),
 						jsx("ul", {
 							children: ["a1", "b2"].map((id) =>
 								jsx("li", {
@@ -525,9 +525,9 @@ describe("Mcp", () => {
 				.describe("A bookmark")
 				.use(async (c) =>
 					jsx("main", {
-						children: (await save.form(c, { url: "https://ovrjs.com" })).Form({
-							params: { id: c.params.id },
-						}),
+						children: save
+							.form({ url: "https://ovrjs.com" })
+							.Form({ params: { id: c.params.id } }),
 					}),
 				),
 			new Mcp({ name: "bookmarks" }),
@@ -622,7 +622,7 @@ describe("Mcp", () => {
 			Route.get("/recipes/:slug")
 				.describe("A recipe")
 				.use(async (c) => {
-					const form = await publish.form(c);
+					const form = publish.form();
 
 					return form.Form({
 						params: { slug: c.params.slug },
@@ -684,7 +684,7 @@ describe("Mcp", () => {
 			Route.get("/recipes/:id")
 				.describe("A recipe")
 				.use(async (c) => {
-					const form = await save.form(c, {
+					const form = save.form({
 						steps: ["Chop", "Fry"],
 						dinners: [b, a],
 						ingredients: [
@@ -891,7 +891,7 @@ describe("Mcp", () => {
 			route,
 			Route.get("/preferences")
 				.describe("Edit preferences")
-				.use(async (c) => (await route.form(c, { tags: ["news"] })).Form({})),
+				.use(() => jsx(route.form({ tags: ["news"] }).Form, {})),
 		);
 		const { body } = await rpc("tools/call", {
 			name: "get_preferences",

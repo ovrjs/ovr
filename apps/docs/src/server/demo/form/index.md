@@ -49,9 +49,5 @@ export const enroll = Route.post("/demo/form")
 		c.redirect(form, 303);
 	});
 
-export const form = Route.get("/demo/form").use(async (c) => {
-	const student = await enroll.form(c);
-
-	return <student.Form />;
-});
+export const form = Route.get("/demo/form").use(() => <enroll.Form />);
 ```

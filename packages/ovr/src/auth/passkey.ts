@@ -178,10 +178,7 @@ export class Passkey {
 						props.children ?? [
 							// the route's own fields: what is filled in, and the hidden
 							// ones the ceremony fills. No submission is kept for them
-							forms
-								.get(route)
-								?.bind()
-								.then((bound) => bound.Fields()),
+							forms.get(route)?.bind().Fields(),
 							jsx("button", {
 								children:
 									options.submit ??

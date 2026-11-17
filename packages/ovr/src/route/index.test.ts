@@ -13,7 +13,7 @@ import { describe, expect, expectTypeOf, test } from "vitest";
  * @param url The page's address
  * @param state What a refused submission kept, which a request has in a
  * cookie, named in the address
- * @returns The request `route.form(c)` reads
+ * @returns The context of a request for the page, as far as a form reads it
  */
 const page = (url: string, state?: string) => {
 	const address = new URL(url, "http://localhost:5173");
@@ -27,8 +27,17 @@ const page = (url: string, state?: string) => {
 					? `1a2b3c4d.${state}`
 					: undefined,
 		},
-	} as unknown as Pick<Context, "url" | "cookie">;
+		memo: (fn: unknown) => fn,
+	} as unknown as Context;
 };
+
+/**
+ * @param element Element to render
+ * @param c Context of the request it is rendered for
+ * @returns Its markup
+ */
+const shown = (element: JSX.Element, c: Context) =>
+	new Render({ markup: element }, { context: c }).string();
 
 describe("Route schema helpers", () => {
 	test("rejecting an oversized field cancels the remaining upload", async () => {
@@ -133,9 +142,7 @@ describe("Route schema helpers", () => {
 			.fields({ role: Field.radio(["reader", "admin"]) })
 			.use(async (c) => {
 				const result = await c.data();
-				const form = await search.form(c);
-
-				return [form.Form({}), result.issues ? "refused" : "found"];
+				return [jsx(search.Form, {}), result.issues ? "refused" : "found"];
 			});
 		const app = new App().use(search);
 		const get = async (path: string) =>
@@ -200,11 +207,7 @@ describe("Route schema helpers", () => {
 		const html = await new Render({ markup: profile.Form({}) }).string();
 
 		// the same as the form for a request that holds nothing for it
-		expect(
-			await new Render({
-				markup: (await profile.form(page("/profile"))).Form({}),
-			}).string(),
-		).toBe(html);
+		expect(await shown(jsx(profile.Form, {}), page("/profile"))).toBe(html);
 
 		expect(html.includes('action="/profile"')).toBe(true);
 		expect(html.includes('method="GET"')).toBe(true);
@@ -216,13 +219,10 @@ describe("Route schema helpers", () => {
 		const submit = Route.post("/submit")
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
-		const html = await new Render({
-			markup: (
-				await submit.form(
-					page("/signup?tab=profile&_form=stale&_return=%2Fold#details"),
-				)
-			).Form({}),
-		}).string();
+		const html = await shown(
+			jsx(submit.Form, {}),
+			page("/signup?tab=profile&_form=stale&_return=%2Fold#details"),
+		);
 
 		expect(
 			html.includes(
@@ -634,11 +634,10 @@ describe("editing records", () => {
 			file: "not a file",
 			note: null,
 		};
-		const html = await new Render({
-			markup: (await update.form(page("/posts/1"), post)).Form({
-				params: { id: "1" },
-			}),
-		}).string();
+		const html = await shown(
+			jsx(update.form(post).Form, { params: { id: "1" } }),
+			page("/posts/1"),
+		);
 
 		expect(html).toContain('value="Draft"');
 		expect(html).toContain(">Text</textarea>");
@@ -655,11 +654,10 @@ describe("editing records", () => {
 		body.set("body", "Other");
 		const result = await forms.get(refused)!.parse(body);
 		if (!result.issues) throw new Error("Expected issues");
-		const restored = await new Render({
-			markup: (await refused.form(page("/posts/1", result.state), post)).Form({
-				params: { id: "1" },
-			}),
-		}).string();
+		const restored = await shown(
+			jsx(refused.form(post).Form, { params: { id: "1" } }),
+			page("/posts/1", result.state),
+		);
 
 		expect(restored).toContain('value="Typed"');
 		expect(restored).toContain(">Other</textarea>");
@@ -680,22 +678,20 @@ describe("editing records", () => {
 		const form = new Form(shape);
 
 		for (const html of [
-			await new Render({
-				markup: (await update.form(state, values)).Form({
-					params: { id: "1" },
-				}),
-			}).string(),
-			await new Render({
-				markup: (await form.bind({ url: state.url }, values)).Fields(),
-			}).string(),
+			await shown(
+				jsx(update.form(values).Form, { params: { id: "1" } }),
+				state,
+			),
+			await shown(
+				jsx(form.bind(values, (c) => ({ url: c.url })).Fields, {}),
+				state,
+			),
 		]) {
 			expect(html).toContain('name="id" value="1"');
 			expect(html).toContain('value="Draft"');
 		}
 
-		const filled = await new Render({
-			markup: (await search.form(state, values)).Form({}),
-		}).string();
+		const filled = await shown(jsx(search.form(values).Form, {}), state);
 
 		expect(filled).toContain('name="id" value="2"');
 		expect(filled).toContain('value="Typed"');
@@ -717,7 +713,7 @@ describe("editing records", () => {
 		expect(html).not.toContain("submit=");
 	});
 
-	test("a route's own Form shows nothing of a request, where its bound form does", async () => {
+	test("a route's own Form shows what a request holds for it", async () => {
 		const signup = Route.post("/signup")
 			.fields({ email: Field.email() })
 			.use((c) => c.text("ok"));
@@ -733,9 +729,7 @@ describe("editing records", () => {
 		expect(plain).not.toContain("not an email");
 		expect(plain).not.toContain("aria-invalid");
 
-		const bound = await new Render({
-			markup: (await signup.form(request)).Form({}),
-		}).string();
+		const bound = await shown(jsx(signup.Form, {}), request);
 		expect(bound).toContain('value="not an email"');
 		expect(bound).toContain('aria-invalid="true"');
 		expect(bound).toContain('action="/signup?_return=%2Fsignup"');
@@ -763,11 +757,11 @@ describe("editing records", () => {
 	});
 
 	test("a bound form's Field and component have the initial values", async () => {
-		const form = await new Form(fields).bind({}, { title: "One", body: "Two" });
+		const form = new Form(fields).bind({ title: "One", body: "Two" });
 		const html = await new Render({
 			markup: [
 				form.Field({ name: "title" }),
-				form.component({ name: "body" }).Control(),
+				(await form.component(page("/"), { name: "body" })).Control(),
 			],
 		}).string();
 
@@ -780,11 +774,10 @@ describe("editing records", () => {
 			.fields({ body: Field.textarea() })
 			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
-		const html = await new Render({
-			markup: (await update.form(page("/posts/1"), { body })).Form({
-				params: { id: "1" },
-			}),
-		}).string();
+		const html = await shown(
+			jsx(update.form({ body }).Form, { params: { id: "1" } }),
+			page("/posts/1"),
+		);
 
 		expect(html).toContain(`>${body}</textarea>`);
 	});
@@ -804,14 +797,15 @@ describe("editing records", () => {
 			const result = parsed.issues
 				? parsed
 				: await parsed.invalid({ email: "Already registered" });
-			const html = await new Render({
-				markup: (
-					await form.bind(
-						{ state: result.state },
-						{ title: "Old title", tags: ["a"] },
-					)
-				).Fields(),
-			}).string();
+			const html = await shown(
+				jsx(
+					form.bind({ title: "Old title", tags: ["a"] }, () => ({
+						state: result.state,
+					})).Fields,
+					{},
+				),
+				page("/"),
+			);
 
 			expect(html).not.toContain('value="Old title"');
 			expect(html).not.toContain("selected");
@@ -821,9 +815,7 @@ describe("editing records", () => {
 
 describe("invalid after parsing", () => {
 	test("puts issues on fields and keeps what was sent", async () => {
-		const form = Route.get("/signup").use(async (c) =>
-			(await signup.form(c)).Form({}),
-		);
+		const form = Route.get("/signup").use(() => jsx(signup.Form, {}));
 		const signup = Route.post("/signup")
 			.fields({ email: Field.email(), name: Field.text() })
 			.use(async (c) => {
@@ -889,7 +881,7 @@ describe("chained routes", () => {
 			.fields({
 				title: Field.text().label("Title").describe("Shown in the list"),
 			});
-		const created = await render((await create.form(page("/posts"))).Form({}));
+		const created = await shown(jsx(create.Form, {}), page("/posts"));
 		expect(created).toContain(
 			'toolname="post_posts" tooltitle="Create a post" tooldescription="Create a post. It starts as a draft."',
 		);
@@ -903,9 +895,7 @@ describe("chained routes", () => {
 		const search = Route.get("/search")
 			.describe("Search posts")
 			.fields({ q: Field.search() });
-		expect(
-			await render((await search.form(page("/search"))).Form({})),
-		).toContain(
+		expect(await shown(jsx(search.Form, {}), page("/search"))).toContain(
 			'toolname="get_search" tooltitle="Search posts" tooldescription="Search posts" toolautosubmit',
 		);
 

@@ -415,10 +415,7 @@ export function configure<U extends Auth.Users>(
 			// registration's own fields, which no submission is kept for: a
 			// refusal says the same whatever was sent
 			const own = fields.bind();
-			const Field: Form.Bound<Shape>["Field"] = (props) =>
-				own.then((bound) => bound.Field(props));
-			const Fields: Form.Bound<Shape>["Fields"] = (props) =>
-				own.then((bound) => bound.Fields(props));
+			const { Field, Fields } = own;
 			const Register = passkey.form(register, "register", {
 				...props,
 				endpoint: registration.url(),
@@ -471,7 +468,9 @@ export function configure<U extends Auth.Users>(
 			const Link = Object.assign(
 				(props: Parameters<typeof link.Form>[0]) =>
 					(token || failure === "link") &&
-					jsx(link.Form, {
+					// called, so the page's address, which holds the token, is not
+					// put in the form's own
+					link.Form({
 						...props,
 						children: [
 							token && [

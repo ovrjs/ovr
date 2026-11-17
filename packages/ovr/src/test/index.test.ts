@@ -159,17 +159,18 @@ function setup() {
 
 	/** The page the form is on, which says what it would show */
 	const add = Route.get("/recipes/new").use(async (c) => {
-		const form = await create.form(c, { title: "Untitled" });
+		const form = create.form({ title: "Untitled" });
 
 		return c.json({
-			issues: form.issues?.map((issue) => issue.path.join(".")) ?? null,
-			values: form.values ?? null,
+			issues:
+				(await form.issues(c))?.map((issue) => issue.path.join(".")) ?? null,
+			values: (await form.values(c)) ?? null,
 		});
 	});
 	const edit = Route.get("/recipes/:id/edit").use(async (c) => {
-		const form = await update.form(c);
+		const form = update.form();
 
-		return c.json({ issues: form.issues ?? null });
+		return c.json({ issues: (await form.issues(c)) ?? null });
 	});
 
 	const routes = {

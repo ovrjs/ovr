@@ -1,3 +1,4 @@
+import type { Context } from "../context/index.js";
 import { jsx } from "../jsx/index.js";
 import { Multipart } from "../multipart/index.js";
 import { Render } from "../render/index.js";
@@ -70,31 +71,33 @@ const ui = <S extends Field.Shape>(form: Form<S>) => {
 		values?: Field.Value.Initial<S> | undefined;
 		state?: URL | undefined;
 	};
+	// a request's context, as far as a form reads it
+	const c = { memo: (fn: unknown) => fn } as unknown as Context;
 	const bind = ({ values, state }: Given) =>
-		form.bind(
-			{ url: state, state: state?.searchParams.get("_form") ?? undefined },
-			values,
-		);
+		form.bind(values, () => ({
+			url: state,
+			state: state?.searchParams.get("_form") ?? undefined,
+		}));
 
 	return {
-		Field: async ({
+		Field: ({
 			values,
 			state,
 			...props
 		}: Parameters<Form.Bound<S>["Field"]>[0] & Given) =>
-			(await bind({ values, state })).Field(props),
-		Fields: async ({
+			bind({ values, state }).Field(props, c),
+		Fields: ({
 			values,
 			state,
 			...props
 		}: NonNullable<Parameters<Form.Bound<S>["Fields"]>[0]> & Given = {}) =>
-			(await bind({ values, state })).Fields(props),
-		component: async <N extends Extract<keyof S, string>>({
+			bind({ values, state }).Fields(props, c),
+		component: <N extends Extract<keyof S, string>>({
 			values,
 			state,
 			...props
-		}: Parameters<Form.Bound<S>["component"]>[0] & Given & { name: N }) =>
-			(await bind({ values, state })).component<N>(props as never),
+		}: Parameters<Form.Bound<S>["component"]>[1] & Given & { name: N }) =>
+			bind({ values, state }).component<N>(c, props as never),
 	};
 };
 

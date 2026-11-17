@@ -10,6 +10,12 @@ import type { Util } from "../util/index.js";
 /** Finishes a route's configuration, `app.use(route)` calls it */
 export const freeze = Symbol("freeze");
 
+/** Each route's own form, which its `Form` renders the fields of */
+const bounds = new WeakMap<
+	object,
+	{ readonly Form: (props: any, c?: Context) => JSX.Element }
+>();
+
 /**
  * Matches a pattern's parameters, as the router reads them: `:name` up to the
  * next slash, anywhere in a segment, and a final `*`, the wildcard, which
@@ -192,9 +198,9 @@ export namespace Route {
 	type WithForm<Pattern extends string = string> = {
 		/**
 		 * `<form>` that submits to the route, with its fields, if it has any,
-		 * and a submit button, unless it is given children. It is the form
-		 * before any request: `route.form(c)` is the one that shows what a
-		 * refused submission sent.
+		 * and a submit button, unless it is given children. A refused
+		 * submission comes back to the page it is on, which shows what was
+		 * sent and what was wrong with it.
 		 */
 		readonly Form: Route.Form<Pattern>;
 	};
@@ -217,11 +223,12 @@ export namespace Route {
 	 */
 	type WithFields<Pattern extends string, S extends Field.Shape> = {
 		/**
-		 * The route's form as this request sees it: its components, with what
-		 * a refused submission kept and the values to start from.
+		 * The route's form with the values to start from, and its fields to
+		 * lay out yourself. Its components show what a refused submission
+		 * sent, over those values.
 		 *
 		 * ```tsx
-		 * const save = await update.form(c, recipe);
+		 * const save = update.form(recipe);
 		 *
 		 * <save.Form params={{ id }}>
 		 * 	<save.Field name="title" />
@@ -229,15 +236,11 @@ export namespace Route {
 		 * </save.Form>
 		 * ```
 		 *
-		 * @param c Request context of the page the form is on
 		 * @param values Initial values, for example the record being edited.
 		 * What a refused submission sent takes precedence
 		 * @returns The form's components, its issues, and its values
 		 */
-		readonly form: (
-			c: Pick<Context, "url" | "cookie">,
-			values?: Field.Value.Initial<S>,
-		) => Promise<Route.Bound<Pattern, S>>;
+		readonly form: (values?: Field.Value.Initial<S>) => Route.Bound<Pattern, S>;
 	};
 
 	/**
@@ -254,7 +257,7 @@ export namespace Route {
 		: WithFields<Pattern, Shape>;
 
 	/**
-	 * A route's form as one request sees it, from `route.form(c)`.
+	 * A route's form with the values it starts from, from `route.form()`.
 	 *
 	 * @template Pattern Route pattern
 	 * @template S Form field shape
@@ -469,6 +472,7 @@ export namespace Route {
 				/** Label of the generated submit button, defaults to "Submit" */
 				submit?: JSX.Element | undefined;
 			},
+		c?: Context,
 	) => JSX.Element;
 
 	/**
@@ -684,31 +688,49 @@ export class Route<
 		if (this.method === Method.get) form = form[query]();
 		forms.set(this, form);
 
-		return Object.assign(this, {
-			form: async (
-				c: Pick<Context, "url" | "cookie">,
-				values?: Field.Value.Initial<S>,
-			) => {
-				// what a refused submission kept, for the page its redirect names
-				const [, name] = FormSchema.params;
-				const id = c.url.searchParams.get(name);
-				const held = id ? c.cookie.get(name) : undefined;
-				const bound = await form.bind(
-					{
-						url: c.url,
-						state: held?.startsWith(`${id}.`)
-							? held.slice(id!.length + 1)
-							: undefined,
-					},
-					values,
-				);
+		/**
+		 * @param c Request context of the page the form is on
+		 * @returns What a refused submission kept, for the page its redirect names
+		 */
+		const source = (c: Context) => {
+			const [, name] = FormSchema.params;
+			const id = c.url.searchParams.get(name);
+			const held = id ? c.cookie.get(name) : undefined;
 
-				return {
-					...bound,
-					Form: (props: Parameters<Route.Form<Pattern>>[0]) =>
-						Route.#form(this, props, c.url, bound.Fields()),
-				};
-			},
+			return {
+				url: c.url,
+				state: held?.startsWith(`${id}.`)
+					? held.slice(id!.length + 1)
+					: undefined,
+			};
+		};
+
+		/**
+		 * @param values Initial values
+		 * @returns The form with them, and the `<form>` that submits to the route
+		 */
+		const bind = (values?: Field.Value.Initial<S>) => {
+			const bound = form.bind(values, source);
+
+			return {
+				...bound,
+				Form: ((props, c) =>
+					Route.#form(
+						this,
+						props,
+						c?.url,
+						jsx(bound.Fields, {}),
+					)) as Route.Form<Pattern>,
+			};
+		};
+
+		// the route's own, which its `Form` renders
+		const own = bind();
+		bounds.set(this, own);
+
+		return Object.assign(this, {
+			form: (values?: Field.Value.Initial<S>) =>
+				values === undefined ? own : bind(values),
 		}) as any;
 	}
 
@@ -829,18 +851,10 @@ export class Route<
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: ((props) =>
-				Route.#form(
-					route,
-					props,
-					undefined,
-					// its fields as they are before any request: the form for a
-					// request, with what was refused, is `route.form(c)`
-					forms
-						.get(route)
-						?.bind()
-						.then((bound) => bound.Fields()),
-				)) as Route.Form<Pattern>,
+			Form: ((props, c) =>
+				// with its fields, when it has any, and what was refused of them
+				bounds.get(route)?.Form(props, c) ??
+				Route.#form(route, props)) as Route.Form<Pattern>,
 		});
 	}
 

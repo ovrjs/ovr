@@ -22,11 +22,12 @@ const update = Route.post("/posts/:id")
 	.describe("Change a post's title or body") // for agents
 	.params({ id: Schema.string().uuid() }) // checked before the middleware
 	.fields({ title, body }) // parsed by c.data()
-	.use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect("/login", 303);
-		// ...
-	});
+	.use(
+		auth.guard(async (c) => {
+			const { user } = await c.session();
+			// ...
+		}),
+	);
 ```
 
 ## Parameters
@@ -129,7 +130,7 @@ const page = Route.get("/").use(() => (
 ));
 ```
 
-That form is the same for every request. To show a person what a refused submission sent, and what was wrong with it, render the route's form for the request, [`route.form(c)`](/schema#post-forms).
+The form shows a person what a [refused submission](/schema#a-refused-submission) sent, and what was wrong with it. To lay its fields out yourself, or to fill them with a record's values, use [`route.form()`](/schema#lay-out-the-fields).
 
 A route without fields, such as a delete, renders just the button. Patterns can have parameters, like any route, and the components take their values with [`params`](#props).
 
@@ -147,7 +148,7 @@ Pass children to write the form's contents yourself, for example with the form's
 `Button` is for a second action inside another form: a submit button whose `formaction` sends that form to this route instead. Like any `formaction` button, it does nothing outside a `<form>`, so use the route's `Form` for a standalone button.
 
 ```tsx
-const save = await update.form(c, post);
+const save = update.form(post);
 
 <save.Form params={{ id: post.id }}>
 	<save.Fields />

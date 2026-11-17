@@ -79,14 +79,10 @@ export const signup = Route.post("/signup")
 		return <p>Welcome, {result.data.name}.</p>;
 	});
 
-export const page = Route.get("/signup").use(async (c) => {
-	const join = await signup.form(c);
-
-	return <join.Form />;
-});
+export const page = Route.get("/signup").use(() => <signup.Form />);
 ```
 
-`signup.form(c)` is the route's form as this request sees it: its components, with what a [refused submission](#a-refused-submission) sent. Its `Form` renders the `<form>` _and_ the fields inside by default. The button is labelled "Submit"; pass `submit` to change it, for example `<join.Form submit="Sign up" />`. Name the form for what it does, such as `join` or `save`: a handler often has the record under the more obvious name.
+The route's `Form` renders the `<form>` _and_ the fields inside by default, and shows what a [refused submission](#a-refused-submission) sent. The button is labelled "Submit"; pass `submit` to change it, for example `<signup.Form submit="Sign up" />`.
 
 ```html
 <form
@@ -106,24 +102,36 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 > Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, give the field a label: `Field.text().label("Full Name")`.
 
-`describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from `join.component` to place it yourself.
+`describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from [`join.component`](#lay-out-the-fields) to place it yourself.
 
 A description written to be complete for an agent can be more than a person needs under a control. `hint` is what people read in its place, and agents still read the description: `Field.number().describe("Weight in grams for cups and spoons. Empty for counts and liquids.").hint("For cups and spoons")`. An empty hint shows people nothing.
 
 `control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<join.Field name="name" autofocus />`.
 
-- `join.Fields` renders all the fields _without_ the outer `<form>` shell
-- `join.Field` renders one field by `name` (each key in the shape)
-- `join.component({ name })` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
-- `join.issues` and `join.values` are what a refused submission found and sent, `undefined` without one
-
----
-
 The form returns a refused submission to the page it is on: its action carries the page's address in a same-origin `_return` query param.
 
-A route's own `Form` is the shortest form: `<signup.Form />` renders the fields and the button without the `const`. It is the same for every request, so it shows nothing a refused submission sent. Use it where the browser's own checks are enough, and `signup.form(c)` where a person should see what the server refused.
-
 > To share fields between routes, reuse the shape object, such as `.fields({ ...shape, note: Field.textarea() })`.
+
+### Lay out the fields
+
+`signup.form()` gives the form's parts, to lay the fields out yourself. Name it for what it does, such as `join` or `save`: a handler often has the record under the more obvious name.
+
+```tsx
+const join = signup.form();
+
+<join.Form>
+	<join.Field name="name" autofocus />
+	<button>Sign up</button>
+</join.Form>;
+```
+
+- `join.Form` renders the `<form>`, and the fields and the button when it is given no children
+- `join.Fields` renders all the fields _without_ the outer `<form>` shell
+- `join.Field` renders one field by `name` (each key in the shape)
+- `await join.component(c, { name })` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
+- `await join.issues(c)` and `await join.values(c)` are what a refused submission found and sent, `undefined` without one
+
+`Form`, `Field`, and `Fields` are components, so each reads the request from the [context](/render#context) it is rendered for. The other three are read outside of one, so they take `c`.
 
 Routes that share fields can share the component that lays them out. Give it the form, typed by the fields it has, such as `form: Field.Bound<typeof fields>`, and render `<props.form.Field name="title" />`. Render each route's own `Form` around it, since one may need `params` the other does not take.
 
@@ -136,7 +144,7 @@ const update = Route.post("/posts/:id").fields(fields).use(handler);
 
 const edit = Route.get("/posts/:id/edit").use(async (c) => {
 	const post = await find(c.params.id);
-	const save = await update.form(c, post);
+	const save = update.form(post);
 
 	return <save.Form params={{ id: post.id }} />;
 });
@@ -221,7 +229,7 @@ const publish = Route.post("/recipes/:id/publish")
 	.fields({ photos: Field.checkboxes(Schema.string().uuid()) })
 	.use(handler);
 
-const choose = await publish.form(c);
+const choose = publish.form();
 
 <choose.Form params={{ id }}>
 	<choose.Field name="photos" options={photos.map((photo) => photo.id)} />
@@ -279,7 +287,7 @@ Each control is named by its list and its place, `sides.0` or `ingredients.0.amo
 
 An invalid submission shows a list's rows again, with each issue on its cell. When the rows are too many to [keep](#a-refused-submission), the issue is shown under the list and says where it was, such as "Row 2, Ingredient: Required field", with the field's label.
 
-A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own. Here `save` is the route's form, `const save = await update.form(c, recipe)`:
+A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own. Here `save` is the route's form, `const save = update.form(recipe)`:
 
 ```tsx
 <save.Field
@@ -288,10 +296,10 @@ A list's `options` are those of each row's choices made from a schema, so a week
 />
 ```
 
-`save.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
+`await save.component(c, { name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
 
 ```tsx
-const Items = save.component({ name: "ingredients" });
+const Items = await save.component(c, { name: "ingredients" });
 
 <Items.Root>
 	<Items.Legend />
@@ -394,7 +402,7 @@ ovr also normalizes a few common HTML form quirks before validation:
 
 ## A refused submission
 
-When a route refuses a submission, `c.data()` keeps the issues and what was sent, and its `url` is the page the form is on. There, `route.form(c)` shows it again:
+When a route refuses a submission, `c.data()` keeps the issues and what was sent, and its `url` is the page the form is on. There, the form shows it again:
 
 - each field has what the person typed
 - the matching issue message is under its field
@@ -405,12 +413,12 @@ It is kept in a cookie, compressed, for an hour. Only the page the form is on is
 
 A cookie holds about 4 KB, which is a long form once it is compressed: a recipe of 100 ingredients, its steps, and its notes. When there is more, values are left out, from the form's last field back, until it fits. The issues are kept, so the person sees what was wrong, but not what they typed in the fields left out. A list shows no more rows than its `max()`, and a row's hidden value, such as its ID, is the page's to give.
 
-The form has its `issues` and `values`, to act on a refused submission outside its fields, such as opening the `<details>` the form is in:
+`route.form()` has its `issues` and `values`, to act on a refused submission outside its fields, such as opening the `<details>` the form is in:
 
 ```tsx
-const add = await create.form(c);
+const add = create.form();
 
-<details open={Boolean(add.issues)}>
+<details open={Boolean(await add.issues(c))}>
 	<summary>Add a recipe</summary>
 	<add.Form />
 </details>;
@@ -418,7 +426,7 @@ const add = await create.form(c);
 
 ## GET forms
 
-`Route.get` takes fields too, for a form that sends its values as search params. Its submission is the page's URL, so `route.form(c)` fills the fields from it, and shows what is wrong with them once the URL has any. Only a GET route's form reads its fields from search params, since that is where it submits them. Other forms show just what a [refused submission](#a-refused-submission) kept, so a link cannot fill in an edit form.
+`Route.get` takes fields too, for a form that sends its values as search params. Its submission is the page's URL, so its form fills the fields from it, and shows what is wrong with them once the URL has any. Only a GET route's form reads its fields from search params, since that is where it submits them. Other forms show just what a [refused submission](#a-refused-submission) kept, so a link cannot fill in an edit form.
 
 ```tsx
 import { Field, Route } from "ovr";
@@ -431,9 +439,8 @@ export const search = Route.get("/search")
 	})
 	.use(async (c) => {
 		const result = await c.data();
-		const find = await search.form(c);
 
-		if (result.issues) return <find.Form />;
+		if (result.issues) return <search.Form />;
 
 		result.data; // { q: "travel backpack", minPrice: 50, inStock: true }
 
@@ -441,7 +448,7 @@ export const search = Route.get("/search")
 
 		return (
 			<>
-				<find.Form />
+				<search.Form />
 				<h2>Results for {result.data.q || "all products"}</h2>
 			</>
 		);

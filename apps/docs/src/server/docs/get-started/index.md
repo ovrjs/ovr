@@ -73,10 +73,7 @@ const todos: string[] = [];
 
 const list = Route.get("/")
 	.describe("List the todos")
-	.use(async (c) => {
-		// the add route's form, with what a refused submission sent
-		const entry = await add.form(c);
-
+	.use(() => {
 		return (
 			<main>
 				<h1>Todos</h1>
@@ -85,7 +82,8 @@ const list = Route.get("/")
 						<li>{todo}</li>
 					))}
 				</ul>
-				<entry.Form submit="Add" />
+				{/* the add route's form, with what a refused submission sent */}
+				<add.Form submit="Add" />
 			</main>
 		);
 	});

@@ -46,16 +46,14 @@ export const enroll = Route.post("/demo/form")
 		c.redirect(form, 303);
 	});
 
-export const form = Route.get("/demo/form").use(async (c) => {
-	const student = await enroll.form(c);
-
+export const form = Route.get("/demo/form").use(() => {
 	return (
 		<Layout head={<Meta {...formContent.frontmatter} />}>
 			<h1>{formContent.frontmatter.title}</h1>
 
 			{Render.raw({ markup: formContent.html })}
 
-			<student.Form />
+			<enroll.Form />
 		</Layout>
 	);
 });

@@ -5,6 +5,7 @@ import type { Field, Form } from "../form/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Mcp } from "../mcp/index.js";
+import type { Middleware } from "../middleware/index.js";
 import type { Route } from "../route/index.js";
 import type { Schema } from "../schema/index.js";
 import type { Table } from "../table/index.js";
@@ -307,6 +308,9 @@ export class Auth<
 
 	/** Generated endpoints, mounted with `app.use(auth)`. */
 	readonly #routes: readonly Route[];
+
+	/** Authentication page, where a guard sends someone who is not signed in */
+	readonly #page: string;
 	/**
 	 * Read an agent's authorization request on the consent page, with the form
 	 * to allow or deny it. `null` when the request is invalid or expired.
@@ -380,6 +384,7 @@ export class Auth<
 		const resources = new Set<string>();
 		const signin = oauth(options, storage, (c) => this.#state(c), resources);
 		this.#routes = service.routes;
+		this.#page = options.page ?? "/login";
 		this.forms = service.forms;
 		this.link = service.link;
 		this.consent = signin.consent;
@@ -456,6 +461,55 @@ export class Auth<
 	) => {
 		return this.#state(c).login(user);
 	};
+
+	/**
+	 * Middleware for a route that needs someone signed in. Anyone else is
+	 * sent to the authentication `page`, and comes back once they sign in: to
+	 * the page they asked for, or the page the form they sent was on. In the
+	 * handler `c.session()` is never `null`.
+	 *
+	 * ```tsx
+	 * Route.get("/recipes").use(auth.guard(() => <Book />));
+	 *
+	 * Route.post("/recipes").use(
+	 * 	auth.guard(async (c) => {
+	 * 		const { user } = await c.session();
+	 * 	}),
+	 * );
+	 * ```
+	 *
+	 * @template P Parameters created from a route match
+	 * @template S Parsed form data shape
+	 * @param handler Middleware to run for a signed-in request
+	 * @returns Middleware for the route
+	 */
+	readonly guard =
+		<
+			P extends Record<string, unknown> = Record<string, unknown>,
+			S extends Field.Shape = any,
+		>(
+			handler: (
+				c: {
+					/** @returns The session, which the guard found */
+					session(): Promise<ContextType.Session>;
+				} & ContextType<P, S>,
+				next: Middleware.Next,
+			) => any,
+		): Middleware<P, S> =>
+		async (c, next) => {
+			if (await this.#state(c).session()) return handler(c as never, next);
+
+			// a page is asked for by its address, a form names the page it was on
+			const read = c.req.method === "GET" || c.req.method === "HEAD";
+			const back = read
+				? c.url.pathname + c.url.search
+				: c.url.searchParams.get("_return");
+
+			return c.redirect(
+				back ? `${this.#page}?_return=${encodeURIComponent(back)}` : this.#page,
+				303,
+			);
+		};
 
 	/** Revoke the current session and expire its cookie. Always await this method. */
 	readonly logout = (c: Pick<Auth.Context, "url" | "cookie" | "res">) => {

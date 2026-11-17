@@ -77,50 +77,51 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 	});
 
 	/** Protected dashboard route for demo session/credential output. */
-	const admin = Route.get("/demo/auth/admin").use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect(auth, 303);
-		const user = await account(database, session.user);
-		if (!user) {
-			await service.logout(c);
-			return c.redirect(auth, 303);
-		}
-		const { logout } = service.forms(c);
-		const credentials = await database.sql`
+	const admin = Route.get("/demo/auth/admin").use(
+		service.guard(async (c) => {
+			const session = await c.session();
+			const user = await account(database, session.user);
+			if (!user) {
+				await service.logout(c);
+				return c.redirect(auth, 303);
+			}
+			const { logout } = service.forms(c);
+			const credentials = await database.sql`
 			SELECT * FROM ${database.auth_credentials}
 			WHERE ${database.auth_credentials.columns.user} = ${user.id} ORDER BY id
 		`.parse(database.auth_credentials);
 
-		return (
-			<Layout head={<Meta {...content.frontmatter} />}>
-				<h1>Admin</h1>
+			return (
+				<Layout head={<Meta {...content.frontmatter} />}>
+					<h1>Admin</h1>
 
-				<p>Hello, {user.email}</p>
+					<p>Hello, {user.email}</p>
 
-				<h2>Session</h2>
-				<pre>
-					<code>
-						{JSON.stringify(
-							{ user: session.user, expiration: session.expiration },
-							null,
-							4,
-						)}
-					</code>
-				</pre>
+					<h2>Session</h2>
+					<pre>
+						<code>
+							{JSON.stringify(
+								{ user: session.user, expiration: session.expiration },
+								null,
+								4,
+							)}
+						</code>
+					</pre>
 
-				<h2>Registered credentials</h2>
-				<ul>
-					{credentials.map((v) => (
-						<li key={v.id}>{v.id}</li>
-					))}
-				</ul>
+					<h2>Registered credentials</h2>
+					<ul>
+						{credentials.map((v) => (
+							<li key={v.id}>{v.id}</li>
+						))}
+					</ul>
 
-				<logout.Form>
-					<button>Log out</button>
-				</logout.Form>
-			</Layout>
-		);
-	});
+					<logout.Form>
+						<button>Log out</button>
+					</logout.Form>
+				</Layout>
+			);
+		}),
+	);
 
 	return { auth, admin };
 }

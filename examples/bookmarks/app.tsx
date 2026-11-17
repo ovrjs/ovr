@@ -44,153 +44,158 @@ const login = Route.get("/login").use(async (c) => {
 const create = Route.post("/bookmarks")
 	.describe("Save a bookmark")
 	.fields(editable)
-	.use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect(login, 303);
-		const result = await c.data();
-		if (result.issues) return c.redirect(result.url, 303);
+	.use(
+		auth.guard(async (c) => {
+			const session = await c.session();
+			const result = await c.data();
+			if (result.issues) return c.redirect(result.url, 303);
 
-		const [bookmark] = await database.sql`
+			const [bookmark] = await database.sql`
 			INSERT INTO ${bookmarks}
 			${database.sql.values(bookmarks, { ...result.data, owner: session.user })}
 			ON CONFLICT (owner, url) DO NOTHING
 			RETURNING *
 		`.parse(bookmarks);
 
-		if (!bookmark) {
-			const invalid = await result.invalid({
-				url: "You already saved this URL",
-			});
-			return c.redirect(invalid.url, 303);
-		}
-
-		return c.redirect(list, 303);
-	});
-
-const update = Route.post("/bookmarks/:id")
-	.describe("Change a bookmark's title or URL")
-	.params({ id })
-	.fields(editable)
-	.use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect(login, 303);
-		const result = await c.data();
-		if (result.issues) return c.redirect(result.url, 303);
-
-		try {
-			const [bookmark] = await database.sql`
-				UPDATE ${bookmarks} SET ${database.sql.set(bookmarks, result.data)}
-				WHERE id = ${c.params.id} AND owner = ${session.user}
-				RETURNING *
-			`.parse(bookmarks);
-
-			if (!bookmark) return c.text("Not Found", 404);
-		} catch (error) {
-			// Match the specific constraint, not every database failure.
-			if (Database.unique(error, "bookmarks_owner_url")) {
+			if (!bookmark) {
 				const invalid = await result.invalid({
 					url: "You already saved this URL",
 				});
 				return c.redirect(invalid.url, 303);
 			}
-			throw error;
-		}
 
-		return c.redirect(list, 303);
-	});
+			return c.redirect(list, 303);
+		}),
+	);
+
+const update = Route.post("/bookmarks/:id")
+	.describe("Change a bookmark's title or URL")
+	.params({ id })
+	.fields(editable)
+	.use(
+		auth.guard(async (c) => {
+			const session = await c.session();
+			const result = await c.data();
+			if (result.issues) return c.redirect(result.url, 303);
+
+			try {
+				const [bookmark] = await database.sql`
+				UPDATE ${bookmarks} SET ${database.sql.set(bookmarks, result.data)}
+				WHERE id = ${c.params.id} AND owner = ${session.user}
+				RETURNING *
+			`.parse(bookmarks);
+
+				if (!bookmark) return c.text("Not Found", 404);
+			} catch (error) {
+				// Match the specific constraint, not every database failure.
+				if (Database.unique(error, "bookmarks_owner_url")) {
+					const invalid = await result.invalid({
+						url: "You already saved this URL",
+					});
+					return c.redirect(invalid.url, 303);
+				}
+				throw error;
+			}
+
+			return c.redirect(list, 303);
+		}),
+	);
 
 const remove = Route.post("/bookmarks/:id/delete")
 	.describe("Delete a bookmark")
 	.params({ id })
-	.use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect(login, 303);
-		const [bookmark] = await database.sql`
+	.use(
+		auth.guard(async (c) => {
+			const session = await c.session();
+			const [bookmark] = await database.sql`
 			DELETE FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
 			RETURNING *
 		`.parse(bookmarks);
 
-		if (!bookmark) return c.text("Not Found", 404);
-		return c.redirect(list, 303);
-	});
+			if (!bookmark) return c.text("Not Found", 404);
+			return c.redirect(list, 303);
+		}),
+	);
 
 const list = Route.get("/bookmarks")
 	.describe("The latest 50 bookmarks")
-	.use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect(login, 303);
-		const { logout } = auth.forms(c);
-		const add = await create.form(c);
-		const rows = await database.sql`
+	.use(
+		auth.guard(async (c) => {
+			const session = await c.session();
+			const { logout } = auth.forms(c);
+			const rows = await database.sql`
 			SELECT * FROM ${bookmarks} WHERE owner = ${session.user}
 			ORDER BY created DESC, id DESC LIMIT 50
 		`.parse(bookmarks);
 
-		return (
-			<Page title="Your bookmarks">
-				<logout.Form />
-				<h2>Add a bookmark</h2>
-				<add.Form submit="Add bookmark" />
-				<h2>Latest 50 bookmarks</h2>
-				{rows.length ? (
-					<ul>
-						{rows.map((bookmark) => (
-							<li>
-								<a href={bookmark.url}>{bookmark.title}</a>{" "}
-								<edit.Anchor params={{ id: bookmark.id }}>Edit</edit.Anchor>
-								<remove.Form params={{ id: bookmark.id }}>
-									<button>Delete {bookmark.title}</button>
-								</remove.Form>
-							</li>
-						))}
-					</ul>
-				) : (
-					<p>No bookmarks yet.</p>
-				)}
-			</Page>
-		);
-	});
+			return (
+				<Page title="Your bookmarks">
+					<logout.Form />
+					<h2>Add a bookmark</h2>
+					<create.Form submit="Add bookmark" />
+					<h2>Latest 50 bookmarks</h2>
+					{rows.length ? (
+						<ul>
+							{rows.map((bookmark) => (
+								<li>
+									<a href={bookmark.url}>{bookmark.title}</a>{" "}
+									<edit.Anchor params={{ id: bookmark.id }}>Edit</edit.Anchor>
+									<remove.Form params={{ id: bookmark.id }}>
+										<button>Delete {bookmark.title}</button>
+									</remove.Form>
+								</li>
+							))}
+						</ul>
+					) : (
+						<p>No bookmarks yet.</p>
+					)}
+				</Page>
+			);
+		}),
+	);
 
 const edit = Route.get("/bookmarks/:id/edit")
 	.describe("A bookmark with its edit form")
 	.params({ id })
-	.use(async (c) => {
-		const session = await c.session();
-		if (!session) return c.redirect(login, 303);
-		const [bookmark] = await database.sql`
+	.use(
+		auth.guard(async (c) => {
+			const session = await c.session();
+			const [bookmark] = await database.sql`
 			SELECT * FROM ${bookmarks}
 			WHERE id = ${c.params.id} AND owner = ${session.user}
 		`.parse(bookmarks);
 
-		if (!bookmark) return c.text("Not Found", 404);
+			if (!bookmark) return c.text("Not Found", 404);
 
-		const save = await update.form(c, bookmark);
+			const save = update.form(bookmark);
+
+			return (
+				<Page title="Edit bookmark">
+					<save.Form params={{ id: bookmark.id }} submit="Save changes" />
+					<list.Anchor>Back to bookmarks</list.Anchor>
+				</Page>
+			);
+		}),
+	);
+
+const connect = Route.get("/connect").use(
+	auth.guard(async (c) => {
+		const request = await auth.consent(c);
+		if (!request) return c.text("This request expired. Connect again.", 400);
 
 		return (
-			<Page title="Edit bookmark">
-				<save.Form params={{ id: bookmark.id }} submit="Save changes" />
-				<list.Anchor>Back to bookmarks</list.Anchor>
+			<Page title={`Connect ${request.client.name}?`}>
+				<p>
+					{request.client.name}, published by{" "}
+					{new URL(request.client.id).origin}, will be able to read and change
+					your bookmarks. You will return to {request.returns}.
+				</p>
+				<request.Form />
 			</Page>
 		);
-	});
-
-const connect = Route.get("/connect").use(async (c) => {
-	if (!(await c.session())) return c.redirect(login, 303);
-	const request = await auth.consent(c);
-	if (!request) return c.text("This request expired. Connect again.", 400);
-
-	return (
-		<Page title={`Connect ${request.client.name}?`}>
-			<p>
-				{request.client.name}, published by {new URL(request.client.id).origin},
-				will be able to read and change your bookmarks. You will return to{" "}
-				{request.returns}.
-			</p>
-			<request.Form />
-		</Page>
-	);
-});
+	}),
+);
 
 /** Agents use the described routes as tools, and read pages as Markdown. */
 const mcp = new Mcp({
