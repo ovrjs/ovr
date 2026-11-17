@@ -27,6 +27,13 @@ import {
 } from "vitest";
 
 const origin = "https://example.com";
+
+/**
+ * @param auth Auth
+ * @returns What reads sessions for `c.session()`, as `app.use(auth)` mounts it
+ */
+const reader = (auth: Auth<any, any, any, any>) =>
+	(auth[mount]({ fetch: new App().fetch } as App.Mount) as [Middleware])[0];
 const endpoint = "/_passkey/options";
 const user = "user-1";
 const id = Codec.Base64Url.encode(Uint8Array.of(1, 2, 3, 4));
@@ -292,7 +299,7 @@ function setup(extra: Partial<State.Options> = {}) {
 	const auth = new Auth(settings);
 	const app = new App();
 	// reads sessions for c.session(), as app.use(auth) does
-	app.use((auth[mount]() as [Middleware])[0]);
+	app.use(reader(auth));
 	// Internal protocol tests compose their own routes; applications use new Auth().
 	const issue = (method: "register" | "login") =>
 		Route.post(method === "register" ? endpoint : `${endpoint}/login`)
@@ -2065,14 +2072,14 @@ test("reading a session enforces Auth's origin", async () => {
 	const state = setup();
 	const app = new App();
 	app.use(
-		(state.auth[mount]() as [Middleware])[0],
+		reader(state.auth),
 		Route.get("/private").use(async (c) => c.json(await c.session())),
 	);
 	const response = await app.fetch("https://wrong.example/private");
 	expect(await response.json()).toBeNull();
 	// signing in or out there throws, Auth's cookies and passkeys are bound to its origin
 	const login = new App().use(
-		(state.auth[mount]() as [Middleware])[0],
+		reader(state.auth),
 		Route.post("/login").use(async (c) =>
 			c.json(await state.auth.login(c, "u")),
 		),
@@ -2550,7 +2557,7 @@ test("every rotation secret is validated and the configured list is snapshotted"
 	const auth = new Auth({ ...state.settings, secret: secrets });
 	secrets[0] = "replacement-secret-with-at-least-32-bytes";
 	const app = new App().use(
-		(auth[mount]() as [Middleware])[0],
+		reader(auth),
 		Route.get("/session").use(async (c) => c.json(await c.session())),
 	);
 	const login = await state.post("/session", new FormData());

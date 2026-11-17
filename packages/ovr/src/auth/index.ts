@@ -19,6 +19,12 @@ import { Token } from "./token.js";
 /** Connects an agent without the consent page, see `Auth[grant]`. Internal to ovr. */
 export const grant = Symbol("grant");
 
+/**
+ * Each app's first `Auth`, by the app's `fetch`. Internal to ovr, for what
+ * signs a user in without being given the app's auth.
+ */
+export const auths = new WeakMap<App["fetch"], Auth<any, any, any, any>>();
+
 export namespace Auth {
 	/** Authentication validation issue. */
 
@@ -362,6 +368,7 @@ export class Auth<
 			bearer: signin.bearer,
 			// the OAuth endpoints, once per app when several endpoints share them
 			mount: (app, resource) => {
+				if (!auths.has(app.fetch)) auths.set(app.fetch, this);
 				resources.add(resource);
 				if (this.#mounted.has(app.routes)) return [];
 
@@ -379,7 +386,9 @@ export class Auth<
 	}
 
 	/** Mounted by `app.use(auth)`, and lets every request read its session. */
-	[mount](): ReturnType<App.Service[typeof mount]> {
+	[mount](app: App.Mount): ReturnType<App.Service[typeof mount]> {
+		if (!auths.has(app.fetch)) auths.set(app.fetch, this);
+
 		return [
 			(c: ContextType, next: () => Promise<void>) => {
 				c[sessions] = () => this.#state(c).session();

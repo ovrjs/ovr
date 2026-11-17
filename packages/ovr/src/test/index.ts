@@ -1,5 +1,5 @@
 import { type App, agents } from "../app/index.js";
-import { type Auth, grant } from "../auth/index.js";
+import { auths, grant } from "../auth/index.js";
 import { Context } from "../context/index.js";
 import { type Field, entries, forms, sent } from "../form/index.js";
 import { endpoints, version } from "../mcp/index.js";
@@ -7,29 +7,18 @@ import type { ExtractParams, Route } from "../route/index.js";
 import { Header, Method, Mime } from "../util/index.js";
 
 export namespace Tester {
-	/** Who the tester is: signed out, or a user of the app's `auth`. */
+	/** Who the tester is */
 	export type Options = {
 		/** App to test */
 		readonly app: App;
-	} & (
-		| {
-				/** The app's `Auth`, whose origin requests are made to */
-				readonly auth?: Auth<any, any, any, any>;
 
-				/** Signed out without one */
-				readonly user?: undefined;
-		  }
-		| {
-				/** The app's `Auth`, which signs the user in */
-				readonly auth: Auth<any, any, any, any>;
-
-				/**
-				 * ID of the user to act as, who is signed in without a passkey. The
-				 * account is the test's to create first.
-				 */
-				readonly user: string;
-		  }
-	);
+		/**
+		 * ID of the user to act as, who is signed in by the app's `Auth` without
+		 * a passkey. The account is the test's to create first. Signed out
+		 * without one.
+		 */
+		readonly user?: string;
+	};
 
 	/**
 	 * Values of a route's fields by name, as its form takes them: an array of
@@ -117,7 +106,7 @@ export namespace Tester {
  * whole app.
  *
  * ```ts
- * const tester = new Tester({ app, auth, user: "user-1" });
+ * const tester = new Tester({ app, user: "user-1" });
  *
  * // as the person: the route's own request, signed in
  * const saved = await tester.fetch(create, { data: { title: "Chili" } });
@@ -131,11 +120,7 @@ export class Tester {
 	static readonly #agent = { id: "https://tester.test", name: "Tester" };
 
 	readonly #app: App;
-	readonly #auth: Auth<any, any, any, any> | undefined;
 	readonly #user: string | undefined;
-
-	/** Where requests are made to: the origin people sign in at */
-	readonly #origin: string;
 
 	/** Cookies the app set, by name */
 	readonly #cookies = new Map<string, { value: string; path: string }>();
@@ -149,9 +134,17 @@ export class Tester {
 	/** @param options Who the tester is */
 	constructor(options: Tester.Options) {
 		this.#app = options.app;
-		this.#auth = options.auth;
 		this.#user = options.user;
-		this.#origin = options.auth?.[agents].origin ?? "http://localhost";
+	}
+
+	/** The `Auth` the app uses, which signs the user in */
+	get #auth() {
+		return auths.get(this.#app.fetch);
+	}
+
+	/** Where requests are made to: the origin people sign in at */
+	get #origin() {
+		return this.#auth?.[agents].origin ?? "http://localhost";
 	}
 
 	/**
@@ -322,10 +315,17 @@ export class Tester {
 	/** Signs the user in before the first request, as their passkey would. */
 	#signIn() {
 		return (this.#signedIn ??= (async () => {
-			if (!this.#auth || this.#user === undefined) return;
+			if (this.#user === undefined) return;
+
+			const auth = this.#auth;
+			// an app's services are not part of its type
+			if (!auth)
+				throw new TypeError(
+					"The app has no Auth to sign the user in: app.use(auth) before the first request",
+				);
 
 			const c = new Context(new Request(this.#origin), {});
-			await this.#auth.login(c, this.#user);
+			await auth.login(c, this.#user);
 			this.#keep(c.res.headers);
 		})());
 	}

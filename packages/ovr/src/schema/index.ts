@@ -54,6 +54,28 @@ export const own = (
  * @param issues List to add to
  * @param more Issues to add
  */
+/**
+ * @param def Schema definition
+ * @returns What the schema checks first, under what refines or changes it:
+ * a string, a number, an array. Internal to ovr.
+ */
+export const base = (def: Schema.Def) => {
+	while ("inner" in def) def = def.inner.def;
+	return def;
+};
+
+/**
+ * @param value Number
+ * @param step Step
+ * @returns `true` when the number is a multiple of the step. A quotient such
+ * as 0.3 / 0.1 is not quite whole in binary, so nearly whole is whole.
+ * Internal to ovr.
+ */
+export const multiple = (value: number, step: number) => {
+	const steps = value / step;
+	return Math.abs(steps - Math.round(steps)) < 1e-9;
+};
+
 export const append = <I>(issues: I[], more: readonly I[]) => {
 	for (const issue of more) issues.push(issue);
 };
@@ -267,9 +289,11 @@ export namespace Schema {
 			? never
 			: N;
 
+	/** A day of the calendar, written as `YYYY-MM-DD` */
+	export type Day = `${number}-${number}-${number}`;
+
 	/** A date, or a date and time, as `min()` and `max()` take a `Date`'s */
-	export type Dated =
-		`${number}-${number}-${number}` | `${number}-${number}-${number}T${string}`;
+	export type Dated = Day | `${Day}T${string}`;
 
 	/** Validation applied to the output of another schema. */
 	export type Check =
@@ -1003,15 +1027,8 @@ export class Schema<Output>
 			}
 			case "int":
 				return Number.isSafeInteger;
-			case "step": {
-				const { value } = check;
-
-				// a quotient such as 0.3 / 0.1 is not quite whole in binary
-				return (v) => {
-					const steps = v / value;
-					return Math.abs(steps - Math.round(steps)) < 1e-9;
-				};
-			}
+			case "step":
+				return (v) => multiple(v, check.value);
 			case "email":
 				return (v) => Schema.#emailRegex.test(v);
 			case "url":
@@ -1035,10 +1052,7 @@ export class Schema<Output>
 	 * calendar does not have
 	 */
 	#dated(value: string) {
-		let def: Schema.Def = this.def;
-		while ("inner" in def) def = def.inner.def;
-
-		if (def.type === "date" && Number.isNaN(Date.parse(value)))
+		if (base(this.def).type === "date" && Number.isNaN(Date.parse(value)))
 			throw new TypeError(`"${value}" is not a date`);
 	}
 
@@ -1048,10 +1062,7 @@ export class Schema<Output>
 	 * number of characters, a number's or an array's stands alone
 	 */
 	#amount(value: number | bigint) {
-		let def: Schema.Def = this.def;
-		while ("inner" in def) def = def.inner.def;
-
-		return def.type === "string"
+		return base(this.def).type === "string"
 			? `${value} character${Number(value) === 1 ? "" : "s"}`
 			: String(value);
 	}

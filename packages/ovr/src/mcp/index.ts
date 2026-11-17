@@ -10,7 +10,7 @@ import {
 } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, parameters, schemas } from "../route/index.js";
-import { Schema } from "../schema/index.js";
+import { Schema, base } from "../schema/index.js";
 import {
 	Codec,
 	Header,
@@ -788,9 +788,7 @@ export class Mcp<P extends string = string> {
 	static #lines(field: Field.Any) {
 		if (field.tag !== "textarea") return false;
 
-		let def: Schema.Def = field.def;
-		while ("inner" in def) def = def.inner.def;
-		return def.type === "array";
+		return base(field.def).type === "array";
 	}
 
 	/**

@@ -178,16 +178,16 @@ function setup() {
 
 describe("fetch", () => {
 	test("is signed out without a user", async () => {
-		const { app, auth, whoami } = setup();
-		const res = await new Tester({ app, auth }).fetch(whoami);
+		const { app, whoami } = setup();
+		const res = await new Tester({ app }).fetch(whoami);
 
 		expect(await res.json()).toEqual({ user: null });
 	});
 
 	test("signs the user in without a passkey", async () => {
-		const { app, auth, whoami } = setup();
-		const ross = new Tester({ app, auth, user: "ross" });
-		const sam = new Tester({ app, auth, user: "sam" });
+		const { app, whoami } = setup();
+		const ross = new Tester({ app, user: "ross" });
+		const sam = new Tester({ app, user: "sam" });
 
 		expect(await (await ross.fetch(whoami)).json()).toEqual({ user: "ross" });
 		expect(await (await sam.fetch(whoami)).json()).toEqual({ user: "sam" });
@@ -196,16 +196,16 @@ describe("fetch", () => {
 	});
 
 	test("reads a page as a browser does", async () => {
-		const { app, auth, page } = setup();
-		const res = await new Tester({ app, auth }).fetch(page);
+		const { app, page } = setup();
+		const res = await new Tester({ app }).fetch(page);
 
 		expect(res.headers.get("content-type")).toContain("text/html");
 		expect(await res.text()).toContain("<h1>Hello</h1>");
 	});
 
 	test("sends a form's fields as the form does", async () => {
-		const { app, auth, create, got } = setup();
-		const ross = new Tester({ app, auth, user: "ross" });
+		const { app, create, got } = setup();
+		const ross = new Tester({ app, user: "ross" });
 		const res = await ross.fetch(create, {
 			data: {
 				title: "Chili",
@@ -230,16 +230,16 @@ describe("fetch", () => {
 	});
 
 	test("a box left clear and a field left out send nothing", async () => {
-		const { app, auth, create, got } = setup();
-		const ross = new Tester({ app, auth, user: "ross" });
+		const { app, create, got } = setup();
+		const ross = new Tester({ app, user: "ross" });
 		await ross.fetch(create, { data: { title: "Chili", vegan: false } });
 
 		expect(got.data).toEqual({ title: "Chili", vegan: false });
 	});
 
 	test("a refused submission redirects with the form's state", async () => {
-		const { app, auth, create, update } = setup();
-		const ross = new Tester({ app, auth, user: "ross" });
+		const { app, create, update } = setup();
+		const ross = new Tester({ app, user: "ross" });
 		const res = await ross.fetch(create, {
 			data: { title: "", ingredients: [{ amount: "1 lb" }] },
 			search: { _return: "/recipes/new" },
@@ -259,8 +259,8 @@ describe("fetch", () => {
 	});
 
 	test("a route's parameters and search are its URL's", async () => {
-		const { app, auth, update, file } = setup();
-		const tester = new Tester({ app, auth });
+		const { app, update, file } = setup();
+		const tester = new Tester({ app });
 		const res = await tester.fetch(update, {
 			params: { id: "7" },
 			data: { title: "Chili" },
@@ -273,8 +273,8 @@ describe("fetch", () => {
 	});
 
 	test("a GET route's fields are sent in the search", async () => {
-		const { app, auth, search } = setup();
-		const res = await new Tester({ app, auth }).fetch(search, {
+		const { app, search } = setup();
+		const res = await new Tester({ app }).fetch(search, {
 			data: { q: "chili", tags: ["a", "b"] },
 		});
 
@@ -285,8 +285,8 @@ describe("fetch", () => {
 	});
 
 	test("a form without fields is still a same-origin submission", async () => {
-		const { app, auth, remove } = setup();
-		const res = await new Tester({ app, auth, user: "ross" }).fetch(remove, {
+		const { app, remove } = setup();
+		const res = await new Tester({ app, user: "ross" }).fetch(remove, {
 			params: { id: "7" },
 		});
 
@@ -295,8 +295,8 @@ describe("fetch", () => {
 	});
 
 	test("requests a path, such as a redirect's location", async () => {
-		const { app, auth } = setup();
-		const ross = new Tester({ app, auth, user: "ross" });
+		const { app } = setup();
+		const ross = new Tester({ app, user: "ross" });
 
 		expect(await (await ross.fetch("/whoami")).json()).toEqual({
 			user: "ross",
@@ -307,8 +307,8 @@ describe("fetch", () => {
 	});
 
 	test("keeps the cookies the app sets, by path, until it deletes them", async () => {
-		const { app, auth, cookies, forget, sent, whoami } = setup();
-		const tester = new Tester({ app, auth });
+		const { app, cookies, forget, sent, whoami } = setup();
+		const tester = new Tester({ app });
 
 		await tester.fetch(cookies);
 		expect(await (await tester.fetch(sent)).json()).toEqual({
@@ -326,18 +326,21 @@ describe("fetch", () => {
 		});
 	});
 
-	test("works for an app without auth", async () => {
+	test("works for an app without auth, which has nobody to sign in", async () => {
 		const hello = Route.get("/hello").use((c) => c.text(c.url.origin));
 		const app = new App().use(hello);
 
 		expect(await (await new Tester({ app }).fetch(hello)).text()).toBe(
 			"http://localhost",
 		);
+		await expect(
+			new Tester({ app, user: "ross" }).fetch(hello),
+		).rejects.toThrow("The app has no Auth to sign the user in");
 	});
 
 	test("field names, parameters, and a user without auth are checked", () => {
-		const { app, auth, create, update, whoami } = setup();
-		const tester = new Tester({ app, auth });
+		const { app, create, update, whoami } = setup();
+		const tester = new Tester({ app });
 
 		if (false) {
 			// @ts-expect-error not one of the route's fields
@@ -346,8 +349,6 @@ describe("fetch", () => {
 			void tester.fetch(update, { data: { title: "Chili" } });
 			// @ts-expect-error the route has no fields
 			void tester.fetch(whoami, { data: { title: "Chili" } });
-			// @ts-expect-error a user needs the auth that signs them in
-			new Tester({ app, user: "ross" });
 			// @ts-expect-error not one of the tool's arguments
 			void tester.call(update, { id: "1", name: "Chili" });
 			// @ts-expect-error the tool's parameters are required
@@ -360,8 +361,8 @@ describe("fetch", () => {
 
 describe("call", () => {
 	test("calls a tool as the user's agent", async () => {
-		const { app, auth, whoami } = setup();
-		const result = await new Tester({ app, auth, user: "ross" }).call(whoami);
+		const { app, whoami } = setup();
+		const result = await new Tester({ app, user: "ross" }).call(whoami);
 
 		expect(result.isError).toBe(false);
 		expect(result.structuredContent).toEqual({ user: "ross" });
@@ -369,15 +370,15 @@ describe("call", () => {
 	});
 
 	test("reads a page as Markdown", async () => {
-		const { app, auth, page } = setup();
-		const result = await new Tester({ app, auth, user: "ross" }).call(page);
+		const { app, page } = setup();
+		const result = await new Tester({ app, user: "ross" }).call(page);
 
 		expect(result.content).toEqual([{ type: "text", text: "# Hello\n" }]);
 	});
 
 	test("sends parameters and fields as arguments", async () => {
-		const { app, auth, create, update, file, got } = setup();
-		const ross = new Tester({ app, auth, user: "ross" });
+		const { app, create, update, file, got } = setup();
+		const ross = new Tester({ app, user: "ross" });
 
 		expect(
 			(await ross.call(update, { id: "7", title: "Chili" })).structuredContent,
@@ -402,8 +403,8 @@ describe("call", () => {
 	});
 
 	test("a refused call says which field is wrong", async () => {
-		const { app, auth, update } = setup();
-		const result = await new Tester({ app, auth, user: "ross" }).call(update, {
+		const { app, update } = setup();
+		const result = await new Tester({ app, user: "ross" }).call(update, {
 			id: "7",
 			title: "",
 		});
@@ -413,8 +414,8 @@ describe("call", () => {
 	});
 
 	test("lists the agent, and disconnecting it refuses its next call", async () => {
-		const { app, auth, whoami, agents, disconnect } = setup();
-		const ross = new Tester({ app, auth, user: "ross" });
+		const { app, whoami, agents, disconnect } = setup();
+		const ross = new Tester({ app, user: "ross" });
 
 		expect(await (await ross.fetch(agents)).json()).toEqual([]);
 		await ross.call(whoami);
@@ -427,21 +428,21 @@ describe("call", () => {
 	});
 
 	test("is refused without a signed-in user", async () => {
-		const { app, auth, whoami } = setup();
+		const { app, whoami } = setup();
 
-		await expect(new Tester({ app, auth }).call(whoami)).rejects.toThrow(
+		await expect(new Tester({ app }).call(whoami)).rejects.toThrow(
 			"Unauthorized",
 		);
 	});
 
 	test("needs a described route and an endpoint", async () => {
-		const { app, auth, remove } = setup();
+		const { app, remove } = setup();
 		const hello = Route.get("/hello")
 			.describe("Say hello")
 			.use((c) => c.text("hello"));
 
 		await expect(
-			new Tester({ app, auth, user: "ross" }).call(remove, { id: "7" }),
+			new Tester({ app, user: "ross" }).call(remove, { id: "7" }),
 		).rejects.toThrow("has no tool");
 		await expect(
 			new Tester({ app: new App().use(hello) }).call(hello),
@@ -471,8 +472,8 @@ describe("route.state", () => {
 	});
 
 	test("holds the issues and the values kept", async () => {
-		const { app, auth, create } = setup();
-		const res = await new Tester({ app, auth, user: "ross" }).fetch(create, {
+		const { app, create } = setup();
+		const res = await new Tester({ app, user: "ross" }).fetch(create, {
 			data: { title: "Chili", servings: "many" },
 		});
 		const state = create.state(new URL(res.headers.get("location")!, origin));

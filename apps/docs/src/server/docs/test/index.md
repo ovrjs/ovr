@@ -10,13 +10,13 @@ description: Test an app as a signed-in person and as their agent, without a bro
 It is imported from `ovr/test`, apart from `ovr`, so it stays out of the app.
 
 ```ts
-import { app, auth } from "./app";
+import { app } from "./app";
 import { Tester } from "ovr/test";
 
-const ross = new Tester({ app, auth, user: "user-1" });
+const ross = new Tester({ app, user: "user-1" });
 ```
 
-`user` is the ID of an account the test created. The tester is signed in as that user without a passkey. Leave `user` out for a visitor who is signed out, and leave `auth` out too for an app that has none.
+`user` is the ID of an account the test created. The app's [`Auth`](/auth) signs the tester in as that user, without a passkey. Leave `user` out for a visitor who is signed out.
 
 Use any test runner. These examples use Node's.
 

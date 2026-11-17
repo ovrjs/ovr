@@ -6,6 +6,7 @@ import {
 	annotate,
 	append,
 	exact,
+	multiple,
 	normalizers,
 	own,
 } from "../schema/index.js";
@@ -874,8 +875,7 @@ class FieldSchema<
 				// more than one step, is left to the server
 				attributes.step =
 					steps.length === 1 &&
-					(typeof from !== "number" ||
-						Math.abs(from / step - Math.round(from / step)) < 1e-9)
+					(typeof from !== "number" || multiple(from, step))
 						? step
 						: "any";
 			// a number input takes whole numbers unless it is told otherwise
@@ -914,7 +914,13 @@ class FieldSchema<
 			.join(", ");
 		// a picker's bounds, which JSON Schema has no keyword for
 		const { min, max } = format ? this.#constrain() : {};
-		const accepted = this.#config.accept;
+		// as `accept()` wrote them for the picker
+		const accepted =
+			this.type === "file"
+				? (
+						this.#config.props as { accept?: string } | undefined
+					)?.accept?.split(",")
+				: undefined;
 		const described = Prose.join(
 			description,
 			format,
@@ -1213,12 +1219,11 @@ class FieldSchema<
 			message ?? `Expected a file of type ${FieldSchema.#any(accepted)}`,
 		) as FieldSchema<any, any, any, any, any, any>;
 
-		return refined.#copy({
-			config: {
-				...refined.#config,
-				accept: accepted,
-				props: { ...refined.#config.props, accept: accepted.join(",") },
-			},
+		return refined.#with({
+			props: {
+				...refined.#config.props,
+				accept: accepted.join(","),
+			} as Field.Props,
 		});
 	}
 
@@ -2075,8 +2080,8 @@ export namespace Field {
 	 * the earliest and latest one.
 	 */
 	export type Picked = {
-		date: `${number}-${number}-${number}`;
-		"datetime-local": `${number}-${number}-${number}T${number}:${number}`;
+		date: Schema.Day;
+		"datetime-local": `${Schema.Day}T${number}:${number}`;
 		month: `${number}-${number}`;
 		week: `${number}-W${number}`;
 		time: `${number}:${number}`;
@@ -2264,9 +2269,6 @@ export namespace Field {
 
 		/** What registration says when a user already has the value, set with `taken()` */
 		readonly taken?: string;
-
-		/** Media types a file field takes, set with `accept()` */
-		readonly accept?: readonly string[];
 
 		/** What each item of a list is */
 		readonly item?: Item;
