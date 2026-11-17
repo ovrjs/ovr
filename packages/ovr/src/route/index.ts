@@ -244,6 +244,44 @@ export namespace Route {
 	};
 
 	/**
+	 * What a route with fields adds beside its `Form`: a way to ask, outside
+	 * of the form, whether a submission to it was refused.
+	 *
+	 * @template Pattern Route pattern
+	 * @template Shape Form field shape
+	 */
+	type WithIssues<Pattern extends string, Shape extends Field.Shape> = [
+		Field.Shape,
+	] extends [Shape]
+		? {}
+		: {
+				/**
+				 * What was wrong with a refused submission to the route's form,
+				 * for the page around the form to act on, such as to open the
+				 * `<details>` it is in. The form shows the refusal itself.
+				 *
+				 * ```tsx
+				 * const refused = await create.issues(c);
+				 *
+				 * <details open={Boolean(refused)}>
+				 * 	<create.Form />
+				 * </details>
+				 * ```
+				 *
+				 * @param c Request context of the page the form is on
+				 * @param params The pattern's parameters, when it has any, as
+				 * the form is given them
+				 * @returns The issues, `undefined` when nothing was refused
+				 */
+				readonly issues: (
+					c: View,
+					...params: keyof ExtractParams<Pattern> extends never
+						? []
+						: [params: Route.URLOptions<ExtractParams<Pattern>>["params"]]
+				) => Promise<ValueSchema.Issue.List | undefined>;
+			};
+
+	/**
 	 * GET route type with route components and optional schema helpers.
 	 *
 	 * @template Pattern Route pattern
@@ -257,7 +295,8 @@ export namespace Route {
 	> = Route<Pattern, Params, Shape, "get"> &
 		WithAnchor<Pattern> &
 		WithButton<Pattern> &
-		WithForm<Pattern, Shape>;
+		WithForm<Pattern, Shape> &
+		WithIssues<Pattern, Shape>;
 
 	/**
 	 * POST route type with route components and optional schema helpers.
@@ -272,7 +311,8 @@ export namespace Route {
 		Shape extends Field.Shape = any,
 	> = Route<Pattern, Params, Shape, "post"> &
 		WithButton<Pattern> &
-		WithForm<Pattern, Shape>;
+		WithForm<Pattern, Shape> &
+		WithIssues<Pattern, Shape>;
 
 	/** Options of `describe`, for a route that writes */
 	export type Describe = {
@@ -704,7 +744,18 @@ export class Route<
 				: { url: c.url };
 		};
 
+		/**
+		 * @param params The pattern's parameters
+		 * @returns The form's address, to show only what was sent to it
+		 */
+		const to = (params: unknown) =>
+			address.of(
+				new URL(this.url({ params } as never), "http://localhost").pathname,
+			);
+
 		return Object.assign(this, {
+			issues: async (c: View, params?: unknown) =>
+				(await form.read(c, source, to(params)))?.issues,
 			// its `Form` has its fields now, and what the request holds for them
 			Form: async (
 				{
@@ -716,16 +767,9 @@ export class Route<
 				},
 				c?: View,
 			) => {
-				// the form's address, to show only what was sent to it
-				const to = address.of(
-					new URL(
-						this.url({ params: props.params } as never),
-						"http://localhost",
-					).pathname,
-				);
 				const parts = form.bind(
 					values,
-					c && (await form.read(c, source, to, values)),
+					c && (await form.read(c, source, to(props.params), values)),
 				);
 
 				return Route.#form(

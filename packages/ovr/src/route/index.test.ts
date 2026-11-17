@@ -938,6 +938,39 @@ describe("a refused submission", () => {
 		]);
 	});
 
+	test("is read outside its form, by the page around it", async () => {
+		const page = Route.get("/fold").use(async (c) =>
+			c.json({
+				one: (await rename.issues(c, { id: "1" }))?.map((i) => i.message),
+				two: (await rename.issues(c, { id: "2" }))?.map((i) => i.message),
+			}),
+		);
+		const app = new App().use(rename, page);
+		const body = new FormData();
+		body.set("name", "x");
+		const refused = await app.fetch(
+			new Request("http://localhost/items/2/rename?_return=%2Ffold", {
+				method: "POST",
+				body,
+				headers: { origin: "http://localhost" },
+			}),
+		);
+		const location = new URL(
+			refused.headers.get("location")!,
+			"http://localhost",
+		);
+		const cookie = refused.headers.getSetCookie()[0]!.split(";", 1)[0]!;
+
+		expect(
+			await (await app.fetch(location, { headers: { cookie } })).json(),
+		).toEqual({ two: [expect.stringContaining("3")] });
+		// nothing was refused for a page opened without it
+		expect(await (await app.fetch("http://localhost/fold")).json()).toEqual({});
+
+		// @ts-expect-error the pattern has a parameter
+		void ((c: Context) => rename.issues(c));
+	});
+
 	test("of a hidden field shows its issue, and marks no control", async () => {
 		const pick = Route.post("/pick")
 			.fields({ recipe: Field.hidden().min(3, "Choose a recipe") })

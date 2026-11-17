@@ -411,19 +411,18 @@ It is kept in a cookie, compressed, for an hour. Only the page the form is on is
 
 A cookie holds about 4 KB, which is a long form once it is compressed: a recipe of 100 ingredients, its steps, and its notes. When there is more, values are left out, from the form's last field back, until it fits. The issues are kept, so the person sees what was wrong, but not what they typed in the fields left out. A list shows no more rows than its `max()`, and a row's hidden value, such as its ID, is the page's to give.
 
-The form's parts have its `issues`, to act on a refused submission, such as opening the `<details>` its fields are in:
+The form shows a refusal itself. For the page around it, `route.issues(c)` says whether a submission was refused, such as to open the `<details>` the form is in:
 
 ```tsx
-<create.Form>
-	{(form) => (
-		<details open={Boolean(form.issues)}>
-			<summary>Add a recipe</summary>
-			<form.Fields />
-			<button>Add</button>
-		</details>
-	)}
-</create.Form>
+const refused = await create.issues(c);
+
+<details open={Boolean(refused)}>
+	<summary>Add a recipe</summary>
+	<create.Form />
+</details>;
 ```
+
+A route with parameters takes them as its form does: `update.issues(c, { id })`.
 
 ## GET forms
 
