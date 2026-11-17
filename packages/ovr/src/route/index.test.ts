@@ -192,14 +192,19 @@ describe("Route schema helpers", () => {
 		expect(typeof form.form).toBe("function");
 	});
 
-	test("a route's bound Form defaults to its fields and a submit button", async () => {
+	test("a route's Form defaults to its fields and a submit button, bound or not", async () => {
 		const profile = Route.get("/profile")
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
 
-		const html = await new Render({
-			markup: (await profile.form(page("/profile"))).Form({}),
-		}).string();
+		const html = await new Render({ markup: profile.Form({}) }).string();
+
+		// the same as the form for a request that holds nothing for it
+		expect(
+			await new Render({
+				markup: (await profile.form(page("/profile"))).Form({}),
+			}).string(),
+		).toBe(html);
 
 		expect(html.includes('action="/profile"')).toBe(true);
 		expect(html.includes('method="GET"')).toBe(true);
@@ -710,6 +715,30 @@ describe("editing records", () => {
 		expect(html).toContain("<button>Save changes</button>");
 		expect(html).toContain("<button>Submit</button>");
 		expect(html).not.toContain("submit=");
+	});
+
+	test("a route's own Form shows nothing of a request, where its bound form does", async () => {
+		const signup = Route.post("/signup")
+			.fields({ email: Field.email() })
+			.use((c) => c.text("ok"));
+		const body = new FormData();
+		body.set("email", "not an email");
+		const refused = await forms.get(signup)!.parse(body);
+		if (!refused.issues) throw new Error("Expected issues");
+		const request = page("/signup", refused.state);
+
+		const plain = await new Render({ markup: signup.Form({}) }).string();
+		expect(plain).toContain('name="email"');
+		expect(plain).toContain('action="/signup"');
+		expect(plain).not.toContain("not an email");
+		expect(plain).not.toContain("aria-invalid");
+
+		const bound = await new Render({
+			markup: (await signup.form(request)).Form({}),
+		}).string();
+		expect(bound).toContain('value="not an email"');
+		expect(bound).toContain('aria-invalid="true"');
+		expect(bound).toContain('action="/signup?_return=%2Fsignup"');
 	});
 
 	test("a Form without fields is still a button to submit, unless given children", async () => {

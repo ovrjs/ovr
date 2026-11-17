@@ -49,17 +49,13 @@ const outputs = (async () => {
 
 	const list = o.Route.get("/todos")
 		.describe("List the todos")
-		.use(async (c) => {
-			const todo = await add.form(c);
-
-			return (
-				<main>
-					<h1>Todos</h1>
-					<Todos />
-					<todo.Form submit="Add" />
-				</main>
-			);
-		});
+		.use(() => (
+			<main>
+				<h1>Todos</h1>
+				<Todos />
+				<add.Form submit="Add" />
+			</main>
+		));
 
 	async function Todos() {
 		const todos = await db.todos();
@@ -359,8 +355,8 @@ export const Story = async () => {
 				<div>
 					<Step
 						n={1}
-						lines={[[1, 28]]}
-						snippet={[[1, 28]]}
+						lines={[[1, 24]]}
+						snippet={[[1, 24]]}
 						caption="person and agent · GET /todos"
 						title="One route, two requests"
 						figure={<Stream html={html} md={md} await={waits} />}
@@ -375,10 +371,10 @@ export const Story = async () => {
 					<Step
 						n={2}
 						lines={[
-							[21, 24],
-							[30, 35],
+							[17, 20],
+							[26, 31],
 						]}
-						snippet={[[30, 35]]}
+						snippet={[[26, 31]]}
 						caption="person · text/html · POST /todos/1/done"
 						title="People see it and click Done"
 						figure={<Browser click />}
@@ -394,7 +390,7 @@ export const Story = async () => {
 						n={3}
 						lines={[
 							[2, 2],
-							[31, 31],
+							[27, 27],
 						]}
 						caption="agent · text/markdown · POST /mcp"
 						title="Agents read it and call a tool"

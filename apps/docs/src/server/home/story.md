@@ -7,17 +7,13 @@ description: The todo routes the home page story walks through.
 ```tsx
 const list = Route.get("/todos")
 	.describe("List the todos")
-	.use(async (c) => {
-		const todo = await add.form(c);
-
-		return (
-			<main>
-				<h1>Todos</h1>
-				<Todos />
-				<todo.Form submit="Add" />
-			</main>
-		);
-	});
+	.use(() => (
+		<main>
+			<h1>Todos</h1>
+			<Todos />
+			<add.Form submit="Add" />
+		</main>
+	));
 
 async function Todos() {
 	const todos = await db.todos();

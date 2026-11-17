@@ -10,17 +10,13 @@ Most apps are built twice: a website for people, then an API or MCP server for a
 ```tsx
 const list = Route.get("/todos")
 	.describe("List the todos")
-	.use(async (c) => {
-		const todo = await add.form(c);
-
-		return (
-			<main>
-				<h1>Todos</h1>
-				<Todos />
-				<todo.Form submit="Add" />
-			</main>
-		);
-	});
+	.use(() => (
+		<main>
+			<h1>Todos</h1>
+			<Todos />
+			<add.Form submit="Add" />
+		</main>
+	));
 
 async function Todos() {
 	const todos = await db.todos();
@@ -69,7 +65,7 @@ const add = Route.post("/todos")
 	</li>
 </ul>
 <form
-	action="/todos?_return=%2Ftodos"
+	action="/todos"
 	method="POST"
 	enctype="multipart/form-data"
 	toolname="post_todos"
@@ -97,7 +93,7 @@ The form also names its tool for [WebMCP](/agents#webmcp), so an agent in the br
 
   Submit: Done
 
-**Form:** `POST https://example.com/todos?_return=%2Ftodos` as `multipart/form-data`
+**Form:** `POST https://example.com/todos` as `multipart/form-data`
 
 - Todo `text` (text, required)
 

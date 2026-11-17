@@ -190,7 +190,12 @@ export namespace Route {
 	 * @template Pattern Route pattern
 	 */
 	type WithForm<Pattern extends string = string> = {
-		/** `<form>` component with preset `method` and `action` attributes */
+		/**
+		 * `<form>` that submits to the route, with its fields, if it has any,
+		 * and a submit button, unless it is given children. It is the form
+		 * before any request: `route.form(c)` is the one that shows what a
+		 * refused submission sent.
+		 */
 		readonly Form: Route.Form<Pattern>;
 	};
 
@@ -824,7 +829,18 @@ export class Route<
 					formenctype: enctype,
 					...rest,
 				})) as Route.Button<Pattern>,
-			Form: ((props) => Route.#form(route, props)) as Route.Form<Pattern>,
+			Form: ((props) =>
+				Route.#form(
+					route,
+					props,
+					undefined,
+					// its fields as they are before any request: the form for a
+					// request, with what was refused, is `route.form(c)`
+					forms
+						.get(route)
+						?.bind()
+						.then((bound) => bound.Fields()),
+				)) as Route.Form<Pattern>,
 		});
 	}
 
@@ -833,7 +849,7 @@ export class Route<
 	 * @param route Route the form submits to
 	 * @param props The form's props
 	 * @param page The page the form is on, where a refused submission returns
-	 * @param fields The route's fields, a form of its own has none
+	 * @param fields The route's fields, if it has any
 	 * @returns The `<form>`, with a submit button unless it is given children
 	 */
 	static #form<Pattern extends string>(

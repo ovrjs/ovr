@@ -119,7 +119,9 @@ A description written to be complete for an agent can be more than a person need
 
 ---
 
-The form returns a refused submission to the page it is on: its action carries the page's address in a same-origin `_return` query param. A route's own `Form`, such as `<remove.Form params={{ id }} />`, is a plain form with a submit button, for a route without fields or a form you fill with your own inputs.
+The form returns a refused submission to the page it is on: its action carries the page's address in a same-origin `_return` query param.
+
+A route's own `Form` is the shortest form: `<signup.Form />` renders the fields and the button without the `const`. It is the same for every request, so it shows nothing a refused submission sent. Use it where the browser's own checks are enough, and `signup.form(c)` where a person should see what the server refused.
 
 > To share fields between routes, reuse the shape object, such as `.fields({ ...shape, note: Field.textarea() })`.
 
