@@ -393,7 +393,7 @@ ovr stores issue metadata and any values marked with `.persist()` in the `_form`
 - set `aria-invalid` and `aria-describedby`
 - autofocus the first invalid field
 
-The state is kept small, since it is in a URL. A value over 512 characters is not kept. Each value of a field with many, such as a line of `lines()`, has that limit of its own. A list's items have no limit of their own, but a list shows no more rows from a URL than its `max()`, and never a row's hidden value. The whole state is at most 4 KB before it is encoded. When it is larger, values are left out, from the form's last field back, until it fits. The issues are kept unless they alone are over 4 KB, so the person sees what was wrong, but not what they typed in the fields left out. Keep a long form's values another way, such as by saving a draft.
+The state is compressed, since it is in a URL, and is at most 5 KB there. That holds a long form: a recipe of 50 ingredients, its steps, and its notes. A list shows no more rows from a URL than its `max()`, and never a row's hidden value. When the state is larger, values are left out, from the form's last field back, until it fits. The issues are kept unless they alone are too long, so the person sees what was wrong, but not what they typed in the fields left out. Text that does not compress, or a form of many long fields, can still be too much: keep those values another way, such as by saving a draft.
 
 `route.state(url)` reads the state a URL holds for the route's form: its `issues`, and the `values` kept. It is `undefined` when the URL holds none of the form's own. Use it to act on a refused submission outside the form's components, such as opening the `<details>` the form is in:
 

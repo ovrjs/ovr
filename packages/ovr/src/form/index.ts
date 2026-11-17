@@ -11,6 +11,7 @@ import {
 	own,
 } from "../schema/index.js";
 import { Checksum, Codec, Prose, Size, type Util } from "../util/index.js";
+import { pack, unpack } from "./pack.js";
 
 /** Internal protocol for a GET route, to make the form its fields render. */
 export const query = Symbol("query");
@@ -29,11 +30,17 @@ const render = Symbol("render");
 export const forms = new WeakMap<object, Form<any>>();
 
 /**
- * Maximum encoded state size in bytes. Outside the class, since a static that
- * reads another module is a side effect, which keeps `Form` in bundles that
- * only use `Field`.
+ * Most characters of a form's state in a URL, once it is compressed. Outside
+ * the class, since a static that reads another module is a side effect, which
+ * keeps `Form` in bundles that only use `Field`.
  */
-const maxStateBytes = 4 * Size.kb;
+const maxStateChars = 5 * Size.kb;
+
+/**
+ * Most characters of state before it is compressed: text is about a third of
+ * its length compressed, so more than this could never fit, and is not tried.
+ */
+const maxStateText = maxStateChars * 6;
 
 /**
  * Form schema with JSX rendering capabilities.
@@ -46,9 +53,6 @@ const maxStateBytes = 4 * Size.kb;
 export class Form<Shape extends Field.Shape = Field.Shape> {
 	/** Query param keys ordered as `[return, form]`. */
 	static readonly params = ["_return", "_form"] as const;
-
-	/** Maximum serialized size for a single persisted value. */
-	static readonly #maxValueChars = 512;
 
 	/** Schema used to validate persisted form values, see `#value`. */
 	static #valueSchema?: Schema<Field.Value.Cell>;
@@ -221,12 +225,8 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 
 					if (
 						!result.issues &&
-						(!limit ||
-							// each of many values, such as a line, has the limit:
-							// the state's own holds them all
-							(Array.isArray(result.data) ? result.data : [result.data]).every(
-								(one) => JSON.stringify(one).length <= Form.#maxValueChars,
-							))
+						// a value that could not fit the state alone is not kept
+						(!limit || JSON.stringify(result.data).length <= maxStateText)
 					) {
 						own(sanitized, name, result.data);
 					}
@@ -344,7 +344,12 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 			);
 			const encoded = searchParams.get(Form.params[1]);
 
-			if (encoded && encoded.length <= maxStateBytes * 2) {
+			const state =
+				encoded && encoded.length <= maxStateChars
+					? unpack(encoded, maxStateText * 3)
+					: undefined;
+
+			if (state) {
 				try {
 					const result = Schema.string()
 						.json(
@@ -382,7 +387,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 								).optional(),
 							}),
 						)
-						.parse(Codec.decode(Codec.Base64Url.decode(encoded)));
+						.parse(Codec.decode(state));
 
 					// valid only for this form, its id is a literal
 					if (!result.issues) {
@@ -415,19 +420,20 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 
 		// encode everything first, then trim persisted values until the state fits
 		for (let i = this.names.length; ; i--) {
-			const state = Codec.encode(
-				JSON.stringify({
-					issues: result.issues,
-					id: this.#id,
-					// issues only when nothing is persisted
-					...(persisted && Object.keys(persisted).length
-						? { values: persisted }
-						: {}),
-				} satisfies Field.State),
-			);
+			const text = JSON.stringify({
+				issues: result.issues,
+				id: this.#id,
+				// issues only when nothing is persisted
+				...(persisted && Object.keys(persisted).length
+					? { values: persisted }
+					: {}),
+			} satisfies Field.State);
+			// only what could fit is compressed
+			const state =
+				text.length <= maxStateText ? pack(Codec.encode(text)) : undefined;
 
-			if (state.byteLength <= maxStateBytes) {
-				search = [[Form.params[1], Codec.Base64Url.encode(state)]];
+			if (state !== undefined && state.length <= maxStateChars) {
+				search = [[Form.params[1], state]];
 				break;
 			}
 

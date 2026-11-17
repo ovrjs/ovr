@@ -4,6 +4,7 @@ import { Render } from "../render/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec } from "../util/index.js";
 import { Field, Form, query, taken } from "./index.js";
+import { pack, unpack } from "./pack.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
 type FormValid<S extends Field.Shape> = Extract<
@@ -15,6 +16,20 @@ type FormInvalid<S extends Field.Shape> = Exclude<
 	Field.Parse.Result<S>,
 	FormValid<S>
 >;
+
+/**
+ * @param length Number of characters
+ * @returns Text that does not compress, the same each run
+ */
+const noise = (length: number) => {
+	let seed = 1;
+	let text = "";
+	while (text.length < length) {
+		seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+		text += (seed % 36).toString(36);
+	}
+	return text;
+};
 
 const valid = <T>(result: Schema.Parse.Result<T>): T => {
 	if ("issues" in result) throw new Error("Expected no issues");
@@ -37,7 +52,7 @@ const decodeState = <S extends Field.Shape>(
 	if (!search) throw new Error("Expected _form search state");
 
 	return JSON.parse(
-		Codec.decode(Codec.Base64Url.decode(search[0][1])),
+		Codec.decode(unpack(search[0][1], 1 << 20)!),
 	) as Field.State<S>;
 };
 
@@ -499,14 +514,14 @@ describe("Form schema", () => {
 	});
 
 	test("oversize persisted values fall back to issues-only _form state", async () => {
-		const notes = `notes-${"a".repeat(5000)}`;
 		const form = new Form({
-			[notes]: Field.text().persist(),
+			notes: Field.textarea().persist(),
 			role: Field.radio(["reader", "admin"]),
 		});
 		const data = new FormData();
 
-		data.set(notes, "kept");
+		// text that does not compress, more than the state holds
+		data.set("notes", noise(12_000));
 		data.set("role", "owner");
 
 		const result = formInvalid(await form.parse(data));
@@ -537,10 +552,7 @@ describe("Form schema", () => {
 		};
 		const url = new URL("https://example.com/form");
 
-		url.searchParams.set(
-			"_form",
-			Codec.Base64Url.encode(Codec.encode(JSON.stringify(tampered))),
-		);
+		url.searchParams.set("_form", pack(Codec.encode(JSON.stringify(tampered))));
 
 		const html = await new Render({
 			markup: form.Field({ name: "name", state: url }),
@@ -908,7 +920,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set(
 			"_form",
-			Codec.Base64Url.encode(
+			pack(
 				Codec.encode(
 					JSON.stringify({
 						...decodeState(result.search),
@@ -978,9 +990,7 @@ describe("Form schema", () => {
 
 		url.searchParams.set(
 			"_form",
-			Codec.Base64Url.encode(
-				Codec.encode(JSON.stringify({ ...state, issues: [{}] })),
-			),
+			pack(Codec.encode(JSON.stringify({ ...state, issues: [{}] }))),
 		);
 
 		const html = await new Render({
@@ -1543,30 +1553,38 @@ test("what is passed to a group is its fieldset's, and each box has what control
 	);
 });
 
-test("each line of a long text is kept, where one long value is not", async () => {
+test("a long form is kept compressed, and what cannot fit is left out from the last field back", async () => {
 	const form = new Form({
 		title: Field.text(),
 		steps: Field.textarea().lines().persist(),
 		note: Field.textarea().optional().persist(),
 	});
-	const steps = Array.from({ length: 8 }, (_, i) => `${i} ${"x".repeat(260)}`);
+	const steps = Array.from(
+		{ length: 12 },
+		(_, i) => `Step ${i}: brown the turkey in the pot, then stir in the beans.`,
+	);
+	const note =
+		"Grandma made this every fall. It is better the next day, and it freezes well. ".repeat(
+			40,
+		);
+	const parse = async (values: Record<string, string>) =>
+		formInvalid(await form.parse(new URLSearchParams(values))).search;
 
-	const state = decodeState<typeof form.shape>(
-		formInvalid(
-			await form.parse(
-				new URLSearchParams({ steps: steps.join("\n"), note: "y".repeat(600) }),
-			),
-		).search,
-	);
-	expect(state.values).toEqual({ steps });
+	// more than 3,000 characters, where a value once had 512 and the state 4 KB
+	const kept = await parse({ steps: steps.join("\n"), note });
+	expect(decodeState<typeof form.shape>(kept).values).toEqual({ steps, note });
+	expect(kept![0][1].length).toBeLessThan(5 * 1024);
+	expect(kept![0][1]).toMatch(/^[\w-]+$/);
 
-	// a line over the limit is not kept, nor the lines with it
-	const long = formInvalid(
-		await form.parse(new URLSearchParams({ steps: `ok\n${"z".repeat(600)}` })),
-	);
-	expect(decodeState<typeof form.shape>(long.search).values).not.toHaveProperty(
-		"steps",
-	);
+	// text that does not compress is left out, and the fields before it stay
+	const cut = await parse({ steps: steps.join("\n"), note: noise(8_000) });
+	expect(decodeState<typeof form.shape>(cut).values).toEqual({ steps });
+
+	// a value that could never fit is not compressed to find that out
+	const huge = await parse({ steps: "ok", note: "y".repeat(200_000) });
+	expect(decodeState<typeof form.shape>(huge).values).toEqual({
+		steps: ["ok"],
+	});
 });
 
 test("a picker's value is checked, since an agent sends what it likes", async () => {
@@ -2245,7 +2263,7 @@ describe("a list", () => {
 		expect(result.issues[0]?.message).toBe("At most 3");
 
 		// anyone can write the state in a URL
-		const forged = Codec.Base64Url.encode(
+		const forged = pack(
 			Codec.encode(
 				JSON.stringify({
 					id: decodeState<typeof wide.shape>(result.search).id,
