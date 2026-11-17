@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.73
+
+### Patch Changes
+
+- 31a36b0: The multipart parser uses its own boundary search again on every runtime. The last release used Node's `Buffer.prototype.indexOf` on Node only, which made the parser behave differently by runtime.
+
 ## 7.0.0-next.72
 
 ### Patch Changes
