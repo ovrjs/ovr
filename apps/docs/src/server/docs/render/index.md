@@ -128,6 +128,8 @@ Functions like `userOf` are the app's data layer: define each once, in a module 
 
 Results are kept by the function and its arguments, compared as `===` does. Define the function once, outside of the component, and give it IDs and other plain values: a function or an object made for the call never matches an earlier one. A promise is shared as it is, so components that render at the same time wait for one read.
 
+Call it with the same arguments everywhere, written out. `userOf(id)` and `userOf(id, null)` are two reads, even when the second parameter defaults to `null`.
+
 ## Generator components
 
 Components can also be generator functions for more fine grained control and [memory optimization](/demo/memory). When utilizing generators `yield` values instead of returning them.

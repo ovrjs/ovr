@@ -5054,7 +5054,7 @@ describe("a guarded route", () => {
 
 		expect(response.status).toBe(303);
 		expect(response.headers.get("location")).toBe(
-			"/enter?_return=%2Fbook%2Fdinner%3Fpage%3D2",
+			`${origin}/enter?_return=%2Fbook%2Fdinner%3Fpage%3D2`,
 		);
 	});
 
@@ -5070,8 +5070,10 @@ describe("a guarded route", () => {
 
 		expect(
 			(await send("/book?_return=%2Fbook%2Fdinner")).headers.get("location"),
-		).toBe("/enter?_return=%2Fbook%2Fdinner");
+		).toBe(`${origin}/enter?_return=%2Fbook%2Fdinner`);
 		// a form that names no page
-		expect((await send("/book")).headers.get("location")).toBe("/enter");
+		expect((await send("/book")).headers.get("location")).toBe(
+			`${origin}/enter`,
+		);
 	});
 });

@@ -1025,6 +1025,15 @@ describe("chained routes", () => {
 		).toContain('toolname="delete_post" tooldescription="Delete this post"');
 	});
 
+	test("describe takes its options on a route that writes", () => {
+		Route.post("/posts").describe("Create a post", { destructive: false });
+		new Route("POST", "/posts").describe("Create a post", {
+			destructive: false,
+		});
+		// @ts-expect-error a route that reads is never destructive
+		Route.get("/posts").describe("List the posts", { destructive: false });
+	});
+
 	test("url is typed by the path it builds", () => {
 		const page = Route.get("/hello/:name");
 		const home = Route.get("/");

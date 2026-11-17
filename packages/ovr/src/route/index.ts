@@ -274,6 +274,15 @@ export namespace Route {
 		WithButton<Pattern> &
 		WithForm<Pattern, Shape>;
 
+	/** Options of `describe`, for a route that writes */
+	export type Describe = {
+		/**
+		 * `false` for a route that only adds, such as a new record, and never
+		 * changes or deletes what is there
+		 */
+		readonly destructive?: boolean;
+	};
+
 	/** Components a route has: GET routes add an `<Anchor>` */
 	export type Kind = "get" | "post" | "plain";
 
@@ -629,11 +638,16 @@ export class Route<
 				["wildcard" | "*"] extends [keyof ExtractParams<Pattern>]
 				? "Rename :wildcard, a tool's * argument is named wildcard"
 				: D,
-		options: { readonly destructive?: boolean } = {},
+		// a route that reads is never destructive, so a GET route takes none
+		...[options]: 0 extends 1 & Kind
+			? [options?: Route.Describe]
+			: Kind extends "get"
+				? []
+				: [options?: Route.Describe]
 	) {
 		this.#configure("describe");
 		this.#description = description;
-		this.#destructive = options.destructive ?? true;
+		this.#destructive = options?.destructive ?? true;
 		return this;
 	}
 

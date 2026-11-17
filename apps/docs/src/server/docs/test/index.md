@@ -134,3 +134,20 @@ const pool: Database.Pool = {
 ```
 
 Create the database with this pool when the app is tested, apply its [migrations](/database#migrate), and insert the accounts the testers act as.
+
+## An app Vite builds
+
+An app built with Vite, such as one made with [domco](https://domco.robino.dev), imports modules only Vite can load, so load the app through Vite in the test:
+
+```ts
+import { createServer } from "vite";
+
+const vite = await createServer({ server: { middlewareMode: true } });
+const { default: app } = await vite.ssrLoadModule("/server/+app.tsx");
+
+// ... new Tester({ app, user })
+
+await vite.close();
+```
+
+To give it the test's database, point the module that makes the pool at one of your own with [`resolve.alias`](https://vite.dev/config/shared-options#resolve-alias) in that config.

@@ -516,12 +516,11 @@ export class Auth<
 				? c.url.pathname + c.url.search
 				: c.url.searchParams.get(param);
 
-			return c.redirect(
-				back
-					? `${this.#page}?${param}=${encodeURIComponent(back)}`
-					: this.#page,
-				303,
-			);
+			// an absolute address, as a refused form's redirect is
+			const page = new URL(this.#page, c.url);
+			if (back) page.searchParams.set(param, back);
+
+			return c.redirect(page, 303);
 		};
 
 	/** Revoke the current session and expire its cookie. Always await this method. */
