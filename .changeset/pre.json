@@ -62,6 +62,7 @@
     "render-class",
     "render-options",
     "render",
+    "review-cleanup",
     "review-fixes",
     "script-types",
     "session-no-store",
