@@ -1149,6 +1149,38 @@ describe("chained routes", () => {
 		).toContain('toolname="delete_post" tooldescription="Delete this post"');
 	});
 
+	test("a description names another route's tool, whichever is written first", () => {
+		const publish = Route.post("/posts/:id/publish").describe(
+			(tool) => `Publish a post. To undo it, call ${tool(unpublish)}.`,
+		);
+		const unpublish = Route.post("/posts/:id/unpublish").describe(
+			(tool) =>
+				`Stop publishing a post. To publish again, call ${tool(publish)}.`,
+		);
+		const draft = Route.post("/posts/:id/draft");
+
+		new App().use(publish, unpublish);
+
+		expect(publish.tool).toMatchObject({
+			name: "post_posts_id_publish",
+			title: "Publish a post",
+			description: "Publish a post. To undo it, call post_posts_id_unpublish.",
+		});
+		expect(unpublish.description).toBe(
+			"Stop publishing a post. To publish again, call post_posts_id_publish.",
+		);
+
+		// found as the app starts: a route with no tool to name, and no description
+		expect(() =>
+			new App().use(Route.post("/a").describe((tool) => `See ${tool(draft)}`)),
+		).toThrow(
+			"Describe POST /posts/:id/draft to name its tool in the description of POST /a",
+		);
+		expect(() => new App().use(Route.post("/b").describe(() => " "))).toThrow(
+			"The description of POST /b is blank",
+		);
+	});
+
 	test("describe takes its options on a route that writes", () => {
 		Route.post("/posts").describe("Create a post", { destructive: false });
 		new Route("POST", "/posts").describe("Create a post", {

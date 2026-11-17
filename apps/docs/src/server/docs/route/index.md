@@ -209,6 +209,18 @@ Route.post("/posts").describe("Create a post", { destructive: false });
 
 A route that edits a record overwrites what was there, so leave it as it is.
 
+To name another route's tool in a description, give `describe` a function. It is called once every route exists, so two routes can name each other, and a route with no tool to name is an error as the app starts:
+
+```ts
+const publish = Route.post("/posts/:id/publish").describe(
+	(tool) => `Publish a post. To undo it, call ${tool(unpublish)}.`,
+);
+
+const unpublish = Route.post("/posts/:id/unpublish").describe(
+	(tool) => `Stop publishing a post. To publish again, call ${tool(publish)}.`,
+);
+```
+
 A route without a description is not served through MCP, so adding a page never lets agents read it there. The page itself is still served, as Markdown too to any request that asks for it, so protect private pages with [`auth.guard`](/auth#sessions). See [Agents](/agents) for how tools and pages are served to agents.
 
 ## Properties

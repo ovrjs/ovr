@@ -159,6 +159,9 @@ export class App {
 							`Tool name "${tool.name}" is used by ${other.method} ${other.pattern} and ${route.method} ${route.pattern}, change one of their patterns.`,
 						);
 					this.#tools.set(tool.name, route);
+					// written now, so one that names a route with no tool, or is
+					// blank, is found as the app starts
+					void tool.description;
 				}
 
 				this.#trie.add(route);

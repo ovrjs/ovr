@@ -314,6 +314,27 @@ export namespace Route {
 		WithForm<Pattern, Shape> &
 		WithIssues<Pattern, Shape>;
 
+	/**
+	 * A description written once every route exists, to name another
+	 * route's tool in it.
+	 *
+	 * @param tool Names a described route's tool, such as `post_posts_id_publish`
+	 * @returns The description
+	 */
+	export type Description = (tool: (route: Route) => string) => string;
+
+	/**
+	 * The options `describe` takes after the description: none for a GET
+	 * route, since a route that reads is never destructive.
+	 *
+	 * @template K Route kind
+	 */
+	export type Described<K extends Route.Kind> = 0 extends 1 & K
+		? [options?: Route.Describe]
+		: K extends "get"
+			? []
+			: [options?: Route.Describe];
+
 	/** Options of `describe`, for a route that writes */
 	export type Describe = {
 		/**
@@ -552,8 +573,8 @@ export class Route<
 	/** HTTP method */
 	readonly method: Route.Method;
 
-	/** Description for agents */
-	#description?: string;
+	/** Description for agents, or what writes it once every route exists */
+	#description?: string | Route.Description;
 
 	/** Whether the route may change or delete what is there, see `describe` */
 	#destructive = true;
@@ -583,8 +604,27 @@ export class Route<
 	}
 
 	/** Description for agents, only described routes are served to them */
-	get description() {
-		return this.#description;
+	get description(): string | undefined {
+		if (typeof this.#description !== "function") return this.#description;
+
+		// written the first time it is read, when the routes it names exist
+		const description = this.#description((route) => {
+			const name = route.tool?.name;
+
+			if (!name)
+				throw new TypeError(
+					`Describe ${route.method} ${route.pattern} to name its tool in the description of ${this.method} ${this.pattern}`,
+				);
+
+			return name;
+		});
+
+		if (typeof description !== "string" || !description.trim())
+			throw new TypeError(
+				`The description of ${this.method} ${this.pattern} is blank, or not a string`,
+			);
+
+		return (this.#description = description);
 	}
 
 	/** Schemas that check and convert pattern parameters */
@@ -626,9 +666,13 @@ export class Route<
 	 * call it; GET tools are read-only.
 	 */
 	get tool(): Route.Tool | undefined {
-		const { description, method, pattern } = this;
+		const { method, pattern } = this;
 
-		if (!description || method === Method.head) return;
+		// described or not, without writing a description that names other
+		// tools: two that name each other would never finish
+		if (this.#description === undefined || method === Method.head) return;
+
+		const described = () => this.description!;
 
 		const read = method === Method.get;
 
@@ -653,8 +697,14 @@ export class Route<
 
 		return {
 			name,
-			title: description.trim().split(/[.!?](?:\s|$)/, 1)[0]!,
-			description,
+			get title() {
+				return described()
+					.trim()
+					.split(/[.!?](?:\s|$)/, 1)[0]!;
+			},
+			get description() {
+				return described();
+			},
 			read,
 			destructive: !read && this.#destructive,
 		};
@@ -664,6 +714,16 @@ export class Route<
 	 * Describe the route for agents. Only described routes are served to
 	 * them, as MCP tools.
 	 *
+	 * A description that names another route's tool is a function, which is
+	 * given what names it. It is called once every route exists, so two
+	 * routes can name each other, in any order and across modules:
+	 *
+	 * ```ts
+	 * const publish = Route.post("/posts/:id/publish").describe(
+	 * 	(tool) => `Publish a post. To undo it, call ${tool(unpublish)}.`,
+	 * );
+	 * ```
+	 *
 	 * @template D Description, a string literal that is not blank
 	 * @param description What the route does, written for an agent, not blank
 	 * @param options `destructive: false` for a route that only adds, such as
@@ -671,6 +731,12 @@ export class Route<
 	 *   agent's client need not confirm it as it does other writes
 	 * @returns The route
 	 */
+	describe(
+		// its body is not read to choose this signature, so two routes whose
+		// descriptions name each other are not a cycle to the type checker
+		description: (tool: (route: Route) => string) => void,
+		...options: Route.Described<Kind>
+	): this;
 	describe<D extends string>(
 		description: Trim<D> extends ""
 			? never
@@ -678,15 +744,14 @@ export class Route<
 				["wildcard" | "*"] extends [keyof ExtractParams<Pattern>]
 				? "Rename :wildcard, a tool's * argument is named wildcard"
 				: D,
-		// a route that reads is never destructive, so a GET route takes none
-		...[options]: 0 extends 1 & Kind
-			? [options?: Route.Describe]
-			: Kind extends "get"
-				? []
-				: [options?: Route.Describe]
+		...options: Route.Described<Kind>
+	): this;
+	describe(
+		description: string | ((tool: (route: Route) => string) => unknown),
+		...[options]: [options?: Route.Describe]
 	) {
 		this.#configure("describe");
-		this.#description = description;
+		this.#description = description as string | Route.Description;
 		this.#destructive = options?.destructive ?? true;
 		return this;
 	}
