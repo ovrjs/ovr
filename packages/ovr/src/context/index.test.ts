@@ -224,3 +224,44 @@ function context() {
 
 	return given;
 }
+
+test.each([
+	["markup", {}, "<main><p>first</p><p>rows</p><p>rows</p></main>"],
+	["Markdown", { accept: "text/markdown" }, "first\n\nrows\n\nrows\n"],
+])("a page of %s streams as it shares a read", async (_name, headers, page) => {
+	let finish!: (rows: string) => void;
+	const load = vi.fn(
+		() => new Promise<string>((resolve) => (finish = resolve)),
+	);
+	const Rows = async (_props: {}, c: Context) =>
+		jsx("p", { children: await c.memo(load)() });
+	const response = await new App()
+		.use(
+			Route.get("/page").use(() =>
+				// Markdown is written as it renders once it is in a main element
+				jsx("main", {
+					children: [
+						jsx("p", { children: "first" }),
+						jsx(Rows, {}),
+						jsx(Rows, {}),
+					],
+				}),
+			),
+		)
+		.fetch(new Request("https://example.com/page", { headers }));
+	const reader = response
+		.body!.pipeThrough(new TextDecoderStream())
+		.getReader();
+	let text = "";
+
+	// written before what the components wait for is there
+	while (!text.includes("first")) text += (await reader.read()).value;
+	expect(text).not.toContain("rows");
+	expect(load).toHaveBeenCalledTimes(1);
+
+	finish("rows");
+
+	for (let part; !(part = await reader.read()).done;) text += part.value;
+	expect(text).toBe(page);
+	expect(load).toHaveBeenCalledTimes(1);
+});
