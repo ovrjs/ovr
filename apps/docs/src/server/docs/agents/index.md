@@ -117,6 +117,13 @@ const remove = Route.post("/posts/:id/delete")
 | GET, described                    | A read-only tool    |
 | Not described                     | Nothing through MCP |
 
+You don't need to describe every route. Describe the ones an agent would want: what a person comes to the app to do. An agent chooses among every tool it is given, and chooses worse as the list grows past a few dozen.
+
+- **Leave out routes that only make sense in a browser,** such as a page to print, a login page, or a file to download.
+- **Leave out a route another one covers.** An agent that can read a list and read one record rarely needs a separate tool for each view of them.
+- **Say when to use it, not what it is.** "Add a recipe to a week's plan" tells an agent more than "POST week recipes".
+- **Refuse in words.** A handler that answers a 404 or a 403 with a short message gives the agent that message, marked as an error, so it knows why and what to try instead.
+
 A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown. Your handlers do not change. An agent reads a page by calling its GET route's tool.
 
 The endpoint itself is outside your app's [global middleware](/middleware#composition): the request it makes to the route is the one that passes through it, once, like a person's request to the same route.
