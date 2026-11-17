@@ -23,6 +23,7 @@
     "cell-fieldset",
     "choices-for-agents",
     "choices-return-source",
+    "component-context-memo",
     "compressed-state",
     "confirm-passkey",
     "constraints",
