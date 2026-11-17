@@ -37,6 +37,7 @@
     "every-choice",
     "form-address",
     "form-function-child",
+    "form-ids-by-address",
     "form-without-context",
     "group-descriptions",
     "groups",
