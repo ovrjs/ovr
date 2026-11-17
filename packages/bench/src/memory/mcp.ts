@@ -91,7 +91,7 @@ await scenario(
 	`tools/call with a ${mb(size)} MB file argument (${mb((size * 4) / 3)} MB base64), live set inside the route`,
 	async (peak) => {
 		base64 = file.toBase64();
-		const req = call(upload.tool!.name, {
+		const req = call(upload.tool.name(), {
 			file: { name: "a.bin", type: "application/octet-stream", base64 },
 		});
 		// only the stream's copy is left, as a client would send it
@@ -111,7 +111,7 @@ await scenario(
 	`tools/call with a ${mb(size)} MB file argument, live set as the body is parsed`,
 	async (peak) => {
 		base64 = file.toBase64();
-		const req = call(upload.tool!.name, {
+		const req = call(upload.tool.name(), {
 			file: { name: "a.bin", type: "application/octet-stream", base64 },
 		});
 		base64 = undefined;
@@ -142,7 +142,7 @@ await scenario(
 			return json;
 		}) as typeof stringify;
 		try {
-			const res = await app.fetch(call(download.tool!.name, {}));
+			const res = await app.fetch(call(download.tool.name(), {}));
 			current = undefined;
 			// the response, before it is sent
 			peak.sample();

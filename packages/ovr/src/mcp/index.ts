@@ -9,7 +9,7 @@ import {
 	whole,
 } from "../form/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Route, parameters, schemas } from "../route/index.js";
+import { Route, parameters, schemas, tooled } from "../route/index.js";
 import { Schema, base } from "../schema/index.js";
 import {
 	Codec,
@@ -639,10 +639,11 @@ export class Mcp<P extends string = string> {
 		const tools: Json[] = [];
 
 		for (const route of this.#app!.routes) {
-			const { tool } = route;
-			if (!tool) continue;
+			if (!route[tooled]) continue;
 
-			const { name, read } = tool;
+			const { tool } = route;
+			const name = tool.name();
+			const { read } = tool;
 			const shape = forms.get(route)?.shape;
 			// names are unique, app.use() throws for two routes sharing one
 
@@ -850,7 +851,9 @@ export class Mcp<P extends string = string> {
 		// for an app with many tools is megabytes for each call
 		const route =
 			typeof params.name === "string"
-				? this.#app!.routes.find((route) => route.tool?.name === params.name)
+				? this.#app!.routes.find(
+						(route) => route[tooled] && route.tool.name() === params.name,
+					)
 				: undefined;
 		if (!route) throw new RpcError(-32602, `Unknown tool: ${params.name}`);
 		const pathParams = Mcp.#params(route);
@@ -974,8 +977,8 @@ export class Mcp<P extends string = string> {
 	#tool(c: Context) {
 		return (method: string, action: URL) => {
 			const match = this.#find(c, method, action);
-			const name = match?.route.tool?.name;
-			if (!name) return;
+			if (!match?.route[tooled]) return;
+			const name = match.route.tool.name();
 
 			// the address's parameters, as the arguments the tool takes them by
 			const args: Record<string, string> = {};

@@ -32,7 +32,7 @@ const route = (i: number) =>
 
 const routes = Array.from({ length: count }, (_, i) => route(i));
 const app = new App().use(new Mcp(), routes);
-const name = routes[0]!.tool!.name;
+const name = routes[0]!.tool.name();
 
 /** @returns The response text of one tools/call */
 const call = () =>

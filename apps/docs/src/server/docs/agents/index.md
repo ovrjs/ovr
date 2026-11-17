@@ -139,7 +139,7 @@ A tool's name is generated from the method and pattern, for example `post_posts_
 
 A name is public: clients save it and directories list it. Moving a route renames its tool, so treat the pattern of a described route as you would a published URL.
 
-`route.tool` is the name, title, and description a route is called with, whether it only reads, and whether it is destructive, or `undefined` when it is not a tool.
+`route.tool` is what a route is called with: `route.tool.name()`, its `title` and `description`, whether it only reads, and whether it is destructive. A route with no description is no tool, so its `name()` throws.
 
 #### Titles and hints
 

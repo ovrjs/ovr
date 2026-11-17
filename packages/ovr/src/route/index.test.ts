@@ -1151,31 +1151,35 @@ describe("chained routes", () => {
 
 	test("a description names another route's tool, whichever is written first", () => {
 		const publish = Route.post("/posts/:id/publish").describe(
-			(tool) => `Publish a post. To undo it, call ${tool(unpublish)}.`,
+			() => `Publish a post. To undo it, call ${unpublish.tool.name()}.`,
 		);
 		const unpublish = Route.post("/posts/:id/unpublish").describe(
-			(tool) =>
-				`Stop publishing a post. To publish again, call ${tool(publish)}.`,
+			() =>
+				`Stop publishing a post. To publish again, call ${publish.tool.name()}.`,
 		);
 		const draft = Route.post("/posts/:id/draft");
 
 		new App().use(publish, unpublish);
 
-		expect(publish.tool).toMatchObject({
-			name: "post_posts_id_publish",
-			title: "Publish a post",
-			description: "Publish a post. To undo it, call post_posts_id_unpublish.",
-		});
+		expect(publish.tool.name()).toBe("post_posts_id_publish");
+		expect(publish.tool.title).toBe("Publish a post");
+		expect(publish.tool.description).toBe(
+			"Publish a post. To undo it, call post_posts_id_unpublish.",
+		);
 		expect(unpublish.description).toBe(
 			"Stop publishing a post. To publish again, call post_posts_id_publish.",
 		);
 
-		// found as the app starts: a route with no tool to name, and no description
-		expect(() =>
-			new App().use(Route.post("/a").describe((tool) => `See ${tool(draft)}`)),
-		).toThrow(
-			"Describe POST /posts/:id/draft to name its tool in the description of POST /a",
+		// a route with no description is no tool to name
+		expect(() => draft.tool.name()).toThrow(
+			"POST /posts/:id/draft has no tool to name",
 		);
+		// which is found as the app starts, as a blank description is
+		expect(() =>
+			new App().use(
+				Route.post("/a").describe(() => `See ${draft.tool.name()}`),
+			),
+		).toThrow("POST /posts/:id/draft has no tool to name");
 		expect(() => new App().use(Route.post("/b").describe(() => " "))).toThrow(
 			"The description of POST /b is blank",
 		);
@@ -1366,8 +1370,8 @@ describe("chained routes", () => {
 		const undescribed = Route.post("/internal");
 
 		expect(remove.description).toBe("Delete a post");
-		expect(remove.tool).toEqual({
-			name: "post_posts_id_delete",
+		expect(remove.tool.name()).toBe("post_posts_id_delete");
+		expect(remove.tool).toMatchObject({
 			title: "Delete a post",
 			description: "Delete a post",
 			read: false,
@@ -1376,13 +1380,13 @@ describe("chained routes", () => {
 		// a route that only adds, and a read, which never is
 		expect(
 			Route.post("/posts").describe("Create a post", { destructive: false })
-				.tool?.destructive,
+				.tool.destructive,
 		).toBe(false);
-		expect(Route.get("/posts").describe("List posts").tool?.destructive).toBe(
+		expect(Route.get("/posts").describe("List posts").tool.destructive).toBe(
 			false,
 		);
 		expect(undescribed.description).toBeUndefined();
-		expect(undescribed.tool).toBeUndefined();
+		expect(() => undescribed.tool.name()).toThrow("has no tool to name");
 		// an empty description would leave the route silently unserved
 		// @ts-expect-error
 		Route.post("/blank").describe("");

@@ -174,7 +174,9 @@ describe("Mcp", () => {
 
 	test("punctuation in a pattern is a _ in its tool's name, and only a long name ends with a hash", () => {
 		const name = (pattern: string) =>
-			Route.get(pattern as "/").describe("Named").tool?.name;
+			Route.get(pattern as "/")
+				.describe("Named")
+				.tool.name();
 
 		expect(name("/@:username")).toBe("get_username");
 		expect(name("/api_keys")).toBe("get_api_keys");
@@ -355,7 +357,7 @@ describe("Mcp", () => {
 				called = true;
 			}),
 		);
-		await rpc("tools/call", { name: go.tool!.name });
+		await rpc("tools/call", { name: go.tool.name() });
 		expect(went).toBe(true);
 		expect(called).toBe(false);
 	});
@@ -377,14 +379,14 @@ describe("Mcp", () => {
 			app.use(update);
 
 			const saved = await rpc("tools/call", {
-				name: update.tool!.name,
+				name: update.tool.name(),
 				arguments: { id: "1", title: "Renamed" },
 			});
 			expect(title).toBe("Renamed");
 			expect(saved.body.result.isError).toBe(false);
 
 			const missing = await rpc("tools/call", {
-				name: update.tool!.name,
+				name: update.tool.name(),
 				arguments: { id: "1" },
 			});
 			expect(missing.body.result.isError).toBe(true);
@@ -938,7 +940,7 @@ describe("Mcp", () => {
 				.use((c) => c.redirect("https://pay.example/checkout?session=1", 303)),
 		);
 		const hidden = await rpc("tools/call", {
-			name: Route.post("/private-go").describe("x").tool!.name,
+			name: Route.post("/private-go").describe("x").tool.name(),
 		});
 		expect(JSON.stringify(hidden.body)).not.toContain("secret");
 		expect(hidden.body.result.content[0].text).toBe("Redirected");
@@ -1885,7 +1887,7 @@ describe("Mcp", () => {
 			});
 		app.use(route);
 		await rpc("tools/call", {
-			name: route.tool!.name,
+			name: route.tool.name(),
 			arguments: { wildcard: "draft" },
 		});
 		expect(removed).toEqual(["draft"]);
@@ -1909,7 +1911,7 @@ describe("Mcp", () => {
 			.use((c) => c.text(c.params["*"]));
 		app.use(files);
 		const { body } = await rpc("tools/call", {
-			name: files.tool!.name,
+			name: files.tool.name(),
 			arguments: { wildcard: "archive/report" },
 		});
 		expect(body.result.content).toEqual([
@@ -2231,11 +2233,11 @@ describe("Mcp", () => {
 	});
 
 	test("generated tool names", () => {
-		expect(Route.get("/").describe("Home").tool?.name).toBe("get_index");
+		expect(Route.get("/").describe("Home").tool.name()).toBe("get_index");
 		expect(
-			Route.post("/posts/:id/delete").describe("Delete a post").tool?.name,
+			Route.post("/posts/:id/delete").describe("Delete a post").tool.name(),
 		).toBe("post_posts_id_delete");
-		expect(Route.get("/files/*").describe("Files").tool?.name).toBe(
+		expect(Route.get("/files/*").describe("Files").tool.name()).toBe(
 			"get_files_wildcard",
 		);
 	});
@@ -2259,10 +2261,11 @@ describe("Mcp", () => {
 		expect(called).toBe(false);
 
 		// neither is a route without a description
-		expect(Route.post("/internal").tool).toBeUndefined();
-		expect(
-			Route.get("/search").fields({ q: Field.search() }).tool,
-		).toBeUndefined();
-		expect(Route.get("/about").tool).toBeUndefined();
+		for (const route of [
+			Route.post("/internal"),
+			Route.get("/search").fields({ q: Field.search() }),
+			Route.get("/about"),
+		])
+			expect(() => route.tool.name()).toThrow("has no tool to name");
 	});
 });

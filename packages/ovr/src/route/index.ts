@@ -16,6 +16,9 @@ import type { Util } from "../util/index.js";
 /** Finishes a route's configuration, `app.use(route)` calls it */
 export const freeze = Symbol("freeze");
 
+/** Internal protocol for an app and its endpoints, whether a route is a tool. */
+export const tooled = Symbol("tooled");
+
 /**
  * Internal protocol for Auth, a route's `<form>` with no page to return to
  * and nothing of a request: its own forms name where they go themselves.
@@ -152,10 +155,19 @@ export namespace Route {
 		| "PATCH"
 		| (string & {});
 
-	/** How agents call a route, from `route.tool`. */
+	/**
+	 * How agents call a route, from `route.tool`. A route with no description
+	 * is no tool: its `name()`, `title`, and `description` throw.
+	 */
 	export type Tool = {
-		/** Tool name, for example `post_posts_id_delete` */
-		readonly name: string;
+		/**
+		 * The tool's name, for example `post_posts_id_delete`, to name it in
+		 * another route's description, a page, or a test.
+		 *
+		 * @returns The name
+		 * @throws When the route has no description, so it is no tool
+		 */
+		readonly name: () => string;
 		/** What a person is shown the tool as: the description's first sentence */
 		readonly title: string;
 		/** What the tool does */
@@ -318,10 +330,9 @@ export namespace Route {
 	 * A description written once every route exists, to name another
 	 * route's tool in it.
 	 *
-	 * @param tool Names a described route's tool, such as `post_posts_id_publish`
 	 * @returns The description
 	 */
-	export type Description = (tool: (route: Route) => string) => string;
+	export type Description = () => string;
 
 	/**
 	 * The options `describe` takes after the description: none for a GET
@@ -608,16 +619,7 @@ export class Route<
 		if (typeof this.#description !== "function") return this.#description;
 
 		// written the first time it is read, when the routes it names exist
-		const description = this.#description((route) => {
-			const name = route.tool?.name;
-
-			if (!name)
-				throw new TypeError(
-					`Describe ${route.method} ${route.pattern} to name its tool in the description of ${this.method} ${this.pattern}`,
-				);
-
-			return name;
-		});
+		const description = this.#description();
 
 		if (typeof description !== "string" || !description.trim())
 			throw new TypeError(
@@ -660,19 +662,28 @@ export class Route<
 		];
 	}
 
+	/** `true` when agents can call the route: it is described, and not HEAD */
+	get [tooled]() {
+		return this.#description !== undefined && this.method !== Method.head;
+	}
+
 	/**
 	 * The tool agents call the route as, through MCP and the route's `Form`.
 	 * Only described routes are tools, so mounting a route never lets agents
 	 * call it; GET tools are read-only.
 	 */
-	get tool(): Route.Tool | undefined {
+	get tool(): Route.Tool {
 		const { method, pattern } = this;
 
-		// described or not, without writing a description that names other
-		// tools: two that name each other would never finish
-		if (this.#description === undefined || method === Method.head) return;
+		/** @returns The description, of a route that is a tool */
+		const described = () => {
+			if (!this[tooled])
+				throw new TypeError(
+					`${method} ${pattern} has no tool to name: describe it, and a HEAD route never has one`,
+				);
 
-		const described = () => this.description!;
+			return this.description!;
+		};
 
 		const read = method === Method.get;
 
@@ -696,7 +707,16 @@ export class Route<
 			name = `${name.slice(0, 56)}_${Checksum.djb2(`${method} ${pattern}`).slice(0, 7)}`;
 
 		return {
-			name,
+			name: () => {
+				// described or not, without writing the description: two that
+				// name each other would never finish
+				if (!this[tooled])
+					throw new TypeError(
+						`${method} ${pattern} has no tool to name: describe it, and a HEAD route never has one`,
+					);
+
+				return name;
+			},
 			get title() {
 				return described()
 					.trim()
@@ -714,13 +734,13 @@ export class Route<
 	 * Describe the route for agents. Only described routes are served to
 	 * them, as MCP tools.
 	 *
-	 * A description that names another route's tool is a function, which is
-	 * given what names it. It is called once every route exists, so two
-	 * routes can name each other, in any order and across modules:
+	 * A description that names another route's tool is a function. It is
+	 * called once every route exists, so two routes can name each other, in
+	 * any order and across modules:
 	 *
 	 * ```ts
 	 * const publish = Route.post("/posts/:id/publish").describe(
-	 * 	(tool) => `Publish a post. To undo it, call ${tool(unpublish)}.`,
+	 * 	() => `Publish a post. To undo it, call ${unpublish.tool.name()}.`,
 	 * );
 	 * ```
 	 *
@@ -734,7 +754,7 @@ export class Route<
 	describe(
 		// its body is not read to choose this signature, so two routes whose
 		// descriptions name each other are not a cycle to the type checker
-		description: (tool: (route: Route) => string) => void,
+		description: () => void,
 		...options: Route.Described<Kind>
 	): this;
 	describe<D extends string>(
@@ -747,7 +767,7 @@ export class Route<
 		...options: Route.Described<Kind>
 	): this;
 	describe(
-		description: string | ((tool: (route: Route) => string) => unknown),
+		description: string | (() => unknown),
 		...[options]: [options?: Route.Describe]
 	) {
 		this.#configure("describe");
@@ -1036,7 +1056,7 @@ export class Route<
 			}
 		}
 
-		const { tool } = route;
+		const tool = route[tooled] ? route.tool : undefined;
 
 		return jsx("form", {
 			action: route.url({
@@ -1054,7 +1074,7 @@ export class Route<
 			// the name, so those set the attributes themselves when they are unique
 			...(tool &&
 				!/[:*]/.test(route.pattern) && {
-					toolname: tool.name,
+					toolname: tool.name(),
 					tooltitle: tool.title,
 					tooldescription: tool.description,
 					// a form that may change data waits for the user to submit it

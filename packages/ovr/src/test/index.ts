@@ -3,7 +3,7 @@ import { auths, grant } from "../auth/index.js";
 import { Context } from "../context/index.js";
 import { type Field, entries, forms, sent } from "../form/index.js";
 import { endpoints, version } from "../mcp/index.js";
-import type { ExtractParams, Route } from "../route/index.js";
+import { type ExtractParams, type Route, tooled } from "../route/index.js";
 import { Header, Method, Mime } from "../util/index.js";
 
 export namespace Tester {
@@ -246,7 +246,7 @@ export class Tester {
 			? [Tester.Arguments<Pattern, Shape>?]
 			: [Tester.Arguments<Pattern, Shape>]
 	): Promise<Tester.Result> => {
-		const name = route.tool?.name;
+		const name = route[tooled] ? route.tool.name() : undefined;
 		// a description is not part of a route's type
 		if (!name)
 			throw new TypeError(

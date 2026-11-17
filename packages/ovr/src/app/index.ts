@@ -7,7 +7,7 @@ import {
 	Unsupported,
 	memory,
 } from "../multipart/index.js";
-import { Route, freeze } from "../route/index.js";
+import { Route, freeze, tooled } from "../route/index.js";
 import { Trie } from "../trie/index.js";
 import { Header, Method, Mime, type Util } from "../util/index.js";
 
@@ -151,14 +151,15 @@ export class App {
 			if (route instanceof Route) {
 				// final from here, so its tool name and middleware stay as checked
 				route[freeze]();
-				const { tool } = route;
-				if (tool) {
-					const other = this.#tools.get(tool.name);
+				if (route[tooled]) {
+					const { tool } = route;
+					const name = tool.name();
+					const other = this.#tools.get(name);
 					if (other && other !== route)
 						throw new TypeError(
-							`Tool name "${tool.name}" is used by ${other.method} ${other.pattern} and ${route.method} ${route.pattern}, change one of their patterns.`,
+							`Tool name "${name}" is used by ${other.method} ${other.pattern} and ${route.method} ${route.pattern}, change one of their patterns.`,
 						);
-					this.#tools.set(tool.name, route);
+					this.#tools.set(name, route);
 					// written now, so one that names a route with no tool, or is
 					// blank, is found as the app starts
 					void tool.description;
