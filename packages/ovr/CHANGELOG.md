@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.76
+
+### Patch Changes
+
+- 9a53b59: Document every member the way v6 did, with `@param`, `@returns` and `@template` on functions and generic types, and write inline comments in v6's style.
+
 ## 7.0.0-next.75
 
 ### Patch Changes
