@@ -168,7 +168,7 @@ function setup() {
 		});
 	});
 	const edit = Route.get("/recipes/:id/edit").use(async (c) => {
-		const form = update.form();
+		const form = update.form(undefined, { id: c.params.id });
 
 		return c.json({ issues: (await form.issues(c)) ?? null });
 	});
@@ -271,7 +271,9 @@ describe("fetch", () => {
 		);
 		// it is kept in a cookie only that page is sent, and no script reads
 		const [cookie] = res.headers.getSetCookie();
-		expect(cookie).toMatch(/^_form=[0-9a-f]{8}\.[\w-]+; Path=\/recipes\/new; /);
+		expect(cookie).toMatch(
+			/^_form=[0-9a-f]{8}\.[\w-]+\.[\w-]+; Path=\/recipes\/new; /,
+		);
 		expect(cookie).toContain("HttpOnly");
 		expect(cookie).toContain("SameSite=Strict");
 		expect(cookie).toContain("Secure");

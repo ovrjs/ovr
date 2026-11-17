@@ -1,5 +1,11 @@
 import type { Context as View } from "../context/read.js";
-import { type Field, Form as FormSchema, forms, query } from "../form/index.js";
+import {
+	type Field,
+	Form as FormSchema,
+	address,
+	forms,
+	query,
+} from "../form/index.js";
 import { type JSX, jsx } from "../jsx/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Schema as ValueSchema } from "../schema/index.js";
@@ -9,6 +15,12 @@ import type { Util } from "../util/index.js";
 
 /** Finishes a route's configuration, `app.use(route)` calls it */
 export const freeze = Symbol("freeze");
+
+/**
+ * Internal protocol for Auth, a route's `<form>` with no page to return to
+ * and nothing of a request: its own forms name where they go themselves.
+ */
+export const element = Symbol("element");
 
 /**
  * Matches a pattern's parameters, as the router reads them: `:name` up to the
@@ -222,9 +234,9 @@ export namespace Route {
 		 * sent, over those values.
 		 *
 		 * ```tsx
-		 * const save = update.form(recipe);
+		 * const save = update.form(recipe, { id });
 		 *
-		 * <save.Form params={{ id }}>
+		 * <save.Form>
 		 * 	<save.Field name="title" />
 		 * 	<button>Save</button>
 		 * </save.Form>
@@ -232,9 +244,19 @@ export namespace Route {
 		 *
 		 * @param values Initial values, for example the record being edited.
 		 * What a refused submission sent takes precedence
+		 * @param params The pattern's parameters, when it has any. They are
+		 * the form's address: of a page's forms with these fields, such as one
+		 * in every row, only the one a refused submission was sent to shows it
 		 * @returns The form's components, its issues, and its values
 		 */
-		readonly form: (values?: Field.Value.Initial<S>) => Route.Bound<Pattern, S>;
+		readonly form: (
+			...args: keyof ExtractParams<Pattern> extends never
+				? [values?: Field.Value.Initial<S>]
+				: [
+						values: Field.Value.Initial<S> | undefined,
+						params: Route.URLOptions<ExtractParams<Pattern>>["params"],
+					]
+		) => Route.Bound<S>;
 	};
 
 	/**
@@ -256,16 +278,14 @@ export namespace Route {
 	 * @template Pattern Route pattern
 	 * @template S Form field shape
 	 */
-	export type Bound<
-		Pattern extends string,
-		S extends Field.Shape,
-	> = Field.Bound<S> & {
+	export type Bound<S extends Field.Shape> = Field.Bound<S> & {
 		/**
 		 * `<form>` that submits to the route, with its fields and a submit
 		 * button unless it is given children. A refused submission comes back to
-		 * the page it is on.
+		 * the page it is on. It has the parameters `route.form` was given, so
+		 * it takes none.
 		 */
-		readonly Form: Route.Form<Pattern>;
+		readonly Form: Route.Form<"/">;
 	};
 
 	/**
@@ -466,7 +486,7 @@ export namespace Route {
 				/** Label of the generated submit button, defaults to "Submit" */
 				submit?: JSX.Element | undefined;
 			},
-		c?: View,
+		c: View,
 	) => JSX.Element;
 
 	/**
@@ -686,45 +706,49 @@ export class Route<
 		 * @param c Request context of the page the form is on
 		 * @returns What a refused submission kept, for the page its redirect names
 		 */
-		const source = (c: View) => {
+		const source = (c: View): FormSchema.Source => {
 			const [, name] = FormSchema.params;
 			const id = c.url.searchParams.get(name);
-			const held = id ? c.cookie.get(name) : undefined;
+			// the ID the address names, the form it was sent to, and the state
+			const [key, sent, state] =
+				(id ? c.cookie.get(name) : undefined)?.split(".") ?? [];
 
-			return {
-				url: c.url,
-				state: held?.startsWith(`${id}.`)
-					? held.slice(id!.length + 1)
-					: undefined,
-			};
+			return key === id && state !== undefined
+				? { url: c.url, state, sent: address.read(sent) }
+				: { url: c.url };
 		};
 
 		/**
 		 * @param values Initial values
+		 * @param params The pattern's parameters, which make the form's address
 		 * @returns The form with them, and the `<form>` that submits to the route
 		 */
-		const bind = (values?: Field.Value.Initial<S>) => {
-			const bound = form.bind(values, source);
+		const bind = (values?: Field.Value.Initial<S>, params?: unknown) => {
+			const bound = form.bind(
+				values,
+				source,
+				address.of(
+					new URL(this.url({ params } as never), "http://localhost").pathname,
+				),
+			);
 
 			return {
 				...bound,
-				Form: ((props, c) =>
+				Form: (props: Parameters<Route.Form<Pattern>>[0], c: View) =>
 					Route.#form(
 						this,
-						props,
+						{ ...props, params } as never,
 						c?.url,
 						jsx(bound.Fields, {}),
-					)) as Route.Form<Pattern>,
+					),
 			};
 		};
 
-		// the route's own, which is its `Form` now that it has fields
-		const own = bind();
-
 		return Object.assign(this, {
-			Form: own.Form,
-			form: (values?: Field.Value.Initial<S>) =>
-				values === undefined ? own : bind(values),
+			// its own `Form` has its fields now, for the parameters it is given
+			Form: ((props, c) =>
+				bind(undefined, props.params).Form(props, c)) as Route.Form<Pattern>,
+			form: bind,
 		}) as any;
 	}
 
@@ -854,6 +878,19 @@ export class Route<
 	 * @template Pattern Route pattern
 	 * @param route Route the form submits to
 	 * @param props The form's props
+	 * @returns The `<form>`, with no page to return to and nothing of a request
+	 */
+	static [element]<Pattern extends string>(
+		route: Route<Pattern>,
+		props: Parameters<Route.Form<Pattern>>[0],
+	) {
+		return Route.#form(route, props);
+	}
+
+	/**
+	 * @template Pattern Route pattern
+	 * @param route Route the form submits to
+	 * @param props The form's props
 	 * @param page The page the form is on, where a refused submission returns
 	 * @param fields The route's fields, if it has any
 	 * @returns The `<form>`, with a submit button unless it is given children
@@ -879,15 +916,21 @@ export class Route<
 				target.searchParams.delete(param);
 			}
 
-			query = new URLSearchParams(
-				// @ts-expect-error - see type above
-				search,
-			);
+			const back = target.pathname + target.search + target.hash;
 
-			query.set(
-				FormSchema.params[0],
-				target.pathname + target.search + target.hash,
-			);
+			// a form that posts to the page it is on already returns there
+			if (
+				back !==
+				route.url({ params, search, hash } as Route.URLOptions<
+					ExtractParams<Pattern>
+				>)
+			) {
+				query = new URLSearchParams(
+					// @ts-expect-error - see type above
+					search,
+				);
+				query.set(FormSchema.params[0], back);
+			}
 		}
 
 		const { tool } = route;

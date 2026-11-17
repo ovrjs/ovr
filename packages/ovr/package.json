@@ -43,7 +43,7 @@
 		"!src/**/*.test.ts"
 	],
 	"scripts": {
-		"check": "tsc",
+		"check": "tsc --checkers 1",
 		"dev": "node scripts/client.js --watch",
 		"build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && node scripts/client.js && tsc -p tsconfig.build.json && cp ../../LICENSE.md dist"
 	},

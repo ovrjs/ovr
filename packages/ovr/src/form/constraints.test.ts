@@ -1,3 +1,4 @@
+import { jsx } from "../jsx/index.js";
 import { Render } from "../render/index.js";
 import { Schema } from "../schema/index.js";
 import { Field, Form } from "./index.js";
@@ -10,7 +11,7 @@ import { describe, expect, test } from "vitest";
 const control = async (field: Field.Any) => {
 	const form = new Form({ value: field });
 	const html = await new Render({
-		markup: (await form.bind()).Field({ name: "value" }),
+		markup: jsx(form.bind().Field, { name: "value" }),
 	}).string();
 
 	return /<(?:input|textarea)[^>]*>/.exec(html)![0];

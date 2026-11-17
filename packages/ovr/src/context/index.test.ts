@@ -49,6 +49,10 @@ test("a component given as a value is typed with or without the context", async 
 	expectTypeOf<
 		(props: {}, c: Context<{ id: string }>) => string
 	>().not.toExtend<JSX.Component>();
+	// nor a tag, which may be rendered on any page
+	const Scoped = (_props: {}, c: Context<{ id: string }>) => c.params.id;
+	// @ts-expect-error
+	void (() => jsx(Scoped, {}));
 });
 
 test("a component's context reads the request, and cannot answer it", () => {

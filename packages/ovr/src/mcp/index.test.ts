@@ -409,15 +409,14 @@ describe("Mcp", () => {
 			Route.get("/notes/:id")
 				.describe("Show a note")
 				.use(async (c) => {
-					const [title, gone] = await Promise.all([
-						rename.form({ title: "Groceries" }),
-						archive.form(),
-					]);
+					const { id } = c.params;
 
 					return jsx("main", {
 						children: [
-							title.Form({ params: { id: c.params.id }, submit: "Save" }),
-							gone.Form({ params: { id: c.params.id } }),
+							jsx(rename.form({ title: "Groceries" }, { id }).Form, {
+								submit: "Save",
+							}),
+							jsx(archive.Form, { params: { id } }),
 						],
 					});
 				}),
@@ -458,14 +457,17 @@ describe("Mcp", () => {
 			.use(async () =>
 				jsx("main", {
 					children: [
-						logout.Form({ submit: "Log out" }),
+						jsx(logout.Form, { submit: "Log out" }),
 						jsx(add.Form, { submit: "Add" }),
 						jsx("ul", {
 							children: ["a1", "b2"].map((id) =>
 								jsx("li", {
 									children: [
 										jsx("a", { href: `https://${id}.example/`, children: id }),
-										remove.Form({ params: { id }, submit: `Delete ${id}` }),
+										jsx(remove.Form, {
+											params: { id },
+											submit: `Delete ${id}`,
+										}),
 									],
 								}),
 							),
@@ -525,9 +527,10 @@ describe("Mcp", () => {
 				.describe("A bookmark")
 				.use(async (c) =>
 					jsx("main", {
-						children: save
-							.form({ url: "https://ovrjs.com" })
-							.Form({ params: { id: c.params.id } }),
+						children: jsx(
+							save.form({ url: "https://ovrjs.com" }, { id: c.params.id }).Form,
+							{},
+						),
 					}),
 				),
 			new Mcp({ name: "bookmarks" }),
@@ -622,13 +625,12 @@ describe("Mcp", () => {
 			Route.get("/recipes/:slug")
 				.describe("A recipe")
 				.use(async (c) => {
-					const form = publish.form();
+					const form = publish.form(undefined, { slug: c.params.slug });
 
-					return form.Form({
-						params: { slug: c.params.slug },
+					return jsx(form.Form, {
 						children: [
-							form.Field({ name: "photos", options: [a] }),
-							form.Field({ name: "tags" }),
+							jsx(form.Field, { name: "photos", options: [a] }),
+							jsx(form.Field, { name: "tags" }),
 						],
 					});
 				}),
@@ -684,22 +686,24 @@ describe("Mcp", () => {
 			Route.get("/recipes/:id")
 				.describe("A recipe")
 				.use(async (c) => {
-					const form = save.form({
-						steps: ["Chop", "Fry"],
-						dinners: [b, a],
-						ingredients: [
-							{ id: "7", amount: 2, unit: "cup", name: "flour" },
-							{ id: "8", name: "salt", organic: true },
-						],
-					});
+					const form = save.form(
+						{
+							steps: ["Chop", "Fry"],
+							dinners: [b, a],
+							ingredients: [
+								{ id: "7", amount: 2, unit: "cup", name: "flour" },
+								{ id: "8", name: "salt", organic: true },
+							],
+						},
+						{ id: c.params.id },
+					);
 
-					return form.Form({
-						params: { id: c.params.id },
+					return jsx(form.Form, {
 						children: [
-							form.Field({ name: "steps" }),
-							form.Field({ name: "tags" }),
-							form.Field({ name: "dinners", options: [a, b], rows: 4 }),
-							form.Field({ name: "ingredients", options: ["cup", "tsp"] }),
+							jsx(form.Field, { name: "steps" }),
+							jsx(form.Field, { name: "tags" }),
+							jsx(form.Field, { name: "dinners", options: [a, b], rows: 4 }),
+							jsx(form.Field, { name: "ingredients", options: ["cup", "tsp"] }),
 						],
 					});
 				}),

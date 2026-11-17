@@ -85,11 +85,7 @@ export const page = Route.get("/signup").use(() => <signup.Form />);
 The route's `Form` renders the `<form>` _and_ the fields inside by default, and shows what a [refused submission](#a-refused-submission) sent. The button is labelled "Submit"; pass `submit` to change it, for example `<signup.Form submit="Sign up" />`.
 
 ```html
-<form
-	action="/signup?_return=%2Fsignup"
-	method="POST"
-	enctype="multipart/form-data"
->
+<form action="/signup" method="POST" enctype="multipart/form-data">
 	<div>
 		<label for="name">name</label>
 		<input id="name" required type="text" name="name" />
@@ -108,7 +104,7 @@ A description written to be complete for an agent can be more than a person need
 
 `control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<join.Field name="name" autofocus />`.
 
-The form returns a refused submission to the page it is on: its action carries the page's address in a same-origin `_return` query param.
+The form returns a refused submission to the page it is on. On a page with another address than the form's own, its action carries the page's address in a same-origin `_return` query param, such as `action="/signup?_return=%2Fjoin"`.
 
 > To share fields between routes, reuse the shape object, such as `.fields({ ...shape, note: Field.textarea() })`.
 
@@ -125,15 +121,17 @@ const join = signup.form();
 </join.Form>;
 ```
 
-- `join.Form` renders the `<form>`, and the fields and the button when it is given no children
+- `join.Form` renders the `<form>`, and the fields and the button when it is given no children. It has the route's parameters already, so it takes no `params`
 - `join.Fields` renders all the fields _without_ the outer `<form>` shell
 - `join.Field` renders one field by `name` (each key in the shape)
 - `await join.component(c, { name })` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
 - `await join.issues(c)` and `await join.values(c)` are what a refused submission found and sent, `undefined` without one
 
-`Form`, `Field`, and `Fields` are components, so each reads the request from the [context](/render#context) it is rendered for. The other three are read outside of one, so they take `c`.
+`Form`, `Field`, and `Fields` are components, so each reads the request from the [context](/render#context) it is rendered for: use them as tags, since calling one as a function is a type error. The other three are read outside of one, so they take `c`.
 
-Routes that share fields can share the component that lays them out. Give it the form, typed by the fields it has, such as `form: Field.Bound<typeof fields>`, and render `<props.form.Field name="title" />`. Render each route's own `Form` around it, since one may need `params` the other does not take.
+A route with parameters takes them where the form is made, after the values: `update.form(post, { id })`, or `comment.form(undefined, { post })` for a form that starts empty. They are the form's address, so a page with a form in every row makes one for each row.
+
+Routes that share fields can share the component that lays them out. Give it the form, typed by the fields it has, such as `form: Field.Bound<typeof fields>`, and render `<props.form.Field name="title" />`. Render each route's own `Form` around it.
 
 ### Edit a record
 
@@ -144,9 +142,9 @@ const update = Route.post("/posts/:id").fields(fields).use(handler);
 
 const edit = Route.get("/posts/:id/edit").use(async (c) => {
 	const post = await find(c.params.id);
-	const save = update.form(post);
+	const save = update.form(post, { id: post.id });
 
-	return <save.Form params={{ id: post.id }} />;
+	return <save.Form />;
 });
 ```
 
@@ -229,9 +227,9 @@ const publish = Route.post("/recipes/:id/publish")
 	.fields({ photos: Field.checkboxes(Schema.string().uuid()) })
 	.use(handler);
 
-const choose = publish.form();
+const choose = publish.form(undefined, { id });
 
-<choose.Form params={{ id }}>
+<choose.Form>
 	<choose.Field name="photos" options={photos.map((photo) => photo.id)} />
 	<button>Publish</button>
 </choose.Form>;
@@ -287,7 +285,7 @@ Each control is named by its list and its place, `sides.0` or `ingredients.0.amo
 
 An invalid submission shows a list's rows again, with each issue on its cell. When the rows are too many to [keep](#a-refused-submission), the issue is shown under the list and says where it was, such as "Row 2, Ingredient: Required field", with the field's label.
 
-A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own. Here `save` is the route's form, `const save = update.form(recipe)`:
+A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own. Here `save` is the route's form, `const save = update.form(recipe, { id })`:
 
 ```tsx
 <save.Field
@@ -408,6 +406,8 @@ When a route refuses a submission, `c.data()` keeps the issues and what was sent
 - the matching issue message is under its field
 - `aria-invalid` and `aria-describedby` are set
 - the first invalid field has the focus
+
+Only the form it was sent to shows it. Another form on the page with the same fields, such as the one in the next row, keeps its own values.
 
 It is kept in a cookie, compressed, for an hour. Only the page the form is on is sent the cookie, no script can read it, and the address names it with a short ID, such as `?_form=3f9a2c1e`. So nothing a person typed is in an address, a history, or a log, and the page opened without the ID starts over. A file and a password are never kept.
 

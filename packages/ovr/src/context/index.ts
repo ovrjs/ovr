@@ -1,6 +1,12 @@
 import type { App } from "../app/index.js";
 import { Cookie, type Cookie as CookieType } from "../cookie/index.js";
-import { type Field, Form as FormSchema, forms, kept } from "../form/index.js";
+import {
+	type Field,
+	Form as FormSchema,
+	address,
+	forms,
+	kept,
+} from "../form/index.js";
 import { type Options, tools } from "../markdown/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Multipart } from "../multipart/index.js";
@@ -448,13 +454,18 @@ export class Context<
 						url.searchParams.set(name, id);
 
 						if (result.state !== undefined)
-							this.cookie.set(name, `${id}.${result.state}`, {
-								path: url.pathname,
-								maxAge: kept,
-								httpOnly: true,
-								sameSite: "Strict",
-								secure: url.protocol === "https:",
-							});
+							// with the form it was sent to, the only one that shows it
+							this.cookie.set(
+								name,
+								`${id}.${address.write(this.url.pathname)}.${result.state}`,
+								{
+									path: url.pathname,
+									maxAge: kept,
+									httpOnly: true,
+									sameSite: "Strict",
+									secure: url.protocol === "https:",
+								},
+							);
 					}
 				}
 

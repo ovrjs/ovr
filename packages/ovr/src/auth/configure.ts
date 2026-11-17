@@ -4,7 +4,7 @@ import { Field, Form, field, taken } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
-import { Route } from "../route/index.js";
+import { Route, element } from "../route/index.js";
 import { Header, Time, noStore } from "../util/index.js";
 import type { Auth } from "./index.js";
 import { Issue } from "./issue.js";
@@ -468,9 +468,9 @@ export function configure<U extends Auth.Users>(
 			const Link = Object.assign(
 				(props: Parameters<typeof link.Form>[0]) =>
 					(token || failure === "link") &&
-					// called, so the page's address, which holds the token, is not
-					// put in the form's own
-					link.Form({
+					// the form alone, so the page's address, which holds the token,
+					// is not put in the form's own
+					Route[element](link, {
 						...props,
 						children: [
 							token && [

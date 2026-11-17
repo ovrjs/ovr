@@ -45,6 +45,40 @@ const maxStateChars = 3800;
 export const kept = 60 * 60;
 
 /**
+ * A form's address: the path it submits to, whatever its trailing slash. A
+ * refused submission is kept with it, so only the form it was sent to shows
+ * it, and not another on the page with the same fields, such as another
+ * row's.
+ */
+export const address = {
+	/**
+	 * @param pathname Path of the form's action, or of the request sent to it
+	 * @returns The address
+	 */
+	of: (pathname: string) =>
+		pathname.length > 1 && pathname.endsWith("/")
+			? pathname.slice(0, -1)
+			: pathname,
+
+	/**
+	 * @param pathname Path of the request
+	 * @returns Its address, to keep in a cookie
+	 */
+	write: (pathname: string) =>
+		Codec.Base64Url.encode(Codec.encode(address.of(pathname))),
+
+	/**
+	 * @param text Address from a cookie, which anyone can write
+	 * @returns The address, if it is one
+	 */
+	read(text: string | undefined) {
+		try {
+			if (text !== undefined) return Codec.decode(Codec.Base64Url.decode(text));
+		} catch {}
+	},
+};
+
+/**
  * Most characters of state before it is compressed: text is about a third of
  * its length compressed, so more than this could never fit, and is not tried.
  */
@@ -307,11 +341,14 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @param source Finds what the request holds for the form
 	 * @param c Request context
 	 */
-	readonly #kept = async (
-		source: (c: View) => Form.Source,
-		c: View,
-	): Promise<Field.State<Shape> | undefined> =>
-		this.#unplaced(await this.#restore(source(c)));
+	readonly #kept = async (source: (c: View) => Form.Source, c: View) => {
+		const held = source(c);
+
+		return {
+			sent: held.sent,
+			state: this.#unplaced(await this.#restore(held)),
+		};
+	};
 
 	/**
 	 * Restore what a request holds for the form.
@@ -580,22 +617,31 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @param initial Initial values, for example the record being edited.
 	 * What a refused submission sent takes precedence
 	 * @param source Finds what a request holds for the form, nothing without it
+	 * @param to The form's address, to show only what was sent to it
 	 * @returns The form's components, its issues, and its values
 	 */
 	bind = (
 		initial?: Field.Value.Initial<Shape>,
 		source?: (c: View) => Form.Source,
+		to?: string,
 	): Form.Bound<Shape> => {
 		/**
 		 * @param c Request context, of a component rendered for one
 		 * @returns What the fields show: the initial values, under what the
-		 * request kept
+		 * request kept for this form
 		 */
-		const state = async (c: View | undefined) =>
-			this.#over(
-				c && source ? await c.memo(this.#kept)(source, c) : undefined,
+		const state = async (c: View | undefined) => {
+			const held = c && source ? await c.memo(this.#kept)(source, c) : null;
+
+			return this.#over(
+				// another form's, such as another row's, is not this one's to show
+				held &&
+					(to === undefined || held.sent === undefined || held.sent === to)
+					? held.state
+					: undefined,
 				initial,
 			);
+		};
 
 		return {
 			Field: async (props, c) =>
@@ -626,6 +672,9 @@ export namespace Form {
 
 		/** The state a refused submission kept, compressed */
 		readonly state?: string | undefined;
+
+		/** The address of the form the submission was sent to */
+		readonly sent?: string | undefined;
 	};
 
 	/**
@@ -647,7 +696,7 @@ export namespace Form {
 		 */
 		readonly Field: (
 			props: Field.Component.Props<Shape>,
-			c?: View,
+			c: View,
 		) => JSX.Element;
 
 		/**
@@ -662,11 +711,11 @@ export namespace Form {
 		 */
 		readonly Fields: (
 			// partial because name is not required
-			props?: Partial<Field.Component.Props<Shape>> & {
+			props: Partial<Field.Component.Props<Shape>> & {
 				/** Each field's own: give them to its `Field` or `component` */
 				options?: never;
 			},
-			c?: View,
+			c: View,
 		) => JSX.Element;
 
 		/**

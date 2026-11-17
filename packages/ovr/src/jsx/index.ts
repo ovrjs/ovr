@@ -59,7 +59,7 @@ export namespace JSX {
 	 * for. A class is not one, so `<Form />` with the `Form` class is a type
 	 * error instead of failing as it renders.
 	 */
-	export type ElementType = string | ((props: any, c: View<any>) => unknown);
+	export type ElementType = string | ((props: any, c: View) => unknown);
 }
 
 /** ovr JSX */
@@ -74,7 +74,7 @@ export class JSX {
 	 * @returns Generator of the element's `Chunk`s of HTML
 	 */
 	static jsx<P extends JSX.Props = JSX.Props>(
-		tag: ((props: P, c: View<any>) => JSX.Element) | string,
+		tag: ((props: P, c: View) => JSX.Element) | string,
 		props: P,
 	): AsyncGenerator<Chunk, void, unknown> {
 		// this function doesn't need to be called recursively

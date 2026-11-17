@@ -148,9 +148,9 @@ Pass children to write the form's contents yourself, for example with the form's
 `Button` is for a second action inside another form: a submit button whose `formaction` sends that form to this route instead. Like any `formaction` button, it does nothing outside a `<form>`, so use the route's `Form` for a standalone button.
 
 ```tsx
-const save = update.form(post);
+const save = update.form(post, { id: post.id });
 
-<save.Form params={{ id: post.id }}>
+<save.Form>
 	<save.Fields />
 	<button>Save</button>
 	{/* submits the same form to /posts/1/preview */}
@@ -166,7 +166,7 @@ The `Anchor`, `Button`, and `Form` components of `Route.get` and `Route.post` ta
 - `search` - [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/URLSearchParams) to append to the URL, passed into `URLSearchParams` constructor to create the query string.
 - `hash` - [fragment hash](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) appended with a `#` at the end of the URL.
 
-`Form` also takes `submit`, the label of its button. To fill a form with a record's values, use [`route.form(values)`](/schema#edit-a-record).
+`Form` also takes `submit`, the label of its button. To fill a form with a record's values, use [`route.form(values, params)`](/schema#edit-a-record).
 
 ```tsx
 const page = Route.get("/hello/:name").use(() => {

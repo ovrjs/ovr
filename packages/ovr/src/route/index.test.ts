@@ -1,6 +1,6 @@
 import { App } from "../app/index.js";
 import type { Context } from "../context/index.js";
-import { Field, Form, forms } from "../form/index.js";
+import { Field, Form, address, forms } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import type { JSX } from "../jsx/index.js";
 import { Mcp } from "../mcp/index.js";
@@ -13,18 +13,19 @@ import { describe, expect, expectTypeOf, test } from "vitest";
  * @param url The page's address
  * @param state What a refused submission kept, which a request has in a
  * cookie, named in the address
+ * @param sent Path of the form it was sent to, the page's own by default
  * @returns The context of a request for the page, as far as a form reads it
  */
-const page = (url: string, state?: string) => {
-	const address = new URL(url, "http://localhost:5173");
-	if (state !== undefined) address.searchParams.set("_form", "1a2b3c4d");
+const page = (url: string, state?: string, sent?: string) => {
+	const at = new URL(url, "http://localhost:5173");
+	if (state !== undefined) at.searchParams.set("_form", "1a2b3c4d");
 
 	return {
-		url: address,
+		url: at,
 		cookie: {
 			get: (name: string) =>
 				name === "_form" && state !== undefined
-					? `1a2b3c4d.${state}`
+					? `1a2b3c4d.${address.write(sent ?? at.pathname)}.${state}`
 					: undefined,
 		},
 		memo: (fn: unknown) => fn,
@@ -204,7 +205,7 @@ describe("Route schema helpers", () => {
 			.fields({ name: Field.text() })
 			.use((c) => c.text("ok"));
 
-		const html = await new Render({ markup: profile.Form({}) }).string();
+		const html = await new Render({ markup: jsx(profile.Form, {}) }).string();
 
 		// the same as the form for a request that holds nothing for it
 		expect(await shown(jsx(profile.Form, {}), page("/profile"))).toBe(html);
@@ -635,7 +636,7 @@ describe("editing records", () => {
 			note: null,
 		};
 		const html = await shown(
-			jsx(update.form(post).Form, { params: { id: "1" } }),
+			jsx(update.form(post, { id: "1" }).Form, {}),
 			page("/posts/1"),
 		);
 
@@ -655,7 +656,7 @@ describe("editing records", () => {
 		const result = await forms.get(refused)!.parse(body);
 		if (!result.issues) throw new Error("Expected issues");
 		const restored = await shown(
-			jsx(refused.form(post).Form, { params: { id: "1" } }),
+			jsx(refused.form(post, { id: "1" }).Form, {}),
 			page("/posts/1", result.state),
 		);
 
@@ -678,10 +679,7 @@ describe("editing records", () => {
 		const form = new Form(shape);
 
 		for (const html of [
-			await shown(
-				jsx(update.form(values).Form, { params: { id: "1" } }),
-				state,
-			),
+			await shown(jsx(update.form(values, { id: "1" }).Form, {}), state),
 			await shown(
 				jsx(form.bind(values, (c) => ({ url: c.url })).Fields, {}),
 				state,
@@ -703,8 +701,8 @@ describe("editing records", () => {
 			.use((c) => c.text("ok"));
 		const html = await new Render({
 			markup: [
-				update.Form({ params: { id: "1" }, submit: "Save changes" }),
-				update.Form({ params: { id: "1" } }),
+				jsx(update.Form, { params: { id: "1" }, submit: "Save changes" }),
+				jsx(update.Form, { params: { id: "1" } }),
 			],
 		}).string();
 
@@ -723,7 +721,7 @@ describe("editing records", () => {
 		if (!refused.issues) throw new Error("Expected issues");
 		const request = page("/signup", refused.state);
 
-		const plain = await new Render({ markup: signup.Form({}) }).string();
+		const plain = await new Render({ markup: jsx(signup.Form, {}) }).string();
 		expect(plain).toContain('name="email"');
 		expect(plain).toContain('action="/signup"');
 		expect(plain).not.toContain("not an email");
@@ -732,21 +730,22 @@ describe("editing records", () => {
 		const bound = await shown(jsx(signup.Form, {}), request);
 		expect(bound).toContain('value="not an email"');
 		expect(bound).toContain('aria-invalid="true"');
-		expect(bound).toContain('action="/signup?_return=%2Fsignup"');
+		// it posts to the page it is on, which a refusal returns to already
+		expect(bound).toContain('action="/signup"');
 	});
 
 	test("a Form without fields is still a button to submit, unless given children", async () => {
 		const remove = Route.post("/posts/:id/delete").use((c) => c.text("ok"));
 		expect(
 			await new Render({
-				markup: remove.Form({ params: { id: "1" }, submit: "Delete" }),
+				markup: jsx(remove.Form, { params: { id: "1" }, submit: "Delete" }),
 			}).string(),
 		).toBe(
 			'<form action="/posts/1/delete" method="POST" enctype="multipart/form-data"><button>Delete</button></form>',
 		);
 		expect(
 			await new Render({
-				markup: remove.Form({
+				markup: jsx(remove.Form, {
 					params: { id: "1" },
 					children: jsx("button", { children: "Remove" }),
 				}),
@@ -760,7 +759,7 @@ describe("editing records", () => {
 		const form = new Form(fields).bind({ title: "One", body: "Two" });
 		const html = await new Render({
 			markup: [
-				form.Field({ name: "title" }),
+				jsx(form.Field, { name: "title" }),
 				(await form.component(page("/"), { name: "body" })).Control(),
 			],
 		}).string();
@@ -775,7 +774,7 @@ describe("editing records", () => {
 			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
 		const html = await shown(
-			jsx(update.form({ body }).Form, { params: { id: "1" } }),
+			jsx(update.form({ body }, { id: "1" }).Form, {}),
 			page("/posts/1"),
 		);
 
@@ -811,6 +810,101 @@ describe("editing records", () => {
 			expect(html).not.toContain("selected");
 		},
 	);
+});
+
+describe("a refused submission", () => {
+	const fields = { name: Field.text().min(3) };
+	const rename = Route.post("/items/:id/rename")
+		.fields(fields)
+		.use(async (c) => {
+			const result = await c.data();
+			return result.issues ? c.redirect(result.url, 303) : c.text("ok");
+		});
+	// another route with the same fields
+	const note = Route.post("/notes/:id/rename")
+		.fields(fields)
+		.use((c) => c.text("ok"));
+	const list = Route.get("/items").use(() => {
+		const second = rename.form({ name: "Two" }, { id: "2" });
+
+		return [
+			// the route's own form, one laid out by hand, and another route's
+			jsx(rename.Form, { params: { id: "1" } }),
+			jsx(second.Form, { children: jsx(second.Field, { name: "name" }) }),
+			jsx(rename.form({ name: "Three" }, { id: "3" }).Form, {}),
+			jsx(note.Form, { params: { id: "2" } }),
+		];
+	});
+	const app = new App().use(rename, note, list);
+
+	/**
+	 * @param id Item to rename, with a name that is too short
+	 * @returns Each form's action, with the value and validity of its field
+	 */
+	const refuse = async (id: string) => {
+		const body = new FormData();
+		body.set("name", "x");
+		const refused = await app.fetch(
+			new Request(`http://localhost/items/${id}/rename?_return=%2Fitems`, {
+				method: "POST",
+				body,
+				headers: { origin: "http://localhost" },
+			}),
+		);
+		const html = await (
+			await app.fetch(
+				new URL(refused.headers.get("location")!, "http://localhost"),
+				{
+					headers: {
+						cookie: refused.headers.getSetCookie()[0]!.split(";", 1)[0]!,
+					},
+				},
+			)
+		).text();
+
+		return html
+			.split("<form ")
+			.slice(1)
+			.map((form) => [
+				/action="([^"?]+)/.exec(form)![1],
+				/ value="([^"]*)"/.exec(form)?.[1] ?? "",
+				form.includes('aria-invalid="true"'),
+			]);
+	};
+
+	test("is shown by the form it was sent to, and no other with its fields", async () => {
+		expect(await refuse("2")).toEqual([
+			["/items/1/rename", "", false],
+			["/items/2/rename", "x", true],
+			["/items/3/rename", "Three", false],
+			["/notes/2/rename", "", false],
+		]);
+		expect(await refuse("1")).toEqual([
+			["/items/1/rename", "x", true],
+			["/items/2/rename", "Two", false],
+			["/items/3/rename", "Three", false],
+			["/notes/2/rename", "", false],
+		]);
+	});
+
+	test("a form takes its route's parameters once, where it is made", () => {
+		// @ts-expect-error the pattern has a parameter
+		void (() => rename.form({ name: "One" }));
+		// @ts-expect-error
+		void (() => rename.form());
+		void ((c: Context) => {
+			const one = rename.form(undefined, { id: "1" });
+
+			// @ts-expect-error the form has them already
+			one.Form({ params: { id: "2" } }, c);
+			// @ts-expect-error a part is a component, rendered for a request
+			one.Field({ name: "name" });
+			// @ts-expect-error
+			one.Fields({});
+			// @ts-expect-error
+			rename.Form({ params: { id: "1" } });
+		});
+	});
 });
 
 describe("invalid after parsing", () => {
@@ -850,7 +944,10 @@ describe("invalid after parsing", () => {
 		// the address names the submission, a cookie for that page holds it
 		expect(location.search).toMatch(/^\?_form=[0-9a-f]{8}$/);
 		const [cookie] = res.headers.getSetCookie();
-		expect(cookie).toMatch(/^_form=[0-9a-f]{8}\.[\w-]+; Path=\/signup; /);
+		// its ID, the form it was sent to, and what was sent
+		expect(cookie).toMatch(
+			/^_form=[0-9a-f]{8}\.[\w-]+\.[\w-]+; Path=\/signup; /,
+		);
 
 		const html = await (
 			await app.fetch(location, {
@@ -902,16 +999,16 @@ describe("chained routes", () => {
 		// a form per record would repeat the name, and only described routes are tools
 		const remove = Route.post("/posts/:id/delete").describe("Delete a post");
 		for (const html of [
-			await render(remove.Form({ params: { id: "1" } })),
-			await render(Route.post("/internal").Form({})),
-			await render(Route.get("/about").Form({})),
+			await render(jsx(remove.Form, { params: { id: "1" } })),
+			await render(jsx(Route.post("/internal").Form, {})),
+			await render(jsx(Route.get("/about").Form, {})),
 		])
 			expect(html).not.toContain("toolname");
 
 		// props override them
 		expect(
 			await render(
-				remove.Form({
+				jsx(remove.Form, {
 					params: { id: "1" },
 					toolname: "delete_post",
 					tooldescription: "Delete this post",

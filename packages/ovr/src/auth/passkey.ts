@@ -1,7 +1,7 @@
 import type { Context as ContextType } from "../context/index.js";
 import { Field, Form as FormSchema, forms } from "../form/index.js";
-import { type JSX, jsx } from "../jsx/index.js";
-import { Route } from "../route/index.js";
+import { Fragment, type JSX, jsx } from "../jsx/index.js";
+import { Route, element } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Codec, Time, noStore } from "../util/index.js";
 import { AuthData } from "./auth-data.js";
@@ -20,7 +20,10 @@ export namespace Passkey {
 	 *
 	 * @template Pattern Pattern of the route the form submits to
 	 */
-	export type Component<Pattern extends string> = Route.Form<Pattern> & {
+	export type Component<Pattern extends string> = ((
+		// a passkey form reads nothing of the request as it renders
+		props: Parameters<Route.Form<Pattern>>[0],
+	) => JSX.Element) & {
 		Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 	};
 	/**
@@ -166,7 +169,7 @@ export class Passkey {
 		};
 		const Form: Passkey.Component<Pattern> = Object.assign(
 			(props: Parameters<Route.Form<Pattern>>[0]) =>
-				route.Form({
+				Route[element](route as never, {
 					...props,
 					...(options.page && {
 						search: [
@@ -178,7 +181,7 @@ export class Passkey {
 						props.children ?? [
 							// the route's own fields: what is filled in, and the hidden
 							// ones the ceremony fills. No submission is kept for them
-							forms.get(route)?.bind().Fields(),
+							jsx(forms.get(route)?.bind().Fields ?? Fragment, {}),
 							jsx("button", {
 								children:
 									options.submit ??

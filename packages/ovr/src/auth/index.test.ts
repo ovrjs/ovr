@@ -1221,7 +1221,9 @@ describe("configured passkey callbacks", () => {
 				auth,
 				Route.get("/signup").use((c) => {
 					const { register } = auth.forms(c);
-					return register.Form({ children: register.Field({ name: "email" }) });
+					return jsx(register.Form, {
+						children: jsx(register.Field, { name: "email" }),
+					});
 				}),
 			);
 			const page = await app.fetch(
@@ -1283,7 +1285,7 @@ describe("configured passkey callbacks", () => {
 		const auth = new Auth({ ...setup().settings, database, users: accounts });
 		const app = new App().use(
 			auth,
-			Route.get("/login").use((c) => auth.forms(c).register.Form({})),
+			Route.get("/login").use((c) => jsx(auth.forms(c).register.Form, {})),
 		);
 		const page = await app.fetch(`${origin}/login`);
 		const html = await page.text();
@@ -1344,7 +1346,9 @@ describe("configured passkey callbacks", () => {
 			auth,
 			Route.get("/signup").use((c) => {
 				const { register } = auth.forms(c);
-				return register.Form({ children: register.Field({ name: "email" }) });
+				return jsx(register.Form, {
+					children: jsx(register.Field, { name: "email" }),
+				});
 			}),
 		);
 		const page = await app.fetch(origin + "/signup");
