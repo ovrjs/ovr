@@ -196,8 +196,6 @@ describe("Route schema helpers", () => {
 		expect(typeof form.Anchor).toBe("function");
 		expect(typeof form.Form).toBe("function");
 		expect(typeof form.Button).toBe("function");
-		// its fields are the form's, for the request it is rendered for
-		expect(typeof form.form).toBe("function");
 	});
 
 	test("a route's Form defaults to its fields and a submit button, with a request or without", async () => {
@@ -636,7 +634,7 @@ describe("editing records", () => {
 			note: null,
 		};
 		const html = await shown(
-			jsx(update.form(post, { id: "1" }).Form, {}),
+			jsx(update.Form, { params: { id: "1" }, values: post }),
 			page("/posts/1"),
 		);
 
@@ -656,7 +654,7 @@ describe("editing records", () => {
 		const result = await forms.get(refused)!.parse(body);
 		if (!result.issues) throw new Error("Expected issues");
 		const restored = await shown(
-			jsx(refused.form(post, { id: "1" }).Form, {}),
+			jsx(refused.Form, { params: { id: "1" }, values: post }),
 			page("/posts/1", result.state),
 		);
 
@@ -679,17 +677,17 @@ describe("editing records", () => {
 		const form = new Form(shape);
 
 		for (const html of [
-			await shown(jsx(update.form(values, { id: "1" }).Form, {}), state),
 			await shown(
-				jsx(form.bind(values, (c) => ({ url: c.url })).Fields, {}),
+				jsx(update.Form, { params: { id: "1" }, values: values }),
 				state,
 			),
+			await shown(jsx(form.bind(values).Fields, {}), state),
 		]) {
 			expect(html).toContain('name="id" value="1"');
 			expect(html).toContain('value="Draft"');
 		}
 
-		const filled = await shown(jsx(search.form(values).Form, {}), state);
+		const filled = await shown(jsx(search.Form, { values: values }), state);
 
 		expect(filled).toContain('name="id" value="2"');
 		expect(filled).toContain('value="Typed"');
@@ -760,7 +758,7 @@ describe("editing records", () => {
 		const html = await new Render({
 			markup: [
 				jsx(form.Field, { name: "title" }),
-				(await form.component(page("/"), { name: "body" })).Control(),
+				form.component({ name: "body" }).Control(),
 			],
 		}).string();
 
@@ -774,7 +772,7 @@ describe("editing records", () => {
 			.use((c) => c.text("ok"));
 		const body = "Article text. ".repeat(100);
 		const html = await shown(
-			jsx(update.form({ body }, { id: "1" }).Form, {}),
+			jsx(update.Form, { params: { id: "1" }, values: { body } }),
 			page("/posts/1"),
 		);
 
@@ -798,9 +796,10 @@ describe("editing records", () => {
 				: await parsed.invalid({ email: "Already registered" });
 			const html = await shown(
 				jsx(
-					form.bind({ title: "Old title", tags: ["a"] }, () => ({
-						state: result.state,
-					})).Fields,
+					form.bind(
+						{ title: "Old title", tags: ["a"] },
+						await form.read(page("/"), () => ({ state: result.state }), "/"),
+					).Fields,
 					{},
 				),
 				page("/"),
@@ -825,13 +824,15 @@ describe("a refused submission", () => {
 		.fields(fields)
 		.use((c) => c.text("ok"));
 	const list = Route.get("/items").use(() => {
-		const second = rename.form({ name: "Two" }, { id: "2" });
-
 		return [
-			// the route's own form, one laid out by hand, and another route's
+			// the form as it is, one laid out by hand, and another route's
 			jsx(rename.Form, { params: { id: "1" } }),
-			jsx(second.Form, { children: jsx(second.Field, { name: "name" }) }),
-			jsx(rename.form({ name: "Three" }, { id: "3" }).Form, {}),
+			jsx(rename.Form, {
+				params: { id: "2" },
+				values: { name: "Two" },
+				children: (form) => jsx(form.Field, { name: "name" }),
+			}),
+			jsx(rename.Form, { params: { id: "3" }, values: { name: "Three" } }),
 			jsx(note.Form, { params: { id: "2" } }),
 		];
 	});
@@ -887,22 +888,29 @@ describe("a refused submission", () => {
 		]);
 	});
 
-	test("a form takes its route's parameters once, where it is made", () => {
-		// @ts-expect-error the pattern has a parameter
-		void (() => rename.form({ name: "One" }));
-		// @ts-expect-error
-		void (() => rename.form());
-		void ((c: Context) => {
-			const one = rename.form(undefined, { id: "1" });
+	test("a form's values and parts are typed by its route's fields", () => {
+		const id = { id: "1" };
 
-			// @ts-expect-error the form has them already
-			one.Form({ params: { id: "2" } }, c);
-			// @ts-expect-error a part is a component, rendered for a request
-			one.Field({ name: "name" });
-			// @ts-expect-error
-			one.Fields({});
-			// @ts-expect-error
-			rename.Form({ params: { id: "1" } });
+		void ((c: Context) => {
+			// @ts-expect-error the pattern has a parameter
+			rename.Form({}, c);
+			// @ts-expect-error not one of the fields
+			rename.Form({ params: id, values: { title: "" } }, c);
+			// @ts-expect-error a form is a component, rendered for a request
+			rename.Form({ params: id });
+			rename.Form(
+				{
+					params: id,
+					values: { name: "One" },
+					children: (form) => {
+						// @ts-expect-error not one of the fields
+						form.Field({ name: "title" });
+
+						return jsx(form.Field, { name: "name" });
+					},
+				},
+				c,
+			);
 		});
 	});
 });

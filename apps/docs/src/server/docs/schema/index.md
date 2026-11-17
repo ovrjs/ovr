@@ -102,7 +102,7 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 A description written to be complete for an agent can be more than a person needs under a control. `hint` is what people read in its place, and agents still read the description: `Field.number().describe("Weight in grams for cups and spoons. Empty for counts and liquids.").hint("For cups and spoons")`. An empty hint shows people nothing.
 
-`control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<join.Field name="name" autofocus />`.
+`control` gives the field's control its attributes wherever it renders: `Field.text().control({ placeholder: "Harry Potter" })`. Attributes for one form are passed when it renders, `<form.Field name="name" autofocus />`.
 
 The form returns a refused submission to the page it is on. On a page with another address than the form's own, its action carries the page's address in a same-origin `_return` query param, such as `action="/signup?_return=%2Fjoin"`.
 
@@ -110,41 +110,37 @@ The form returns a refused submission to the page it is on. On a page with anoth
 
 ### Lay out the fields
 
-`signup.form()` gives the form's parts, to lay the fields out yourself. Name it for what it does, such as `join` or `save`: a handler often has the record under the more obvious name.
+Give the `Form` a function to lay the fields out yourself. It is given the form's parts:
 
 ```tsx
-const join = signup.form();
-
-<join.Form>
-	<join.Field name="name" autofocus />
-	<button>Sign up</button>
-</join.Form>;
+<signup.Form>
+	{(form) => (
+		<>
+			<form.Field name="name" autofocus />
+			<button>Sign up</button>
+		</>
+	)}
+</signup.Form>
 ```
 
-- `join.Form` renders the `<form>`, and the fields and the button when it is given no children. It has the route's parameters already, so it takes no `params`
-- `join.Fields` renders all the fields _without_ the outer `<form>` shell
-- `join.Field` renders one field by `name` (each key in the shape)
-- `await join.component(c, { name })` exposes the low-level field components for more customization, for example if you need to change the position of the label or input.
-- `await join.issues(c)` and `await join.values(c)` are what a refused submission found and sent, `undefined` without one
+- `form.Fields` renders all the fields
+- `form.Field` renders one field by `name` (each key in the shape)
+- `form.component({ name })` exposes the low-level field components for more customization, for example if you need to change the position of the label or input
+- `form.issues` and `form.values` are what a refused submission found and sent, `undefined` without one
 
-`Form`, `Field`, and `Fields` are components, so each reads the request from the [context](/render#context) it is rendered for: use them as tags, since calling one as a function is a type error. The other three are read outside of one, so they take `c`.
-
-A route with parameters takes them where the form is made, after the values: `update.form(post, { id })`, or `comment.form(undefined, { post })` for a form that starts empty. They are the form's address, so a page with a form in every row makes one for each row.
-
-Routes that share fields can share the component that lays them out. Give it the form, typed by the fields it has, such as `form: Field.Bound<typeof fields>`, and render `<props.form.Field name="title" />`. Render each route's own `Form` around it.
+Routes that share fields can share the component that lays them out. Give it the parts, typed by the fields they have, such as `form: Field.Bound<typeof fields>`, and render `<props.form.Field name="title" />`.
 
 ### Edit a record
 
-Give `route.form` the record to fill the fields with its current values. What a refused submission sent takes precedence, and values a field can't render, such as dates and `null`, are skipped.
+Give the `Form` the record as `values`, to fill the fields with its current values. What a refused submission sent takes precedence, and values a field can't render, such as dates and `null`, are skipped.
 
 ```tsx
 const update = Route.post("/posts/:id").fields(fields).use(handler);
 
 const edit = Route.get("/posts/:id/edit").use(async (c) => {
 	const post = await find(c.params.id);
-	const save = update.form(post, { id: post.id });
 
-	return <save.Form />;
+	return <update.Form params={{ id: post.id }} values={post} />;
 });
 ```
 
@@ -227,12 +223,14 @@ const publish = Route.post("/recipes/:id/publish")
 	.fields({ photos: Field.checkboxes(Schema.string().uuid()) })
 	.use(handler);
 
-const choose = publish.form(undefined, { id });
-
-<choose.Form>
-	<choose.Field name="photos" options={photos.map((photo) => photo.id)} />
-	<button>Publish</button>
-</choose.Form>;
+<publish.Form params={{ id }}>
+	{(form) => (
+		<>
+			<form.Field name="photos" options={photos.map((photo) => photo.id)} />
+			<button>Publish</button>
+		</>
+	)}
+</publish.Form>;
 ```
 
 Agents see these as an array of the schema's values, such as UUIDs, without a fixed list.
@@ -279,25 +277,25 @@ const update = Route.post("/recipes/:id")
 
 A list renders a `<fieldset>` with a row for each item, and one empty row to add another. A list of several fields is a `<table>` in it, with a column for each field: its label is the column's heading, each cell has the control and its issue, and the fields' descriptions are listed once under the table. The table is in a `<div>` of its own, so a wide one can scroll sideways alone, such as `.wide > div { overflow-x: auto }`. A list's own description follows its legend, before the rows it explains, as a radio or checkbox group's does. Attributes passed to a list, such as `<save.Field name="ingredients" class="wide" />`, are its fieldset's, since it has no control of its own, as a group's are too: each box has what `control()` set. People clear a row to remove its item: a row left empty is left out, so nothing in a row is `required` in the browser, and the server checks each item that is filled. A list needs one item unless it is made `.optional()`, and `min()` and `max()` count its items, as they do for any array, such as `Field.checkboxes(tags).max(3)`.
 
-Set how many rows a list shows with `control`, wherever it renders, or pass `rows` to one form, as with any field's attributes. A week's seven dinners are `Field.list(Field.select(id)).max(7).control({ rows: 7 })`, and an edit form with room to add is `<save.Field name="ingredients" rows={ingredients.length + 5} />`. Every item is always shown, and a list never shows more rows than its `max()`, so a full list has no empty row.
+Set how many rows a list shows with `control`, wherever it renders, or pass `rows` to one form, as with any field's attributes. A week's seven dinners are `Field.list(Field.select(id)).max(7).control({ rows: 7 })`, and an edit form with room to add is `<form.Field name="ingredients" rows={ingredients.length + 5} />`. Every item is always shown, and a list never shows more rows than its `max()`, so a full list has no empty row.
 
-Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. The values given to `route.form` have a list's items as an array, as the route gets them.
+Each control is named by its list and its place, `sides.0` or `ingredients.0.amount`, so every row's controls have their own `id` and an issue is shown on the cell it is about. The `values` given to a `Form` have a list's items as an array, as the route gets them.
 
 An invalid submission shows a list's rows again, with each issue on its cell. When the rows are too many to [keep](#a-refused-submission), the issue is shown under the list and says where it was, such as "Row 2, Ingredient: Required field", with the field's label.
 
-A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own. Here `save` is the route's form, `const save = update.form(recipe, { id })`:
+A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own.:
 
 ```tsx
-<save.Field
+<form.Field
 	name="sides"
 	options={Object.fromEntries(recipes.map((r) => [r.id, r.title]))}
 />
 ```
 
-`await save.component(c, { name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
+`form.component({ name: "ingredients" })` gives `Root`, `Legend`, `Description`, `Issue`, and `rows`, to lay a list out yourself. Each row is its field's component, or its fields' components by name. A row's control names its `Issue` in `aria-describedby`, but not its `Description`, since a layout shows a column's description once, not in every row:
 
 ```tsx
-const Items = await save.component(c, { name: "ingredients" });
+const Items = form.component({ name: "ingredients" });
 
 <Items.Root>
 	<Items.Legend />
@@ -413,15 +411,18 @@ It is kept in a cookie, compressed, for an hour. Only the page the form is on is
 
 A cookie holds about 4 KB, which is a long form once it is compressed: a recipe of 100 ingredients, its steps, and its notes. When there is more, values are left out, from the form's last field back, until it fits. The issues are kept, so the person sees what was wrong, but not what they typed in the fields left out. A list shows no more rows than its `max()`, and a row's hidden value, such as its ID, is the page's to give.
 
-`route.form()` has its `issues` and `values`, to act on a refused submission outside its fields, such as opening the `<details>` the form is in:
+The form's parts have its `issues`, to act on a refused submission, such as opening the `<details>` its fields are in:
 
 ```tsx
-const add = create.form();
-
-<details open={Boolean(await add.issues(c))}>
-	<summary>Add a recipe</summary>
-	<add.Form />
-</details>;
+<create.Form>
+	{(form) => (
+		<details open={Boolean(form.issues)}>
+			<summary>Add a recipe</summary>
+			<form.Fields />
+			<button>Add</button>
+		</details>
+	)}
+</create.Form>
 ```
 
 ## GET forms

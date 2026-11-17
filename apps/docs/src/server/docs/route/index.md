@@ -132,7 +132,7 @@ const page = Route.get("/").use(() => (
 ));
 ```
 
-The form shows a person what a [refused submission](/schema#a-refused-submission) sent, and what was wrong with it. To lay its fields out yourself, or to fill them with a record's values, use [`route.form()`](/schema#lay-out-the-fields).
+The form shows a person what a [refused submission](/schema#a-refused-submission) sent, and what was wrong with it. Give it a record's [`values`](/schema#edit-a-record) to fill the fields, or a function to [lay them out yourself](/schema#lay-out-the-fields).
 
 A route without fields, such as a delete, renders just the button. Patterns can have parameters, like any route, and the components take their values with [`params`](#props).
 
@@ -150,14 +150,16 @@ Pass children to write the form's contents yourself, for example with the form's
 `Button` is for a second action inside another form: a submit button whose `formaction` sends that form to this route instead. Like any `formaction` button, it does nothing outside a `<form>`, so use the route's `Form` for a standalone button.
 
 ```tsx
-const save = update.form(post, { id: post.id });
-
-<save.Form>
-	<save.Fields />
-	<button>Save</button>
-	{/* submits the same form to /posts/1/preview */}
-	<preview.Button params={{ id: post.id }}>Preview</preview.Button>
-</save.Form>;
+<update.Form params={{ id: post.id }} values={post}>
+	{(form) => (
+		<>
+			<form.Fields />
+			<button>Save</button>
+			{/* submits the same form to /posts/1/preview */}
+			<preview.Button params={{ id: post.id }}>Preview</preview.Button>
+		</>
+	)}
+</update.Form>
 ```
 
 ## Props
@@ -168,7 +170,7 @@ The `Anchor`, `Button`, and `Form` components of `Route.get` and `Route.post` ta
 - `search` - [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/URLSearchParams) to append to the URL, passed into `URLSearchParams` constructor to create the query string.
 - `hash` - [fragment hash](https://developer.mozilla.org/en-US/docs/Web/API/URL/hash) appended with a `#` at the end of the URL.
 
-`Form` also takes `submit`, the label of its button. To fill a form with a record's values, use [`route.form(values, params)`](/schema#edit-a-record).
+`Form` also takes `submit`, the label of its button. To fill it with a record's values, give it [`values`](/schema#edit-a-record).
 
 ```tsx
 const page = Route.get("/hello/:name").use(() => {

@@ -610,56 +610,44 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	};
 
 	/**
-	 * The form with the values to start from. Its components show what a
-	 * refused submission kept, which each reads from the context of the
-	 * request it is rendered for.
+	 * What a request kept for this form: what a refused submission sent to
+	 * its address, read once for the request however many forms ask.
 	 *
-	 * @param initial Initial values, for example the record being edited.
-	 * What a refused submission sent takes precedence
-	 * @param source Finds what a request holds for the form, nothing without it
-	 * @param to The form's address, to show only what was sent to it
+	 * @param c Request context
+	 * @param source Finds what the request holds for the form
+	 * @param to The form's address, to take only what was sent to it
+	 * @returns The kept state, if it is this form's
+	 */
+	read = async (c: View, source: (c: View) => Form.Source, to: string) => {
+		const held = await c.memo(this.#kept)(source, c);
+
+		// another form's, such as another row's, is not this one's to show
+		return held.sent === undefined || held.sent === to ? held.state : undefined;
+	};
+
+	/**
+	 * The form's parts, with the values to show.
+	 *
+	 * @param initial Initial values, for example the record being edited
+	 * @param kept What a refused submission sent, which takes precedence
 	 * @returns The form's components, its issues, and its values
 	 */
 	bind = (
 		initial?: Field.Value.Initial<Shape>,
-		source?: (c: View) => Form.Source,
-		to?: string,
+		kept?: Field.State<Shape>,
 	): Form.Bound<Shape> => {
-		/**
-		 * @param c Request context, of a component rendered for one
-		 * @returns What the fields show: the initial values, under what the
-		 * request kept for this form
-		 */
-		const state = async (c: View | undefined) => {
-			const held = c && source ? await c.memo(this.#kept)(source, c) : null;
-
-			return this.#over(
-				// another form's, such as another row's, is not this one's to show
-				held &&
-					(to === undefined || held.sent === undefined || held.sent === to)
-					? held.state
-					: undefined,
-				initial,
-			);
-		};
+		const state = this.#over(kept, initial);
 
 		return {
-			Field: async (props, c) =>
-				this.shape[props.name]![render]({ ...props, state: await state(c) }),
-			Fields: async (props = {}, c) => {
-				const fields = await state(c);
-
-				return this.names.map((name) =>
-					this.shape[name]![render]({ ...props, name, state: fields }),
-				);
-			},
-			component: async (c, props) =>
-				this.shape[props.name]![component]({
-					...props,
-					state: await state(c),
-				}) as never,
-			issues: async (c) => (await state(c))?.issues,
-			values: async (c) => (await state(c))?.values,
+			Field: (props) => this.shape[props.name]![render]({ ...props, state }),
+			Fields: (props = {}) =>
+				this.names.map((name) =>
+					this.shape[name]![render]({ ...props, name, state }),
+				),
+			component: (props) =>
+				this.shape[props.name]![component]({ ...props, state }) as never,
+			issues: state?.issues,
+			values: state?.values,
 		};
 	};
 }
@@ -678,8 +666,8 @@ export namespace Form {
 	};
 
 	/**
-	 * A form with the values it starts from. Its components read the request
-	 * they are rendered for.
+	 * A form's parts, as its `Form` gives them to a function child: its
+	 * fields with the values they show.
 	 *
 	 * @template Shape Form field shape type
 	 */
@@ -688,22 +676,19 @@ export namespace Form {
 		 * Render a single form field.
 		 *
 		 * ```tsx
-		 * <signup.Field name="username" />
+		 * <form.Field name="username" />
 		 * ```
 		 *
 		 * @param props Component props
 		 * @returns The field's label, control, description, and issue
 		 */
-		readonly Field: (
-			props: Field.Component.Props<Shape>,
-			c: View,
-		) => JSX.Element;
+		readonly Field: (props: Field.Component.Props<Shape>) => JSX.Element;
 
 		/**
 		 * Render all form fields.
 		 *
 		 * ```tsx
-		 * <signup.Fields />
+		 * <form.Fields />
 		 * ```
 		 *
 		 * @param props Component props
@@ -711,46 +696,38 @@ export namespace Form {
 		 */
 		readonly Fields: (
 			// partial because name is not required
-			props: Partial<Field.Component.Props<Shape>> & {
+			props?: Partial<Field.Component.Props<Shape>> & {
 				/** Each field's own: give them to its `Field` or `component` */
 				options?: never;
 			},
-			c: View,
 		) => JSX.Element;
 
 		/**
 		 * Access the parts of a field, to lay it out yourself.
 		 *
 		 * ```tsx
-		 * const Radio = await signup.component(c, { name: "radio" });
+		 * const Radio = form.component({ name: "radio" });
 		 *
 		 * <Radio.Label />
 		 * <Radio.Control />
 		 * ```
 		 *
 		 * @template N Type of the form field name
-		 * @param c Request context of the page the form is on
 		 * @param props Field component props
 		 * @returns The field's parts
 		 */
 		readonly component: <N extends ShapeUtil.Name<Shape>>(
-			c: View,
 			props: { name: N } & Field.Component.Props<Shape>,
-		) => Promise<Field.Component<Shape[N]>>;
+		) => Field.Component<Shape[N]>;
+
+		/** What was wrong with a refused submission, `undefined` without one */
+		readonly issues: Schema.Issue.List | undefined;
 
 		/**
-		 * @param c Request context of the page the form is on
-		 * @returns What was wrong with a refused submission, `undefined`
-		 * without one
+		 * The values the fields show: the initial ones, under what a refused
+		 * submission sent
 		 */
-		readonly issues: (c: View) => Promise<Schema.Issue.List | undefined>;
-
-		/**
-		 * @param c Request context of the page the form is on
-		 * @returns The values the fields show: the initial ones, under what a
-		 * refused submission sent
-		 */
-		readonly values: (c: View) => Promise<Field.Value.Map<Shape> | undefined>;
+		readonly values: Field.Value.Map<Shape> | undefined;
 	};
 }
 
@@ -2151,9 +2128,9 @@ export namespace Field {
 	export type Shape = Record<string, Field.Any>;
 
 	/**
-	 * A form's fields with the values they start from, from `route.form()`: the type
-	 * of a prop that takes a form to lay its fields out, whichever route's it
-	 * is.
+	 * A form's parts, as its `Form` gives them to a function child: the type
+	 * of a prop that takes them to lay the fields out, whichever route's they
+	 * are.
 	 *
 	 * @template S Form shape type
 	 */

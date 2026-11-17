@@ -73,31 +73,38 @@ const ui = <S extends Field.Shape>(form: Form<S>) => {
 	};
 	// a request's context, as far as a form reads it
 	const c = { memo: (fn: unknown) => fn } as unknown as Context;
-	const bind = ({ values, state }: Given) =>
-		form.bind(values, () => ({
-			url: state,
-			state: state?.searchParams.get("_form") ?? undefined,
-		}));
+	const bind = async ({ values, state }: Given) =>
+		form.bind(
+			values,
+			await form.read(
+				c,
+				() => ({
+					url: state,
+					state: state?.searchParams.get("_form") ?? undefined,
+				}),
+				"",
+			),
+		);
 
 	return {
-		Field: ({
+		Field: async ({
 			values,
 			state,
 			...props
 		}: Parameters<Form.Bound<S>["Field"]>[0] & Given) =>
-			bind({ values, state }).Field(props, c),
-		Fields: ({
+			(await bind({ values, state })).Field(props),
+		Fields: async ({
 			values,
 			state,
 			...props
 		}: NonNullable<Parameters<Form.Bound<S>["Fields"]>[0]> & Given = {}) =>
-			bind({ values, state }).Fields(props, c),
-		component: <N extends Extract<keyof S, string>>({
+			(await bind({ values, state })).Fields(props),
+		component: async <N extends Extract<keyof S, string>>({
 			values,
 			state,
 			...props
-		}: Parameters<Form.Bound<S>["component"]>[1] & Given & { name: N }) =>
-			bind({ values, state }).component<N>(c, props as never),
+		}: Field.Component.Props<S> & Given & { name: N }) =>
+			(await bind({ values, state })).component<N>(props as never),
 	};
 };
 

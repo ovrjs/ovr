@@ -200,15 +200,37 @@ export namespace Route {
 	 * Helper type for a route with a `<Form>` component.
 	 *
 	 * @template Pattern Route pattern
+	 * @template Shape Form field shape
 	 */
-	type WithForm<Pattern extends string = string> = {
+	type WithForm<
+		Pattern extends string = string,
+		Shape extends Field.Shape = any,
+	> = {
 		/**
 		 * `<form>` that submits to the route, with its fields, if it has any,
 		 * and a submit button, unless it is given children. A refused
 		 * submission comes back to the page it is on, which shows what was
 		 * sent and what was wrong with it.
+		 *
+		 * ```tsx
+		 * <update.Form params={{ id }} values={post} />
+		 *
+		 * // to lay out the fields, give it a function
+		 * <update.Form params={{ id }} values={post}>
+		 * 	{(form) => (
+		 * 		<>
+		 * 			<form.Field name="title" />
+		 * 			<button>Save</button>
+		 * 		</>
+		 * 	)}
+		 * </update.Form>
+		 * ```
 		 */
-		readonly Form: Route.Form<Pattern>;
+		readonly Form: Route.Form<
+			Pattern,
+			// a route typed without its shape takes no values
+			[Field.Shape] extends [Shape] ? never : Shape
+		>;
 	};
 
 	/**
@@ -219,73 +241,6 @@ export namespace Route {
 	type WithAnchor<Pattern extends string = string> = {
 		/** `<a>` component with preset `href` attribute */
 		readonly Anchor: Route.Anchor<Pattern>;
-	};
-
-	/**
-	 * What a route with fields adds: its form, with the values it starts from.
-	 *
-	 * @template Pattern Route pattern
-	 * @template S Form field shape
-	 */
-	type WithFields<Pattern extends string, S extends Field.Shape> = {
-		/**
-		 * The route's form with the values to start from, and its fields to
-		 * lay out yourself. Its components show what a refused submission
-		 * sent, over those values.
-		 *
-		 * ```tsx
-		 * const save = update.form(recipe, { id });
-		 *
-		 * <save.Form>
-		 * 	<save.Field name="title" />
-		 * 	<button>Save</button>
-		 * </save.Form>
-		 * ```
-		 *
-		 * @param values Initial values, for example the record being edited.
-		 * What a refused submission sent takes precedence
-		 * @param params The pattern's parameters, when it has any. They are
-		 * the form's address: of a page's forms with these fields, such as one
-		 * in every row, only the one a refused submission was sent to shows it
-		 * @returns The form's components, its issues, and its values
-		 */
-		readonly form: (
-			...args: keyof ExtractParams<Pattern> extends never
-				? [values?: Field.Value.Initial<S>]
-				: [
-						values: Field.Value.Initial<S> | undefined,
-						params: Route.URLOptions<ExtractParams<Pattern>>["params"],
-					]
-		) => Route.Bound<S>;
-	};
-
-	/**
-	 * A route's form once `route.fields()` sets a shape. A route that may
-	 * have one, typed without its shape, may have `form`.
-	 *
-	 * @template Pattern Route pattern
-	 * @template Shape Form field shape
-	 */
-	type WithSchema<Pattern extends string, Shape extends Field.Shape> = [
-		Field.Shape,
-	] extends [Shape]
-		? { readonly form?: Util.Bivariant<WithFields<Pattern, any>["form"]> }
-		: WithFields<Pattern, Shape>;
-
-	/**
-	 * A route's form with the values it starts from, from `route.form()`.
-	 *
-	 * @template Pattern Route pattern
-	 * @template S Form field shape
-	 */
-	export type Bound<S extends Field.Shape> = Field.Bound<S> & {
-		/**
-		 * `<form>` that submits to the route, with its fields and a submit
-		 * button unless it is given children. A refused submission comes back to
-		 * the page it is on. It has the parameters `route.form` was given, so
-		 * it takes none.
-		 */
-		readonly Form: Route.Form<"/">;
 	};
 
 	/**
@@ -302,8 +257,7 @@ export namespace Route {
 	> = Route<Pattern, Params, Shape, "get"> &
 		WithAnchor<Pattern> &
 		WithButton<Pattern> &
-		WithForm<Pattern> &
-		WithSchema<Pattern, Shape>;
+		WithForm<Pattern, Shape>;
 
 	/**
 	 * POST route type with route components and optional schema helpers.
@@ -318,8 +272,7 @@ export namespace Route {
 		Shape extends Field.Shape = any,
 	> = Route<Pattern, Params, Shape, "post"> &
 		WithButton<Pattern> &
-		WithForm<Pattern> &
-		WithSchema<Pattern, Shape>;
+		WithForm<Pattern, Shape>;
 
 	/** Components a route has: GET routes add an `<Anchor>` */
 	export type Kind = "get" | "post" | "plain";
@@ -480,12 +433,31 @@ export namespace Route {
 	 *
 	 * @template Pattern Route pattern
 	 */
-	export type Form<Pattern extends string> = (
-		props: JSX.IntrinsicElements["form"] &
+	export type Form<Pattern extends string, S extends Field.Shape = never> = (
+		props: Omit<JSX.IntrinsicElements["form"], "children"> &
 			URLOptions<ExtractParams<Pattern>> & {
 				/** Label of the generated submit button, defaults to "Submit" */
 				submit?: JSX.Element | undefined;
-			},
+
+				/**
+				 * The form's contents, in place of its fields and button. A
+				 * function is given the form's parts, to lay out its fields:
+				 * `Field`, `Fields`, `component`, `issues`, and `values`.
+				 */
+				children?:
+					| JSX.Element
+					| ([S] extends [never]
+							? never
+							: (form: Field.Bound<S>) => JSX.Element);
+			} & ([S] extends [never]
+				? {}
+				: {
+						/**
+						 * Initial values, for example the record being edited.
+						 * What a refused submission sent takes precedence.
+						 */
+						values?: Field.Value.Initial<S> | undefined;
+					}),
 		c: View,
 	) => JSX.Element;
 
@@ -718,37 +690,42 @@ export class Route<
 				: { url: c.url };
 		};
 
-		/**
-		 * @param values Initial values
-		 * @param params The pattern's parameters, which make the form's address
-		 * @returns The form with them, and the `<form>` that submits to the route
-		 */
-		const bind = (values?: Field.Value.Initial<S>, params?: unknown) => {
-			const bound = form.bind(
-				values,
-				source,
-				address.of(
-					new URL(this.url({ params } as never), "http://localhost").pathname,
-				),
-			);
-
-			return {
-				...bound,
-				Form: (props: Parameters<Route.Form<Pattern>>[0], c: View) =>
-					Route.#form(
-						this,
-						{ ...props, params } as never,
-						c?.url,
-						jsx(bound.Fields, {}),
-					),
-			};
-		};
-
 		return Object.assign(this, {
-			// its own `Form` has its fields now, for the parameters it is given
-			Form: ((props, c) =>
-				bind(undefined, props.params).Form(props, c)) as Route.Form<Pattern>,
-			form: bind,
+			// its `Form` has its fields now, and what the request holds for them
+			Form: async (
+				{
+					values,
+					children,
+					...props
+				}: Parameters<Route.Form<Pattern, S>>[0] & {
+					values?: Field.Value.Initial<S>;
+				},
+				c?: View,
+			) => {
+				// the form's address, to show only what was sent to it
+				const to = address.of(
+					new URL(
+						this.url({ params: props.params } as never),
+						"http://localhost",
+					).pathname,
+				);
+				const parts = form.bind(values, c && (await form.read(c, source, to)));
+
+				return Route.#form(
+					this,
+					{
+						...props,
+						...(children !== undefined && {
+							children:
+								typeof children === "function"
+									? (children as (form: Field.Bound<S>) => JSX.Element)(parts)
+									: children,
+						}),
+					} as never,
+					c?.url,
+					parts.Fields(),
+				);
+			},
 		}) as any;
 	}
 

@@ -4,6 +4,7 @@ import { Database } from "../database/index.js";
 import { Field } from "../form/index.js";
 import { jsx } from "../jsx/index.js";
 import { Mcp } from "../mcp/index.js";
+import { Render } from "../render/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
@@ -159,18 +160,42 @@ function setup() {
 
 	/** The page the form is on, which says what it would show */
 	const add = Route.get("/recipes/new").use(async (c) => {
-		const form = create.form({ title: "Untitled" });
+		let seen: unknown;
 
-		return c.json({
-			issues:
-				(await form.issues(c))?.map((issue) => issue.path.join(".")) ?? null,
-			values: (await form.values(c)) ?? null,
-		});
+		// the form gives its parts to a function child
+		await new Render(
+			{
+				markup: jsx(create.Form, {
+					values: { title: "Untitled" },
+					children: (form) => {
+						seen = {
+							issues: form.issues?.map((issue) => issue.path.join(".")) ?? null,
+							values: form.values ?? null,
+						};
+					},
+				}),
+			},
+			{ context: c },
+		).string();
+
+		return c.json(seen);
 	});
 	const edit = Route.get("/recipes/:id/edit").use(async (c) => {
-		const form = update.form(undefined, { id: c.params.id });
+		let issues: unknown = null;
 
-		return c.json({ issues: (await form.issues(c)) ?? null });
+		await new Render(
+			{
+				markup: jsx(update.Form, {
+					params: { id: c.params.id },
+					children: (form) => {
+						issues = form.issues ?? null;
+					},
+				}),
+			},
+			{ context: c },
+		).string();
+
+		return c.json({ issues });
 	});
 
 	const routes = {

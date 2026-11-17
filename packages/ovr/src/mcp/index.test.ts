@@ -413,7 +413,9 @@ describe("Mcp", () => {
 
 					return jsx("main", {
 						children: [
-							jsx(rename.form({ title: "Groceries" }, { id }).Form, {
+							jsx(rename.Form, {
+								params: { id },
+								values: { title: "Groceries" },
 								submit: "Save",
 							}),
 							jsx(archive.Form, { params: { id } }),
@@ -527,10 +529,10 @@ describe("Mcp", () => {
 				.describe("A bookmark")
 				.use(async (c) =>
 					jsx("main", {
-						children: jsx(
-							save.form({ url: "https://ovrjs.com" }, { id: c.params.id }).Form,
-							{},
-						),
+						children: jsx(save.Form, {
+							params: { id: c.params.id },
+							values: { url: "https://ovrjs.com" },
+						}),
 					}),
 				),
 			new Mcp({ name: "bookmarks" }),
@@ -625,10 +627,9 @@ describe("Mcp", () => {
 			Route.get("/recipes/:slug")
 				.describe("A recipe")
 				.use(async (c) => {
-					const form = publish.form(undefined, { slug: c.params.slug });
-
-					return jsx(form.Form, {
-						children: [
+					return jsx(publish.Form, {
+						params: { slug: c.params.slug },
+						children: (form) => [
 							jsx(form.Field, { name: "photos", options: [a] }),
 							jsx(form.Field, { name: "tags" }),
 						],
@@ -686,8 +687,9 @@ describe("Mcp", () => {
 			Route.get("/recipes/:id")
 				.describe("A recipe")
 				.use(async (c) => {
-					const form = save.form(
-						{
+					return jsx(save.Form, {
+						params: { id: c.params.id },
+						values: {
 							steps: ["Chop", "Fry"],
 							dinners: [b, a],
 							ingredients: [
@@ -695,11 +697,7 @@ describe("Mcp", () => {
 								{ id: "8", name: "salt", organic: true },
 							],
 						},
-						{ id: c.params.id },
-					);
-
-					return jsx(form.Form, {
-						children: [
+						children: (form) => [
 							jsx(form.Field, { name: "steps" }),
 							jsx(form.Field, { name: "tags" }),
 							jsx(form.Field, { name: "dinners", options: [a, b], rows: 4 }),
@@ -895,7 +893,7 @@ describe("Mcp", () => {
 			route,
 			Route.get("/preferences")
 				.describe("Edit preferences")
-				.use(() => jsx(route.form({ tags: ["news"] }).Form, {})),
+				.use(() => jsx(route.Form, { values: { tags: ["news"] } })),
 		);
 		const { body } = await rpc("tools/call", {
 			name: "get_preferences",

@@ -168,11 +168,13 @@ const edit = Route.get("/bookmarks/:id/edit")
 
 			if (!bookmark) return c.text("Not Found", 404);
 
-			const save = update.form(bookmark, { id: bookmark.id });
-
 			return (
 				<Page title="Edit bookmark">
-					<save.Form submit="Save changes" />
+					<update.Form
+						params={{ id: bookmark.id }}
+						values={bookmark}
+						submit="Save changes"
+					/>
 					<list.Anchor>Back to bookmarks</list.Anchor>
 				</Page>
 			);

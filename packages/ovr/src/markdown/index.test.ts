@@ -274,7 +274,7 @@ describe("Markdown", () => {
 						"tr",
 						null,
 						h("td", null, "Post 3"),
-						h("td", null, rename.form(undefined, { id: "3" }).Form({}, page)),
+						h("td", null, rename.Form({ params: { id: "3" } }, page)),
 					),
 				),
 			),
@@ -613,9 +613,10 @@ describe("Markdown", () => {
 		expect(
 			await md(
 				jsx("main", {
-					children: route
-						.form({ title: "Hello", kind: "b" })
-						.Form({ submit: "Save" }, page),
+					children: route.Form(
+						{ submit: "Save", values: { title: "Hello", kind: "b" } },
+						page,
+					),
 				}),
 			),
 		).toBe(
