@@ -1560,8 +1560,10 @@ class FieldSchema<
 		const control = {
 			id: hidden ? undefined : props.name,
 			required: this.#required(),
-			autofocus: issue && state?.issues?.[0] === issue,
-			"aria-invalid": issue && "true",
+			// a hidden control takes no focus and is read by nobody: what is
+			// wrong with it is shown by its issue alone
+			autofocus: !hidden && issue && state?.issues?.[0] === issue,
+			"aria-invalid": !hidden && issue && "true",
 			// a control with a label and nothing more to say needs none
 			toolparamdescription:
 				!hidden && (this.description || named !== props.name)
@@ -1569,9 +1571,11 @@ class FieldSchema<
 					: undefined,
 			// read with the control: its description, then what is wrong with it
 			"aria-describedby":
-				[described === true ? descriptionId : described, issueId]
-					.filter(Boolean)
-					.join(" ") || undefined,
+				(!hidden &&
+					[described === true ? descriptionId : described, issueId]
+						.filter(Boolean)
+						.join(" ")) ||
+				undefined,
 			...this.#constrain(),
 			...this.#config.props,
 			...props,
@@ -1597,7 +1601,6 @@ class FieldSchema<
 
 		const Issue = (data: Field.Component.Issue = {}) =>
 			issue && // render nothing if no issue
-			!hidden &&
 			jsx("p", {
 				id: issueId,
 				children: issue.message,

@@ -938,6 +938,47 @@ describe("a refused submission", () => {
 		]);
 	});
 
+	test("of a hidden field shows its issue, and marks no control", async () => {
+		const pick = Route.post("/pick")
+			.fields({ recipe: Field.hidden().min(3, "Choose a recipe") })
+			.use(async (c) => {
+				const result = await c.data();
+				return result.issues ? c.redirect(result.url, 303) : c.text("ok");
+			});
+		const app = new App().use(
+			pick,
+			Route.get("/").use(() => jsx(pick.Form, { values: { recipe: "x" } })),
+		);
+		const body = new FormData();
+		body.set("recipe", "x");
+		const refused = await app.fetch(
+			new Request("http://localhost/pick?_return=%2F", {
+				method: "POST",
+				body,
+				headers: { origin: "http://localhost" },
+			}),
+		);
+		const html = await (
+			await app.fetch(
+				new URL(refused.headers.get("location")!, "http://localhost"),
+				{
+					headers: {
+						cookie: refused.headers.getSetCookie()[0]!.split(";", 1)[0]!,
+					},
+				},
+			)
+		).text();
+
+		// the message is there for the person, since the control is not
+		expect(html).toContain(
+			'<p id="recipe-issue" data-issue="0">Choose a recipe</p>',
+		);
+		expect(html).toContain('<input type="hidden" name="recipe" value="x">');
+		expect(html).not.toContain("aria-invalid");
+		expect(html).not.toContain("aria-describedby");
+		expect(html).not.toContain("autofocus");
+	});
+
 	test("a form's values and parts are typed by its route's fields", () => {
 		const id = { id: "1" };
 
