@@ -134,30 +134,3 @@ const pool: Database.Pool = {
 ```
 
 Create the database with this pool when the app is tested, apply its [migrations](/database#migrate), and insert the accounts the testers act as.
-
-## An app Vite builds
-
-An app built with Vite, such as one made with [domco](https://domco.robino.dev), imports modules only Vite can load, so load the app through Vite in the test:
-
-```ts
-import { createServer } from "vite";
-
-const vite = await createServer({
-	// no socket beside a running dev server, and its own dependency cache
-	server: { middlewareMode: true, hmr: false, ws: false },
-	cacheDir: "node_modules/.vite-test",
-	// the app's own database module is untouched: its pool is the test's
-	resolve: { alias: [{ find: /^pg$/, replacement: "./test/pg.ts" }] },
-});
-
-const { default: app } = await vite.ssrLoadModule("/server/+app.tsx");
-const recipes = await vite.ssrLoadModule("/server/recipes.tsx");
-
-// ... new Tester({ app, user }).fetch(recipes.create, ...)
-
-await vite.close();
-```
-
-- **Load routes the same way.** A route given to `fetch` or `call` must come from `ssrLoadModule` too. A plain `import` loads a second copy of the module, whose routes are not the app's.
-- **Set the environment first.** What the app reads as it is imported, such as a secret or its origin, must be set before `ssrLoadModule`.
-- **Alias the driver, not your own module.** `test/pg.ts` exports a `Pool` over the test's database, such as the PGlite pool above, as `pg` does.
