@@ -62,6 +62,7 @@
     "preprocess-message",
     "query-type",
     "read-context",
+    "read-redirect",
     "recent-sign-in",
     "registration-messages",
     "render-class",
