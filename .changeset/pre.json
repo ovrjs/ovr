@@ -24,6 +24,7 @@
     "choices-for-agents",
     "choices-return-source",
     "component-context-memo",
+    "component-type",
     "compressed-state",
     "confirm-passkey",
     "constraints",
