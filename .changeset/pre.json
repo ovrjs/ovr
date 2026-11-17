@@ -27,6 +27,7 @@
     "compressed-state",
     "confirm-passkey",
     "constraints",
+    "context-export",
     "date-range",
     "enum-types",
     "escape",
