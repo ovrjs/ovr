@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.46
+
+### Patch Changes
+
+- 00b4884: `Tester` finds the app's `Auth` itself, as it does the MCP endpoint, so it no longer takes `auth`: `new Tester({ app, user: "user-1" })`.
+
 ## 7.0.0-next.45
 
 ### Minor Changes
