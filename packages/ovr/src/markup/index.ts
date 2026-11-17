@@ -256,6 +256,9 @@ export class Renderer {
 	/** Chunks rendered before the element is its parent's current child */
 	queue: Chunk[] | undefined;
 
+	/** Characters in the queue, more or less, set by the parent of a child */
+	ahead = 0;
+
 	/** Waiting, set by the parent of a child */
 	waiting = false;
 
@@ -529,7 +532,7 @@ class Parallel {
 			const child = new Renderer(element, raw, context);
 			const chunk = this.#advance(child);
 
-			if (chunk) child.queue = [chunk];
+			if (chunk) this.#queue(child, chunk);
 			if (this.#children.push(child) > 1 && !child.done && !child.waiting)
 				this.#idle.push(child);
 		}
@@ -548,6 +551,7 @@ class Parallel {
 
 			if (chunks) {
 				child.queue = undefined;
+				child.ahead = 0;
 
 				// the others go on as the current one is read, so whatever they
 				// wait for has started before they are next
@@ -579,6 +583,34 @@ class Parallel {
 	}
 
 	/**
+	 * Most a child renders before it is the current one, in characters, more
+	 * or less. What a child waits for starts as soon as the page does, but a
+	 * large one behind a slow one is not all held in memory.
+	 */
+	static readonly #most = 256 * 1024;
+
+	/**
+	 * @param child Child to queue the chunk of
+	 * @param chunk Chunk it rendered before its turn
+	 */
+	#queue(child: Renderer, chunk: Chunk) {
+		(child.queue ??= []).push(chunk);
+		// a tag's markup is not built until it is written
+		child.ahead += chunk.value.length + 16;
+	}
+
+	/**
+	 * @param child Child
+	 * @returns `true` if it is not the current one, and has rendered as far
+	 * ahead as one may
+	 */
+	#far(child: Renderer) {
+		return (
+			child.ahead >= Parallel.#most && child !== this.#children[this.#current]
+		);
+	}
+
+	/**
 	 * Steps a child once.
 	 *
 	 * @param child Child that is not waiting
@@ -603,10 +635,12 @@ class Parallel {
 
 					// a step goes on to its chunk without being asked again, so
 					// whatever the child waits for next starts as soon as it can
-					if (!this.#failed && !this.#closed) {
+					// one that is far enough ahead waits for its turn, when it is
+					// stepped as it is read
+					if (!this.#failed && !this.#closed && !this.#far(child)) {
 						const chunk = this.#advance(child);
 
-						if (chunk) (child.queue ??= []).push(chunk);
+						if (chunk) this.#queue(child, chunk);
 						if (
 							!child.done &&
 							!child.waiting &&
@@ -641,10 +675,11 @@ class Parallel {
 			const child = idle[i]!;
 
 			// the current child is stepped as it is read
-			if (child !== current) {
+			// nor is one far enough ahead, which then waits for its turn
+			if (child !== current && !this.#far(child)) {
 				const chunk = this.#advance(child);
 
-				if (chunk) (child.queue ??= []).push(chunk);
+				if (chunk) this.#queue(child, chunk);
 				// one that waits is added again once it can step
 				if (!child.done && !child.waiting) idle[kept++] = child;
 				stepped = true;

@@ -129,7 +129,7 @@ You don't need to describe every route. Describe the ones an agent would want: w
 - **Say when to use it, not what it is.** "Add a recipe to a week's plan" tells an agent more than "POST week recipes".
 - **Refuse in words.** A handler that answers a 404 or a 403 with a short message gives the agent that message, marked as an error, so it knows why and what to try instead.
 
-A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown. Your handlers do not change. An agent reads a page by calling its GET route's tool.
+A tool call is a request to the route. The arguments become form data, or search parameters for GET, and the response is returned as Markdown. A tool has one set of arguments, so a field named as a path parameter is the same argument, such as a hidden `id` on `/posts/:id`: give them different names when they mean different things. Your handlers do not change. An agent reads a page by calling its GET route's tool.
 
 The endpoint itself is outside your app's [global middleware](/middleware#composition): the request it makes to the route is the one that passes through it, once, like a person's request to the same route.
 

@@ -94,7 +94,7 @@ Add the MCP server at http://localhost:5173/mcp as a connector named "todos",
 then add a todo to it.
 ```
 
-It calls `post_todos` with `{ "text": "..." }`. The same handler runs, and the agent reads the list it redirects to as Markdown.
+It calls `post_todos` with `{ "text": "..." }`. The same handler runs, and the agent is told where it redirects, `Redirected to /`. It reads the list by calling `get_index`.
 
 To try an ovr app without building one, connect an agent to these docs, which are an ovr app too:
 

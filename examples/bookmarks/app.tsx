@@ -69,7 +69,7 @@ const create = Route.post("/bookmarks")
 	);
 
 const update = Route.post("/bookmarks/:id")
-	.describe("Change a bookmark's title or URL")
+	.describe("Change a bookmark. Send both its title and its URL.")
 	.params({ id })
 	.fields(editable)
 	.use(

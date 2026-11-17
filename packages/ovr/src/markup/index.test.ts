@@ -660,3 +660,40 @@ describe("stream", () => {
 		await expect(reader.read()).rejects.toThrow("failed");
 	});
 });
+
+test("a large child behind a slow one is not all rendered ahead of it", async () => {
+	let release!: (value: string) => void;
+	const slow = new Promise<string>((resolve) => (release = resolve));
+	const piece = "x".repeat(4096);
+	let made = 0;
+
+	async function* Large() {
+		for (let i = 0; i < 8192; i++) {
+			made++;
+			yield piece;
+			// as a read from a database or a file would
+			await Promise.resolve();
+		}
+	}
+
+	const reader = new Render({ markup: [slow, jsx(Large, {})] })
+		.stream()
+		.getReader();
+	const first = reader.read();
+
+	// long enough for all of it, were nothing to stop it
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	// about 256 KB of it, not 32 MB
+	expect(made).toBeGreaterThan(8);
+	expect(made).toBeLessThan(200);
+
+	release("slow");
+	let length = (await first).value!.length;
+	for (let part; !(part = await reader.read()).done;)
+		length += part.value.length;
+
+	// and all of it arrives once the slow one has
+	expect(made).toBe(8192);
+	expect(length).toBe(4 + 8192 * 4096);
+});
