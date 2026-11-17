@@ -119,7 +119,10 @@ export class Tester {
 	/** The agent `call` connects, as `auth.agents(c)` lists it */
 	static readonly #agent = { id: "https://tester.test", name: "Tester" };
 
+	/** The app requests are sent to */
 	readonly #app: App;
+
+	/** ID of the user it signs in as, signed out without one */
 	readonly #user: string | undefined;
 
 	/** Cookies the app set, by name */
@@ -233,6 +236,8 @@ export class Tester {
 	 * const result = await tester.call(update, { id: "1", title: "Chili" });
 	 * ```
 	 *
+	 * @template Pattern Route pattern
+	 * @template Shape Route's fields
 	 * @param route A described route
 	 * @param args The tool's arguments: the route's parameters and its fields
 	 * @returns The tool's result, where `isError` is `true` when the route

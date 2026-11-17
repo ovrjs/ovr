@@ -257,11 +257,15 @@ export namespace Auth {
 		readonly expires: number;
 	}
 
+	/** A stored passkey, as Auth keeps it */
 	export interface Credential {
+		/** Credential ID, as the authenticator gave it, base64url */
 		id: string;
+		/** ID of the user it signs in as */
 		user: string;
 		/** SPKI-encoded P-256 public key as base64url. */
 		publicKey: string;
+		/** Signature counter, which a cloned authenticator would repeat */
 		counter: number;
 		/** Whether the credential is eligible for backup; this must not change. */
 		eligible: boolean;
@@ -280,6 +284,9 @@ export namespace Auth {
  * Complete passkey authentication stored in the application's Postgres database.
  *
  * @template U Users table, whose form fields are the registration form
+ * @template P Page path
+ * @template R Redirect path
+ * @template C Consent page path
  */
 export class Auth<
 	U extends Auth.Users = Auth.Users,
@@ -300,7 +307,10 @@ export class Auth<
 		Storage.links,
 	] as const;
 
+	/** Session and signing configuration */
 	readonly #options: State.Options;
+
+	/** Each request's authentication state, by its context */
 	readonly #states = new WeakMap<object, State>();
 	/** Auth's tables in its database */
 	readonly #storage: Storage;
@@ -346,7 +356,11 @@ export class Auth<
 		options?: { origin?: string },
 	) => Promise<string>;
 
-	/** Configure passkeys, session helpers, and automatic authentication rate limits. */
+	/**
+	 * Configure passkeys, session helpers, and automatic authentication rate limits.
+	 *
+	 * @param options Authentication configuration
+	 */
 	constructor(options: Auth.Options<U, P, R, C>) {
 		const origin = new URL(options.origin);
 		if (origin.protocol !== "https:" || origin.origin !== options.origin)
@@ -411,7 +425,12 @@ export class Auth<
 		};
 	}
 
-	/** Mounted by `app.use(auth)`, and lets every request read its session. */
+	/**
+	 * Mounted by `app.use(auth)`, and lets every request read its session.
+	 *
+	 * @param app The app it is mounted on
+	 * @returns Its middleware and endpoints
+	 */
 	[mount](app: App.Mount): ReturnType<App.Service[typeof mount]> {
 		if (!auths.has(app.fetch)) auths.set(app.fetch, this);
 
@@ -457,6 +476,10 @@ export class Auth<
 		return this.#state(c as unknown as State.Context).session();
 	}
 
+	/**
+	 * @param c Request context
+	 * @returns The request's authentication state, made once for it
+	 */
 	#state(c: State.Context) {
 		return this.#states.getOrInsertComputed(
 			c,
@@ -464,7 +487,13 @@ export class Auth<
 		);
 	}
 
-	/** Establish a session for an already-authorized user with a non-blank ID of at most 1024 UTF-8 bytes. Built-in passkey handlers do this automatically. */
+	/**
+	 * Establish a session for an already-authorized user. Built-in passkey
+	 * handlers do this automatically.
+	 *
+	 * @param c Request context
+	 * @param user ID of the user, not blank and at most 1024 UTF-8 bytes
+	 */
 	readonly login = (
 		c: Pick<Auth.Context, "url" | "cookie" | "res">,
 		user: string,
@@ -523,7 +552,11 @@ export class Auth<
 			return c.redirect(page, 303);
 		};
 
-	/** Revoke the current session and expire its cookie. Always await this method. */
+	/**
+	 * Revoke the current session and expire its cookie. Always await this method.
+	 *
+	 * @param c Request context
+	 */
 	readonly logout = (c: Pick<Auth.Context, "url" | "cookie" | "res">) => {
 		return this.#state(c).logout();
 	};

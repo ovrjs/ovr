@@ -990,7 +990,7 @@ export class Schema<Output>
 	static #test(check: Schema.Check): (value: any) => boolean {
 		switch (check.name) {
 			// a string has between length / 2 and length code points, count only
-			// between. An array is checked by its number of items.
+			// between. An array is checked by its number of items
 			case "min": {
 				const { value } = check;
 				if (typeof value === "string") {
@@ -2448,6 +2448,10 @@ class ObjectSchema<
 		this.#mode = mode;
 	}
 
+	/**
+	 * @param text What the object is, for agents
+	 * @returns A copy of the schema with the description
+	 */
 	override describe(text: string) {
 		// still an object schema, which `derive` would not make
 		return new ObjectSchema(this.shape, this.#mode, text) as this;

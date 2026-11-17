@@ -19,7 +19,13 @@ export namespace AuthData {
 
 /** Bounded parser for WebAuthn authenticator data. */
 export class AuthData {
-	/** Parse the fixed header, optional attested credential, and optional extensions. */
+	/**
+	 * Parse the fixed header, optional attested credential, and optional extensions.
+	 *
+	 * @param data Authenticator data, as the authenticator signed it
+	 * @returns Its parts
+	 * @throws {Issue} When it is malformed
+	 */
 	static parse(data: Uint8Array) {
 		if (data.length < 37) throw new Issue("credential");
 		const view = new DataView(data.buffer, data.byteOffset, data.length);

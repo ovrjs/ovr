@@ -82,6 +82,7 @@ const downloads = {
  * @param options Auth options
  * @param storage Auth storage
  * @param state Request state
+ * @param resources MCP endpoints' URLs, the resources tokens are issued for
  * @returns Endpoints, the consent form, and bearer token verification
  */
 export function oauth(
@@ -780,12 +781,18 @@ function redirectable(uri: unknown) {
 	}
 }
 
-/** @returns `true` for a URL without a fragment or credentials */
+/**
+ * @param url Redirect URI
+ * @returns `true` for a URL without a fragment or credentials
+ */
 function plain(url: URL) {
 	return !url.hash && !url.username && !url.password;
 }
 
-/** @returns `true` for loopback hosts */
+/**
+ * @param host Host of a URL
+ * @returns `true` for loopback hosts
+ */
 function loopback(host: string) {
 	return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
 }

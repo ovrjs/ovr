@@ -2,7 +2,13 @@ import { Issue } from "./issue.js";
 
 /** Strict DER decoding for WebAuthn ES256 signatures. */
 export class DER {
-	/** Convert a canonical DER ECDSA signature into Web Crypto's 64-byte format. */
+	/**
+	 * Convert a canonical DER ECDSA signature into Web Crypto's 64-byte format.
+	 *
+	 * @param der Signature, DER-encoded
+	 * @returns The signature's `r` and `s`, 32 bytes each
+	 * @throws {Issue} When it is not canonical DER
+	 */
 	static unwrap(der: Uint8Array<ArrayBuffer>) {
 		if (
 			der.length < 8 ||

@@ -17,12 +17,17 @@ import { Token } from "./token.js";
  * Construct startup-complete handlers and request-scoped UI components.
  *
  * @template U Users table
+ * @param options Auth options
+ * @param storage Auth storage
+ * @param state Request state
+ * @returns Endpoints, forms, and the sign-in link helper
  */
 export function configure<U extends Auth.Users>(
 	options: Auth.Options<U>,
 	storage: Storage,
 	state: (c: State.Context) => State,
 ) {
+	/** Any form's fields */
 	type Shape = Field.Shape;
 	const { users } = options;
 	const defaults = (users.options.default ?? []) as readonly string[];
@@ -73,7 +78,7 @@ export function configure<U extends Auth.Users>(
 	};
 
 	const values = (data: object) => {
-		// Both routes validate this application shape before selecting its transformed values.
+		// both routes validate this application shape before selecting its transformed values
 		return Object.fromEntries(
 			fields.names.map((name) => [name, Reflect.get(data, name)]),
 		) as Field.Parse.Data<Shape>;
@@ -172,7 +177,7 @@ export function configure<U extends Auth.Users>(
 						return c.text("Authentication failed.", 403);
 					return back(c, method);
 				}
-				// Network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header.
+				// network identity comes from the deployment, never an unauthenticated cookie or guessed proxy header
 				if (
 					method !== "logout" &&
 					!(prompt && method === "register") &&
@@ -212,7 +217,7 @@ export function configure<U extends Auth.Users>(
 	const login = Route.post(paths.login)
 		.fields(Passkey.shape)
 		.use(guard("login"), async (c) => {
-			// Bound the body before verification.
+			// bound the body before verification
 			if (!(await Issue.data(c))) throw new Issue("login request");
 			const credential = await new Passkey(c, state(c)).login(
 				storage.credentials,
@@ -241,7 +246,7 @@ export function configure<U extends Auth.Users>(
 				return c.json({ fields: invalid }, 422);
 			}
 			if (!(await admit(c, "register", true))) return;
-			// The reserved bootstrap field is added to the validated application shape above.
+			// the reserved bootstrap field is added to the validated application shape above
 			const data = input.data as Field.Parse.Data<Shape> & {
 				bootstrap: string;
 			};
@@ -305,8 +310,8 @@ export function configure<U extends Auth.Users>(
 			if (!input || input.issues) throw new Issue("passkey request");
 			const session = await state(c).session();
 			// a passkey outlasts the session that adds it, so only a person
-			// who has just signed in adds one, not whoever holds an old session.
-			// The form then confirms them with a passkey they have.
+			// who has just signed in adds one, not whoever holds an old session,
+			// and the form then confirms them with a passkey they have
 			if (!session || !(await state(c).recent(10 * Time.minute)))
 				return c.text("Confirm your passkey to add another.", 401);
 			const [[account], exclude] = await Promise.all([
@@ -322,7 +327,7 @@ export function configure<U extends Auth.Users>(
 				exclude,
 			});
 		});
-	// Confirms the person signed in with a passkey of theirs, which starts
+	// confirms the person signed in with a passkey of theirs, which starts
 	// their session again: what adding a passkey asks for after a while
 	const confirming = Route.post(`${paths.options}/confirm`)
 		.fields({ bootstrap: Field.hidden() })

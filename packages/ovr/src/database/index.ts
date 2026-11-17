@@ -200,6 +200,7 @@ export class Sql<Row = unknown> implements Database.Query<Row> {
 	/** Validated rows, started by the first `then`, `catch`, or `finally`. */
 	#result?: Promise<Row[]>;
 
+	/** Named in `Object.prototype.toString`, as a promise is */
 	readonly [Symbol.toStringTag] = "Sql";
 
 	/**
@@ -285,6 +286,7 @@ export class Sql<Row = unknown> implements Database.Query<Row> {
 		return this.then().finally(fn);
 	}
 
+	/** @returns The parsed rows, the query run once however many fragments ask */
 	async #run() {
 		if (!this.#execution.result) {
 			const { text, values } = this.toQuery();
@@ -589,7 +591,10 @@ class Base<T extends readonly Table.Any[]> {
 		}
 	>();
 
+	/** Pool queries run on */
 	readonly #pool: Database.Pool;
+
+	/** Tables, by name */
 	readonly #tables: T;
 
 	/** SQL tag, queries run on the pool when awaited. */

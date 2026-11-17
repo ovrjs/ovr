@@ -4,8 +4,13 @@ import { Issue } from "./issue.js";
 
 /** Internal integrity protection with explicit authentication purposes. */
 export class Token {
+	/** Signing keys by secret, imported once */
 	static readonly #keys = new Map<string, Promise<CryptoKey>>();
 
+	/**
+	 * @param secret Secret to sign with
+	 * @returns Its HMAC key
+	 */
 	static #key(secret: string) {
 		return Token.#keys.getOrInsertComputed(secret, () =>
 			crypto.subtle.importKey(
@@ -23,17 +28,38 @@ export class Token {
 		return Codec.Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
 	}
 
-	/** Seal a payload for exactly one authentication purpose. */
+	/**
+	 * Seal a payload for exactly one authentication purpose.
+	 *
+	 * @param secret Secret, or secrets newest first, the first signs
+	 * @param purpose What the token is for, which `open` must be given
+	 * @param value Payload
+	 * @returns The payload with its purpose and signature
+	 */
 	static async seal(
 		secret: Auth.Options["secret"],
 		purpose: "session" | "passkey" | "consent",
 		value: string,
 	) {
 		const payload = `${purpose}:${value}`;
-		return `${payload}.${Codec.Base64Url.encode(new Uint8Array(await crypto.subtle.sign("HMAC", await Token.#key([secret].flat()[0]!), Codec.encode(payload))))}`;
+		const signature = await crypto.subtle.sign(
+			"HMAC",
+			await Token.#key([secret].flat()[0]!),
+			Codec.encode(payload),
+		);
+
+		return `${payload}.${Codec.Base64Url.encode(new Uint8Array(signature))}`;
 	}
 
-	/** Verify both integrity and purpose before exposing the payload. */
+	/**
+	 * Verify both integrity and purpose before exposing the payload.
+	 *
+	 * @param secret Secret, or secrets newest first, any of which may have signed it
+	 * @param purpose What the token must be for
+	 * @param token Sealed token
+	 * @returns The payload
+	 * @throws {Issue} When the token is invalid, or for another purpose
+	 */
 	static async open(
 		secret: Auth.Options["secret"],
 		purpose: "session" | "passkey" | "consent",
@@ -59,7 +85,7 @@ export class Token {
 					)
 						return token.slice(purpose.length + 1, dot);
 			} catch {
-				// Malformed signatures are authentication failures.
+				// malformed signatures are authentication failures
 			}
 		}
 		throw new Issue("token");

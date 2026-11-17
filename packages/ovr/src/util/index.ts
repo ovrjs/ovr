@@ -378,8 +378,8 @@ export class Method {
 	static readonly head = "HEAD";
 }
 
-// Each constant is written out: a static that reads another one is a side
-// effect, which keeps the class in every bundle that imports this module.
+// each constant is written out: a static that reads another one is a side
+// effect, which keeps the class in every bundle that imports this module
 
 /** Byte size constants */
 export class Size {

@@ -132,10 +132,10 @@ class Part extends Request {
 			method: req.method,
 			headers: parsed,
 			body,
-			// A request made from another follows its signal with a listener,
+			// a request made from another follows its signal with a listener,
 			// and each listener added is compared with all those before it, so
-			// the cost of a form grew with the square of its number of parts.
-			// The part has the request's own signal instead, see `signal`.
+			// the cost of a form grew with the square of its number of parts,
+			// the part has the request's own signal instead, see `signal`
 			signal: null,
 			// @ts-expect-error - streaming https://developer.mozilla.org/en-US/docs/Web/API/RequestInit#duplex
 			duplex: "half",
@@ -416,7 +416,7 @@ export class Multipart {
 				}
 				this.#scratch.set(next.value, length);
 			} else {
-				// The caller must consume or retain these bytes before yielding.
+				// the caller must consume or retain these bytes before yielding
 				this.#memory = next.value;
 			}
 			this.#valid = required;
@@ -465,9 +465,9 @@ export class Multipart {
 		const byte = needle[anchor]!;
 		const last = needle[end]!;
 
-		// Reading only where the needle would end skips most of the haystack.
+		// reading only where the needle would end skips most of the haystack,
 		// `Uint8Array.indexOf` reads every byte of it, and in V8 does so several
-		// times slower than a loop, which made large files slow to parse.
+		// times slower than a loop, which made large files slow to parse
 		for (
 			let i = this.#start + end, current: number;
 			i < haystackLength;
@@ -545,7 +545,7 @@ export class Multipart {
 					!(found = this.#find(needle)) && !done;
 					done = this.#read(await this.#reader.read(), true, true)
 				) {
-					// Retain only a suffix that could begin a boundary.
+					// retain only a suffix that could begin a boundary
 					this.#start = this.#end = this.#valid;
 					const last = this.#valid - 1;
 					const indices =
@@ -591,20 +591,20 @@ export class Multipart {
 					pending = pending.subarray(length);
 					request.respond(length);
 				} else {
-					// Byte-stream enqueue transfers this independent allocation.
+					// byte-stream enqueue transfers this independent allocation
 					c.enqueue(new Uint8Array(pending));
 					pending = undefined;
 				}
 			}
 			if (this.#memory !== this.#scratch) {
-				// Source buffers may be reused on the next pull. Borrow only
-				// within this synchronous continuation, including small BYOB reads.
+				// source buffers may be reused on the next pull. Borrow only
+				// within this synchronous continuation, including small BYOB reads
 				if (pending?.length) pending = new Uint8Array(pending);
 				this.#retain();
 			}
 			if (state.ended && !pending?.length) {
 				c.close();
-				// An empty part or final short BYOB read still needs a response.
+				// an empty part or final short BYOB read still needs a response
 				c.byobRequest?.respond(0);
 			}
 		};

@@ -18,17 +18,33 @@ export namespace State {
 
 /** Internal authentication state for exactly one service and request. */
 export class State {
+	/** Cookie holding the signed session ID */
 	static readonly #cookie = "__Host-auth-session";
+
+	/** Cookie binding a ceremony to the browser that started it */
 	static readonly #binding = "__Host-auth-browser";
+
+	/** Cookie holding the path to return to after signing in */
 	static readonly #return = "__Host-auth-return";
+
+	/** Request context */
 	readonly #c: State.Context;
+
+	/** The browser's binding, once read or created */
 	#browser: string | undefined;
+
+	/** The session, read once for the request */
 	#session: Promise<Auth.Session | null> | undefined;
 
 	/** Normalized authentication configuration. */
 	readonly options;
 
-	/** Create authentication helpers for the current request. */
+	/**
+	 * Create authentication helpers for the current request.
+	 *
+	 * @param c Request context
+	 * @param options Session and signing configuration
+	 */
 	constructor(c: State.Context, options: State.Options) {
 		this.#c = c;
 		const lifetime = options.lifetime ?? 30 * Time.day;
@@ -71,7 +87,12 @@ export class State {
 			);
 	}
 
-	/** Read a browser binding; create it only while preparing a form in the handler. */
+	/**
+	 * Read a browser binding; create it only while preparing a form in the handler.
+	 *
+	 * @param create Create one if the browser has none
+	 * @returns The binding, if there is one
+	 */
 	browser(create = false) {
 		if (create) this.#origin();
 		this.#browser ??= this.#c.cookie.get(State.#binding);
@@ -98,11 +119,13 @@ export class State {
 		});
 	}
 
+	/** Expire the session cookie, which is invalid or for an ended session */
 	#clear() {
 		noStore(this.#c.res.headers);
 		this.#set(State.#cookie, "", { maxAge: 0 });
 	}
 
+	/** @returns The session the request carries, `null` without a valid one */
 	async #read() {
 		// an agent's tool call, authorized by its token
 		const { req } = this.#c as Partial<Pick<ContextType, "req">>;
@@ -118,12 +141,12 @@ export class State {
 		let id: string;
 		try {
 			id = await Token.open(this.options.secret, "session", cookie);
-		} catch (e) {
-			if (!(e instanceof Issue)) throw e;
+		} catch (error) {
+			if (!(error instanceof Issue)) throw error;
 			this.#clear();
 			return null;
 		}
-		// Storage failures must propagate, rather than appear to be successful logouts.
+		// storage failures must propagate, rather than appear to be successful logouts
 		const session = await this.options.sessions.get(id);
 		const now = Date.now();
 		if (
@@ -232,7 +255,11 @@ export class State {
 		}
 	}
 
-	/** Replace the current session and issue a new signed, secure cookie. */
+	/**
+	 * Replace the current session and issue a new signed, secure cookie.
+	 *
+	 * @param user ID of the user who signed in
+	 */
 	async login(user: string) {
 		this.#origin();
 		if (!user.trim() || Codec.encode(user).length > 1024)

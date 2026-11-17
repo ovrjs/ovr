@@ -177,6 +177,8 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	/**
 	 * @param item What each item of a list is
 	 * @param value Candidate items
+	 * @param url The items were read from a URL, so a hidden cell's value, the
+	 * server's to give, is not taken from it
 	 * @returns The items a list can render, without what a cell cannot
 	 */
 	static #items(item: Field.Item, value: unknown, url = false) {
@@ -841,7 +843,7 @@ class FieldSchema<
 	/**
 	 * Create a new field.
 	 *
-	 * @param options Field options
+	 * @param config Field options
 	 * @param schema How to validate the input
 	 * @param read How to read the form data
 	 * @param parts Maximum expected multipart parts for this field
@@ -1516,6 +1518,10 @@ class FieldSchema<
 	/**
 	 * @template S Form shape type
 	 * @param props Field control props
+	 * @param named What people know the field as, its name by default, such as
+	 * a list's column for one of its cells
+	 * @param described ID that describes the control: `true` for its own
+	 * description, a string for another's, such as a table's for its column
 	 * @returns Field component with sub-components
 	 */
 	[component]<S extends Field.Shape>(
@@ -1529,7 +1535,7 @@ class FieldSchema<
 		named: string = props.name,
 		// if the control is read with its description. A row laid out by
 		// hand, such as in a table, seldom renders each cell's, and the
-		// default table has one for the column, whose ID this is.
+		// default table has one for the column, whose ID this is
 		described: boolean | string = true,
 	): unknown {
 		const options = this.#options(given);
@@ -1653,7 +1659,7 @@ class FieldSchema<
 
 			// a group's own attributes, such as a class, are its fieldset's,
 			// as a list's are. Each box has those `control()` set, and if it
-			// is required.
+			// is required
 			const {
 				name,
 				required = this.#required(),
@@ -1761,6 +1767,7 @@ class FieldSchema<
 	/**
 	 * @template S Form shape type
 	 * @param props Field control props including `name` of the field to render
+	 * @param named What people know the field as, its name by default
 	 * @returns Component that renders the HTML field with default structure
 	 */
 	[render]<S extends Field.Shape>(
@@ -1777,8 +1784,8 @@ class FieldSchema<
 			children: [
 				item
 					? // a list of one field, a group with a legend, a row for each.
-						// Its description is before the rows it explains, which
-						// may be many.
+						// its description is before the rows it explains, which
+						// may be many
 						[
 							c.Legend(),
 							c.Description(),
@@ -1921,7 +1928,7 @@ class FieldSchema<
 					}),
 				}),
 				// what each column is, once under the table: a heading has no
-				// room for it. Each cell of the column is read with its text.
+				// room for it. Each cell of the column is read with its text
 				columns.map(
 					([key, field]) =>
 						field.#shown() &&
@@ -2027,7 +2034,7 @@ class FieldSchema<
 			[
 				field,
 				// never required: a row left empty is left out. The list's own
-				// attributes are its fieldset's, not each control's.
+				// attributes are its fieldset's, not each control's
 				{ name, state: cells, options: props.options, required: false },
 				named,
 			] as const;
@@ -3055,6 +3062,7 @@ export class Field {
 	}
 
 	/**
+	 * @template V Value of a choice
 	 * @param options The choices, or a schema that checks each one when they
 	 * are only known as the form renders, such as a record's own IDs
 	 * @returns Fixed choices, and the schema that checks one, when given a list

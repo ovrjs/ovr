@@ -158,6 +158,8 @@ export namespace Mcp {
  * ```ts
  * app.use(new Mcp({ instructions: "Save and organize bookmarks." }));
  * ```
+ *
+ * @template P Path of the endpoint
  */
 export class Mcp<P extends string = string> {
 	/** Supported protocol versions */
@@ -184,6 +186,7 @@ export class Mcp<P extends string = string> {
 	 */
 	static readonly #discovery = "/.well-known/oauth-protected-resource";
 
+	/** Server options, with the endpoint's path */
 	readonly #options: Omit<Mcp.Options, "path"> & { path: string };
 
 	/** App the endpoint is mounted on */
@@ -640,6 +643,7 @@ export class Mcp<P extends string = string> {
 	 * @param method JSON-RPC method
 	 * @param params Request params
 	 * @param session Session the token authorizes
+	 * @param legacy The request is of a version before 2026-07-28
 	 * @returns Method result
 	 */
 	async #dispatch(
@@ -1128,6 +1132,7 @@ export class Mcp<P extends string = string> {
 	 * @param session Session the token authorizes
 	 * @param url URL to request
 	 * @param init Method and body
+	 * @param sent The fields the tool call gave, which are all it updates
 	 * @returns The response, or the form's issues instead of the redirect back to it
 	 */
 	async #run(
@@ -1172,6 +1177,7 @@ export class Mcp<P extends string = string> {
 	 * @param session Session the token authorizes
 	 * @param url URL to request
 	 * @param init Method and body
+	 * @param sent The fields the tool call gave, which are all it updates
 	 * @returns Tool result
 	 */
 	async #fetch(

@@ -248,7 +248,10 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 	/** One store per database, so instances share pruning. */
 	static readonly #stores = new WeakMap<Database, Storage>();
 
+	/** Database containing the authentication tables */
 	readonly #db: Database;
+
+	/** When expired rows were last deleted, in milliseconds */
 	#pruned = 0;
 
 	/**
@@ -299,6 +302,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		);
 	}
 
+	/** Agents' codes and tokens, stored by their hashes */
 	readonly tokens = {
 		/**
 		 * @param token Code or token, stored by its hash
@@ -508,6 +512,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		);
 	}
 
+	/** Passkey ceremonies in progress, each used once */
 	readonly challenges: Storage.Challenges = {
 		set: async (id, challenge) => {
 			await this.#prune();
@@ -548,6 +553,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		},
 	};
 
+	/** Browser sessions */
 	readonly sessions: Storage.Sessions = {
 		set: async (_, session) => {
 			await this.#prune();
@@ -573,6 +579,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		},
 	};
 
+	/** Passkeys, as ceremonies read and update them */
 	readonly credentials: Storage.Credentials = {
 		get: async (id) =>
 			(
@@ -607,6 +614,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		},
 	};
 
+	/** A user's passkeys, to list and remove */
 	readonly passkeys = {
 		/**
 		 * @param user User ID
@@ -644,6 +652,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 			}),
 	};
 
+	/** Sign-in links, each used once */
 	readonly links = {
 		/**
 		 * @param token Link's token, stored by its hash

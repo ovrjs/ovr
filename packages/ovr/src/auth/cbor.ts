@@ -41,7 +41,10 @@ export class COSE {
 }
 
 export namespace CBOR {
+	/** A map's key */
 	export type Key = number | string;
+
+	/** A decoded value */
 	export type Value =
 		number | string | boolean | null | Uint8Array | Map<Key, Value> | Value[];
 }
@@ -171,6 +174,7 @@ export class CBOR {
 	/**
 	 * Parse next CBOR value from stream.
 	 *
+	 * @param depth How deeply nested the value is, at most 8
 	 * @returns Decoded value (primitives, Uint8Array, or Map)
 	 * @throws Issue if stream is malformed
 	 */

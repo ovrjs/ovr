@@ -1,10 +1,17 @@
-/** Attach the passkey protocol to one form. Served as a normal browser module. */
+/**
+ * Attach the passkey protocol to one form. Served as a normal browser module.
+ *
+ * @param id ID of the module's script element, inside the form
+ * @param bootstrap The ceremony's signed start
+ * @param endpoint Where the ceremony's options are asked for
+ * @param method The ceremony the form starts
+ * @param confirm Confirms the person with a passkey they have, when the form asks
+ */
 export function listen(
 	id: string,
 	bootstrap: string,
 	endpoint: string,
 	method: "register" | "login",
-	/** Confirms the person with a passkey they have, when the form asks */
 	confirm?: { bootstrap: string; endpoint: string; action: string },
 ) {
 	const script = document.getElementById(id);
@@ -175,14 +182,14 @@ export function listen(
 			submitting = true;
 			finalizing = true;
 			submitted = undefined;
-			// Preserve native validation, submit events, and the original submitter.
+			// preserve native validation, submit events, and the original submitter
 			HTMLFormElement.prototype.requestSubmit.call(
 				form,
 				e.submitter ?? undefined,
 			);
 			finalizing = false;
-			// requestSubmit synchronously re-enters this listener; TypeScript cannot see that assignment.
-			// Validation may prevent the final event; another listener may cancel it.
+			// requestSubmit re-enters this listener synchronously, which TypeScript
+			// cannot see, and validation or another listener may cancel the final event
 			submitting = Boolean(
 				submitted && !(submitted as SubmitEvent).defaultPrevented,
 			);
@@ -211,7 +218,7 @@ export function listen(
 	return reset;
 }
 
-// Modules execute once per document. Observe streamed HTML and subsequent fragment navigation too.
+// modules execute once per document, so observe streamed HTML and later fragment navigation too
 const attached = new WeakMap<HTMLScriptElement, () => void>();
 const scripts = () =>
 	document.querySelectorAll<HTMLScriptElement>("script[data-passkey]");

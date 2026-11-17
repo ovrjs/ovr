@@ -180,6 +180,8 @@ export class Context<
 	 * Creates a new `Context` with the current `Request`.
 	 *
 	 * @param req Request
+	 * @param options The app's options
+	 * @param ip Client IP the server gave `app.fetch`, never read from headers
 	 */
 	constructor(req: Request, options: App.Options, ip?: string) {
 		this.req = req;
@@ -313,7 +315,8 @@ export class Context<
 	 * _Prefer_ `Context.data()` _when possible to parse
 	 * with a type-safe schema._
 	 *
-	 * @yields Multipart request `Part`(s)
+	 * @param options Overrides the app's multipart options for this request
+	 * @returns The parser, which yields each `Part` as it is read
 	 * @example
 	 *
 	 * ```ts
@@ -370,6 +373,8 @@ export class Context<
 	 * the call. A promise is shared as it is, so calls made at the same time
 	 * wait for one result, and one that rejects does for each of them.
 	 *
+	 * @template A Arguments of the function
+	 * @template R What it returns
 	 * @param fn Function to share the results of
 	 * @returns The function, which runs once for each set of arguments
 	 */

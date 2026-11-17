@@ -219,6 +219,10 @@ export class Table<
 		this.columns = columns as { readonly [K in keyof S]: Column };
 	}
 
+	/**
+	 * @param text What the table's rows are, for agents
+	 * @returns A copy of the table with the description
+	 */
 	override describe(text: string) {
 		// still a table, which `derive` would not make, with the names and
 		// columns checked when this one was made

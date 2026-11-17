@@ -269,7 +269,12 @@ export class App {
 			return [400, `Bad Request: ${error.message}`];
 	}
 
-	/** Answers a body the client got wrong, where the route read it */
+	/**
+	 * Answers a body the client got wrong, where the route read it.
+	 *
+	 * @param c Request context
+	 * @param next Dispatches the next middleware
+	 */
 	static async #body(c: Context, next: Middleware.Next) {
 		try {
 			await next();

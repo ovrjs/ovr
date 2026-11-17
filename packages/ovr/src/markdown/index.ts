@@ -163,6 +163,7 @@ class Writer {
 	/** Attributes of an element without any, never changed */
 	static readonly #none: Record<string, string> = Object.freeze({});
 
+	/** Conversion options */
 	readonly #options: Options;
 
 	/** Open elements below the top level */
@@ -282,6 +283,10 @@ class Writer {
 		} else this.#pending.children.push(node);
 	}
 
+	/**
+	 * @param tag Name of the element that starts
+	 * @param attrs Its attributes
+	 */
 	#open(tag: string, attrs: Record<string, string>) {
 		if (this.#skipping) {
 			this.#skipping++;
@@ -323,6 +328,7 @@ class Writer {
 		this.#stack.push(node);
 	}
 
+	/** @param tag Name of the element that ends */
 	#close(tag: string) {
 		if (this.#skipping) {
 			this.#skipping--;
@@ -1302,6 +1308,7 @@ class Writer {
 	/**
 	 * @param tag Tag name
 	 * @param attrs Attributes
+	 * @param children Text it holds
 	 * @returns New element node
 	 */
 	static #node(

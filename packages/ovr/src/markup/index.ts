@@ -208,18 +208,28 @@ export class Element implements AsyncGenerator<Chunk, void, unknown> {
 		})(this.take() ? new Element(this.tag, this.props) : null));
 	}
 
+	/** @returns The element's next chunk */
 	next() {
 		return this.chunks().next();
 	}
 
+	/**
+	 * @param value Returned when it is done
+	 * @returns The end of the chunks
+	 */
 	return(value: void | PromiseLike<void>) {
 		return this.chunks().return(value);
 	}
 
+	/**
+	 * @param error Thrown into the render
+	 * @returns The next chunk, if the render catches it
+	 */
 	throw(error: unknown) {
 		return this.chunks().throw(error);
 	}
 
+	/** @returns The element, its own iterator */
 	[Symbol.asyncIterator]() {
 		return this;
 	}
@@ -729,10 +739,10 @@ export const readable = (render: {
 						await last;
 					}
 
-					// The stream pulls until its queue is full, and each chunk it is
+					// the stream pulls until its queue is full, and each chunk it is
 					// given costs far more than rendering one. So what is rendered
 					// without waiting is sent together, up to as much as the stream
-					// would have pulled.
+					// would have pulled
 					while (!cancelled && (result = render.step())) {
 						if (!(result instanceof Promise)) {
 							text += result.toString();

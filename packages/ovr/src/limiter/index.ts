@@ -35,7 +35,7 @@ export function network(value: string | undefined) {
 		...Array<string>(8 - first.length - last.length).fill("0"),
 		...last,
 	];
-	// IPv4-mapped IPv6 addresses share their IPv4 budget, rather than one giant ::ffff /64 bucket.
+	// IPv4-mapped IPv6 addresses share their IPv4 budget, rather than one giant ::ffff /64 bucket
 	if (groups.slice(0, 5).every((v) => v === "0") && groups[5] === "ffff") {
 		const high = parseInt(groups[6]!, 16);
 		const low = parseInt(groups[7]!, 16);
@@ -107,21 +107,33 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 		]);
 	}
 
+	/** Name of the policy's buckets */
 	readonly #name;
+
+	/** Options, with the default limit and interval */
 	readonly #options;
+
+	/** When expired buckets were last deleted, in milliseconds */
 	#pruned = 0;
 
 	/**
 	 * Create a policy backed by the application's database.
 	 *
 	 * @param name Stable name of the policy's buckets. Limiters with the same name and policy share them, across every server using the database.
+	 * @param options The database, the limit and its interval, and who a request counts against
 	 */
 	constructor(name: string, options: Limiter.Options) {
 		this.#options = { limit: 60, interval: Time.minute, ...options };
 		this.#name = name;
 	}
 
-	/** Admit a request or return its retry deadline. Scopes have independent budgets. */
+	/**
+	 * Admit a request or return its retry deadline. Scopes have independent budgets.
+	 *
+	 * @param c Request context
+	 * @param scope What the request is counted for, each with its own budget
+	 * @returns `true` when admitted, otherwise when to retry
+	 */
 	async check(c: Limiter.Context, scope = ""): Promise<true | Date> {
 		const identity = this.#options.key
 			? await this.#options.key(c)
@@ -131,9 +143,9 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 				"Rate limiting requires a trusted client IP in App.fetch(request, { ip }), or an explicit authenticated key",
 			);
 		const { limit, interval } = this.#options;
-		// Different policies cannot interpret the same stored token balance
+		// different policies cannot interpret the same stored token balance
 		// differently. Hashed, so a long name, scope, or identity always fits
-		// in the primary key's index.
+		// in the primary key's index
 		const retry = await this.#consume(
 			Codec.Base64Url.encode(
 				new Uint8Array(
@@ -157,6 +169,9 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 	 * Mount globally with app.use(), or on selected routes. A missing identity
 	 * or storage failure throws, so the app's error handling sees it and the
 	 * request is not admitted.
+	 *
+	 * @param c Request context
+	 * @param next Dispatches the next middleware
 	 */
 	readonly middleware: Middleware = async (c, next) => {
 		const result = await this.check(c);

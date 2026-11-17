@@ -522,6 +522,7 @@ export namespace Route {
 	 * `<Form>` route component type
 	 *
 	 * @template Pattern Route pattern
+	 * @template S The route's fields, which its `values` and function child are typed by
 	 */
 	export type Form<Pattern extends string, S extends Field.Shape = never> = (
 		props: Omit<JSX.IntrinsicElements["form"], "children"> &

@@ -88,10 +88,12 @@ export class Passkey {
 		credential: Field.hidden().json(Schema.unknown()),
 		ceremony: Field.hidden(),
 	};
+	/** What a ceremony's form posts: the credential and its signed start */
 	static readonly #payload = Schema.object({
 		credential: Schema.unknown(),
 		ceremony: Schema.string(),
 	});
+	/** A ceremony's signed start, as the form gives it to the browser module */
 	static readonly #bootstrap = Schema.object({
 		method: Schema.enum(["register", "login"]),
 		action: Schema.string(),
@@ -101,17 +103,20 @@ export class Passkey {
 		user: Schema.string().optional(),
 		fields: Schema.string().optional(),
 	});
+	/** What every credential the browser returns has */
 	static readonly #credential = Schema.object({
 		type: Schema.literal("public-key"),
 		id: Schema.string(),
 		rawId: Schema.string(),
 	});
+	/** A credential from registering a passkey */
 	static readonly #registration = Passkey.#credential.extend({
 		response: Schema.object({
 			clientDataJSON: Schema.string(),
 			attestationObject: Schema.string(),
 		}),
 	});
+	/** A credential from signing in with a passkey */
 	static readonly #assertion = Passkey.#credential.extend({
 		response: Schema.object({
 			clientDataJSON: Schema.string(),
@@ -121,10 +126,18 @@ export class Passkey {
 			userHandle: Schema.string().nullable().optional(),
 		}),
 	});
+	/** Request context */
 	readonly #c: Auth.Context;
+
+	/** The request's authentication state */
 	readonly #auth: State;
 
-	/** Create request-scoped passkey helpers. */
+	/**
+	 * Create request-scoped passkey helpers.
+	 *
+	 * @param c Request context
+	 * @param auth The request's authentication state
+	 */
 	constructor(c: Auth.Context, auth: State) {
 		this.#c = c;
 		this.#auth = auth;
@@ -134,6 +147,10 @@ export class Passkey {
 	 * Create a form in the handler before returning JSX.
 	 *
 	 * @template Pattern Pattern of the route the form submits to
+	 * @param route Route the form submits to
+	 * @param method The ceremony the form starts
+	 * @param options Where the browser module posts, and the form's own options
+	 * @returns The form, with its issue component
 	 */
 	form<Pattern extends string>(
 		route: Passkey.Post<Pattern>,
@@ -188,7 +205,7 @@ export class Passkey {
 									(method === "register" ? "Create account" : "Log in"),
 							}),
 						],
-						// A supplied Issue component takes precedence over this accessible fallback.
+						// a supplied Issue component takes precedence over this accessible fallback
 						Form.Issue({ "data-passkey-fallback": true }),
 						async () =>
 							jsx("script", {
@@ -250,12 +267,21 @@ export class Passkey {
 		c.res.body = source;
 	});
 
+	/** @throws {Issue} When the request is not on Auth's origin */
 	#origin() {
 		if (this.#c.url.origin !== this.#auth.options.origin)
 			throw new Issue("origin");
 	}
 
-	/** Validate a signed form and issue one fresh ceremony. */
+	/**
+	 * Validate a signed form and issue one fresh ceremony.
+	 *
+	 * @param c Request context
+	 * @param auth The request's authentication state
+	 * @param token The form's signed start of the ceremony
+	 * @param expected The ceremony the endpoint serves
+	 * @returns The ceremony's options for the browser, as JSON
+	 */
 	static async issue(
 		c: Pick<ContextType, "url" | "res" | "text" | "json">,
 		auth: State,
@@ -356,6 +382,11 @@ export class Passkey {
 			});
 	}
 
+	/**
+	 * @param value Base64url, as the browser sends it
+	 * @returns Its bytes
+	 * @throws {Issue} When it is not canonical base64url
+	 */
 	static #decode(value: string) {
 		if (!/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1)
 			throw new Issue("base64url");
@@ -364,10 +395,19 @@ export class Passkey {
 		return bytes;
 	}
 
+	/**
+	 * @param value Bytes
+	 * @returns Their SHA-256 digest
+	 */
 	static async #hash(value: Uint8Array<ArrayBuffer>) {
 		return new Uint8Array(await crypto.subtle.digest("SHA-256", value));
 	}
 
+	/**
+	 * @param value A passkey's public key, as SPKI
+	 * @returns The key, to verify its signatures
+	 * @throws {Issue} When it is not a P-256 key
+	 */
 	static async #key(value: Uint8Array<ArrayBuffer>) {
 		try {
 			return await crypto.subtle.importKey(
@@ -377,9 +417,9 @@ export class Passkey {
 				false,
 				["verify"],
 			);
-		} catch (e) {
-			if (e instanceof DOMException) throw new Issue("public key");
-			throw e;
+		} catch (error) {
+			if (error instanceof DOMException) throw new Issue("public key");
+			throw error;
 		}
 	}
 
@@ -435,7 +475,11 @@ export class Passkey {
 		return { state, credential: credential.data, client };
 	}
 
-	/** @returns The client data, verified for the ceremony */
+	/**
+	 * @param value Client data, base64url, as the browser sends it
+	 * @param state The ceremony's stored challenge
+	 * @returns The client data, verified for the ceremony
+	 */
 	#client(value: string, state: Storage.Challenge) {
 		let bytes: Uint8Array<ArrayBuffer>;
 		let json: string;
@@ -463,7 +507,10 @@ export class Passkey {
 		return bytes;
 	}
 
-	/** @returns Authenticator data, for this origin and a verified user */
+	/**
+	 * @param bytes Authenticator data, as the authenticator signed it
+	 * @returns Authenticator data, for this origin and a verified user
+	 */
 	async #data(bytes: Uint8Array) {
 		const data = AuthData.parse(bytes);
 		if (
@@ -480,6 +527,13 @@ export class Passkey {
 		return data;
 	}
 
+	/**
+	 * Compare in time that does not depend on where they differ.
+	 *
+	 * @param a Bytes
+	 * @param b Bytes
+	 * @returns `true` when they are the same
+	 */
 	static #equal(a: Uint8Array, b: Uint8Array) {
 		if (a.length !== b.length) return false;
 		let result = 0;
@@ -487,7 +541,12 @@ export class Passkey {
 		return result === 0;
 	}
 
-	/** Digest canonical application values so field order cannot change the binding. */
+	/**
+	 * Digest canonical application values so field order cannot change the binding.
+	 *
+	 * @param value The registration's fields
+	 * @returns Their digest
+	 */
 	static fields(value: unknown) {
 		// base64url SHA-256, like a stored token
 		return Storage.hash(
@@ -503,7 +562,12 @@ export class Passkey {
 		);
 	}
 
-	/** Verify registration before persisting a new credential. */
+	/**
+	 * Verify registration before persisting a new credential.
+	 *
+	 * @param fields Digest of the fields the form was made with, from `fields`
+	 * @returns The credential to store, for the user the ceremony made
+	 */
 	async register(fields?: string) {
 		const { state, credential } = await this.#consume(
 			"register",
@@ -526,7 +590,7 @@ export class Passkey {
 		)
 			throw new Issue("credential ID");
 		const key = COSE.toSPKI(data.attestedCredentialData.publicKey);
-		// Web Crypto validates that the P-256 point is on the curve before it is stored.
+		// Web Crypto validates that the P-256 point is on the curve before it is stored
 		await Passkey.#key(key);
 		return {
 			id: credential.id,
