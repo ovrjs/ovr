@@ -616,13 +616,39 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	 * @param c Request context
 	 * @param source Finds what the request holds for the form
 	 * @param to The form's address, to take only what was sent to it
+	 * @param initial The form's initial values. Its hidden ones tell it from
+	 * another form at the same address, such as a button in every row that
+	 * sends the row's ID
 	 * @returns The kept state, if it is this form's
 	 */
-	read = async (c: View, source: (c: View) => Form.Source, to: string) => {
-		const held = await c.memo(this.#kept)(source, c);
+	read = async (
+		c: View,
+		source: (c: View) => Form.Source,
+		to: string,
+		initial?: Field.Value.Initial<Shape>,
+	) => {
+		const { sent, state } = await c.memo(this.#kept)(source, c);
 
 		// another form's, such as another row's, is not this one's to show
-		return held.sent === undefined || held.sent === to ? held.state : undefined;
+		if (sent !== undefined && sent !== to) return;
+
+		// a GET form's submission is its page's URL, which is no other form's
+		if (sent !== undefined && state?.values && initial) {
+			for (const name of this.names) {
+				const mine = (initial as Record<string, unknown>)[name];
+				const theirs = (state.values as Record<string, unknown>)[name];
+
+				if (
+					this.shape[name]!.type === "hidden" &&
+					mine != null &&
+					theirs !== undefined &&
+					String(mine) !== String(theirs)
+				)
+					return;
+			}
+		}
+
+		return state;
 	};
 
 	/**

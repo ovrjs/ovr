@@ -405,7 +405,7 @@ When a route refuses a submission, `c.data()` keeps the issues and what was sent
 - `aria-invalid` and `aria-describedby` are set
 - the first invalid field has the focus
 
-Only the form it was sent to shows it. Another form on the page with the same fields, such as the one in the next row, keeps its own values.
+Only the form it was sent to shows it. Another form on the page with the same fields, such as the one in the next row, keeps its own values. Forms are told apart by their address, and then by their hidden `values`, so a button in every row that posts to one address needs only its row's ID: `<add.Form values={{ recipe: recipe.id }} />`.
 
 It is kept in a cookie, compressed, for an hour. Only the page the form is on is sent the cookie, no script can read it, and the address names it with a short ID, such as `?_form=3f9a2c1e`. So nothing a person typed is in an address, a history, or a log, and the page opened without the ID starts over. A file and a password are never kept.
 

@@ -888,6 +888,56 @@ describe("a refused submission", () => {
 		]);
 	});
 
+	test("is shown by the form with its hidden values, of forms at one address", async () => {
+		// a button in every row, which sends the row's ID to one address
+		const add = Route.post("/week/:start/add")
+			.fields({ recipe: Field.hidden(), servings: Field.number().min(1) })
+			.use(async (c) => {
+				const result = await c.data();
+				return result.issues ? c.redirect(result.url, 303) : c.text("ok");
+			});
+		const week = Route.get("/week").use(() =>
+			["a", "b", "c"].map((recipe) =>
+				jsx(add.Form, { params: { start: "monday" }, values: { recipe } }),
+			),
+		);
+		const app = new App().use(add, week);
+		const body = new FormData();
+		body.set("recipe", "b");
+		body.set("servings", "0");
+		const refused = await app.fetch(
+			new Request("http://localhost/week/monday/add?_return=%2Fweek", {
+				method: "POST",
+				body,
+				headers: { origin: "http://localhost" },
+			}),
+		);
+		const html = await (
+			await app.fetch(
+				new URL(refused.headers.get("location")!, "http://localhost"),
+				{
+					headers: {
+						cookie: refused.headers.getSetCookie()[0]!.split(";", 1)[0]!,
+					},
+				},
+			)
+		).text();
+
+		expect(
+			html
+				.split("<form ")
+				.slice(1)
+				.map((form) => [
+					/name="recipe" value="([^"]*)"/.exec(form)?.[1],
+					form.includes('aria-invalid="true"'),
+				]),
+		).toEqual([
+			["a", false],
+			["b", true],
+			["c", false],
+		]);
+	});
+
 	test("a form's values and parts are typed by its route's fields", () => {
 		const id = { id: "1" };
 

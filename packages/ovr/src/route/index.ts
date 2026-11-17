@@ -723,7 +723,10 @@ export class Route<
 						"http://localhost",
 					).pathname,
 				);
-				const parts = form.bind(values, c && (await form.read(c, source, to)));
+				const parts = form.bind(
+					values,
+					c && (await form.read(c, source, to, values)),
+				);
 
 				return Route.#form(
 					this,
