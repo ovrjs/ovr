@@ -183,7 +183,7 @@ The form has one optional field, the passkey's name, such as "Laptop", and its b
 | `id`      | Its ID, which `remove` takes                                               |
 | `name`    | What the person called it when adding it, or `null`                        |
 | `created` | When it was made, in milliseconds                                          |
-| `origin`  | The origin it was made at, the only one it signs in at                     |
+| `origin`  | The origin it was made at. It signs in at its hostname, on any port        |
 | `synced`  | `true` when a password manager keeps a copy, so losing the device keeps it |
 
 `auth.remove(c, id)` removes one, such as for a device the person no longer has, and signs them out everywhere else. It keeps the account's last passkey, since nothing else signs in as it, and returns `false` then, or for an ID that is not one of theirs:

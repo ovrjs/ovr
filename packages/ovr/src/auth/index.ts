@@ -239,7 +239,7 @@ export namespace Auth {
 		readonly name: string | null;
 		/** When it was made, in milliseconds */
 		readonly created: number;
-		/** Origin it was made at, the only one it signs in at */
+		/** Origin it was made at. It signs in at that origin's hostname, on any port */
 		readonly origin: string;
 		/** A password manager keeps a copy, so losing the device does not lose it */
 		readonly synced: boolean;
@@ -273,7 +273,7 @@ export namespace Auth {
 		backedUp: boolean;
 		/** When it was made, in milliseconds. */
 		created: number;
-		/** Origin it was made at, the only one it signs in at. */
+		/** Origin it was made at. It signs in at that origin's hostname, on any port. */
 		origin: string;
 		/** What the person called it when adding it, such as "Laptop". */
 		name: string | null;
