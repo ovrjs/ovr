@@ -240,8 +240,8 @@ class Writer {
 				// its own block when it is written as one, or stands for one. A
 				// line for a line, such as a separator only agents read, stays
 				// in its sentence
-				/\n/.test(chunk.markdown.trim()) ||
-					Writer.#rawBlock.test(String(chunk.value)),
+				chunk.markdown.trim().includes("\n") ||
+					Writer.#rawBlock.test(chunk.value),
 			);
 		else if (chunk.raw) this.#raw(chunk.value);
 		else this.#text(chunk.value);

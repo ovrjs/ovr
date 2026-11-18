@@ -29,7 +29,7 @@ export namespace JSX {
 			| object
 			| null
 			| undefined
-			| Symbol
+			| symbol
 			| Iterable<Element>
 			| AsyncIterable<Element>
 		>

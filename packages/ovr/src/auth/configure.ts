@@ -322,7 +322,7 @@ export function configure<U extends Auth.Users>(
 			await Passkey.issue(c, state(c), input.data.bootstrap, {
 				method: "register",
 				action: paths.passkey,
-				name: name((account ?? {}) as Field.Parse.Data<Shape>),
+				name: name(account ?? {}),
 				user: session.user,
 				exclude,
 			});

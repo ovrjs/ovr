@@ -150,8 +150,7 @@ export class State {
 		const session = await this.options.sessions.get(id);
 		const now = Date.now();
 		if (
-			session &&
-			session.id === id &&
+			session?.id === id &&
 			session.expiration > now &&
 			session.started + this.options.lifetime > now
 		) {

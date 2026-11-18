@@ -126,7 +126,7 @@ function setup() {
 
 		return {
 			status: res.status,
-			body: (text.startsWith("{") ? JSON.parse(text) : text) as any,
+			body: text.startsWith("{") ? JSON.parse(text) : text,
 		};
 	};
 
@@ -183,8 +183,8 @@ describe("Mcp", () => {
 		expect(name("/report.pdf")).toBe("get_report_pdf");
 		expect(name("/users/:id.json")).toBe("get_users_id_json");
 
-		const long = name(`/${"segment/".repeat(10)}end`)!;
-		const other = name(`/${"segment/".repeat(10)}other`)!;
+		const long = name(`/${"segment/".repeat(10)}end`);
+		const other = name(`/${"segment/".repeat(10)}other`);
 		expect(long).toMatch(/^get_segment_/);
 		expect(long).not.toContain("end");
 		expect(long.length).toBeLessThanOrEqual(64);
@@ -493,7 +493,7 @@ describe("Mcp", () => {
 			"http://localhost/mcp",
 			request("tools/call", { name: "get_bookmarks", arguments: {} }),
 		);
-		expect(((await res.json()) as any).result.content[0].text).toBe(
+		expect((await res.json()).result.content[0].text).toBe(
 			[
 				"Add: tool `post_bookmarks`",
 				"",
@@ -541,9 +541,9 @@ describe("Mcp", () => {
 		);
 		const rpc = async (method: string, params?: Record<string, unknown>) =>
 			(
-				(await (
+				await (
 					await app.fetch("http://localhost/mcp", request(method, params))
-				).json()) as any
+				).json()
 			).result;
 
 		// what an agent reads before it calls the tool
@@ -1097,8 +1097,7 @@ describe("Mcp", () => {
 			new Mcp({ name: "bookmarks" }),
 		);
 		const res = await app.fetch("http://localhost/mcp", request("tools/list"));
-		const { properties } = ((await res.json()) as any).result.tools[0]
-			.inputSchema;
+		const { properties } = (await res.json()).result.tools[0].inputSchema;
 
 		expect(properties.id).toEqual({
 			type: "string",
@@ -1125,9 +1124,7 @@ describe("Mcp", () => {
 			});
 		const app = new App().use(buy, new Mcp({ name: "shop" }));
 		const rpc = async (method: string, params?: Record<string, unknown>) =>
-			(
-				await app.fetch("http://localhost/mcp", request(method, params))
-			).json() as Promise<any>;
+			(await app.fetch("http://localhost/mcp", request(method, params))).json();
 
 		expect((await rpc("tools/list")).result.tools[0].inputSchema).toEqual({
 			type: "object",
@@ -1160,9 +1157,7 @@ describe("Mcp", () => {
 			});
 		const app = new App().use(upload, new Mcp({ name: "photos" }));
 		const rpc = async (method: string, params?: Record<string, unknown>) =>
-			(
-				await app.fetch("http://localhost/mcp", request(method, params))
-			).json() as Promise<any>;
+			(await app.fetch("http://localhost/mcp", request(method, params))).json();
 		const call = (args: Record<string, unknown>) =>
 			rpc("tools/call", { name: "post_upload", arguments: args });
 
@@ -1238,9 +1233,7 @@ describe("Mcp", () => {
 			new Mcp({ name: "recipes" }),
 		);
 		const rpc = async (method: string, params?: Record<string, unknown>) =>
-			(
-				await app.fetch("http://localhost/mcp", request(method, params))
-			).json() as Promise<any>;
+			(await app.fetch("http://localhost/mcp", request(method, params))).json();
 
 		const { tools } = (await rpc("tools/list")).result;
 		expect(
@@ -1304,9 +1297,7 @@ describe("Mcp", () => {
 			new Mcp({ name: "files" }),
 		);
 		const rpc = async (method: string, params?: Record<string, unknown>) =>
-			(
-				await app.fetch("http://localhost/mcp", request(method, params))
-			).json() as Promise<any>;
+			(await app.fetch("http://localhost/mcp", request(method, params))).json();
 		const call = async (name: string) =>
 			(await rpc("tools/call", { name, arguments: {} })).result.content;
 		const blob = bytes.toBase64();
@@ -1363,9 +1354,7 @@ describe("Mcp", () => {
 			new Mcp({ name: "events" }),
 		);
 		const rpc = async (method: string, params: Record<string, unknown>) =>
-			(
-				await app.fetch("http://localhost/mcp", request(method, params))
-			).json() as Promise<any>;
+			(await app.fetch("http://localhost/mcp", request(method, params))).json();
 		const uri = "http://localhost/live/a";
 		const note =
 			"This is a live event stream. Request the address yourself to read its events as they arrive, and close the connection to stop: " +
@@ -1425,9 +1414,9 @@ describe("Mcp", () => {
 			params?: Record<string, unknown>,
 		) =>
 			(
-				(await (
+				await (
 					await app.fetch("http://localhost/mcp", request(method, params))
-				).json()) as any
+				).json()
 			).result;
 
 		// a link in the page stays a real address, for the user to open
@@ -1483,7 +1472,7 @@ describe("Mcp", () => {
 				body: JSON.stringify(body),
 			});
 
-			return { res, body: (await res.json()) as any };
+			return { res, body: await res.json() };
 		};
 		const key = "io.modelcontextprotocol/contentLanguage";
 
@@ -1541,10 +1530,7 @@ describe("Mcp", () => {
 				}),
 			});
 
-			return {
-				status: res.status,
-				code: ((await res.json()) as any).error?.code,
-			};
+			return { status: res.status, code: (await res.json()).error?.code };
 		};
 		const protocol = { "io.modelcontextprotocol/protocolVersion": version };
 		const capabilities = { "io.modelcontextprotocol/clientCapabilities": {} };
@@ -1622,9 +1608,7 @@ describe("Mcp", () => {
 			new Mcp({ name: "errors" }),
 		);
 		const rpc = async (method: string, params: Record<string, unknown>) =>
-			(
-				await app.fetch("http://localhost/mcp", request(method, params))
-			).json() as Promise<any>;
+			(await app.fetch("http://localhost/mcp", request(method, params))).json();
 		const internal = {
 			code: -32603,
 			message: "Internal error",
@@ -1680,9 +1664,9 @@ describe("Mcp", () => {
 		);
 		const rpc = async (method: string, params?: Record<string, unknown>) =>
 			(
-				(await (
+				await (
 					await app.fetch("http://localhost/mcp", request(method, params))
-				).json()) as any
+				).json()
 			).result;
 		const [edit, list] = (await rpc("tools/list")).tools;
 

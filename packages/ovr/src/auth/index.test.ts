@@ -1852,7 +1852,7 @@ describe("configured passkey callbacks", () => {
 		const data = new FormData();
 		data.set(
 			"bootstrap",
-			html.match(/data-bootstrap="([^"]+)"/)![1]!.replaceAll("&quot;", '\"'),
+			html.match(/data-bootstrap="([^"]+)"/)![1]!.replaceAll("&quot;", '"'),
 		);
 		data.set("email", "user@example.com");
 		expect(

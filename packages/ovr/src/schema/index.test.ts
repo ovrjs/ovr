@@ -2,11 +2,6 @@ import { Field, Form } from "../form/index.js";
 import { Schema } from "./index.js";
 import { describe, expect, test } from "vitest";
 
-type FormValid<S extends Field.Shape> = Extract<
-	Field.Parse.Result<S>,
-	{ data: Field.Parse.Data<S> }
->;
-
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 type Assert<T extends true> = T;
@@ -23,7 +18,7 @@ const invalid = <T>(result: Schema.Parse.Result<T>) => {
 
 const formValid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 	if (result.issues) throw new Error("Expected no issues");
-	return result as FormValid<S>;
+	return result;
 };
 
 describe("Schema core", () => {

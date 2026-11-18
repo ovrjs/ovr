@@ -704,7 +704,7 @@ export class Mcp<P extends string = string> {
 					required.add(field);
 				for (const name in shape)
 					properties[name] = Mcp.#property(
-						shape[name]!,
+						shape[name],
 						properties[name] as Json,
 					);
 			}
@@ -1055,7 +1055,7 @@ export class Mcp<P extends string = string> {
 					if (rendered(item)) choices.add(name);
 				} else {
 					for (const key of Object.keys(item))
-						if (rendered(item[key]!)) choices.add(`${name}.${key}`);
+						if (rendered(item[key])) choices.add(`${name}.${key}`);
 				}
 			}
 

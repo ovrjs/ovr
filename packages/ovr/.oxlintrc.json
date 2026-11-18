@@ -1,0 +1,44 @@
+{
+	"$schema": "../../node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc"],
+	"categories": { "correctness": "error" },
+	"options": { "typeAware": true, "denyWarnings": true },
+	"ignorePatterns": ["src/auth/client-source.ts"],
+	"rules": {
+		"typescript/no-unnecessary-type-assertion": "error",
+		"typescript/no-unnecessary-type-arguments": "error",
+		"typescript/no-unnecessary-type-conversion": "error",
+		"typescript/no-meaningless-void-operator": "error",
+		"typescript/prefer-includes": "error",
+		"eslint/no-unused-vars": [
+			"error",
+			{
+				"ignoreRestSiblings": true,
+				"argsIgnorePattern": "^_",
+				"varsIgnorePattern": "^_"
+			}
+		],
+		"typescript/unbound-method": "off",
+		"typescript/no-misused-spread": "off",
+		"typescript/no-base-to-string": "off",
+		"typescript/restrict-template-expressions": "off",
+		"typescript/await-thenable": "off",
+		"typescript/no-this-alias": "off",
+		"unicorn/no-thenable": "off",
+		"unicorn/no-new-array": "off"
+	},
+	"overrides": [
+		{
+			"files": ["**/*.test.ts"],
+			"rules": {
+				"typescript/no-floating-promises": "off",
+				"typescript/no-implied-eval": "off",
+				"typescript/no-useless-default-assignment": "off",
+				"eslint/no-constant-condition": "off",
+				"eslint/no-unused-expressions": "off",
+				"unicorn/no-useless-spread": "off",
+				"unicorn/no-single-promise-in-promise-methods": "off"
+			}
+		}
+	]
+}

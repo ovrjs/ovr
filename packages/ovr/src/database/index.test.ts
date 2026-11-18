@@ -149,7 +149,7 @@ describe("sql", () => {
 			{ schema: "s" },
 		);
 		expect(
-			db.sql`SELECT ${quoted.columns['a"b']!} FROM ${quoted}`.toQuery().text,
+			db.sql`SELECT ${quoted.columns['a"b']} FROM ${quoted}`.toQuery().text,
 		).toBe('SELECT "s"."my ""t"""."a""b" FROM "s"."my ""t"""');
 	});
 

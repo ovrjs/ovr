@@ -377,7 +377,7 @@ export class Renderer {
 					if (source in element) {
 						// a render as a child: its element, which its strings would
 						// be escaped as text
-						this.#element = (element as { [source]: unknown })[source];
+						this.#element = element[source];
 						this.#next = 1;
 						continue;
 					}
@@ -431,13 +431,13 @@ export class Renderer {
 				// stays on the stack to be closed if it throws
 				const result = top.step();
 
-				if (!result) stack!.pop();
+				if (!result) stack.pop();
 				else if (result instanceof Chunk) return result;
 				else return (this.#wait = result);
 			} else {
 				// an iterator is off the stack while it is read, so one that
 				// throws is not closed as well
-				stack!.pop();
+				stack.pop();
 
 				if (top instanceof Tag) return top; // end tag
 
@@ -445,7 +445,7 @@ export class Renderer {
 					return (this.#wait = Promise.resolve(top.iterator.next()).then(
 						(result) => {
 							if (!result.done) {
-								stack!.push(top);
+								stack.push(top);
 								this.#element = result.value;
 								this.#next = 1;
 							}
@@ -456,7 +456,7 @@ export class Renderer {
 				const result = (top.iterator as Iterator<JSX.Element>).next();
 
 				if (!result.done) {
-					stack!.push(top);
+					stack.push(top);
 					this.#element = result.value;
 					this.#next = 1;
 				}

@@ -613,7 +613,7 @@ export class Route<
 	readonly #pattern: Pattern;
 
 	/** Middleware added with `use` */
-	readonly #stack: Middleware<any, any>[] = [];
+	readonly #stack: Middleware<any>[] = [];
 
 	/**
 	 * Create a new route.
@@ -653,7 +653,7 @@ export class Route<
 	}
 
 	/** Route middleware stack, runs after global middleware */
-	get middleware(): Middleware<any, any>[] {
+	get middleware(): Middleware<any>[] {
 		const params = this.#paramSchemas;
 		// a copy, so a mounted route's middleware cannot be changed through it
 		if (!params) return [...this.#stack];
@@ -812,10 +812,7 @@ export class Route<
 	): Route.Of<Kind, Pattern, Route.Converted<Params, P>, Shape> {
 		this.#configure("params");
 
-		this.#paramSchemas = { ...this.#paramSchemas, ...schemas } as Record<
-			string,
-			ValueSchema<unknown>
-		>;
+		this.#paramSchemas = { ...this.#paramSchemas, ...schemas };
 
 		return this as any;
 	}

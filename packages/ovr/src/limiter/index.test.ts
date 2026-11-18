@@ -326,7 +326,7 @@ test("an agent's tool call is one request to the app, counted once by each limit
 		});
 
 		return res.status === 200
-			? ((await res.json()) as any).result.content[0].text
+			? (await res.json()).result.content[0].text
 			: res.status;
 	};
 
@@ -376,7 +376,7 @@ test("a write that redirects is one request, so the page it sends to cannot fail
 	const version = "2026-07-28";
 	const add = async () =>
 		(
-			(await (
+			await (
 				await app.fetch("https://example.com/mcp", {
 					method: "POST",
 					headers: {
@@ -400,7 +400,7 @@ test("a write that redirects is one request, so the page it sends to cannot fail
 					}),
 					ip: "192.0.2.40",
 				})
-			).json()) as any
+			).json()
 		).result;
 
 	for (const count of [1, 2, 3])

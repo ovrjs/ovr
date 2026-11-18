@@ -443,7 +443,7 @@ export class ShapeUtil {
 		S extends Record<string, unknown>,
 		E extends Record<string, unknown>,
 	>(shape: S, extra: E): ShapeUtil.Extend<S, E> {
-		return { ...shape, ...extra } as ShapeUtil.Extend<S, E>;
+		return { ...shape, ...extra };
 	}
 
 	/**
@@ -600,7 +600,7 @@ export class Schema<Output>
 {
 	/** Email regular expression */
 	static readonly #emailRegex =
-		/^(?!\.)(?!.*\.\.)([a-z0-9_'+\-\.]*)[a-z0-9_'+\-]@([a-z0-9][a-z0-9\-]*\.)+[a-z]{2,}$/i;
+		/^(?!\.)(?!.*\.\.)([a-z0-9_'+.-]*)[a-z0-9_'+-]@([a-z0-9][a-z0-9-]*\.)+[a-z]{2,}$/i;
 
 	/** UUID regular expression, any version */
 	static readonly #uuidRegex =

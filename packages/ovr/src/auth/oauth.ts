@@ -375,8 +375,8 @@ export function oauth(
 	) => {
 		const pending = await read(c, request);
 		if (pending === undefined)
-			return void c.text("The request expired. Try connecting again.", 400);
-		if (!pending) return void c.text("Forbidden", 403);
+			return c.text("The request expired. Try connecting again.", 400);
+		if (!pending) return c.text("Forbidden", 403);
 
 		return pending;
 	};
@@ -848,10 +848,8 @@ function identify(id: string) {
  * if the download failed for now
  */
 async function find(id: string, url: URL): Promise<Client | null | undefined> {
-	const metadata = (await Metadata.fetch(url)) as Record<
-		string,
-		unknown
-	> | null;
+	const metadata = (await Metadata.fetch(url)) as
+		Record<string, unknown> | null | undefined;
 	if (metadata === null) return null;
 	const redirects = metadata?.redirect_uris;
 	if (

@@ -546,7 +546,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 									}
 								} finally {
 									try {
-										await iter.return?.();
+										await iter.return();
 									} catch {}
 								}
 							})();
@@ -558,7 +558,7 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 					}
 				}
 			} catch (error) {
-				await iter.return?.().catch(() => {});
+				await iter.return().catch(() => {});
 				throw error;
 			}
 		}
@@ -671,13 +671,13 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 		const state = scope ? { id: this.#id, ...shown, scope } : shown;
 
 		return {
-			Field: (props) => this.shape[props.name]![render]({ ...props, state }),
+			Field: (props) => this.shape[props.name][render]({ ...props, state }),
 			Fields: (props = {}) =>
 				this.names.map((name) =>
 					this.shape[name]![render]({ ...props, name, state }),
 				),
 			component: (props) =>
-				this.shape[props.name]![component]({ ...props, state }) as never,
+				this.shape[props.name][component]({ ...props, state }),
 			issues: state?.issues,
 			values: state?.values,
 		};
@@ -1286,9 +1286,7 @@ class FieldSchema<
 									{ readonly step?: never }
 								: unknown),
 	): Field.Instance<Output, Tag, Type, Values, Stream, Item> {
-		return this.#with({
-			props: { ...this.#config.props, ...attributes } as Field.Props,
-		});
+		return this.#with({ props: { ...this.#config.props, ...attributes } });
 	}
 
 	/**
@@ -1338,10 +1336,7 @@ class FieldSchema<
 		) as FieldSchema<any, any, any, any, any, any>;
 
 		return refined.#with({
-			props: {
-				...refined.#config.props,
-				accept: accepted.join(","),
-			} as Field.Props,
+			props: { ...refined.#config.props, accept: accepted.join(",") },
 		});
 	}
 
@@ -1401,9 +1396,7 @@ class FieldSchema<
 		// each value is checked as this field checks one, and a description
 		// given before describes the field, not each value
 		const array = Schema.array(
-			(description === undefined
-				? this
-				: this.#copy({ def })) as Schema<unknown>,
+			description === undefined ? this : this.#copy({ def }),
 			file ? required : choose,
 		);
 
@@ -1442,9 +1435,7 @@ class FieldSchema<
 		const { description, ...def } = this.def;
 		// a description given before describes the field, not each line
 		const array = Schema.array(
-			(description === undefined
-				? this
-				: this.#copy({ def })) as Schema<unknown>,
+			description === undefined ? this : this.#copy({ def }),
 			required,
 		);
 
@@ -1617,7 +1608,7 @@ class FieldSchema<
 			jsx("p", {
 				id: issueId,
 				children: issue.message,
-				"data-issue": issue && state!.issues!.indexOf(issue), // issue index starting from 0
+				"data-issue": state!.issues!.indexOf(issue), // issue index starting from 0
 				...data,
 			});
 
@@ -1831,9 +1822,7 @@ class FieldSchema<
 				jsx("div", { children: [c.Control({ value }), c.Label({ value })] }),
 			);
 
-		const placeholder =
-			props.placeholder ??
-			(this.#config.props as Field.Props.Select | undefined)?.placeholder;
+		const placeholder = props.placeholder ?? this.#config.props?.placeholder;
 
 		return c.Control({
 			children: [
@@ -1967,11 +1956,7 @@ class FieldSchema<
 	#most() {
 		let most = Infinity;
 
-		for (
-			let def: Schema.Def | undefined = this.def;
-			def && "inner" in def;
-			def = def.inner.def
-		) {
+		for (let def: Schema.Def = this.def; "inner" in def; def = def.inner.def) {
 			if (def.type === "check" && def.check.name === "max")
 				most = Math.min(most, Math.floor(Number(def.check.value)));
 		}
@@ -2028,7 +2013,7 @@ class FieldSchema<
 						)
 					: issue,
 			),
-		} as unknown as Field.State<Field.Shape>;
+		} as unknown as Field.State;
 
 		const cell = (field: Field.Cell, name: string, named: string) =>
 			[
@@ -2046,7 +2031,7 @@ class FieldSchema<
 				length: Math.max(
 					filled.length,
 					Math.min(
-						shown === undefined ? filled.length + 1 : Number(shown),
+						shown === undefined ? filled.length + 1 : shown,
 						this.#most(),
 					),
 				),
@@ -3009,7 +2994,7 @@ export class Field {
 	 */
 	static #toNumber(value: unknown) {
 		// form submissions read numeric controls as strings
-		if (value == null || value === "") return undefined;
+		if (value == null || value === "") return;
 
 		return exact(value);
 	}
@@ -3166,12 +3151,7 @@ export class Field {
 	> {
 		return new FieldSchema(
 			{ tag: "fieldset", item },
-			Schema.array(
-				field(item)
-					? item
-					: Schema.object(item as Readonly<Record<string, Field.Cell>>),
-				required,
-			),
+			Schema.array(field(item) ? item : Schema.object(item), required),
 			FieldSchema.items(item),
 			Infinity,
 		);

@@ -661,7 +661,7 @@ describe("MultipartParser", () => {
 				expect(part).toBeDefined();
 				expect(part.name).toBe("huge");
 				expect(part).toBeDefined();
-				await expect(part!.arrayBuffer()).rejects.toThrow(RangeError); // From Uint8Array.set(source longer than dest)
+				await expect(part.arrayBuffer()).rejects.toThrow(RangeError); // From Uint8Array.set(source longer than dest)
 			}
 		});
 

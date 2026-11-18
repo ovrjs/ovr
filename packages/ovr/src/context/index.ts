@@ -525,7 +525,7 @@ export class Context<
 	 * @param i current middleware index (default `0`)
 	 * @returns return value of `middleware[i]`
 	 */
-	async #run(middleware: Middleware<any, any>[], i = 0) {
+	async #run(middleware: Middleware<any>[], i = 0) {
 		const mw = middleware[i];
 
 		if (!mw) return; // end of stack

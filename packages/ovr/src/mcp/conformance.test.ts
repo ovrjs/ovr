@@ -171,7 +171,7 @@ test.each([
 		const client = new Client({ name: "official-client", version: "1.0.0" });
 
 		try {
-			await client.connect(new Transport(new URL(server.url)) as never);
+			await client.connect(new Transport(new URL(server.url)));
 
 			const { tools } = await client.listTools();
 			expect(tools.map((tool) => tool.name)).toEqual([

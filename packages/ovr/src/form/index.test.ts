@@ -8,16 +8,6 @@ import { Field, Form, query, taken } from "./index.js";
 import { pack, unpack } from "./pack.js";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-type FormValid<S extends Field.Shape> = Extract<
-	Field.Parse.Result<S>,
-	{ data: Field.Parse.Data<S> }
->;
-
-type FormInvalid<S extends Field.Shape> = Exclude<
-	Field.Parse.Result<S>,
-	FormValid<S>
->;
-
 /**
  * @param length Number of characters
  * @returns Text that does not compress, the same each run
@@ -39,12 +29,12 @@ const valid = <T>(result: Schema.Parse.Result<T>): T => {
 
 const formValid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 	if (result.issues) throw new Error("Expected no issues");
-	return result as FormValid<S>;
+	return result;
 };
 
 const formInvalid = <S extends Field.Shape>(result: Field.Parse.Result<S>) => {
 	if (!result.issues) throw new Error("Expected issues");
-	return result as FormInvalid<S>;
+	return result;
 };
 
 const decodeState = async <S extends Field.Shape>(
@@ -53,7 +43,7 @@ const decodeState = async <S extends Field.Shape>(
 	if (state === undefined) throw new Error("Expected state to keep");
 
 	return JSON.parse(
-		Codec.decode((await unpack(state, 1 << 20))!),
+		Codec.decode(await unpack(state, 1 << 20)),
 	) as Field.State<S>;
 };
 
@@ -104,7 +94,7 @@ const ui = <S extends Field.Shape>(form: Form<S>) => {
 			state,
 			...props
 		}: Field.Component.Props<S> & Given & { name: N }) =>
-			(await bind({ values, state })).component<N>(props as never),
+			(await bind({ values, state })).component<N>(props),
 	};
 };
 

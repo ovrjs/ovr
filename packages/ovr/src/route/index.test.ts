@@ -389,7 +389,7 @@ describe("Route schema helpers", () => {
 			new File(["abc"], "license.txt", { type: "text/plain" }),
 		);
 
-		const res = (await Promise.race([
+		const res = await Promise.race([
 			app.fetch(
 				new Request("http://localhost:5173/upload", {
 					method: "POST",
@@ -403,7 +403,7 @@ describe("Route schema helpers", () => {
 					1000,
 				);
 			}),
-		])) as Response;
+		]);
 
 		expect(res.status).toBe(303);
 
@@ -1373,10 +1373,7 @@ describe("chained routes", () => {
 
 		// components build their URLs the same way
 		const html = await new Render({
-			markup: page.Anchor({
-				params: { name: "a/b" },
-				children: "Hi",
-			}) as JSX.Element,
+			markup: page.Anchor({ params: { name: "a/b" }, children: "Hi" }),
 		}).string();
 		expect(html).toContain('href="/hello/a%2Fb"');
 

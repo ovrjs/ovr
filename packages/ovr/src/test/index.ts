@@ -167,7 +167,7 @@ export class Tester {
 	 */
 	readonly fetch: {
 		<Pattern extends string, Shape extends Field.Shape>(
-			resource: Route<Pattern, any, Shape, any>,
+			resource: Route<Pattern, any, Shape>,
 			...[init]: keyof ExtractParams<Pattern> extends never
 				? [Tester.Init<Pattern, Shape>?]
 				: [Tester.Init<Pattern, Shape>]
@@ -248,7 +248,7 @@ export class Tester {
 	 * signed-in user
 	 */
 	readonly call = async <Pattern extends string, Shape extends Field.Shape>(
-		route: Route<Pattern, any, Shape, any>,
+		route: Route<Pattern, any, Shape>,
 		...[args]: keyof ExtractParams<Pattern> extends never
 			? [Tester.Arguments<Pattern, Shape>?]
 			: [Tester.Arguments<Pattern, Shape>]
