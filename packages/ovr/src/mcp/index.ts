@@ -8,7 +8,6 @@ import {
 	sent,
 	whole,
 } from "../form/index.js";
-import type { Middleware } from "../middleware/index.js";
 import { Route, parameters, schemas, tooled } from "../route/index.js";
 import { Schema, base } from "../schema/index.js";
 import {
@@ -225,9 +224,7 @@ export class Mcp<P extends string = string> {
 			...[Method.get, "DELETE"].map((method) =>
 				new Route(method, path).use((c) => {
 					// a request from another site is refused first, whatever its method
-					const origin = c.req.headers.get(Header.name.origin);
-					if (origin !== null && (origin !== c.url.origin || Mcp.#rebound(c)))
-						return c.text("Forbidden", 403);
+					if (Mcp.#foreign(c)) return c.text("Forbidden", 403);
 
 					c.res.headers.set("allow", Method.post);
 					return c.text("Method Not Allowed", 405);
@@ -244,7 +241,8 @@ export class Mcp<P extends string = string> {
 			// by the configured origin, the one tokens are issued for, and not the
 			// request's host, which anyone can choose
 			const { origin } = auth[agents];
-			const metadata: Middleware = (c) => {
+			// part of the way in too, an agent reads it before it has a token
+			const discovery = Route.get(Mcp.#discovery + path).use((c) => {
 				c.res.headers.set("access-control-allow-origin", "*");
 				c.json({
 					resource: new URL(path, origin).href,
@@ -252,10 +250,7 @@ export class Mcp<P extends string = string> {
 					bearer_methods_supported: ["header"],
 					resource_name: this.#options.name ?? new URL(origin).host,
 				});
-			};
-
-			// part of the way in too, an agent reads it before it has a token
-			const discovery = Route.get(Mcp.#discovery + path).use(metadata);
+			});
 			direct.add(discovery);
 			routes.push(discovery);
 
@@ -277,9 +272,7 @@ export class Mcp<P extends string = string> {
 			c.json({ jsonrpc: "2.0", id, ...body }, status);
 
 		try {
-			const origin = c.req.headers.get(Header.name.origin);
-			if (origin !== null && (origin !== c.url.origin || Mcp.#rebound(c)))
-				throw new RpcError(-32600, "Invalid origin", 403);
+			if (Mcp.#foreign(c)) throw new RpcError(-32600, "Invalid origin", 403);
 
 			const session = await this.#authorize(c);
 
@@ -375,20 +368,27 @@ export class Mcp<P extends string = string> {
 	}
 
 	/**
-	 * DNS rebinding: a site whose name resolves to this machine, so the user's
-	 * browser sends its requests here, with the site as both host and origin.
-	 * A browser request from this machine for another host is one.
+	 * A browser's request from another site, or by DNS rebinding: a site whose
+	 * name resolves to this machine, so the user's browser sends its requests
+	 * here, with the site as both host and origin. A browser request from this
+	 * machine for another host is one.
 	 *
 	 * @param c Request context
-	 * @returns `true` when a local client asks for a host that is not local
+	 * @returns `true` for a browser request from a site that is not this one
 	 */
-	static #rebound(c: Context) {
+	static #foreign(c: Context) {
+		const origin = c.req.headers.get(Header.name.origin);
+		if (origin === null) return false;
+
 		const local = (host: string) =>
 			host === "localhost" ||
 			host.endsWith(".localhost") ||
 			/^127\.|^\[?::1\]?$|^\[?::ffff:127\./.test(host);
 
-		return Boolean(c.ip && local(c.ip) && !local(c.url.hostname));
+		return (
+			origin !== c.url.origin ||
+			Boolean(c.ip && local(c.ip) && !local(c.url.hostname))
+		);
 	}
 
 	/**
@@ -453,9 +453,10 @@ export class Mcp<P extends string = string> {
 		// read into memory, so within what the app allows a form's body there:
 		// a tool's file arguments are in it
 		const limit = this.#app!.memory;
-		const length = Number(c.req.headers.get("content-length"));
 		const text =
-			length > limit ? undefined : await Mcp.#text(c.req.body, limit);
+			Number(c.req.headers.get("content-length")) > limit
+				? undefined
+				: await Mcp.#text(c.req.body, limit);
 		if (text === undefined)
 			// the limit, so an agent knows how far to shrink a file, which base64
 			// makes about a third larger
@@ -1190,10 +1191,6 @@ export class Mcp<P extends string = string> {
 		let redirected: URL | undefined;
 		/** The call writes, so a redirect from it means it was done */
 		const wrote = init !== undefined;
-		/** A page of this app, by its path */
-		const redirect = (page: URL) =>
-			`Redirected to ${page.pathname}${page.search}`;
-
 		for (let i = 0; ; i++) {
 			const res = await this.#run(c, session, url, init, sent);
 			if (typeof res === "string") return Mcp.#result(res, true);
@@ -1232,7 +1229,7 @@ export class Mcp<P extends string = string> {
 					next.origin !== c.url.origin
 						? `Redirected to ${next.href}`
 						: readable
-							? redirect(next)
+							? `Redirected to ${next.pathname}${next.search}`
 							: "Redirected",
 				);
 			}

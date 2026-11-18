@@ -445,8 +445,9 @@ export class Passkey {
 	) {
 		this.#origin();
 		// a route's `c.data()` resolves to its parse result
-		const parsed = (await Issue.data(this.#c)) as { data?: unknown } | null;
-		const result = Passkey.#payload.parse(parsed?.data);
+		const result = Passkey.#payload.parse(
+			((await Issue.data(this.#c)) as { data?: unknown } | null)?.data,
+		);
 		if (result.issues) throw new Issue("passkey request");
 		const state = await this.#auth.options.challenges.take(
 			result.data.ceremony,

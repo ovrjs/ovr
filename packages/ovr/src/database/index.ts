@@ -747,7 +747,7 @@ class Base<T extends readonly Table.Any[]> {
 				// applied in order under the lock, so `n` follows the history
 				await sql`CREATE TABLE IF NOT EXISTS migrations (n bigint GENERATED ALWAYS AS IDENTITY, id text PRIMARY KEY, checksum text NOT NULL, applied timestamptz NOT NULL DEFAULT now())`;
 
-				const history = await sql`
+				for (const row of await sql`
 					SELECT n, id, checksum FROM migrations WHERE n > ${last} ORDER BY n
 				`.parse(
 					Schema.object({
@@ -755,9 +755,7 @@ class Base<T extends readonly Table.Any[]> {
 						id: Schema.string(),
 						checksum: Schema.string(),
 					}),
-				);
-
-				for (const row of history) {
+				)) {
 					if (!checksums.has(row.id))
 						throw new Error(`Applied migration ${row.id} is missing`);
 					if (checksums.get(row.id) !== row.checksum)

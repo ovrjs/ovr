@@ -181,7 +181,6 @@ export class Tester {
 
 		const route = typeof resource === "string" ? undefined : resource;
 		const method = route?.method ?? Method.get;
-		const read = method === Method.get || method === Method.head;
 		const url = new URL(
 			route ? route.url(init as never) : (resource as string),
 			this.#origin,
@@ -190,7 +189,10 @@ export class Tester {
 			throw new TypeError(`${url.href} is not a page of the app`);
 
 		// a form without fields, such as a delete, still sends a body
-		const body = read ? undefined : new FormData();
+		const body =
+			method === Method.get || method === Method.head
+				? undefined
+				: new FormData();
 		const shape = route && forms.get(route)?.shape;
 
 		for (const [name, value] of Object.entries(init?.data ?? {})) {

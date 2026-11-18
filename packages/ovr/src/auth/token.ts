@@ -42,13 +42,15 @@ export class Token {
 		value: string,
 	) {
 		const payload = `${purpose}:${value}`;
-		const signature = await crypto.subtle.sign(
-			"HMAC",
-			await Token.#key([secret].flat()[0]!),
-			Codec.encode(payload),
-		);
-
-		return `${payload}.${Codec.Base64Url.encode(new Uint8Array(signature))}`;
+		return `${payload}.${Codec.Base64Url.encode(
+			new Uint8Array(
+				await crypto.subtle.sign(
+					"HMAC",
+					await Token.#key([secret].flat()[0]!),
+					Codec.encode(payload),
+				),
+			),
+		)}`;
 	}
 
 	/**

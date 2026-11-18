@@ -219,10 +219,10 @@ export function configure<U extends Auth.Users>(
 		.use(guard("login"), async (c) => {
 			// bound the body before verification
 			if (!(await Issue.data(c))) throw new Issue("login request");
-			const credential = await new Passkey(c, state(c)).login(
-				storage.credentials,
+			await enter(
+				c,
+				(await new Passkey(c, state(c)).login(storage.credentials)).user,
 			);
-			await enter(c, credential.user);
 		});
 	const logout = Route.post(paths.logout).use(guard("logout"), async (c) => {
 		await state(c).logout();
@@ -419,8 +419,7 @@ export function configure<U extends Auth.Users>(
 			if (back) state(c).remember(back);
 			// registration's own fields, which no submission is kept for: a
 			// refusal says the same whatever was sent
-			const own = fields.bind();
-			const { Field, Fields } = own;
+			const { Field, Fields } = fields.bind();
 			const Register = passkey.form(register, "register", {
 				...props,
 				endpoint: registration.url(),

@@ -361,8 +361,7 @@ export function oauth(
 		}
 		if (pending.expiration <= Date.now()) return;
 
-		const session = await state(c).session();
-		return session?.user === pending.user ? pending : null;
+		return (await state(c).session())?.user === pending.user ? pending : null;
 	};
 
 	/**

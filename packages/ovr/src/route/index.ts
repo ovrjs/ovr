@@ -690,19 +690,15 @@ export class Route<
 	 * @returns The name
 	 */
 	static #named(method: string, path: string) {
-		const segments = path
-			.split("/")
-			.filter(Boolean)
-			.map((segment) =>
-				segment === "*" ? "wildcard" : segment.replace(/^:/, ""),
-			);
-
-		// punctuation, such as the `@` of `/@:username`, is a `_`. Two patterns
-		// whose names are then the same, such as `/a/b` and `/a_b`, are told
-		// apart when they are mounted: `app.use()` throws
-		const name = `${method.toLowerCase()}_${segments.join("_") || "index"}`
-			.replace(/[^A-Za-z0-9-]+/g, "_")
-			.replace(/_$/, "");
+		// punctuation, such as the `/` and `@:` of `/@:username`, is a `_`. Two
+		// patterns whose names are then the same, such as `/a/b` and `/a_b`, are
+		// told apart when they are mounted: `app.use()` throws
+		const name = `${method.toLowerCase()}_${
+			path
+				.replace(/\/\*$/, "/wildcard")
+				.replace(/[^A-Za-z0-9-]+/g, "_")
+				.replace(/^_|_$/g, "") || "index"
+		}`;
 
 		// a name cut to the 64 characters a tool's may have ends with the
 		// path's hash, so two long paths that start alike differ
@@ -719,30 +715,28 @@ export class Route<
 	get tool(): Route.Tool {
 		const { method, pattern } = this;
 
-		/** @returns The description, of a route that is a tool */
-		const described = () => {
+		/** @returns The name, of a route that is a tool */
+		const name = () => {
+			// described or not, without writing the description: two that
+			// name each other would never finish
 			if (!this[tooled])
 				throw new TypeError(
 					`${method} ${pattern} has no tool to name: describe it, and a HEAD route never has one`,
 				);
 
+			return Route.#named(method, pattern);
+		};
+
+		/** @returns The description, of a route that is a tool */
+		const described = () => {
+			name();
 			return this.description!;
 		};
 
 		const read = method === Method.get;
-		const name = Route.#named(method, pattern);
 
 		return {
-			name: () => {
-				// described or not, without writing the description: two that
-				// name each other would never finish
-				if (!this[tooled])
-					throw new TypeError(
-						`${method} ${pattern} has no tool to name: describe it, and a HEAD route never has one`,
-					);
-
-				return name;
-			},
+			name,
 			get title() {
 				return described()
 					.trim()

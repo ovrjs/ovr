@@ -539,11 +539,11 @@ export class Auth<
 			if (await this.#state(c).session()) return handler(c as never, next);
 
 			// a page is asked for by its address, a form names the page it was on
-			const read = c.req.method === Method.get || c.req.method === Method.head;
 			const [param] = Form.params;
-			const back = read
-				? c.url.pathname + c.url.search
-				: c.url.searchParams.get(param);
+			const back =
+				c.req.method === Method.get || c.req.method === Method.head
+					? c.url.pathname + c.url.search
+					: c.url.searchParams.get(param);
 
 			// an absolute address, as a refused form's redirect is
 			const page = new URL(this.#page, c.url);

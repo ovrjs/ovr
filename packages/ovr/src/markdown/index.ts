@@ -541,28 +541,27 @@ class Writer {
 		const indent = (text: string, width: number) =>
 			text.replace(/\n(?=[^\n])/g, "\n" + " ".repeat(width)).trimEnd();
 
-		const visit = (parent: Node) => {
-			for (const child of parent.children) {
-				if (typeof child === "string") continue;
-				if (child.tag === "li") {
-					const marker = ordered ? `${n++}. ` : "- ";
-					items.push(
-						marker +
-							indent(this.#blocks(child.children, "\n\n", "\n"), marker.length),
-					);
-				} else if (Writer.#lists.has(child.tag)) {
-					// a list directly in a list belongs to the item before it
-					const width = ordered ? `${n - 1}. `.length : 2;
-					const nested = this.#list(child);
-					if (!nested) continue;
-					// on the lines after the item, indented as its contents are
-					if (items.length)
-						items[items.length - 1] += indent(`\n${nested}`, width);
-					else items.push(nested);
-				} else visit(child); // items inside a wrapper, such as a custom element
+		// items inside a wrapper too, such as a custom element
+		for (const child of Writer.#find(node, "li", ...Writer.#lists)) {
+			if (child.tag === "li") {
+				const marker = ordered ? `${n++}. ` : "- ";
+				items.push(
+					marker +
+						indent(this.#blocks(child.children, "\n\n", "\n"), marker.length),
+				);
+				continue;
 			}
-		};
-		visit(node);
+			// a list directly in a list belongs to the item before it
+			const nested = this.#list(child);
+			if (!nested) continue;
+			// on the lines after the item, indented as its contents are
+			if (items.length)
+				items[items.length - 1] += indent(
+					`\n${nested}`,
+					ordered ? `${n - 1}. `.length : 2,
+				);
+			else items.push(nested);
+		}
 
 		return items.join("\n");
 	}
@@ -572,12 +571,13 @@ class Writer {
 	 * @returns Fenced code block
 	 */
 	#pre(node: Node) {
-		const code = node.children.find(
-			(child): child is Node =>
-				typeof child !== "string" && child.tag === "code",
-		);
 		const language = /(?:^|\s)lang(?:uage)?-(\S+)/.exec(
-			code?.attrs.class ?? node.attrs.class ?? "",
+			node.children.find(
+				(child): child is Node =>
+					typeof child !== "string" && child.tag === "code",
+			)?.attrs.class ??
+				node.attrs.class ??
+				"",
 		)?.[1];
 		// the newline HTML ignores after `<pre>`, and a last one, which the
 		// fence's own line break replaces
@@ -613,30 +613,24 @@ class Writer {
 			});
 		};
 
-		const visit = (parent: Node) => {
-			for (const child of parent.children) {
-				if (typeof child === "string") continue;
-				if (child.tag === "caption") caption = this.#paragraph(child.children);
-				else if (child.tag === "tr") {
-					rows.push(
-						child.children
-							.filter(
-								(cell): cell is Node =>
-									typeof cell !== "string" &&
-									(cell.tag === "td" || cell.tag === "th"),
-							)
-							.map((cell) => {
-								take(cell);
-								return this.#inline(cell.children)
-									.replace(/\s+/g, " ")
-									.trim()
-									.replaceAll("|", "\\|");
-							}),
-					);
-				} else visit(child);
-			}
-		};
-		visit(node);
+		for (const child of Writer.#find(node, "caption", "tr"))
+			if (child.tag === "caption") caption = this.#paragraph(child.children);
+			else
+				rows.push(
+					child.children
+						.filter(
+							(cell): cell is Node =>
+								typeof cell !== "string" &&
+								(cell.tag === "td" || cell.tag === "th"),
+						)
+						.map((cell) => {
+							take(cell);
+							return this.#inline(cell.children)
+								.replace(/\s+/g, " ")
+								.trim()
+								.replaceAll("|", "\\|");
+						}),
+				);
 
 		let table = "";
 		if (rows.length) {
@@ -680,15 +674,8 @@ class Writer {
 		let legend = "";
 
 		// labels with `for`
-		const collect = (parent: Node) => {
-			for (const child of parent.children) {
-				if (typeof child === "string") continue;
-				if (child.tag === "label" && child.attrs.for)
-					labels.set(child.attrs.for, Writer.#plain(child));
-				collect(child);
-			}
-		};
-		collect(node);
+		for (const label of Writer.#find(node, "label"))
+			if (label.attrs.for) labels.set(label.attrs.for, Writer.#plain(label));
 
 		/** A new field, which a later control with its name may add to */
 		const add = (label: string, name: string, type: string) => {
@@ -734,10 +721,6 @@ class Writer {
 				name;
 
 			if (type === "checkbox" || type === "radio") {
-				// a box without a label of its own, such as one in each row of a
-				// table, is its value alone
-				const option = (value: string, label: string) =>
-					`${value}${label !== value && label !== name ? ` (${label})` : ""}`;
 				let group = byName.get(name);
 				const value = attrs.value ?? "on";
 				if (group?.type === type) group.lone = false;
@@ -745,7 +728,11 @@ class Writer {
 					group = add(legend || label, name, type);
 					group.lone = type === "checkbox" && attrs.value === undefined;
 				}
-				group.options.push(option(value, label));
+				// a box without a label of its own, such as one in each row of a
+				// table, is its value alone
+				group.options.push(
+					`${value}${label !== value && label !== name ? ` (${label})` : ""}`,
+				);
 				if ("checked" in attrs) group.value.push(value);
 				Writer.#rules(group, attrs);
 				return;
@@ -755,22 +742,16 @@ class Writer {
 
 			if (control.tag === "select") {
 				if ("multiple" in attrs) entry.type = "select multiple";
-				const options = (parent: Node) => {
-					for (const child of parent.children) {
-						if (typeof child === "string") continue;
-						if (child.tag === "option") {
-							const text = Writer.#plain(child);
-							const value = child.attrs.value ?? text;
-							// the empty choice of a select that may be left empty
-							if (!value) continue;
-							entry.options.push(
-								`${value}${text && text !== value ? ` (${text})` : ""}`,
-							);
-							if ("selected" in child.attrs) entry.value.push(value);
-						} else options(child);
-					}
-				};
-				options(control);
+				for (const option of Writer.#find(control, "option")) {
+					const text = Writer.#plain(option);
+					const value = option.attrs.value ?? text;
+					// the empty choice of a select that may be left empty
+					if (!value) continue;
+					entry.options.push(
+						`${value}${text && text !== value ? ` (${text})` : ""}`,
+					);
+					if ("selected" in option.attrs) entry.value.push(value);
+				}
 			} else if (control.tag === "textarea") {
 				const value = Writer.#content(control).replace(/^\n/, "");
 				if (value) entry.value.push(value);
@@ -900,11 +881,6 @@ class Writer {
 		};
 		visit(node);
 
-		// how to encode the body, for an agent that submits it itself
-		const encoding =
-			!tool && method !== "GET" && node.attrs.enctype
-				? ` as ${Writer.#code(node.attrs.enctype)}`
-				: "";
 		// what the form calls: its tool, or the address it submits to
 		const call = tool
 			? Writer.#call(tool)
@@ -956,7 +932,12 @@ class Writer {
 						...lines,
 					]
 				: [
-						`**Form:** ${call}${encoding}`,
+						// how to encode the body, for an agent that submits it itself
+						`**Form:** ${call}${
+							method !== "GET" && node.attrs.enctype
+								? ` as ${Writer.#code(node.attrs.enctype)}`
+								: ""
+						}`,
 						...(lines.length ? ["", ...lines] : []),
 					]),
 			...(notes.length ? ["", ...notes] : []),
@@ -986,15 +967,23 @@ class Writer {
 	 * @param select `<select>` element
 	 * @returns The value of its selected option, `undefined` without one
 	 */
-	static #chosen(select: Node): string | undefined {
-		for (const child of select.children) {
-			if (typeof child === "string") continue;
-			if (child.tag !== "option") {
-				const chosen = Writer.#chosen(child);
-				if (chosen !== undefined) return chosen;
-			} else if ("selected" in child.attrs)
-				return child.attrs.value ?? Writer.#plain(child);
-		}
+	static #chosen(select: Node) {
+		for (const option of Writer.#find(select, "option"))
+			if ("selected" in option.attrs)
+				return option.attrs.value ?? Writer.#plain(option);
+	}
+
+	/**
+	 * @param parent Element to look in
+	 * @param tags Tags of the elements to find
+	 * @yields Each element with one of the tags, in document order, and none
+	 * of those inside one it yields
+	 */
+	static *#find(parent: Node, ...tags: string[]): Generator<Node> {
+		for (const child of parent.children)
+			if (typeof child !== "string")
+				if (tags.includes(child.tag)) yield child;
+				else yield* Writer.#find(child, ...tags);
 	}
 
 	/**
