@@ -21,7 +21,20 @@ export function listen(
 	const status =
 		form?.querySelector("[data-passkey-error]:not([data-passkey-fallback])") ??
 		fallback;
-	if (!(form instanceof HTMLFormElement) || !(status instanceof HTMLElement))
+	// a passkey is only sent to this page's own origin, so markup injected into
+	// the page cannot send one elsewhere
+	const own = (url: string | null | undefined) =>
+		URL.parse(url ?? "", location.href)?.origin === location.origin;
+	if (
+		!(form instanceof HTMLFormElement) ||
+		!(status instanceof HTMLElement) ||
+		![
+			endpoint,
+			form.getAttribute("action"),
+			confirm?.endpoint,
+			confirm?.action,
+		].every(own)
+	)
 		return;
 	if (status !== fallback && fallback instanceof HTMLElement)
 		fallback.hidden = true;

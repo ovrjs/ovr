@@ -11,6 +11,9 @@ class Element {
 	removeAttribute(name: string) {
 		this.attributes.delete(name);
 	}
+	getAttribute(name: string) {
+		return this.attributes.get(name) ?? null;
+	}
 }
 class Input extends Element {
 	validation = "";
@@ -173,6 +176,7 @@ function setup() {
 		},
 	);
 	vi.stubGlobal("navigator", { credentials: { create, get } });
+	vi.stubGlobal("location", new URL("https://example.com/login"));
 	vi.stubGlobal("fetch", fetcher);
 	const NativeFormData = globalThis.FormData;
 	vi.stubGlobal(
@@ -244,6 +248,24 @@ describe("passkey browser runtime", () => {
 		).toBe("BA");
 		expect(state.get).toHaveBeenCalledOnce();
 		expect(state.first.attributes.has("aria-busy")).toBe(true);
+	});
+
+	test("sends a passkey only to the page's own origin", async () => {
+		const state = setup();
+		const evil = "https://evil.example/steal";
+		for (const [endpoint, confirm] of [
+			[evil, undefined],
+			["/options", { bootstrap: "b", endpoint: evil, action: "/confirm" }],
+			["/options", { bootstrap: "b", endpoint: "/confirm", action: evil }],
+		] as const)
+			expect(
+				state.init("first", "b", endpoint, "login", confirm),
+			).toBeUndefined();
+
+		state.second.setAttribute("action", evil);
+		expect(state.init("second", "b", "/options", "login")).toBeUndefined();
+		expect(state.first.handler).toBeUndefined();
+		expect(state.second.handler).toBeUndefined();
 	});
 
 	test("a button that submits elsewhere needs no passkey", async () => {

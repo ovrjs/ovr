@@ -126,6 +126,22 @@ test("escape attribute", () => {
 	expect(escaped.includes('"')).toBe(false);
 });
 
+test("a name that would break its tag is left out, as is a script link", async () => {
+	const props = {
+		"onmouseover=alert(1) x": true,
+		'a"><img src=x onerror=alert(1)>': "1",
+		"@click": "open = true",
+		href: " \tJava\nScript:alert(1)",
+		action: "/save",
+	};
+	expect(await new Render({ markup: jsx("a", props) }).string()).toBe(
+		'<a @click="open = true" action="/save"></a>',
+	);
+	await expect(
+		new Render({ markup: jsx("img src=x onerror=alert(1)", {}) }).string(),
+	).rejects.toThrow("Invalid tag name");
+});
+
 test("fragment", () => {
 	const children = ["Hello", ", world!"];
 	expect(JSX.Fragment({ children })).toBe(children);

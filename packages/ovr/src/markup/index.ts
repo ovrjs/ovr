@@ -64,8 +64,10 @@ export class Tag extends Chunk {
 		let opening = name;
 
 		for (const key in props) {
-			// more memory efficient to skip children instead of destructuring and using ...rest
-			if (key === "children") continue;
+			// more memory efficient to skip children instead of destructuring and
+			// using ...rest. A name that would break the tag, such as a key of an
+			// object from a user spread into props, is left out
+			if (key === "children" || !attributeName.test(key)) continue;
 
 			const value = props[key];
 
@@ -73,7 +75,9 @@ export class Tag extends Chunk {
 				// just put the key without the value
 				opening += ` ${key}`;
 			} else if (typeof value === "string") {
-				opening += ` ${key}="${escape(value, true)}"`;
+				// a link that runs script, such as a website a user gave, is left out
+				if (!(urls.has(key) && script.test(value)))
+					opening += ` ${key}="${escape(value, true)}"`;
 			} else if (typeof value === "number" || typeof value === "bigint") {
 				opening += ` ${key}="${value}"`;
 			}
@@ -130,6 +134,26 @@ export class Group extends Chunk {
 
 /** End tags by name, shared by every render */
 const ends = new Map<string, Tag>();
+
+/** A tag name, which cannot end its tag or start a comment */
+const tagName = /^[a-z][^\s\p{Cc}"'<>/=]*$/iu;
+
+/** An attribute name, which cannot end its tag or start another attribute */
+const attributeName = /^[^\s\p{Cc}"'<>/=]+$/u;
+
+/** Attributes whose URL a browser follows or loads */
+const urls = new Set([
+	"href",
+	"src",
+	"action",
+	"formaction",
+	"data",
+	"xlink:href",
+]);
+
+/** A `javascript:` URL, as a browser reads one, with the characters it skips */
+const script =
+	/^[\0-\x20]*j[\t\n\r]*a[\t\n\r]*v[\t\n\r]*a[\t\n\r]*s[\t\n\r]*c[\t\n\r]*r[\t\n\r]*i[\t\n\r]*p[\t\n\r]*t[\t\n\r]*:/i;
 
 /**
  * HTML tags that do not require a closing tag.
@@ -371,7 +395,12 @@ export class Renderer {
 						if (!closed) {
 							// end tags have no props, so one of each is shared
 							let end = ends.get(tag);
-							if (!end) ends.set(tag, (end = new Tag(tag)));
+							if (!end) {
+								// checked once for each name, as its end tag is made
+								if (!tagName.test(tag))
+									throw new TypeError(`Invalid tag name: ${tag}`);
+								ends.set(tag, (end = new Tag(tag)));
+							}
 
 							// text alone, the most common child, is one chunk with its tags
 							const { children } = props;
