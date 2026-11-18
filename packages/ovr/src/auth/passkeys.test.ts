@@ -143,6 +143,21 @@ test("removes a passkey, never the last and never someone else's", async () => {
 	expect(await left(new Tester({ app, user: "sam" }))).toEqual(["sams"]);
 });
 
+test("removing a passkey signs the user out everywhere else", async () => {
+	const { app, list, remove } = setup();
+	const laptop = new Tester({ app, user: "ross" });
+	const lost = new Tester({ app, user: "ross" });
+	const sam = new Tester({ app, user: "sam" });
+	await lost.fetch(list);
+	await sam.fetch(list);
+
+	await laptop.fetch(remove, { data: { id: "first" } });
+
+	await expect(lost.fetch(list)).rejects.toThrow("Sign in to list passkeys");
+	expect(await (await laptop.fetch(list)).json()).toHaveLength(1);
+	expect(await (await sam.fetch(list)).json()).toHaveLength(1);
+});
+
 test("two removals at once leave one passkey", async () => {
 	const { app, list, remove } = setup();
 	const ross = new Tester({ app, user: "ross" });

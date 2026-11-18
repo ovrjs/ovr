@@ -68,7 +68,8 @@ class Part extends Request {
 	readonly name: string | null;
 
 	/**
-	 * Filename from Content-Disposition header if file
+	 * Filename from Content-Disposition header if file, as the sender chose
+	 * it, so it can hold `../` and is not a safe path
 	 *
 	 * @example "my-image.png"
 	 */
@@ -228,9 +229,10 @@ export namespace Multipart {
 		payload?: number;
 
 		/**
-		 * Maximum number of parts.
+		 * Maximum number of parts, each of which costs a little to read however
+		 * small it is.
 		 *
-		 * @default Infinity
+		 * @default 1000
 		 * @example
 		 *
 		 * ```ts
@@ -299,7 +301,7 @@ export class Multipart {
 	readonly #options: Required<Multipart.Options> = {
 		memory,
 		payload: 16 * Size.mb,
-		parts: Infinity,
+		parts: 1000,
 	};
 
 	/** Request the parts are read from */
@@ -363,7 +365,13 @@ export class Multipart {
 			throw new Malformed("Invalid Boundary");
 		if (!req.body) throw new Malformed("No Request Body");
 
-		Object.assign(this.#options, options);
+		let key: keyof Multipart.Options;
+		for (key in options) {
+			const value = options![key]!;
+			// undefined or NaN, such as from an unset environment variable, would
+			// turn the limit off, so it keeps the default
+			if (value >= 0) this.#options[key] = value;
+		}
 		this.#req = req;
 		this.#reader = req.body.getReader();
 		this.#opening = new Needle(`--${boundary}`);

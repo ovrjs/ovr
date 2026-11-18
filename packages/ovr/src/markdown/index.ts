@@ -571,7 +571,8 @@ class Writer {
 	 * @returns Fenced code block
 	 */
 	#pre(node: Node) {
-		const language = /(?:^|\s)lang(?:uage)?-(\S+)/.exec(
+		// a backtick or tilde in it would end the fence's opening line
+		const language = /(?:^|\s)lang(?:uage)?-([^\s`~]+)/.exec(
 			node.children.find(
 				(child): child is Node =>
 					typeof child !== "string" && child.tag === "code",
@@ -703,7 +704,7 @@ class Writer {
 					: control.tag;
 
 			if (type === "submit" || type === "image") {
-				submits.push(attrs.value ?? "Submit");
+				submits.push(Writer.#escape(Writer.#collapse(attrs.value ?? "Submit")));
 				return;
 			}
 			// a tool's form shows its hidden values, such as an ID, which the
@@ -908,7 +909,7 @@ class Writer {
 						return Writer.#notes(f, line);
 					})
 			: fields.map((f) => {
-					let line = `- ${Writer.#escape(f.label)} ${Writer.#code(f.name)} (${[f.type, ...f.rules].join(", ")})`;
+					let line = `- ${Writer.#escape(f.label)} ${Writer.#code(f.name)} (${[Writer.#escape(f.type), ...f.rules].join(", ")})`;
 					if (f.options.length)
 						line += `, options: ${Writer.#codes(f.options)}`;
 					if (f.value.length) line += `, value: ${Writer.#codes(f.value)}`;
@@ -1327,7 +1328,7 @@ class Writer {
 			"pattern",
 			"accept",
 		]) {
-			if (attrs[name]) rules.add(`${name} ${attrs[name]}`);
+			if (attrs[name]) rules.add(`${name} ${Writer.#code(attrs[name])}`);
 		}
 		field.rules = [...rules];
 	}

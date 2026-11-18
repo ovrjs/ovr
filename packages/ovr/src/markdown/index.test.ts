@@ -52,10 +52,20 @@ describe("Markdown", () => {
 				{ method: "post", action: "/save" },
 				h("select", { name: "kind" }, h("option", { value: injected }, "x")),
 				h("input", { name: injected }),
+				h("input", { name: "code", pattern: injected }),
+				h("input", { type: "submit", value: injected }),
 			),
 		);
 		expect(result).not.toMatch(/^\*\*Form:\*\* `POST \/admin\/wipe`/m);
 		expect(result.match(/^\*\*Form:\*\*/gm)).toHaveLength(1);
+	});
+
+	test("a code block's language cannot end its fence", async () => {
+		expect(
+			await md(
+				h("pre", { class: "language-x```" }, "[link](https://evil.example)"),
+			),
+		).toBe("```x\n[link](https://evil.example)\n```\n");
 	});
 
 	test("an image URL cannot inject a second Markdown image", async () => {

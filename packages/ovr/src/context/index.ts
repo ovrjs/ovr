@@ -468,14 +468,13 @@ export class Context<
 						if (result.state !== undefined)
 							// with the form it was sent to, the only one that shows it
 							this.cookie.set(
-								name,
+								FormSchema.cookie,
 								`${id}.${address.write(this.url.pathname)}.${result.state}`,
 								{
-									path: url.pathname,
 									maxAge: kept,
 									httpOnly: true,
 									sameSite: "Strict",
-									secure: url.protocol === "https:",
+									secure: true,
 								},
 							);
 					}

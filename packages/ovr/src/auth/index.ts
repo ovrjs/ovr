@@ -584,8 +584,8 @@ export class Auth<
 
 	/**
 	 * Remove one of the signed-in user's passkeys, such as one for a device
-	 * they no longer have. Their last passkey is kept, since nothing else signs
-	 * in as them.
+	 * they no longer have. It signs them out everywhere else, and their last
+	 * passkey is kept, since nothing else signs in as them.
 	 *
 	 * @param c Request context of the signed-in user
 	 * @param id Passkey's ID, a passkey's `id` from `auth.passkeys(c)`
@@ -597,7 +597,7 @@ export class Auth<
 		const session = await this.#session(c);
 		if (!session) throw new Error("Sign in to remove a passkey");
 
-		return this.#storage.passkeys.remove(session.user, id);
+		return this.#storage.passkeys.remove(session.user, id, session.id);
 	};
 
 	/**

@@ -841,7 +841,7 @@ export class Route<
 			const id = c.url.searchParams.get(name);
 			// the ID the address names, the form it was sent to, and the state
 			const [key, sent, state] =
-				(id ? c.cookie.get(name) : undefined)?.split(".") ?? [];
+				(id ? c.cookie.get(FormSchema.cookie) : undefined)?.split(".") ?? [];
 
 			return key === id && state !== undefined
 				? { url: c.url, state, sent: address.read(sent) }

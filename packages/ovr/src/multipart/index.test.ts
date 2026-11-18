@@ -598,6 +598,27 @@ describe("MultipartParser", () => {
 			}).rejects.toThrow("Payload Too Large");
 		});
 
+		it("keeps the default limit for an unset environment variable", async () => {
+			const parts = Array.from({ length: 1001 }, () => ({
+				name: "a",
+				content: "",
+			}));
+			const req = new Request("http://localhost", {
+				method: "POST",
+				headers: {
+					"content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+				},
+				body: multipartPayload(BOUNDARY, parts),
+			});
+
+			await expect(async () => {
+				for await (const part of new Multipart(req, {
+					parts: Number(process.env.OVR_UNSET_PARTS),
+				}))
+					void part;
+			}).rejects.toThrow("Too Many Parts");
+		});
+
 		it("uses default payload limit (16MB) and succeeds on smaller size", async () => {
 			const content = "a".repeat(15.99 * ONE_MB);
 			const payload = multipartPayload(BOUNDARY, [

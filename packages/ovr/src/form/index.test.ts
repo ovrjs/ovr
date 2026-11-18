@@ -1070,10 +1070,12 @@ describe("Form schema", () => {
 		expect(Field.file().stream().parts).toBe(1);
 		expect(Field.checkboxes(["a", "b", "c"]).parts).toBe(3);
 		expect(Field.select(["a", "b"]).multiple().parts).toBe(2);
-		expect(Field.file().multiple().parts).toBe(Infinity);
+		// open-ended fields take the most any list takes
+		expect(Field.file().multiple().parts).toBe(1000);
+		expect(Field.textarea().lines().parts).toBe(1000);
 	});
 
-	test("form parts sums field cardinality and preserves infinity", () => {
+	test("form parts sums field cardinality", () => {
 		expect(
 			new Form({
 				name: Field.text(),
@@ -1084,7 +1086,7 @@ describe("Form schema", () => {
 		).toBe(7);
 		expect(
 			new Form({ name: Field.text(), uploads: Field.file().multiple() }).parts,
-		).toBe(Infinity);
+		).toBe(1001);
 	});
 
 	test("multipart parse returns validated data and streamed parts together", async () => {
@@ -1334,6 +1336,19 @@ test("a number field sent text asks for a number, left empty it is required", as
 		["n", "Enter a number"],
 		["count", "Required field"],
 	]);
+
+	// only decimal text, and spaces alone are empty
+	const odd = formInvalid(
+		await form.parse(new URLSearchParams("n=0x10&count=%20%20")),
+	).issues;
+	expect(odd.map((issue) => [issue.path[0], issue.message])).toEqual([
+		["n", "Enter a number"],
+		["count", "Required field"],
+	]);
+	expect(
+		formValid(await form.parse(new URLSearchParams("n=-.5e1&count=%203%20")))
+			.data,
+	).toEqual({ n: -5, count: 3 });
 });
 
 describe("choices people call by another name", () => {

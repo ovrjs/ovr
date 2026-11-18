@@ -1804,7 +1804,15 @@ describe("Mcp", () => {
 				.describe("Save, at its old address")
 				.fields({ title: Field.text() })
 				.use((c) => c.redirect("/new", 307)),
+			Route.post("/purge")
+				.describe("Save, sent on to a route that is no tool")
+				.use((c) => c.redirect("/admin/purge", 307)),
+			Route.post("/admin/purge").use((c) => {
+				done.push("purged");
+				return c.text("Purged");
+			}),
 			Route.post("/new")
+				.describe("Save")
 				.fields({ title: Field.text() })
 				.use(async (c) => {
 					const result = await c.data();
@@ -1821,6 +1829,14 @@ describe("Mcp", () => {
 		expect(done).toEqual(["Hello"]);
 		expect(body.result.isError).toBe(false);
 		expect(body.result.content[0].text).toBe("Saved Hello");
+
+		// agents call only tools, so a write is not sent on to another route
+		const purge = await rpc("tools/call", {
+			name: "post_purge",
+			arguments: {},
+		});
+		expect(done).toEqual(["Hello"]);
+		expect(purge.body.result.content[0].text).not.toContain("Purged");
 
 		for (const method of ["GET", "DELETE"]) {
 			const ours = await app.fetch("http://localhost/mcp", { method });

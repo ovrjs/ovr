@@ -186,7 +186,7 @@ The form has one optional field, the passkey's name, such as "Laptop", and its b
 | `origin`  | The origin it was made at, the only one it signs in at                     |
 | `synced`  | `true` when a password manager keeps a copy, so losing the device keeps it |
 
-`auth.remove(c, id)` removes one, such as for a device the person no longer has. It keeps the account's last passkey, since nothing else signs in as it, and returns `false` then, or for an ID that is not one of theirs:
+`auth.remove(c, id)` removes one, such as for a device the person no longer has, and signs them out everywhere else. It keeps the account's last passkey, since nothing else signs in as it, and returns `false` then, or for an ID that is not one of theirs:
 
 ```ts
 const remove = Route.post("/account/passkeys/remove")

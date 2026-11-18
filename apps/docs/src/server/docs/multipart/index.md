@@ -68,7 +68,7 @@ const data = await mp.data(); // FormData
 
 ## Options
 
-Options are available for the maximum `memory` allocation, max total `payload` size, and max number of `parts`, to prevent attackers from sending massive requests. `memory` bounds what the parser holds while it reads. `Multipart.data` and `c.data()` keep every value, uploaded files included, so what they hold is bounded by `payload`; stream large files with `c.multipart()` instead.
+Options are available for the maximum `memory` allocation, max total `payload` size, and max number of `parts` (1000 by default), to prevent attackers from sending massive requests. `memory` bounds what the parser holds while it reads. `Multipart.data` and `c.data()` keep every value, uploaded files included, so what they hold is bounded by `payload`; stream large files with `c.multipart()` instead.
 
 ```ts
 const options: Multipart.Options = {
@@ -123,8 +123,9 @@ import { Route } from "ovr";
 const upload = Route.post("/upload").use(async (c) => {
 	for await (const part of c.multipart()) {
 		if (part.name === "photo") {
+			// the sender chooses `part.filename`, so `../` in it could write anywhere
 			await part.body.pipeTo(
-				Writable.toWeb(createWriteStream(`/uploads/${part.filename}`)),
+				Writable.toWeb(createWriteStream(`/uploads/${crypto.randomUUID()}`)),
 			);
 		}
 	}

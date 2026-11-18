@@ -171,12 +171,15 @@ export class App {
 				this.#trie.add(route);
 				this.#routes.push(route);
 			} else if (mount in route) {
+				// undefined or NaN, such as from an unset environment variable,
+				// would turn the limit off, so it keeps the default
+				const limit = this.#options.multipart?.memory;
 				this.use(
 					route[mount]({
 						routes: this.#routes,
 						tools: this.#tools,
 						fetch: this.fetch,
-						memory: this.#options.multipart?.memory ?? memory,
+						memory: limit! >= 0 ? limit! : memory,
 						find: (method, pathname) =>
 							this.#find(method, pathname) ?? undefined,
 					}),

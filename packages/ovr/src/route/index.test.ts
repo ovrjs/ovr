@@ -24,7 +24,7 @@ const page = (url: string, state?: string, sent?: string) => {
 		url: at,
 		cookie: {
 			get: (name: string) =>
-				name === "_form" && state !== undefined
+				name === "__Host-form" && state !== undefined
 					? `1a2b3c4d.${address.write(sent ?? at.pathname)}.${state}`
 					: undefined,
 		},
@@ -1120,7 +1120,7 @@ describe("invalid after parsing", () => {
 		const [cookie] = res.headers.getSetCookie();
 		// its ID, the form it was sent to, and what was sent
 		expect(cookie).toMatch(
-			/^_form=[0-9a-f]{8}\.[\w-]+\.[\w-]+; Path=\/signup; /,
+			/^__Host-form=[0-9a-f]{8}\.[\w-]+\.[\w-]+; Path=\/; /,
 		);
 
 		const html = await (

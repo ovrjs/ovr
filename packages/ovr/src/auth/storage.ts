@@ -629,13 +629,15 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		},
 		/**
 		 * Removes one of a user's passkeys, never their last: nothing else
-		 * signs in as them.
+		 * signs in as them. Their other sessions end with it, since one may be
+		 * on the device it was for.
 		 *
 		 * @param user User ID
 		 * @param id Passkey's ID
+		 * @param session ID of the session that removes it, which stays
 		 * @returns `true` when it was removed
 		 */
-		remove: (user: string, id: string) =>
+		remove: (user: string, id: string, session: string) =>
 			this.#db.sql(async (t) => {
 				const { columns } = Storage.credentials;
 				// one removal for a user at a time, so two at once cannot each
@@ -647,8 +649,14 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 						AND (SELECT count(*) FROM ${Storage.credentials} WHERE ${columns.user} = ${user}) > 1
 					RETURNING ${columns.id}
 				`;
+				if (!rows.length) return false;
 
-				return rows.length === 1;
+				const { columns: sessions } = Storage.sessions;
+				await t.sql`
+					DELETE FROM ${Storage.sessions}
+					WHERE ${sessions.user} = ${user} AND ${sessions.id} <> ${session}
+				`;
+				return true;
 			}),
 	};
 

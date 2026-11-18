@@ -1209,11 +1209,12 @@ export class Mcp<P extends string = string> {
 				}
 
 				// a 307 or 308 sends the write on as it is, to be done there: it
-				// is followed with its method and body, within this app
+				// is followed with its method and body, to another of the app's
+				// tools, since agents call no other route
 				if (
 					wrote &&
 					(res.status === 307 || res.status === 308) &&
-					next.origin === c.url.origin &&
+					this.#find(c, init.method!, next)?.route[tooled] &&
 					i < Mcp.#redirects
 				) {
 					url = next;

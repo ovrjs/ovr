@@ -294,10 +294,10 @@ describe("fetch", () => {
 		expect(location).toMatch(
 			new RegExp(`^${origin}/recipes/new\\?_form=[0-9a-f]{8}$`),
 		);
-		// it is kept in a cookie only that page is sent, and no script reads
+		// it is kept in a cookie only this host sets, and no script reads
 		const [cookie] = res.headers.getSetCookie();
 		expect(cookie).toMatch(
-			/^_form=[0-9a-f]{8}\.[\w-]+\.[\w-]+; Path=\/recipes\/new; /,
+			/^__Host-form=[0-9a-f]{8}\.[\w-]+\.[\w-]+; Path=\/; /,
 		);
 		expect(cookie).toContain("HttpOnly");
 		expect(cookie).toContain("SameSite=Strict");

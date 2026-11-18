@@ -51,6 +51,13 @@ describe("Cookie Manager", () => {
 			expect(cookie.get("baz")).toBe("hello world");
 		});
 
+		test("an open quote ends at the semicolon, not at the next quote", () => {
+			const { c } = createMockContext('a="; session=token; b="');
+			const cookie = new Cookie(c);
+			expect(cookie.get("a")).toBe('"');
+			expect(cookie.get("session")).toBe("token");
+		});
+
 		test("decodes URI encoded values", () => {
 			const { c } = createMockContext("foo=hello%20world; bar=%F0%9F%9A%80");
 			const cookie = new Cookie(c);

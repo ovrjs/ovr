@@ -150,11 +150,11 @@ export class Header {
 
 	/**
 	 * @param header header value to parse
-	 * @param insensitive Lowercase each key, a parameter's name is
-	 * case-insensitive, a cookie's is not
+	 * @param parameter The header's parameters, whose names are
+	 * case-insensitive and whose values can be quoted, a cookie's are neither
 	 * @returns Map containing each key=value pair
 	 */
-	static params(header: string | null, insensitive?: boolean) {
+	static params(header: string | null, parameter?: boolean) {
 		// without a prototype, so a key such as "__proto__" is only a key
 		const parsed: Record<string, string> = Object.create(null);
 
@@ -176,14 +176,14 @@ export class Header {
 				}
 
 				let key = header.slice(cursor, equal).trim();
-				if (insensitive) key = key.toLowerCase();
+				if (parameter) key = key.toLowerCase();
 				let value: string;
 				let quoted = false;
 
 				// a quoted value ends at its closing quote, it can contain ";"
 				let start = equal + 1;
 				while (header[start] === " " || header[start] === "\t") start++;
-				if (header[start] === '"') {
+				if (parameter && header[start] === '"') {
 					quoted = true;
 					value = "";
 					let i = start + 1;
@@ -191,7 +191,12 @@ export class Header {
 						value += header[i] === "\\" ? (header[++i] ?? "") : header[i];
 					semi = header.indexOf(";", i);
 					if (semi === -1) semi = headerLength;
-				} else value = header.slice(start, semi).trim();
+				} else {
+					value = header.slice(start, semi).trim();
+					// a cookie's quotes are within its ";", so one cannot take in
+					// the cookies after it
+					if (/^".*"$/s.test(value)) value = value.slice(1, -1);
+				}
 
 				// first value should take precedence
 				if (!(key in parsed)) {

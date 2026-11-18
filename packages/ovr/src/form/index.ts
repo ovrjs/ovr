@@ -96,6 +96,12 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 	/** Query param keys ordered as `[return, form]`. */
 	static readonly params = ["_return", "_form"] as const;
 
+	/**
+	 * Cookie that keeps a refused submission. Only this host can set it, not
+	 * another subdomain or an insecure page
+	 */
+	static readonly cookie = "__Host-form";
+
 	/** Schema used to validate kept form values, see `#value`. */
 	static #valueSchema?: Schema<Field.Value.Cell>;
 
@@ -869,7 +875,7 @@ class FieldSchema<
 		// does, so a request cannot send rows without end
 		const { item } = this;
 		this.parts = item
-			? Math.min(this.#most(), FieldSchema.#rows) *
+			? Math.min(this.#most(), FieldSchema.rows) *
 				(item instanceof FieldSchema
 					? item.parts
 					: Object.values(item).reduce((sum, cell) => sum + cell.parts, 0))
@@ -1409,7 +1415,7 @@ class FieldSchema<
 						return files.length ? files : undefined;
 					}
 				: readMany,
-			file ? Infinity : this.options!.length || Infinity,
+			file ? FieldSchema.rows : this.options!.length || FieldSchema.rows,
 			this.streaming,
 		);
 	}
@@ -1454,7 +1460,7 @@ class FieldSchema<
 
 				return lines.length ? lines : undefined;
 			},
-			Infinity,
+			FieldSchema.rows,
 			this.streaming,
 		);
 	}
@@ -1935,8 +1941,11 @@ class FieldSchema<
 		});
 	}
 
-	/** The most rows a list without a `max()` takes in one request */
-	static readonly #rows = 1000;
+	/**
+	 * The most values or rows a field without a `max()` takes in one request,
+	 * so a request of many small parts is refused before they are read
+	 */
+	static readonly rows = 1000;
 
 	/**
 	 * @param field List field
@@ -1944,7 +1953,7 @@ class FieldSchema<
 	 * the most any list takes
 	 */
 	static most(field: Field.Any) {
-		return Math.min(field.#most(), FieldSchema.#rows);
+		return Math.min(field.#most(), FieldSchema.rows);
 	}
 
 	/**
@@ -2993,7 +3002,14 @@ export class Field {
 	 */
 	static #toNumber(value: unknown) {
 		// form submissions read numeric controls as strings
-		if (value == null || value === "") return;
+		if (typeof value === "string") {
+			const text = value.trim();
+			if (!text) return;
+			// decimal only, as a browser sends, so "0x10" is not 16
+			if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(text)) return text;
+			value = text;
+		}
+		if (value == null) return;
 
 		return exact(value);
 	}
@@ -3097,7 +3113,7 @@ export class Field {
 			{ ...config, props: { type: "checkbox" } },
 			Schema.array(choice, choose),
 			readMany,
-			config.options!.length || Infinity,
+			config.options!.length || FieldSchema.rows,
 		);
 	}
 
