@@ -84,6 +84,7 @@
     "review-fixes",
     "review-follow-up",
     "route-issues",
+    "safe-attributes",
     "script-types",
     "security-review",
     "session-no-store",
