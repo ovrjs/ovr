@@ -119,7 +119,9 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				release.resolve();
 				await Promise.all([rotation, replay]);
 			}
-			expect(await storage.tokens.get("survivor")).toBeUndefined();
+			expect(
+				await storage.tokens.get(await Storage.hash("survivor")),
+			).toBeUndefined();
 		});
 
 		test("documented agent disconnection revokes tokens issued by an in-flight refresh", async () => {
@@ -166,7 +168,7 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				await Promise.all([rotation, disconnect]);
 			}
 			expect
-				.soft(await storage.tokens.get("disconnect-access"))
+				.soft(await storage.tokens.get(await Storage.hash("disconnect-access")))
 				.toBeUndefined();
 			expect
 				.soft(
@@ -240,7 +242,9 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 				expect(
 					(await pool.query("SELECT id FROM deletion_users")).rows,
 				).toEqual([]);
-				expect(await storage.tokens.get("deletion-access")).toBeUndefined();
+				expect(
+					await storage.tokens.get(await Storage.hash("deletion-access")),
+				).toBeUndefined();
 			} finally {
 				await pool.query(
 					"ALTER TABLE auth_tokens DROP CONSTRAINT deletion_tokens",
@@ -319,7 +323,9 @@ describe.skipIf(!process.env.OVR_TEST_DATABASE_URL)(
 						.toEqual([]);
 					// the deletion waited, then removed the tokens the refresh issued
 					expect
-						.soft(await storage.tokens.get("holding-access"))
+						.soft(
+							await storage.tokens.get(await Storage.hash("holding-access")),
+						)
 						.toBeUndefined();
 				} finally {
 					await pool.query("DROP TRIGGER zz_pause ON auth_tokens");

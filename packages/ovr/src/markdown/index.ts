@@ -499,7 +499,7 @@ class Writer {
 			case "h4":
 			case "h5":
 			case "h6": {
-				const text = this.#inline(children).replace(/\s+/g, " ").trim();
+				const text = Writer.#collapse(this.#inline(children)).trim();
 				return text && `${"#".repeat(Number(tag[1]))} ${text}`;
 			}
 			case "dt":
@@ -600,6 +600,8 @@ class Writer {
 		const forms: Node[] = [];
 
 		const take = (parent: Node) => {
+			// most cells are text alone, with nothing to take
+			if (parent.children.every((child) => typeof child === "string")) return;
 			parent.children = parent.children.flatMap<Node | string>((child) => {
 				if (typeof child === "string") return [child];
 				if (child.tag === "form") {
@@ -625,8 +627,7 @@ class Writer {
 						)
 						.map((cell) => {
 							take(cell);
-							return this.#inline(cell.children)
-								.replace(/\s+/g, " ")
+							return Writer.#collapse(this.#inline(cell.children))
 								.trim()
 								.replaceAll("|", "\\|");
 						}),
@@ -1138,7 +1139,7 @@ class Writer {
 
 		for (const child of children) {
 			if (typeof child === "string") {
-				out += Writer.#escape(child.replace(/\s+/g, " "));
+				out += Writer.#escape(Writer.#collapse(child));
 				continue;
 			}
 
@@ -1168,7 +1169,7 @@ class Writer {
 				case "code":
 				case "kbd":
 				case "samp":
-					out += Writer.#code(Writer.#content(child).replace(/\s+/g, " "));
+					out += Writer.#code(Writer.#collapse(Writer.#content(child)));
 					break;
 				case "a": {
 					const text = inner().trim();
@@ -1332,6 +1333,15 @@ class Writer {
 	}
 
 	/**
+	 * @param text Text
+	 * @returns The text with each run of whitespace a single space
+	 */
+	static #collapse(text: string) {
+		// most text has single spaces alone, which a test finds faster than a replace
+		return /\s\s|[^\S ]/.test(text) ? text.replace(/\s+/g, " ") : text;
+	}
+
+	/**
 	 * @param node Element
 	 * @param omitControls Leave out the text of nested controls
 	 * @returns Text content with whitespace collapsed
@@ -1345,7 +1355,7 @@ class Writer {
 			else if (!omitControls || !["select", "textarea"].includes(child.tag))
 				text += " " + Writer.#plain(child, omitControls) + " ";
 		}
-		return text.replace(/\s+/g, " ").trim();
+		return Writer.#collapse(text).trim();
 	}
 
 	/**

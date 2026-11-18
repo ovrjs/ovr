@@ -153,7 +153,8 @@ test("a render of markup yields strings", async () => {
 	);
 
 	expectTypeOf(chunks).toEqualTypeOf<string[]>();
-	expect(chunks).toStrictEqual(["<p>", "&lt;b>", "</p>"]);
+	// an element of text alone is one chunk with its tags
+	expect(chunks).toStrictEqual(["<p>&lt;b></p>"]);
 });
 
 test("a render of markup as a child renders its element in place", async () => {
@@ -340,8 +341,8 @@ describe("order and laziness", () => {
 			Symbol.asyncIterator
 		]();
 
-		// <ul>, then the three chunks of each of two rows
-		for (let i = 0; i < 7; i++) await render.next();
+		// <ul>, then each of two rows, one chunk each
+		for (let i = 0; i < 3; i++) await render.next();
 
 		expect(read).toBe(2);
 		await render.return();

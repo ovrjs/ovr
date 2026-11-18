@@ -1626,7 +1626,6 @@ class FieldSchema<
 					jsx("fieldset", { ...attributes, ...data }),
 				Legend: (data: Field.Component.Legend = {}) =>
 					jsx("legend", { children: label, ...data }),
-				...this,
 				// built when read, the default layout renders each cell itself
 				get rows() {
 					return (built ??= cells().map((row) =>
@@ -1708,7 +1707,6 @@ class FieldSchema<
 					}),
 				Legend: (data: Field.Component.Legend = {}) =>
 					jsx("legend", { children: label, ...data }),
-				...this,
 				options,
 			};
 		}
@@ -1750,7 +1748,6 @@ class FieldSchema<
 						selected: chosen(data.value),
 						...data,
 					})),
-			...this,
 			options,
 		};
 	}
@@ -2824,12 +2821,14 @@ export class Field {
 	 * @returns `true` for a day of the calendar as YYYY-MM-DD
 	 */
 	static #day(value: string) {
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+		const [, month, day] = /^\d{4}-(\d{2})-(\d{2})$/.exec(value) ?? [];
+		if (!day) return false;
 
 		const date = new Date(`${value}T00:00:00Z`);
 		// a day that is not one, such as the 31st of June, becomes another
 		return (
-			!Number.isNaN(date.getTime()) && date.toISOString().startsWith(value)
+			date.getUTCMonth() === Number(month) - 1 &&
+			date.getUTCDate() === Number(day)
 		);
 	}
 

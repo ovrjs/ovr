@@ -429,13 +429,13 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 			});
 		},
 		/**
-		 * @param token Access token
+		 * @param id Hash of the access token
 		 * @returns The unexpired token
 		 */
-		get: async (token: string) =>
+		get: async (id: string) =>
 			Storage.#token(
 				await this.#db
-					.sql`SELECT * FROM ${Storage.tokens} WHERE id = ${await Storage.hash(token)} AND kind = 'access'`.parse(
+					.sql`SELECT * FROM ${Storage.tokens} WHERE id = ${id} AND kind = 'access'`.parse(
 					Storage.tokens,
 				),
 			),

@@ -32,6 +32,9 @@ export namespace App {
 		/** Every route the app has, including ones added later */
 		readonly routes: readonly Route[];
 
+		/** The app's tools by name, including ones added later */
+		readonly tools: ReadonlyMap<string, Route>;
+
 		/** The app's request handler */
 		readonly fetch: App["fetch"];
 
@@ -171,6 +174,7 @@ export class App {
 				this.use(
 					route[mount]({
 						routes: this.#routes,
+						tools: this.#tools,
 						fetch: this.fetch,
 						memory: this.#options.multipart?.memory ?? memory,
 						find: (method, pathname) =>
@@ -217,7 +221,15 @@ export class App {
 
 		try {
 			return await Context.compose(
-				Object.assign(c, this.#find(c.req.method, c.url.pathname)),
+				// the request's URL is already serialized, its path is between the
+				// host and the query, so matching does not parse it again
+				Object.assign(
+					c,
+					this.#find(
+						c.req.method,
+						/^[^:]*:\/\/[^/]*([^?#]*)/.exec(c.req.url)![1]!,
+					),
+				),
 				// a route's body errors are answered before global middleware
 				// sees them, so middleware that catches errors gets only the app's
 				c.route
@@ -313,12 +325,12 @@ export class App {
 	/** Basic CSRF middleware */
 	static #csrf(c: Context, next: Middleware.Next) {
 		const { headers, method } = c.req;
+		if (method === Method.get || method === Method.head) return next();
+
 		const site = headers.get(Header.name.fetch);
 		const origin = headers.get(Header.name.origin);
 
 		if (
-			method === Method.get ||
-			method === Method.head ||
 			site === "same-origin" ||
 			origin === c.url.origin ||
 			(c.route && crossOrigin.has(c.route)) ||

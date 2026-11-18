@@ -743,11 +743,12 @@ export function oauth(
 			)?.[1];
 			if (!token) return null;
 
-			const row = await storage.tokens.get(token);
+			const id = await Storage.hash(token);
+			const row = await storage.tokens.get(id);
 			if (!row || row.resource !== resource) return null;
 
 			return {
-				id: await Storage.hash(token),
+				id,
 				user: row.user,
 				expiration: row.expiration,
 				agent: { id: row.client, name: row.name },

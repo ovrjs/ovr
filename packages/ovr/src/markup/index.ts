@@ -128,6 +128,9 @@ export class Group extends Chunk {
 	}
 }
 
+/** End tags by name, shared by every render */
+const ends = new Map<string, Tag>();
+
 /**
  * HTML tags that do not require a closing tag.
  *
@@ -366,8 +369,21 @@ export class Renderer {
 						const closed = props.children == null && voids.has(tag);
 
 						if (!closed) {
-							(this.#stack ??= []).push(new Tag(tag));
-							this.#element = props.children;
+							// end tags have no props, so one of each is shared
+							let end = ends.get(tag);
+							if (!end) ends.set(tag, (end = new Tag(tag)));
+
+							// text alone, the most common child, is one chunk with its tags
+							const { children } = props;
+							if (typeof children === "string" || typeof children === "number")
+								return new Group([
+									new Tag(tag, props),
+									new Chunk(children),
+									end,
+								]);
+
+							(this.#stack ??= []).push(end);
+							this.#element = children;
 							this.#next = 1;
 						}
 
@@ -782,19 +798,6 @@ export const readable = (render: {
 	);
 };
 
-/** Regex to find escape character for attributes */
-const attribute = /[&"<]/g;
-
-/** Regex to find escape character for content */
-const content = /[&<]/g;
-
-/** Escape character map */
-const entities: Record<string, string> = {
-	"&": "&amp;",
-	'"': "&quot;",
-	"<": "&lt;",
-};
-
 /**
  * Escapes text for markup.
  *
@@ -803,5 +806,9 @@ const entities: Record<string, string> = {
  * @returns Escaped text
  */
 export function escape(text: string, attr?: boolean) {
-	return text.replace(attr ? attribute : content, (c) => entities[c]!);
+	// most text has nothing to escape, which `includes` finds fastest
+	if (text.includes("&")) text = text.replaceAll("&", "&amp;");
+	if (text.includes("<")) text = text.replaceAll("<", "&lt;");
+	if (attr && text.includes('"')) text = text.replaceAll('"', "&quot;");
+	return text;
 }

@@ -899,9 +899,7 @@ export class Mcp<P extends string = string> {
 		// for an app with many tools is megabytes for each call
 		const route =
 			typeof params.name === "string"
-				? this.#app!.routes.find(
-						(route) => route[tooled] && route.tool.name() === params.name,
-					)
+				? this.#app!.tools.get(params.name)
 				: undefined;
 		if (!route) throw new RpcError(-32602, `Unknown tool: ${params.name}`);
 		const pathParams = Mcp.#params(route);

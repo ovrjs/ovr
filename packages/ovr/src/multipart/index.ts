@@ -118,19 +118,12 @@ class Part extends Request {
 			}
 		}
 
-		let parsed: Headers;
-		try {
-			parsed = new Headers(headers);
-		} catch {
-			// an invalid name or value, the client's error
-			throw new Malformed("Invalid Part Header");
-		}
-
 		// from its parts, since a server's own request object, such as srvx's,
 		// is not one the platform's constructor can copy
 		super(req.url, {
 			method: req.method,
-			headers: parsed,
+			// checked once, as the request is made, a `Headers` first is checked twice
+			headers,
 			body,
 			// a request made from another follows its signal with a listener,
 			// and each listener added is compared with all those before it, so
@@ -319,7 +312,7 @@ export class Multipart {
 	#memory = new Uint8Array(0);
 
 	/** Owned storage for headers and boundaries spanning input chunks. */
-	readonly #scratch: Uint8Array<ArrayBuffer>;
+	#scratch: Uint8Array<ArrayBuffer>;
 
 	/** Dash and boundary, the first delimiter without a new line before it */
 	readonly #opening: Needle;
@@ -376,15 +369,10 @@ export class Multipart {
 		this.#opening = new Needle(`--${boundary}`);
 		this.#boundary = new Needle(`\r\n--${boundary}`);
 
-		this.#scratch = new Uint8Array(
-			new ArrayBuffer(
-				// slightly larger than common chunk size/high water mark 64kb for leftover boundary
-				// prevents having to resize memory for most requests
-				65 * Size.kb,
-				// cap max chunk size + leftover
-				{ maxByteLength: this.#options.memory },
-			),
-		);
+		// slightly larger than common chunk size/high water mark 64kb for leftover
+		// boundary, prevents having to grow memory for most requests. A plain
+		// buffer, a resizable one is slower to make and to search
+		this.#scratch = new Uint8Array(65 * Size.kb);
 	}
 
 	/** Account for a source read and append or temporarily borrow its bytes. */
@@ -401,18 +389,20 @@ export class Multipart {
 		if (append) {
 			const length = this.#valid - this.#offset;
 			const required = length + nextLength;
-			if (required > this.#scratch.buffer.maxByteLength) {
+			if (required > this.#options.memory) {
 				throw new Limit("Multipart buffer limit exceeded");
 			}
 			if (length || !borrow) {
 				this.#retain();
 				if (required > this.#scratch.length) {
-					this.#scratch.buffer.resize(
+					const grown = new Uint8Array(
 						Math.min(
-							this.#scratch.buffer.maxByteLength,
+							this.#options.memory,
 							Math.max(required, this.#scratch.length * 2),
 						),
 					);
+					grown.set(this.#scratch.subarray(0, length));
+					this.#memory = this.#scratch = grown;
 				}
 				this.#scratch.set(next.value, length);
 			} else {
@@ -429,7 +419,7 @@ export class Multipart {
 	/** Preserve unread bytes before the source can reuse its input storage. */
 	#retain() {
 		const length = this.#valid - this.#offset;
-		if (length > this.#scratch.length) this.#scratch.buffer.resize(length);
+		if (length > this.#scratch.length) this.#scratch = new Uint8Array(length);
 		this.#scratch.set(this.#memory.subarray(this.#offset, this.#valid));
 		this.#memory = this.#scratch;
 		this.#valid = length;
@@ -465,31 +455,49 @@ export class Multipart {
 		const byte = needle[anchor]!;
 		const last = needle[end]!;
 
-		// reading only where the needle would end skips most of the haystack,
-		// `Uint8Array.indexOf` reads every byte of it, and in V8 does so several
-		// times slower than a loop, which made large files slow to parse
-		for (
-			let i = this.#start + end, current: number;
-			i < haystackLength;
-			i += skip[current]!
-		) {
-			current = haystack[i]!;
-
+		/** @returns If the needle ends at `i` */
+		const ends = (i: number) => {
 			// the anchor is checked before comparing, so a haystack of near
 			// matches costs one read for each of its bytes
-			if (current === last && haystack[i - end + anchor] === byte) {
-				const start = i - end;
+			if (haystack[i] !== last || haystack[i - end + anchor] !== byte)
+				return false;
 
-				let match = 0;
-				while (match < length && needle[match] === haystack[start + match])
-					match++;
+			const start = i - end;
+			let match = 0;
+			while (match < length && needle[match] === haystack[start + match])
+				match++;
 
-				if (match === length) {
-					this.#start = start;
-					this.#end = start + length;
-					return this.#shift();
-				}
+			return match === length;
+		};
+
+		// reading only where the needle would end skips most of the haystack,
+		// `Uint8Array.indexOf` reads every byte of it, and in V8 does so several
+		// times slower than a loop. Each read waits on the one before, so two
+		// searches run at once, one over each half: the first half's match is
+		// the earlier one
+		let i = this.#start + end;
+		let j = (i + haystackLength) >> 1;
+		const half = j;
+		let later = -1;
+
+		for (; i < half; i += skip[haystack[i]!]!) {
+			if (ends(i)) break;
+			if (later === -1 && j < haystackLength) {
+				if (ends(j)) later = j;
+				else j += skip[haystack[j]!]!;
 			}
+		}
+
+		if (i >= half) {
+			i = later;
+			if (i === -1)
+				for (i = j; i < haystackLength && !ends(i); i += skip[haystack[i]!]!);
+		}
+
+		if (i < haystackLength) {
+			this.#start = i - end;
+			this.#end = this.#start + length;
+			return this.#shift();
 		}
 
 		// where to safely start the next search in the concatenated chunk result
@@ -695,7 +703,16 @@ export class Multipart {
 				if (i === this.#options.parts) throw new Limit("Too Many Parts");
 
 				const { stream, state } = this.#findStream(this.#boundary);
-				yield new Part(this.#req, stream, headers);
+				let part: Part;
+				try {
+					part = new Part(this.#req, stream, headers);
+				} catch (error) {
+					// an invalid header name or value, the client's error
+					throw error instanceof Malformed
+						? error
+						: new Malformed("Invalid Part Header");
+				}
+				yield part;
 
 				// the next part starts after this one's boundary, however much of it
 				// was read: skip the rest here, never parse it as headers

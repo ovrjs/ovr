@@ -297,10 +297,10 @@ export class Trie {
 					slashIndex === -1 &&
 					this.param.route
 				) {
-					return {
-						route: this.param.route,
-						params: { [this.param.name]: pathname.slice(end) },
-					};
+					// a computed key would take V8's slow path for literals
+					const params: Record<string, string> = {};
+					params[this.param.name] = pathname.slice(end);
+					return { route: this.param.route, params };
 				} else if (this.param.child) {
 					// there's a static node after the param
 					// this is how there can be multiple params, "/" in between
