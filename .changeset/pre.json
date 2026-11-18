@@ -67,6 +67,7 @@
     "performance-pass",
     "picked-values",
     "plain-form-fields",
+    "plain-url",
     "platform-compression",
     "preprocess-message",
     "query-type",

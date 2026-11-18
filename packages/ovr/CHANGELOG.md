@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.80
+
+### Patch Changes
+
+- cfba9ec: `c.url` is parsed as the request starts again, and a schema's issues have their stacks again.
+
 ## 7.0.0-next.79
 
 ### Patch Changes
