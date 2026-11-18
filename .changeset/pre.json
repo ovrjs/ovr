@@ -60,6 +60,7 @@
     "native-search",
     "option-labels",
     "optional-select",
+    "oxlint-pass",
     "passkey-details",
     "passkeys",
     "pattern-title",

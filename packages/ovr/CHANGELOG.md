@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.78
+
+### Patch Changes
+
+- 4cba6ca: Remove type assertions and conditions TypeScript no longer needs, found with oxlint, which `npm run check` now runs.
+
 ## 7.0.0-next.77
 
 ### Patch Changes
