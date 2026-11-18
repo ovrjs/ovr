@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.77
+
+### Patch Changes
+
+- 788e49b: Inline values used once, share the origin check of the MCP endpoint's routes, and walk Markdown's elements with one finder.
+
 ## 7.0.0-next.76
 
 ### Patch Changes
