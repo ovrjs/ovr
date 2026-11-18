@@ -221,15 +221,7 @@ export class App {
 
 		try {
 			return await Context.compose(
-				// the request's URL is already serialized, its path is between the
-				// host and the query, so matching does not parse it again
-				Object.assign(
-					c,
-					this.#find(
-						c.req.method,
-						/^[^:]*:\/\/[^/]*([^?#]*)/.exec(c.req.url)![1]!,
-					),
-				),
+				Object.assign(c, this.#find(c.req.method, c.url.pathname)),
 				// a route's body errors are answered before global middleware
 				// sees them, so middleware that catches errors gets only the app's
 				c.route

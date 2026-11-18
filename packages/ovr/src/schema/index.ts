@@ -510,12 +510,8 @@ class Issue extends Error {
 	 */
 	constructor(expected: unknown, path: Schema.Issue.Path, message?: string) {
 		const exp = String(expected);
-		// an issue is data, its stack would only point to the schema, and
-		// capturing one is most of what refusing a value costs
-		const { stackTraceLimit } = Error;
-		Error.stackTraceLimit = 0;
+
 		super(message ?? `Expected ${exp}`);
-		Error.stackTraceLimit = stackTraceLimit;
 
 		this.name = "Schema.Issue";
 		this.expected = exp;

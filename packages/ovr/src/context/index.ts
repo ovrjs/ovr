@@ -142,17 +142,12 @@ export class Context<
 	/** Trusted client IP supplied by the server through App.fetch; never inferred from request headers. */
 	readonly ip: string | undefined;
 
-	/** `url`, parsed the first time it is read */
-	#url?: URL;
-
 	/**
 	 * Parsed `URL` created from `req.url`.
 	 *
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/URL)
 	 */
-	get url() {
-		return (this.#url ??= new URL(this.req.url));
-	}
+	readonly url: URL;
 
 	/** Route pattern parameters */
 	readonly params: Params = {} as Params; // set after match
@@ -191,6 +186,7 @@ export class Context<
 	constructor(req: Request, options: App.Options, ip?: string) {
 		this.req = req;
 		this.ip = ip;
+		this.url = new URL(req.url);
 		this.#options = options;
 	}
 
@@ -602,8 +598,7 @@ export class Context<
 		}
 
 		const accept = this.req.headers.get(Header.name.accept);
-		// only an explicit request, browsers accept */*, so most never name it
-		if (!accept || !/markdown/i.test(accept)) return false;
+		// only an explicit request, browsers accept */*
 		const markdown = Header.quality(accept, Mime.type.md, true);
 
 		return markdown > 0 && markdown >= Header.quality(accept, Mime.type.html);
