@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.85
+
+### Patch Changes
+
+- 287b4d7: `app.fetch` no longer takes the IP from a server passed as its second argument. On Bun, pass it as on any server: `app.fetch(request, { ip: server.requestIP(request)?.address })`.
+
 ## 7.0.0-next.84
 
 ### Patch Changes

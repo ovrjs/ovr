@@ -21,6 +21,7 @@
     "auth-agents",
     "auth-guard",
     "bound-forms",
+    "bun-server-ip-revert",
     "bun-server-ip",
     "cell-fieldset",
     "choices-for-agents",
