@@ -67,15 +67,6 @@ export namespace App {
 		/** Trusted socket peer or verified edge client IP. Never copy an arbitrary forwarded header. */
 		readonly ip?: string | undefined;
 	}
-
-	/** A server that knows each request's client, such as Bun's, which `Bun.serve(app)` passes */
-	export interface Server {
-		/**
-		 * @param request The server's own request
-		 * @returns Its client's address, or `null` when it has none, such as over a Unix socket
-		 */
-		requestIP(request: Request): { readonly address: string } | null;
-	}
 	export namespace Options {
 		/** Trailing slash preference */
 		export type TrailingSlash = "always" | "never" | "ignore";
@@ -211,33 +202,24 @@ export class App {
 	 * [MDN Reference](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch)
 	 *
 	 * @param resource [Resource](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch#resource) to fetch
-	 * @param options [Options](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch#options) to apply to the request, or the server that received it
+	 * @param options [Options](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch#options) to apply to the request
 	 * @returns Promise that resolves to the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) to the request
 	 */
-	readonly fetch = async (
-		resource: RequestInfo | URL,
-		options?: App.Fetch | App.Server,
-	) => {
+	readonly fetch = async (resource: RequestInfo | URL, options?: App.Fetch) => {
 		let init: RequestInit | undefined;
-		let ip: string | undefined;
-		if (options && "requestIP" in options) {
-			if (!(resource instanceof Request)) resource = new Request(resource);
-			ip = options.requestIP(resource)?.address;
-		} else if (options) {
-			ip = options.ip;
+		if (options)
 			for (const key in options) {
 				if (key === "ip") continue;
 				const { ip, ...rest } = options;
 				init = rest;
 				break;
 			}
-		}
 		const c = new Context(
 			resource instanceof Request && !init
 				? resource
 				: new Request(resource, init),
 			this.#options,
-			ip,
+			options?.ip,
 		);
 
 		try {

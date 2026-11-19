@@ -107,11 +107,14 @@ const response = await app.fetch("https://example.com");
 
 ### Client IP
 
-A `Request` doesn't say who sent it, so the server passes the client's IP: `app.fetch(request, { ip })`. It becomes `c.ip`, which [rate limiting](/middleware#rate-limiting) and [Auth](/auth) count by. Bun passes its server, which `app.fetch` asks for the IP, so `Bun.serve(app)` needs nothing more.
+A `Request` doesn't say who sent it, so the server passes the client's IP: `app.fetch(request, { ip })`. It becomes `c.ip`, which [rate limiting](/middleware#rate-limiting) and [Auth](/auth) count by.
 
 ```ts
 // Bun
-Bun.serve(app);
+Bun.serve({
+	fetch: (request, server) =>
+		app.fetch(request, { ip: server.requestIP(request)?.address }),
+});
 
 // Node, with srvx
 serve({ fetch: (request) => app.fetch(request, { ip: request.ip }) });

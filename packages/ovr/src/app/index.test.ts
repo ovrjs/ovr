@@ -149,54 +149,6 @@ test("server connection metadata preserves the original Request and is not infer
 	expect(await (await app.fetch(req)).json()).toEqual({ ip: null });
 });
 
-test("takes the IP from a server that knows it, such as Bun's", async () => {
-	const app = new App({ csrf: false }).use(
-		Route.post("/").use(async (c) => {
-			c.json({
-				ip: c.ip ?? null,
-				type: c.req.headers.get("content-type"),
-				body: await c.req.text(),
-			});
-		}),
-	);
-	const post = () =>
-		new Request("https://example.com/", {
-			method: "POST",
-			headers: { "content-type": "text/plain" },
-			body: "hi",
-		});
-
-	// Bun's own server keeps its methods on its prototype
-	class Server {
-		address: string | null;
-		constructor(address: string | null) {
-			this.address = address;
-		}
-		requestIP(request: Request) {
-			expect(request.url).toBe("https://example.com/");
-			return this.address === null ? null : { address: this.address };
-		}
-	}
-	expect(
-		await (await app.fetch(post(), new Server("203.0.113.1"))).json(),
-	).toEqual({ ip: "203.0.113.1", type: "text/plain", body: "hi" });
-	// a Unix socket has no address
-	expect(await (await app.fetch(post(), new Server(null))).json()).toEqual({
-		ip: null,
-		type: "text/plain",
-		body: "hi",
-	});
-	expect(
-		await (
-			await app.fetch("https://example.com/", {
-				ip: "192.0.2.1",
-				method: "POST",
-				body: "hi",
-			})
-		).json(),
-	).toEqual({ ip: "192.0.2.1", type: "text/plain;charset=UTF-8", body: "hi" });
-});
-
 test("HEAD /", async () => {
 	const res = await appFetch("/", Method.head);
 
