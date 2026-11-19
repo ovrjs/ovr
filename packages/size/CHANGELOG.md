@@ -1,5 +1,12 @@
 # @ovrjs/size
 
+## 0.0.2-next.84
+
+### Patch Changes
+
+- Updated dependencies [ea8500b]
+  - ovr@7.0.0-next.84
+
 ## 0.0.2-next.83
 
 ### Patch Changes

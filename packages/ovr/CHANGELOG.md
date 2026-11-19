@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.84
+
+### Patch Changes
+
+- ea8500b: `app.fetch` takes the client's IP from a server passed as its second argument, as Bun's is, so `Bun.serve(app)` sets `c.ip`.
+
 ## 7.0.0-next.83
 
 ### Patch Changes
