@@ -21,19 +21,24 @@ export function listen(
 	const status =
 		form?.querySelector("[data-passkey-error]:not([data-passkey-fallback])") ??
 		fallback;
-	// a passkey is only sent to this page's own origin, so markup injected into
-	// the page cannot send one elsewhere
-	const own = (url: string | null | undefined) =>
-		URL.parse(url ?? "", location.href)?.origin === location.origin;
+	// each URL resolves against the page's own address, not a `<base>` that
+	// markup injected into the page could add, and only to its origin, so a
+	// passkey cannot be sent elsewhere
+	const own = (url: string | null | undefined) => {
+		const at = URL.parse(url ?? "", location.href);
+		return at?.origin === location.origin ? at.href : undefined;
+	};
+	const start = own(endpoint);
+	const action = own(form?.getAttribute("action"));
+	const asking = own(confirm?.endpoint);
+	const answering = own(confirm?.action);
 	if (
 		!(form instanceof HTMLFormElement) ||
 		!(status instanceof HTMLElement) ||
-		![
-			endpoint,
-			form.getAttribute("action"),
-			confirm?.endpoint,
-			confirm?.action,
-		].every(own)
+		!start ||
+		!action ||
+		!asking ||
+		!answering
 	)
 		return;
 	if (status !== fallback && fallback instanceof HTMLElement)
@@ -108,7 +113,7 @@ export function listen(
 			data.delete("credential");
 			data.delete("ceremony");
 			data.set("bootstrap", bootstrap);
-			const res = await fetch(endpoint, {
+			const res = await fetch(start, {
 				method: "POST",
 				body: data,
 				credentials: "same-origin",
@@ -150,7 +155,7 @@ export function listen(
 					});
 				const ask = new FormData();
 				ask.set("bootstrap", confirm.bootstrap);
-				const asked = await send(confirm.endpoint, ask);
+				const asked = await send(asking, ask);
 				if (asked.status === 410)
 					throw new Error("This page has expired. Reload and try again.");
 				if (!asked.ok) throw new Error("Sign in again, then try once more.");
@@ -166,7 +171,7 @@ export function listen(
 				const answer = new FormData();
 				answer.set("credential", JSON.stringify(mine));
 				answer.set("ceremony", proof.ceremony);
-				if ((await send(confirm.action, answer)).status !== 204)
+				if ((await send(answering, answer)).status !== 204)
 					throw new Error("Could not confirm your passkey. Try again.");
 				// a browser asks for a new press before its next passkey prompt
 				throw new Error("Confirmed. Press the button again to finish.");
@@ -195,6 +200,7 @@ export function listen(
 			submitting = true;
 			finalizing = true;
 			submitted = undefined;
+			form.setAttribute("action", action);
 			// preserve native validation, submit events, and the original submitter
 			HTMLFormElement.prototype.requestSubmit.call(
 				form,
@@ -214,6 +220,9 @@ export function listen(
 							? "If registration already completed, sign in; otherwise try again."
 							: "If sign-in did not finish, try again.";
 				}, 120000);
+			// a submission validation or another listener stopped, so the signed
+			// passkey is not left for a button that submits elsewhere
+			else reset();
 		} catch (error) {
 			reset();
 			status.textContent =

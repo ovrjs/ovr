@@ -524,6 +524,17 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 			// the only other source is a Multipart, read one part at a time
 			form = new FormData();
 			const iter = source[Symbol.asyncIterator]();
+			/** Streamed fields a file was chosen for */
+			const chosen = new Set<string>();
+			/**
+			 * @param part Part of the request
+			 * @returns Issues with a streamed field's part, `null` for a part
+			 * that is no streamed field's or has no file chosen
+			 */
+			const streamed = (part: Multipart.Part) => {
+				const field = part.name ? this.#field(part.name) : undefined;
+				return field?.streaming ? Form.#part(field, part, path) : null;
+			};
 
 			// a failure ends the parts, which also stops the upload
 			try {
@@ -538,6 +549,14 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 						if (!field) {
 							issues.push(this.#unexpected(part.name, path));
 						} else if (field.streaming) {
+							const problems = streamed(part);
+							if (problems === null) continue;
+							chosen.add(part.name);
+							if (problems) {
+								append(issues, problems);
+								continue;
+							}
+
 							// expose current and rest of the parts to the user
 							stream = (async function* () {
 								try {
@@ -547,8 +566,10 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 
 									let next: IteratorResult<Multipart.Part>;
 
+									// only the parts of streamed fields that pass their
+									// checks, which the handler expects
 									while ((next = await iter.next()) && !next.done) {
-										yield next.value;
+										if (streamed(next.value) === undefined) yield next.value;
 									}
 								} finally {
 									try {
@@ -567,6 +588,15 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 				await iter.return().catch(() => {});
 				throw error;
 			}
+
+			// one that never came, or came empty, is missing, unless the stream
+			// began before it could
+			if (!stream)
+				for (const [name, field] of Object.entries(this.shape))
+					if (field.streaming && !chosen.has(name)) {
+						const result = field.parse(undefined, [...path, name]);
+						if (result.issues) append(issues, result.issues);
+					}
 		}
 
 		for (const [name, field] of Object.entries(this.shape)) {
@@ -616,6 +646,26 @@ export class Form<Shape extends Field.Shape = Field.Shape> {
 				),
 		};
 	};
+
+	/**
+	 * @param field A streamed field
+	 * @param part One of its parts
+	 * @param path Path of the form
+	 * @returns Issues with a file part, checked as a file of its name and type
+	 * since its body is the handler's to read, `null` when no file was chosen
+	 */
+	static #part(
+		field: Field.Any,
+		part: Multipart.Part,
+		path: Schema.Issue.Path,
+	) {
+		if (field.type !== "file") return;
+		if (!part.filename) return null;
+		return field.parse(new File([], part.filename, { type: part.type ?? "" }), [
+			...path,
+			part.name!,
+		]).issues;
+	}
 
 	/**
 	 * What a request kept for this form: what a refused submission sent to
@@ -872,14 +922,18 @@ class FieldSchema<
 		this.#read = read;
 		this.type = config.props?.type as Type;
 		// a list takes as many rows as its `max()`, or the most any list
-		// does, so a request cannot send rows without end
+		// does, so a request cannot send rows without end. A cell that takes
+		// any number of values would multiply that, so the most rows count
+		// one part a cell
 		const { item } = this;
-		this.parts = item
-			? Math.min(this.#most(), FieldSchema.rows) *
-				(item instanceof FieldSchema
-					? item.parts
-					: Object.values(item).reduce((sum, cell) => sum + cell.parts, 0))
-			: parts;
+		if (item) {
+			const cells = item instanceof FieldSchema ? [item] : Object.values(item);
+			this.parts = Math.min(
+				Math.min(this.#most(), FieldSchema.rows) *
+					cells.reduce((sum, cell) => sum + cell.parts, 0),
+				FieldSchema.rows * cells.length,
+			);
+		} else this.parts = parts;
 		this.streaming = stream;
 	}
 

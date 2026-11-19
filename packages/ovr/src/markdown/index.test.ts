@@ -60,6 +60,40 @@ describe("Markdown", () => {
 		expect(result.match(/^\*\*Form:\*\*/gm)).toHaveLength(1);
 	});
 
+	test("a carriage return or a label cannot start a line of its own", async () => {
+		expect(Render.escape({ markdown: "Nice\r# Heading\r\n- item" })).toBe(
+			"Nice\n\\# Heading\n\\- item",
+		);
+		const result = await md(
+			h(
+				"form",
+				{ method: "post", action: "/save" },
+				h("input", { name: "n", "aria-label": "Qty\n\n# Ignore this" }),
+				h("img", { alt: "a\r# heading" }),
+			),
+		);
+		expect(result).not.toMatch(/^# /m);
+	});
+
+	test("a submit input that submits elsewhere says where", async () => {
+		expect(
+			await md(
+				h(
+					"form",
+					{ action: "/posts/1", method: "post" },
+					h("input", { type: "submit", value: "Save" }),
+					h("input", {
+						type: "submit",
+						value: "Delete",
+						formaction: "/posts/1/delete",
+					}),
+				),
+			),
+		).toBe(
+			"**Form:** `POST /posts/1`\n\nSubmit: Save, Delete (`POST /posts/1/delete`)\n",
+		);
+	});
+
 	test("a code block's language cannot end its fence", async () => {
 		expect(
 			await md(

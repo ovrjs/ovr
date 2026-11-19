@@ -823,18 +823,21 @@ export class Schema<Output>
 					v === def.value
 						? { data: def.value }
 						: Schema.#issue(def.value, path, def.message);
-			case "enum":
+			case "enum": {
+				// written once, a list of many bad values would write it for each
+				let expected: string | undefined;
 				return (v, path) => {
 					for (const value of def.values) {
 						if (v === value) return { data: value };
 					}
 
 					return Schema.#issue(
-						def.values.map((v) => JSON.stringify(v)).join(" | "),
+						(expected ??= def.values.map((v) => JSON.stringify(v)).join(" | ")),
 						path,
 						def.message,
 					);
 				};
+			}
 			case "instance":
 				return (v, path) =>
 					v instanceof def.class

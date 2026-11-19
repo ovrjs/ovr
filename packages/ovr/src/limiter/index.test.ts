@@ -112,6 +112,13 @@ describe("token buckets", () => {
 		expect(state.hit).toHaveBeenCalledTimes(3);
 	});
 
+	test("a limit under one admits no one, a new client included", async () => {
+		const state = setup({ limit: 0 });
+		expect((await state.fetch()).status).toBe(429);
+		expect((await state.fetch("192.0.2.2")).status).toBe(429);
+		expect(state.hit).not.toHaveBeenCalled();
+	});
+
 	test("unrelated clients and routes retain their budgets", async () => {
 		const state = setup({ limit: 1 });
 		expect((await state.fetch()).status).toBe(200);

@@ -584,18 +584,20 @@ export class Auth<
 
 	/**
 	 * Remove one of the signed-in user's passkeys, such as one for a device
-	 * they no longer have. It signs them out everywhere else, and their last
-	 * passkey is kept, since nothing else signs in as them.
+	 * they no longer have. It signs them out everywhere else and disconnects
+	 * their agents, and their last passkey is kept, since nothing else signs
+	 * in as them. Only the person can, not an agent.
 	 *
 	 * @param c Request context of the signed-in user
 	 * @param id Passkey's ID, a passkey's `id` from `auth.passkeys(c)`
 	 * @returns `true` when it was removed, `false` when it is their only
 	 * passkey or not one of theirs
-	 * @throws When nobody is signed in
+	 * @throws When nobody is signed in, or an agent asks
 	 */
 	readonly remove = async (c: View, id: string) => {
 		const session = await this.#session(c);
 		if (!session) throw new Error("Sign in to remove a passkey");
+		if (session.agent) throw new Error("An agent cannot remove a passkey");
 
 		return this.#storage.passkeys.remove(session.user, id, session.id);
 	};
@@ -668,11 +670,12 @@ export class Auth<
 	 *
 	 * @param c Request context of the signed-in user
 	 * @param client Agent's client ID, an agent's `id` from `auth.agents(c)`
-	 * @throws When nobody is signed in
+	 * @throws When nobody is signed in, or an agent asks
 	 */
 	readonly disconnect = async (c: View, client: string) => {
 		const session = await this.#session(c);
 		if (!session) throw new Error("Sign in to disconnect an agent");
+		if (session.agent) throw new Error("An agent cannot disconnect agents");
 		await this.#storage.tokens.revoke(session.user, client);
 	};
 }

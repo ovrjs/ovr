@@ -629,8 +629,8 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 		},
 		/**
 		 * Removes one of a user's passkeys, never their last: nothing else
-		 * signs in as them. Their other sessions end with it, since one may be
-		 * on the device it was for.
+		 * signs in as them. Their other sessions and their agents end with
+		 * it, since one may be on the device it was for.
 		 *
 		 * @param user User ID
 		 * @param id Passkey's ID
@@ -656,6 +656,11 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 					DELETE FROM ${Storage.sessions}
 					WHERE ${sessions.user} = ${user} AND ${sessions.id} <> ${session}
 				`;
+				// waits for an exchange issuing this user's tokens, so the delete
+				// sees them
+				await Storage.#lock(t.sql, Storage.tokens, user);
+				const { columns: tokens } = Storage.tokens;
+				await t.sql`DELETE FROM ${Storage.tokens} WHERE ${tokens.user} = ${user}`;
 				return true;
 			}),
 	};

@@ -76,7 +76,7 @@ export class Tag extends Chunk {
 				opening += ` ${key}`;
 			} else if (typeof value === "string") {
 				// a link that runs script, such as a website a user gave, is left out
-				if (!(urls.has(key) && script.test(value)))
+				if (!(urls.has(key.toLowerCase()) && script.test(value)))
 					opening += ` ${key}="${escape(value, true)}"`;
 			} else if (typeof value === "number" || typeof value === "bigint") {
 				opening += ` ${key}="${value}"`;

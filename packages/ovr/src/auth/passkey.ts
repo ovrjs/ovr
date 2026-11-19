@@ -211,7 +211,9 @@ export class Passkey {
 							jsx("script", {
 								id: `passkey-${crypto.randomUUID()}`,
 								type: "module",
-								src: Passkey.client.url(),
+								// whole, so a `<base>` added to the page cannot load another
+								src: new URL(Passkey.client.url(), this.#auth.options.origin)
+									.href,
 								nonce: options.nonce,
 								"data-passkey": method,
 								"data-endpoint": options.endpoint,

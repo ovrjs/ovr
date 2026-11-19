@@ -268,6 +268,21 @@ describe("passkey browser runtime", () => {
 		expect(state.second.handler).toBeUndefined();
 	});
 
+	test("submits to the form's whole address, and clears a stopped submission", async () => {
+		const state = setup();
+		state.first.setAttribute("action", "/auth/login");
+		state.init("first", "bootstrap", "/options", "login");
+		state.first.valid = false;
+		await state.first.fire();
+		expect(state.first.attributes.get("action")).toBe(
+			"https://example.com/auth/login",
+		);
+		// validation stopped it, so the signed passkey is not left in the form
+		expect(state.first.submissions).toHaveLength(1);
+		expect(state.first.fields.get("credential")?.value).toBe("");
+		expect(state.first.attributes.has("aria-busy")).toBe(false);
+	});
+
 	test("a button that submits elsewhere needs no passkey", async () => {
 		const state = setup();
 		const deny = { hasAttribute: (name: string) => name === "formaction" };
@@ -308,10 +323,11 @@ describe("passkey browser runtime", () => {
 
 		// asked for the confirmation, prompted with it, and sent the answer
 		const calls = state.fetcher.mock.calls;
+		// whole, against the page's own address and not a `<base>`
 		expect(calls.map(([url]) => url)).toEqual([
-			"/options/add",
-			"/options/confirm",
-			"/auth/confirm",
+			"https://example.com/options/add",
+			"https://example.com/options/confirm",
+			"https://example.com/auth/confirm",
 		]);
 		expect((calls[1]![1].body as FormData).get("bootstrap")).toBe(
 			"confirm-bootstrap",

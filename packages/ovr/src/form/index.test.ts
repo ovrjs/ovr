@@ -1073,6 +1073,12 @@ describe("Form schema", () => {
 		// open-ended fields take the most any list takes
 		expect(Field.file().multiple().parts).toBe(1000);
 		expect(Field.textarea().lines().parts).toBe(1000);
+		// in a list, the most rows count one part a cell, not 1000 each
+		expect(Field.list(Field.checkboxes(Schema.string())).parts).toBe(1000);
+		expect(
+			Field.list({ a: Field.text(), b: Field.checkboxes(["x", "y"]) }).max(5)
+				.parts,
+		).toBe(15);
 	});
 
 	test("form parts sums field cardinality", () => {
@@ -1115,6 +1121,48 @@ describe("Form schema", () => {
 			expect((await part.bytes()).length).toBe(3);
 			break;
 		}
+	});
+
+	test("a streamed file is checked by its name and type, and the stream holds only its parts", async () => {
+		const form = new Form({
+			name: Field.text().optional(),
+			photo: Field.file().accept(["image/png"]).stream(),
+		});
+		const parse = async (...entries: [string, string | File][]) => {
+			const body = new FormData();
+			for (const [name, value] of entries) body.append(name, value);
+			return form.parse(
+				new Multipart(
+					new Request("http://localhost/upload", { method: "POST", body }),
+				),
+			);
+		};
+		const png = new File(["png"], "a.png", { type: "image/png" });
+
+		const html = formInvalid(
+			await parse([
+				"photo",
+				new File(["<b>"], "a.html", { type: "text/html" }),
+			]),
+		);
+		expect(html.issues[0]?.message).toBe("Expected a file of type image/png");
+		expect(html.stream).toBeUndefined();
+
+		expect(formInvalid(await parse(["name", "x"])).issues[0]?.path).toEqual([
+			"photo",
+		]);
+
+		const result = formValid(
+			await parse(
+				["photo", png],
+				["name", "after"],
+				["photo", new File(["<b>"], "b.html", { type: "text/html" })],
+				["photo", png],
+			),
+		);
+		const names: string[] = [];
+		for await (const part of result.stream!) names.push(part.filename!);
+		expect(names).toEqual(["a.png", "a.png"]);
 	});
 
 	test("multipart parse does not expose parts when non-part fields are invalid", async () => {

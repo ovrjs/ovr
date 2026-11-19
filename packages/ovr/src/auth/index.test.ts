@@ -978,7 +978,7 @@ describe("form contracts", () => {
 		expect(html).not.toContain("</script><script>alert");
 		expect(html.match(/<script/g)).toHaveLength(1);
 		expect(html).toContain("&lt;/script>");
-		expect(html).toContain('src="/_passkey/client.js"');
+		expect(html).toContain('src="https://example.com/_passkey/client.js"');
 	});
 
 	test("binds stored challenges to their exact pathname", async () => {
@@ -1751,7 +1751,9 @@ describe("configured passkey callbacks", () => {
 		expect(start.html).toContain('class="registration"');
 		expect(start.html).toContain('class="error"');
 		expect(start.html).toContain('nonce="csp-nonce"');
-		expect(start.html).toContain('src="/_passkey/client.js"');
+		expect(start.html).toContain(
+			'src="https://example.com/_passkey/client.js"',
+		);
 		expect(start.html).not.toContain("addEventListener");
 		const module = await state.app.fetch(origin + "/_passkey/client.js");
 		expect(module.headers.get("content-type")).toContain("text/javascript");
@@ -2455,7 +2457,7 @@ test("the default register and login forms render together without duplicate IDs
 	const hidden = [...html.matchAll(/<input[^>]*type="hidden"[^>]*>/g)];
 	expect(hidden).toHaveLength(4);
 	for (const [input] of hidden) expect(input).not.toMatch(/\bid=/);
-	expect(html).toContain('src="/_passkey/client.js"');
+	expect(html).toContain('src="https://example.com/_passkey/client.js"');
 	expect(html).toContain("<button>Create account</button>");
 	expect(html).toContain("<button>Log in</button>");
 	expect(html).not.toContain("data-ovr");

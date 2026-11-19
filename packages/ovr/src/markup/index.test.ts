@@ -132,6 +132,7 @@ test("a name that would break its tag is left out, as is a script link", async (
 		'a"><img src=x onerror=alert(1)>': "1",
 		"@click": "open = true",
 		href: " \tJava\nScript:alert(1)",
+		formAction: "javascript:alert(1)",
 		action: "/save",
 	};
 	expect(await new Render({ markup: jsx("a", props) }).string()).toBe(

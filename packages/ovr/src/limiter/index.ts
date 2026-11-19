@@ -207,7 +207,9 @@ CREATE INDEX rate_limits_expiration ON rate_limits (expiration);`,
 			ELSE ${limit}::float8 END`;
 		const admitted = await db.sql`
 			INSERT INTO ${table} AS l (key, tokens, time, expiration)
-			VALUES (${key}, ${limit - 1}, ${now}, ${now + interval})
+			-- a new bucket admits too, when it holds a whole token
+			SELECT ${key}, ${limit - 1}::float8, ${now}::bigint, ${now + interval}::bigint
+			WHERE ${limit}::float8 >= 1
 			ON CONFLICT (key) DO UPDATE SET
 				tokens = ${tokens} - 1,
 				time = GREATEST(${now}::bigint, l.time),

@@ -447,7 +447,7 @@ class Writer {
 	 */
 	#paragraph(children: (Node | string)[]) {
 		return this.#inline(children)
-			.split("\n")
+			.split(/\r\n?|\n/)
 			.map((line) => Writer.#lead(line.trim()))
 			.join("\n")
 			.trim();
@@ -475,7 +475,7 @@ class Writer {
 	 */
 	static escape(text: string) {
 		return text
-			.split("\n")
+			.split(/\r\n?|\n/)
 			.map((line) => Writer.#lead(Writer.#escape(line)))
 			.join("\n");
 	}
@@ -695,6 +695,24 @@ class Writer {
 			return entry;
 		};
 
+		/**
+		 * @param text What a submit button says
+		 * @param attrs Its attributes, where it submits when that is elsewhere,
+		 * such as a delete
+		 */
+		const button = (text: string, attrs: Record<string, string>) => {
+			let line = Writer.#escape(text);
+			const to = attrs.formaction && this.#url(attrs.formaction);
+			if (to) {
+				const by = (attrs.formmethod ?? method).toUpperCase();
+				const other = this.#options[tools]?.(by, to);
+				line += other
+					? ` (${Writer.#call(other)})`
+					: ` (${Writer.#code(`${by} ${this.#href(to)}`)})`;
+			}
+			submits.push(line);
+		};
+
 		const field = (control: Node, label: string | undefined) => {
 			const { attrs } = control;
 			const name = attrs.name;
@@ -704,7 +722,7 @@ class Writer {
 					: control.tag;
 
 			if (type === "submit" || type === "image") {
-				submits.push(Writer.#escape(Writer.#collapse(attrs.value ?? "Submit")));
+				button(Writer.#collapse(attrs.value ?? "Submit"), attrs);
 				return;
 			}
 			// a tool's form shows its hidden values, such as an ID, which the
@@ -784,20 +802,8 @@ class Writer {
 						field(child, label);
 						break;
 					case "button":
-						if ((child.attrs.type ?? "submit") === "submit") {
-							let submit = Writer.#escape(Writer.#plain(child) || "Submit");
-							// a button that submits somewhere else, such as a delete
-							const to =
-								child.attrs.formaction && this.#url(child.attrs.formaction);
-							if (to) {
-								const by = (child.attrs.formmethod ?? method).toUpperCase();
-								const other = this.#options[tools]?.(by, to);
-								submit += other
-									? ` (${Writer.#call(other)})`
-									: ` (${Writer.#code(`${by} ${this.#href(to)}`)})`;
-							}
-							submits.push(submit);
-						}
+						if ((child.attrs.type ?? "submit") === "submit")
+							button(Writer.#plain(child) || "Submit", child.attrs);
 						break;
 					case "label":
 						// controls inside use the label
@@ -909,7 +915,7 @@ class Writer {
 						return Writer.#notes(f, line);
 					})
 			: fields.map((f) => {
-					let line = `- ${Writer.#escape(f.label)} ${Writer.#code(f.name)} (${[Writer.#escape(f.type), ...f.rules].join(", ")})`;
+					let line = `- ${Writer.#escape(Writer.#collapse(f.label))} ${Writer.#code(f.name)} (${[Writer.#escape(Writer.#collapse(f.type)), ...f.rules].join(", ")})`;
 					if (f.options.length)
 						line += `, options: ${Writer.#codes(f.options)}`;
 					if (f.value.length) line += `, value: ${Writer.#codes(f.value)}`;

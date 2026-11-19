@@ -541,7 +541,7 @@ describe("Route schema helpers", () => {
 		expect(await res.text()).toBe("Too Many Parts");
 	});
 
-	test("schema auto parts overrides app multipart parts option", async () => {
+	test("the app's multipart parts option caps a form's parts", async () => {
 		const submit = Route.post("/app-limit")
 			.fields({ a: Field.text(), b: Field.text() })
 			.use(async (c) => {
@@ -572,8 +572,8 @@ describe("Route schema helpers", () => {
 			}),
 		);
 
-		expect(res.status).toBe(200);
-		expect(await res.text()).toBe("ok");
+		expect(res.status).toBe(413);
+		expect(await res.text()).toBe("Too Many Parts");
 	});
 
 	test("c.data parts option overrides app multipart parts option", async () => {

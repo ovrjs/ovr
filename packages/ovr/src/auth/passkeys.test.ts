@@ -1,6 +1,7 @@
 import { App } from "../app/index.js";
 import { Database } from "../database/index.js";
 import { Field } from "../form/index.js";
+import { Mcp } from "../mcp/index.js";
 import { Route } from "../route/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
@@ -92,15 +93,19 @@ function setup() {
 		c.json(await auth.passkeys(c)),
 	);
 	const remove = Route.post("/passkeys/remove")
+		.describe("Remove a passkey")
 		.fields({ id: Field.hidden() })
 		.use(async (c) => {
 			const result = await c.data();
 			if (result.issues) return c.redirect(result.url, 303);
 			return c.json({ removed: await auth.remove(c, result.data.id) });
 		});
-	const app = new App().use(auth, list, remove);
+	const agents = Route.get("/agents").use(async (c) =>
+		c.json(await auth.agents(c)),
+	);
+	const app = new App().use(auth, new Mcp({ auth }), list, remove, agents);
 
-	return { app, list, remove };
+	return { app, list, remove, agents };
 }
 
 test("lists the signed-in user's passkeys, oldest first", async () => {
@@ -143,18 +148,25 @@ test("removes a passkey, never the last and never someone else's", async () => {
 	expect(await left(new Tester({ app, user: "sam" }))).toEqual(["sams"]);
 });
 
-test("removing a passkey signs the user out everywhere else", async () => {
-	const { app, list, remove } = setup();
+test("removing a passkey signs the user out everywhere else, agents too", async () => {
+	const { app, list, remove, agents } = setup();
 	const laptop = new Tester({ app, user: "ross" });
 	const lost = new Tester({ app, user: "ross" });
 	const sam = new Tester({ app, user: "sam" });
 	await lost.fetch(list);
 	await sam.fetch(list);
 
+	// an agent on the lost device cannot remove one
+	await expect(lost.call(remove, { id: "laptop" })).rejects.toThrow(
+		"An agent cannot remove a passkey",
+	);
+	expect(await (await laptop.fetch(agents)).json()).toHaveLength(1);
+
 	await laptop.fetch(remove, { data: { id: "first" } });
 
 	await expect(lost.fetch(list)).rejects.toThrow("Sign in to list passkeys");
 	expect(await (await laptop.fetch(list)).json()).toHaveLength(1);
+	expect(await (await laptop.fetch(agents)).json()).toEqual([]);
 	expect(await (await sam.fetch(list)).json()).toHaveLength(1);
 });
 

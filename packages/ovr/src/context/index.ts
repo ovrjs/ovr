@@ -423,7 +423,14 @@ export class Context<
 			// a body too large or not form data throws, for the handler to answer
 			const result = await form.parse(
 				post
-					? this.multipart({ parts: form.parts, ...options })
+					? this.multipart({
+							// the form's, within the app's own limit
+							parts: Math.min(
+								form.parts,
+								this.#options.multipart?.parts ?? Infinity,
+							),
+							...options,
+						})
 					: this.url.searchParams,
 				[],
 				agent.get(this.req)?.sent,

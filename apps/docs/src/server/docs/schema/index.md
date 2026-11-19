@@ -459,7 +459,7 @@ export const search = Route.get("/search")
 
 ## Streaming
 
-To stream uploads, mark a file field with `.stream()`. `Context.data()` will validate the non-streamed fields first, then expose the current and remaining multipart parts on `result.stream`.
+To stream uploads, mark a file field with `.stream()`. `Context.data()` will validate the non-streamed fields first, then expose the current and remaining multipart parts on `result.stream`. Each file is checked by its name and type, such as with `accept()`, before its body is read, and the stream holds only the parts of streamed fields that pass.
 
 ```tsx
 import { upload } from "./upload";
@@ -494,7 +494,7 @@ const submit = Route.post("/submit")
 
 ## Protections
 
-- `Context.data()` automatically sets the multipart `parts` limit from the schema. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, a list counts its fields for each row it takes, and a file with `multiple()`, a group made from a schema, or `Field.textarea().lines()` has no limit.
+- `Context.data()` automatically sets the multipart `parts` limit from the schema, within the app's own `multipart.parts`. Single inputs count as `1`, checkbox groups and a select with `multiple()` count by their number of options, a list counts its fields for each row it takes, and a file with `multiple()`, a group made from a schema, or `Field.textarea().lines()` takes up to 1000, as does a list without a `max()`.
 - You can still override the parser per request with `Context.data({ parts, memory, payload })`.
 - A body over a limit, such as more parts than the form has fields, throws a `Multipart.Limit`, one that is not multipart form data a `Multipart.Unsupported`, and malformed form data a `Multipart.Malformed`. Browsers submitting your form never send any of these. Left uncaught by the route, ovr answers them itself: 413 for a body over a limit, 415 for another content type, and 400 for malformed form data. Catch them in the route's own [middleware](/middleware) to answer differently; global middleware that [catches errors](/middleware#not-found-and-errors) sees the answer, not the error.
 - App-wide multipart defaults can be set with `new App({ multipart: { memory, payload, parts } })`.
