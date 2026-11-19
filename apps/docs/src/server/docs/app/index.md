@@ -43,7 +43,7 @@ new App({ csrf: false }); // disables the built-in protection
 
 ### Multipart
 
-[Multipart form data options](/multipart#options): `memory`, 4MB by default, is the most the parser holds at once, and also the largest request the [MCP endpoint](/agents#tools) reads; `payload`, 16MB by default, is the largest body; and `parts` has no limit unless you set one.
+[Multipart form data options](/multipart#options): `memory`, 4MB by default, is the most the parser holds at once, and also the largest request the [MCP endpoint](/agents#tools) reads; `payload`, 16MB by default, is the largest body; and `parts`, 1000 by default, is the most parts a request may have.
 
 ```ts
 new App({
@@ -107,9 +107,12 @@ const response = await app.fetch("https://example.com");
 
 ### Client IP
 
-A `Request` doesn't say who sent it, so the server passes the client's IP: `app.fetch(request, { ip })`. It becomes `c.ip`, which [rate limiting](/middleware#rate-limiting) and [Auth](/auth) count by.
+A `Request` doesn't say who sent it, so the server passes the client's IP: `app.fetch(request, { ip })`. It becomes `c.ip`, which [rate limiting](/middleware#rate-limiting) and [Auth](/auth) count by. Bun passes its server, which `app.fetch` asks for the IP, so `Bun.serve(app)` needs nothing more.
 
 ```ts
+// Bun
+Bun.serve(app);
+
 // Node, with srvx
 serve({ fetch: (request) => app.fetch(request, { ip: request.ip }) });
 
