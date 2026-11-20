@@ -207,6 +207,22 @@ describe("a picker's range", () => {
 		);
 	});
 
+	test.each([
+		["time", Field.time().max("17:00"), "17:00:00", "17:00:00.001"],
+		[
+			"datetime",
+			Field.datetime().max("2026-01-01T17:00"),
+			"2026-01-01T17:00:00.000",
+			"2026-01-01T17:00:00.001",
+		],
+	])(
+		"a %s maximum includes equivalent spellings of the bound",
+		async (_name, field, equal, later) => {
+			expect(await refused(field, later)).toMatch(/or earlier$/);
+			expect(await refused(field, equal)).toBeUndefined();
+		},
+	);
+
 	test("is told to agents, and the strictest is kept", () => {
 		const day = Field.date()
 			.describe("When it was cooked")

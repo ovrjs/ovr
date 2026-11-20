@@ -247,14 +247,16 @@ export class App {
 	};
 
 	/**
-	 * @param method Request method, GET finds the route for HEAD
+	 * @param method Request method, a HEAD without its own route finds GET's
 	 * @param pathname URL pathname
 	 * @returns The matched route and its decoded parameters
 	 */
 	#find(method: string, pathname: string) {
-		const match = this.#trie.find(
-			(method === Method.head ? Method.get : method) + pathname,
-		);
+		const match =
+			this.#trie.find(method + pathname) ??
+			(method === Method.head
+				? this.#trie.find(Method.get + pathname)
+				: undefined);
 
 		if (match)
 			for (const name in match.params)

@@ -987,6 +987,18 @@ export class Schema<Output>
 	}
 
 	/**
+	 * @param short A time, or date and time
+	 * @param long One that sorts after it
+	 * @returns If they are the same moment, the longer writing out seconds
+	 * that are zero, such as `17:00` and `17:00:00`
+	 */
+	static #same(short: string, long: string) {
+		return (
+			long.startsWith(short) && /^(:00)?(\.0+)?$/.test(long.slice(short.length))
+		);
+	}
+
+	/**
 	 * @param check Output check
 	 * @returns Function that returns `false` when the value fails the check
 	 */
@@ -1016,7 +1028,10 @@ export class Schema<Output>
 				const { value } = check;
 				if (typeof value === "string") {
 					const time = Date.parse(value);
-					return (v) => (v instanceof Date ? v.getTime() <= time : v <= value);
+					return (v) =>
+						v instanceof Date
+							? v.getTime() <= time
+							: v <= value || Schema.#same(value, v);
 				}
 				const max = Number(value);
 

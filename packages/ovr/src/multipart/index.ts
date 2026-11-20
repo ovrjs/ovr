@@ -752,7 +752,7 @@ export class Multipart {
 		const data = new FormData();
 
 		for await (const part of this) {
-			if (part.name) data.append(part.name, await part.value());
+			if (part.name !== null) data.append(part.name, await part.value());
 		}
 
 		return data;

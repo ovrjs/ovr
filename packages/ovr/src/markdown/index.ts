@@ -534,7 +534,8 @@ class Writer {
 	 */
 	#list(node: Node) {
 		const ordered = node.tag === "ol";
-		let n = Number(node.attrs.start ?? 1) || 1;
+		let n = Number(node.attrs.start ?? 1);
+		if (Number.isNaN(n)) n = 1;
 		const items: string[] = [];
 
 		// lines that are not blank, which need no indent

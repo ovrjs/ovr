@@ -157,6 +157,22 @@ test("HEAD /", async () => {
 	expect(res.body).toBe(null);
 });
 
+test("a mounted HEAD route takes precedence over the GET fallback", async () => {
+	const app = new App().use(
+		Route.get("/report").use((c) => c.text("GET response")),
+		new Route(Method.head, "/report").use((c) => {
+			c.res.headers.set("x-report-count", "3");
+			c.text("HEAD response");
+		}),
+	);
+	const response = await app.fetch("https://example.com/report", {
+		method: Method.head,
+	});
+
+	expect(response.headers.get("x-report-count")).toBe("3");
+	expect(response.body).toBeNull();
+});
+
 test("GET /api/:id/", async () => {
 	const res = await appFetch("/api/123/");
 	const json = await res.json();
@@ -324,6 +340,29 @@ test("etag", async () => {
 	);
 	expect(etag.status).toBe(304);
 	expect(await etag.text()).toBe("");
+});
+
+// If-None-Match accepts a list or a wildcard and uses weak comparison (RFC 9110 §13.1.2).
+test.each([
+	["a weak tag", (tag: string) => `W/${tag}`],
+	["a list containing the tag", (tag: string) => `"stale", ${tag}`],
+	["a wildcard", () => "*"],
+])("If-None-Match returns 304 for %s", async (_name, condition) => {
+	const app = new App().use(
+		Route.get("/report").use((c) => {
+			if (!c.etag("report")) c.text("report");
+		}),
+	);
+	const url = "https://example.com/report";
+	const tag = (await app.fetch(url)).headers.get("etag");
+	if (!tag) throw new Error("Expected an ETag");
+
+	const response = await app.fetch(url, {
+		headers: { "if-none-match": condition(tag) },
+	});
+
+	expect(response.status).toBe(304);
+	expect(response.body).toBeNull();
 });
 
 describe("a body the client got wrong, which the app does not catch", () => {

@@ -299,7 +299,10 @@ export class Context<
 
 		this.res.headers.set(Header.name.etag, etag);
 
-		if (this.req.headers.get(Header.name.none) === etag) {
+		const none = this.req.headers.get(Header.name.none);
+
+		// the tag has its quotes, so it is found whole in a list or after `W/`
+		if (none === "*" || none?.includes(etag)) {
 			this.res.body = null;
 			this.res.status = 304;
 

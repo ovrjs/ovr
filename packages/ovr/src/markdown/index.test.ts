@@ -161,6 +161,14 @@ describe("Markdown", () => {
 		).toBe("- One\n  - Nested\n- Two\n\n3. Three\n4. Four\n");
 	});
 
+	test("an ordered list can start at zero", async () => {
+		expect(
+			await md(
+				h("ol", { start: 0 }, h("li", null, "Zero"), h("li", null, "One")),
+			),
+		).toBe("0. Zero\n1. One\n");
+	});
+
 	test("links and images resolve against the base", async () => {
 		expect(
 			await md(

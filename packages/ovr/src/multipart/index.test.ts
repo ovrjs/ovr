@@ -93,6 +93,21 @@ describe("MultipartParser", () => {
 			expect(i).toBe(2);
 		});
 
+		it("keeps entries whose FormData field name is empty", async () => {
+			const body = new FormData();
+			body.append("", "first");
+			body.append("", "second");
+			const request = new Request("https://example.com/", {
+				method: "POST",
+				body,
+			});
+
+			expect((await new Multipart(request).data()).getAll("")).toEqual([
+				"first",
+				"second",
+			]);
+		});
+
 		it("should handle file uploads correctly", async () => {
 			const formData = new FormData();
 			const fileContent = "Hello world, this is a text file.";
