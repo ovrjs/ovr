@@ -13,7 +13,6 @@
     "3-schema",
     "4-rendering",
     "5-multipart",
-    "6-type-errors",
     "7-agents",
     "8-auth",
     "9-database"
