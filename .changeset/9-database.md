@@ -2,12 +2,23 @@
 "ovr": minor
 ---
 
-Add `Table` and `Database` for Postgres:
+`Table` and `Database`, for Postgres. Apps supply a pg-compatible pool.
 
-- **Tables** are defined with schemas or form fields. Dates inside JSON columns are stored as ISO strings and read back as dates, in union branches too.
-- **Queries:** `database.sql` queries with bound parameters and validated rows. `Database.unique(error, constraint)` recognizes unique violations, for example to show them as form errors.
-- **Transactions:** pass `database.sql` a callback. Queries the callback did not wait for finish before the commit, so one that fails rolls the transaction back.
-- **Migrations:** SQL migrations with checksums and locking, each committed with its history record in one transaction, so `BEGIN`, `COMMIT`, and `ROLLBACK` are not allowed in them. The migrations of library tables such as `Auth.tables` are applied first, in the order each library lists them.
-- **Checks:** `database.check()` is a basic compatibility check of the live database's columns, and of the foreign keys library tables need, such as Auth's to the users table.
+```ts
+const posts = new Table("posts", {
+	id: Schema.string().uuid(),
+	title: Field.text(),
+});
+const database = new Database(pool, [posts]);
 
-Applications supply a pg-compatible pool.
+const rows = await database.sql`SELECT * FROM ${database.posts}`.parse(
+	database.posts,
+);
+```
+
+- **Tables** are defined with schemas or form fields, so a table's field carries its label, description, and constraints into every form and tool that uses it.
+- **Queries:** `database.sql` queries with bound parameters, and `parse(table)` validates the rows. `sql.values(table, row)` and `sql.set(table, updates)` write a row. `Database.Query` names a query's type.
+- **Constraint errors:** `Database.unique(error, constraint)` recognizes a unique violation, such as to show it on a field.
+- **Transactions:** pass `database.sql` a callback.
+- **Migrations:** `database.migrate(migrations)` applies SQL migrations with checksums and locking, each in a transaction with its history record. The migrations of library tables such as `Auth.tables` are applied first.
+- **Checks:** `database.check()` compares the live database's columns with the tables.

@@ -4,13 +4,18 @@
 
 Schemas describe themselves as JSON Schema, and parse about twice as fast.
 
-- **JSON Schema:** `schema.toJsonSchema()` and Standard JSON Schema support through `~standard.jsonSchema`, targeting draft 2020-12 or draft-07. A field's label is its `title`, and a `Field.checkbox()` is optional in input schemas, with a default of `false`, as an unchecked box is left out of a form.
-- **Descriptions:** `describe()` is a method of every schema: `Schema.string().uuid().describe("The bookmark's ID")` is that value's `description` in its JSON Schema, so a route's `params` describe a tool's arguments to agents. A field inherits it, and also shows the text under its control. `schema.description` reads it back, through what wraps it, such as `optional()`.
-- **New schemas:** `Schema.date()` and `.uuid()`. Schemas keep the definition they were built from in `schema.def`.
-- **Issue types:** declaration files name `Schema.Issue` and `Schema.AggregateIssue`, where they copied their members.
-- **Construction:** `new Schema(def)` and `schema.derive()` are protected, so a schema is made with `Schema`'s static methods.
-- **Strings:** `min` and `max` count Unicode characters instead of UTF-16 code units, matching JSON Schema and Postgres, so an emoji counts as one character.
-- **Speed:** nested schemas share one issue path, copied only into issues, and build one `Schema.AggregateIssue`.
-- **Fixes:** a `__proto__` key is kept as data, in an object's shape, passed through by `loose()`, or named by `pick` or `omit`, instead of changing the parsed object's prototype, and is an own property in JSON Schema. Unions and arrays with very many issues no longer overflow the stack. The published types compile without Node's types.
+**Changed**
 
-The unused `Schema.Parse.Constructor` type is removed.
+- **Construction:** `new Schema(def)` and `schema.derive()` are protected, so a schema is made with `Schema`'s static methods. The unused `Schema.Parse.Constructor` type is removed.
+- **Strings:** `min` and `max` count Unicode characters instead of UTF-16 code units, as JSON Schema and Postgres do, so an emoji counts as one.
+- **`__proto__`:** a `__proto__` key is kept as data, instead of changing the parsed object's prototype.
+
+**New**
+
+- **JSON Schema:** `schema.toJsonSchema()`, and Standard JSON Schema through `~standard.jsonSchema`, for draft 2020-12 or draft-07. A literal or an enum says its values' type.
+- **`describe()`** is a method of every schema, its `description` in JSON Schema. `schema.description` reads it back.
+- **`Schema.date()`**, which takes an earliest and latest date with `min()` and `max()`, and **`.uuid()`**.
+- **`pattern(source)`** checks that the whole string matches, and **`step(n)`** that a number is a multiple of `n`.
+- **Arrays:** `min()` and `max()` count an array's items.
+- **`schema.def`** is the definition a schema was built from.
+- **Types:** declaration files name `Schema.Issue` and `Schema.AggregateIssue`, and the published types compile without Node's types.

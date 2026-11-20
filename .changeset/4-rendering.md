@@ -4,12 +4,36 @@
 
 Elements render to markup with `new Render({ markup })` and to Markdown with `new Render({ markdown })`, several times faster.
 
-- **`Render`:** `new Render({ markup: element }, options)` renders HTML and other markup such as XML, where `new Render(element, options)` did. A render is an async iterable with `stream()` and `string()`, so `Render.stream(element)` is `new Render({ markup: element }).stream()`. `Render.html(html)` is `Render.raw({ markup: html })`, `Render.Options` is `Render.Options.Markup`, and its `safe` option is `raw`.
-- **Strings:** a render yields strings, of markup or of Markdown, instead of chunks to call `toString()` on.
-- **JSX:** `JSX` is exported as a type only. The JSX runtime is `ovr/jsx-runtime`, which TypeScript and bundlers load from `jsxImportSource`. A class is a type error as a JSX tag, where it compiled and failed when rendered. SVG `<linearGradient>` and `<radialGradient>` accept their `<stop>` children.
-- **Markdown:** `new Render({ markdown: element }, options)` renders any element to Markdown, as an async iterable, a `stream()`, or a `string()`, written from the rendered elements as they stream, without parsing HTML. Requests that prefer `Accept: text/markdown` receive pages as Markdown, and `c.markdown(source)` responds with a page's own Markdown, such as a post's source, when it is asked for. HTML responses include `Vary: Accept`. Only the page's `<main>` is written when there is one, found inside any wrapper, and HTML from `Render.raw({ markup })` is written as it is, and `Render.raw({ markup, markdown })` renders the HTML on pages and the Markdown for agents.
-- **Markdown forms:** forms are written with their fields, values, and errors, and say how to encode their body, such as `POST https://example.com/todos` as `multipart/form-data`. A form in a table's cell is kept: one that is only a button, such as a delete in each row, is written in the cell, and one with fields after the table. A form around a table keeps the table and its links, with each control named in its cell. A button with a `formaction` says where it submits, and a `<pre>`, a link, and raw markup in a form are kept as they are.
-- **Markdown structure:** an inline element that holds blocks, such as a custom element around a card, is read as a container, so its headings, lists, code, and forms are kept. A code block in a `<dd>` or `<figcaption>` keeps its lines. Raw markup is its own block only when it starts with a block element, so `Render.raw({ markup: "&euro;" })` stays in its sentence. A list keeps items inside a wrapper element and a list placed directly in a list, and paragraphs in one item stay apart.
-- **Markdown escapes:** text loose in a form, a backtick in a form's action, a run of `~`, a `>` or a line of `=` at the start of a line, and a character reference such as `&amp;` are escaped. An ordered list marker in text is escaped after its number (`1\.`), where the escape works.
-- **Speed:** a page renders to HTML about 9 times faster and to Markdown about 5 times faster: the renderer walks the tree with its own stack and only awaits what has to be awaited. A request for a small page through `App.fetch` goes from about 4,700 to 37,000 a second. A streamed response sends what is ready together, up to 2 KB for each read, where each element was a chunk of its own. The bytes and their order are the same, and nothing is held back for something that is still loading.
-- **Fixes:** a chunk rendered while an earlier sibling is still rendering is no longer changed, so a `Render.raw` value used in more than one place renders the same each time. An empty one in a streamed page is skipped, where it ended the stream with an error. A long table read as Markdown holds less than half of the memory it did until the table ends.
+```tsx
+// before
+const html = await Render.string(<Page />);
+const stream = Render.stream(<Page />);
+Render.html("<b>trusted</b>");
+Render.escape(text, true);
+
+// after
+const html = await new Render({ markup: <Page /> }).string();
+const stream = new Render({ markup: <Page /> }).stream();
+Render.raw({ markup: "<b>trusted</b>" });
+Render.escape({ attr: text });
+```
+
+**Changed**
+
+- **`Render`:** `new Render({ markup: element }, options)` replaces `new Render(element, options)`. A render is an async iterable with `stream()` and `string()`, in place of the static methods. `Render.Options` is `Render.Options.Markup`, and its `safe` option is `raw`.
+- **`Render.raw({ markup })`** replaces `Render.html(html)`.
+- **`Render.escape`** takes the text by where it goes: `{ markup }` for an element's content and `{ attr }` for an attribute's value, where it was a second argument.
+- **Strings:** a render yields strings instead of chunks to call `toString()` on, and an element whose child is text alone is one string with its tags.
+- **JSX:** `JSX` is exported as a type only. The runtime is `ovr/jsx-runtime`, which TypeScript and bundlers load from `jsxImportSource`. A class is a type error as a JSX tag.
+- **Unsafe attributes:** an attribute name that would break its tag is left out, as is a `javascript:` URL in `href`, `src`, `action`, `formaction`, `data`, or `xlink:href`. A tag name that is not one throws.
+- **Streaming:** a streamed response sends what is ready together, up to 2 KB for each read, where each element was a chunk of its own. The bytes and their order are the same.
+
+**New**
+
+- **Markdown:** `new Render({ markdown: element }, options)` renders any element to Markdown. A request that prefers `Accept: text/markdown` gets a page as Markdown, only its `<main>` when it has one, with forms written out with their fields, values, and errors. HTML responses include `Vary: Accept`.
+- **Text for one audience:** `Render.raw({ markup, markdown })` renders the markup on pages and the Markdown for agents. With only `markdown` the page shows nothing, and an empty `markdown` hides the markup from agents. `Render.escape({ markdown })` escapes text put into it.
+- **Component context:** a component is given the request's `Context` as its second argument, so a page no longer passes `c` down. A render made outside a request takes it as the `context` option.
+- **`JSX.Component<Props>`** types a component taken as a value.
+- **`<script>`** takes any `type`, such as `application/ld+json`, and SVG gradients accept their `<stop>` children.
+- **Speed:** a page renders to HTML about 9 times faster. A request for a small page through `app.fetch` goes from about 4,700 to 37,000 a second.
+- **Fix:** a `Render.raw` value used in more than one place renders the same each time, and an empty one no longer ends a streamed page with an error.

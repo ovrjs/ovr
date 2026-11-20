@@ -2,12 +2,29 @@
 "ovr": major
 ---
 
-The multipart parser is named `multipart` wherever it appears, so "form" means a route's fields and the `<form>` they render: `c.form()` is `c.multipart()`, and `new App({ form })` is `new App({ multipart })`.
+The multipart parser is named `multipart` wherever it appears, so "form" means a route's fields.
 
-- **Errors:** the errors are `Multipart.Limit`, `Multipart.Malformed`, and `Multipart.Unsupported`, so a route that catches them can tell them apart from its own errors. They and `Multipart.Part` are types too, which declaration files name, so an app that exports a function returning a part or checking an error builds its declarations. A body the client got wrong is answered instead of thrown out of `app.fetch` when the route does not catch it: 413 for a body over a limit, 415 for a content type other than multipart form data, and 400 for malformed form data. Global middleware that catches errors sees the answer and not the error, so an error page is not shown for a client's mistake, and the answer keeps the headers middleware set, such as for CORS.
-- **Not a `Request`:** `Multipart` no longer extends `Request`, since it reads the request's body and every body method it inherited threw. It is the async iterable of a request's parts, with `data()`; read the request's headers and URL from the request. Each `Multipart.Part` is still a `Request`, whose body is the part's.
-- **Other servers:** form submissions work on servers that pass their own request object, such as srvx. The parser copied the request with the platform's constructor, which only accepts its own requests, so `c.data()` threw on every POST there.
-- **Parsing:** the parser skips the rest of a part its reader stopped reading, so a file's bytes are never parsed as further fields. A part that ends without its boundary, a body without the closing delimiter, and one without an opening boundary are malformed; a form without fields, only the closing delimiter, still parses. Only a delimiter starting the body or a line opens the first part, a line in a part that starts with the boundary rejects the body, as RFC 2046 does not allow it, and nothing after the closing delimiter is parsed. Spaces and tabs after a delimiter are ignored, as RFC 2046 requires of receivers.
-- **Boundaries:** boundaries must be 1 to 70 RFC 2046 characters; a boundary of 252 or more characters made parsing loop forever. Boundary searches are linear whatever boundary the client chooses.
-- **Headers:** quoted header parameters can contain `;` and escaped quotes, and decode only `%22`, `%0D`, and `%0A`, the escapes browsers write in filenames, so a file named `100%41.txt` keeps its name. Field names and filenames keep the UTF-8 browsers send, such as `レポート.pdf`, and a part header that is not UTF-8 is malformed.
-- **Memory:** a request or response body read whole is no longer held twice as it is joined.
+```ts
+// before
+new App({ form: { memory } });
+const parts = c.form();
+
+// after
+new App({ multipart: { memory } });
+const parts = c.multipart();
+```
+
+**Changed**
+
+- **Not a `Request`:** `Multipart` no longer extends `Request`. It is the async iterable of a request's parts, with `data()`; read the request's headers and URL from the request. Each `Multipart.Part` is still a `Request`.
+- **Parts:** a body may have 1000 parts by default, where it had no limit. Set `parts` to change it. A limit set to `undefined` or `NaN`, such as from an unset environment variable, keeps its default.
+- **Errors:** the errors are `Multipart.Limit`, `Multipart.Malformed`, and `Multipart.Unsupported`. Left uncaught by the route, ovr answers them: 413 for a body over a limit, 415 for another content type, and 400 for malformed form data. Global middleware that catches errors sees the answer and not the error.
+- **Stricter parsing:** a part that ends without its boundary, a body without the closing delimiter or an opening boundary, a boundary line inside a part, and a part header that is not UTF-8 are malformed. A boundary must be 1 to 70 RFC 2046 characters.
+- **Headers:** quoted parameters can hold `;` and escaped quotes, and decode only `%22`, `%0D`, and `%0A`, the escapes browsers write, so a file named `100%41.txt` keeps its name. Names and filenames keep the UTF-8 browsers send. Parameter names match in any case.
+- **Empty names:** `data()` keeps a field with an empty name, as `request.formData()` does.
+
+**New**
+
+- **Other servers:** form submissions work on servers that pass their own request object, such as srvx.
+- **Skipped parts:** the parser skips the rest of a part its reader stopped reading.
+- **Memory:** a body read whole is no longer held twice as it is joined.
