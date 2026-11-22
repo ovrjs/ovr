@@ -88,7 +88,13 @@ The route's `Form` renders the `<form>` _and_ the fields inside by default, and 
 <form action="/signup" method="POST" enctype="multipart/form-data">
 	<div>
 		<label for="post_signup-name">name</label>
-		<input id="post_signup-name" required type="text" name="name" />
+		<input
+			id="post_signup-name"
+			required
+			minlength="2"
+			type="text"
+			name="name"
+		/>
 	</div>
 	<button>Submit</button>
 </form>
@@ -100,7 +106,7 @@ A control is `required` when leaving it empty fails validation, so browsers and 
 
 > Labels and legends default to the field `name`. Simple CSS such as `text-transform: capitalize` is often enough for the generated markup. Alternatively, give the field a label: `Field.text().label("Full Name")`.
 
-`describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p id="url-description" data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from [`join.component`](#lay-out-the-fields) to place it yourself.
+`describe` says what a value is, as a route's [`describe`](/route#describe) says what the route does. Any schema takes it, such as one in a route's [`params`](/route#parameters), and a field also shows it to people: `Field.url().label("URL").describe("An http or https address")`. People read it in a paragraph under the control, `<p data-description>`, which the control names in `aria-describedby`. Both reach [agents](/agents#tools) too: the label is the field's `title` and the description its `description` in its [JSON Schema](#json-schema), which an agent reads before it calls the tool. Use the `Description` part from [`form.component`](#lay-out-the-fields) to place it yourself.
 
 A description written to be complete for an agent can be more than a person needs under a control. `hint` is what people read in its place, and agents still read the description: `Field.number().describe("Weight in grams for cups and spoons. Empty for counts and liquids.").hint("For cups and spoons")`. An empty hint shows people nothing.
 
@@ -285,7 +291,7 @@ Each control is named by its list and its place, `sides.0` or `ingredients.0.amo
 
 An invalid submission shows a list's rows again, with each issue on its cell. When the rows are too many to [keep](#a-refused-submission), the issue is shown under the list and says where it was, such as "Row 2, Ingredient: Required field", with the field's label.
 
-A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own.:
+A list's `options` are those of each row's choices made from a schema, so a week's dinners show each recipe's title with no layout of their own:
 
 ```tsx
 <form.Field

@@ -5,7 +5,7 @@ description: Understand how ovr handles each request.
 
 ## Create
 
-Middleware are functions that are composed together to handle requests. Most middleware is written inline, passed to a route's `use`. Middleware can also be created on it's own to be used globally or to apply to routes.
+Middleware are functions that are composed together to handle requests. Most middleware is written inline, passed to a route's `use`. Middleware can also be created on its own to be used globally or to apply to routes.
 
 ```ts
 import type { Middleware } from "ovr";

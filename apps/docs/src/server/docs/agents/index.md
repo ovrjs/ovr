@@ -154,7 +154,7 @@ A tool that only reads is marked `readOnlyHint`, and one that writes `destructiv
 
 #### Arguments
 
-A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. A form's tool takes only its fields and parameters, so an argument it does not have is an issue naming it. A route without fields is left open, since its handler may read the query or the body itself.
+A tool's input schema combines the pattern's parameters, converted by `params` schemas, and the route's `fields`. A tool that writes takes only its form's fields and parameters, so an argument it does not have is an issue naming it. A GET route's tool ignores other arguments, as a page ignores search parameters it does not use, and a route without fields is left open, since its handler may read the query or the body itself.
 
 | Field                          | What the agent sends                                                                                  |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------- |

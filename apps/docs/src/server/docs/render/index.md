@@ -19,7 +19,7 @@ function Component(props: { children?: JSX.Element; color: string }) {
 }
 ```
 
-Now the component can be used as it's own tag within other components.
+Now the component can be used as its own tag within other components.
 
 > Use capital letters for components to distinguish them from HTML (or _intrinsic_) elements.
 
@@ -38,7 +38,7 @@ Props are passed in like an HTML attribute `name={value}`, while `children` is a
 
 ovr aligns with the standard (all lowercase) HTML attributes---all attributes will be rendered exactly as they are written. Values are escaped. A name that would break the tag, such as a key from a user's object spread into props, is left out, as is a `javascript:` URL in `href`, `src`, `action`, `formaction`, `data`, or `xlink:href`, such as a website a user gave.
 
-> If you're coming from React, this means you must use `class` and `for` instead of `className` and `htmlFor` respectively. There is also no need to provide a `key` attribute in when rendering lists.
+> If you're coming from React, this means you must use `class` and `for` instead of `className` and `htmlFor` respectively. There is also no need to provide a `key` attribute when rendering lists.
 
 ## Async components
 

@@ -145,7 +145,7 @@ const remove = Route.post("/posts/:id/delete").use((c) => {
 <remove.Form params={{ id: post.id }} submit="Delete" />;
 ```
 
-Pass children to write the form's contents yourself, for example with the form's [`Fields` or `Field`](/schema#post-forms) for a custom layout; they replace the generated fields and button.
+Pass children to write the form's contents yourself; they replace the generated fields and button. A function child is given the form's [`Fields` and `Field`](/schema#lay-out-the-fields) to lay them out.
 
 `Button` is for a second action inside another form: a submit button whose `formaction` sends that form to this route instead. Like any `formaction` button, it does nothing outside a `<form>`, so use the route's `Form` for a standalone button.
 

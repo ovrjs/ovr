@@ -102,7 +102,7 @@ With the email field configured above, `<register.Form />` generates this HTML. 
 	<script
 		id="passkey-register-id"
 		type="module"
-		src="/_passkey/client.js"
+		src="https://example.com/_passkey/client.js"
 		data-passkey="register"
 		data-endpoint="/_passkey/options/register"
 		data-bootstrap="..."
@@ -131,7 +131,7 @@ The hidden `credential` and `ceremony` inputs are filled by the browser script.
 	<script
 		id="passkey-login-id"
 		type="module"
-		src="/_passkey/client.js"
+		src="https://example.com/_passkey/client.js"
 		data-passkey="login"
 		data-endpoint="/_passkey/options/login"
 		data-bootstrap="..."
