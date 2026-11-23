@@ -142,3 +142,13 @@ serve({
 	},
 });
 ```
+
+## Your host
+
+ovr handles a request once your server hands it over. These are left to the server, proxy, or platform it runs on:
+
+- **HTTPS.** TLS ends before `app.fetch`. [Auth](/auth#deployment) needs an `https` origin, in development too.
+- **The client IP.** ovr never reads it from a header, so the server passes it, [as above](#client-ip). Without it, rate limits throw, and the [MCP endpoint](/agents#mcp) cannot refuse a DNS rebinding attack on a server running on your own machine. A host that routes requests by their `Host` header, as most platforms do, never delivers that attack in production.
+- **Body size and time.** ovr limits what it parses: a [multipart](/multipart) body to 16 MB and 1000 parts by default, and Auth's endpoints to at most 128 KB. `c.req.json()` and the other `Request` methods read the whole body. Set a body limit and request timeouts in the server or proxy.
+- **Floods.** A [limiter](/middleware#rate-limiting) counts each IPv4 address and each IPv6 `/64` network. An attacker with many addresses, or a denial-of-service attack, is for your host's protection to stop. Auth downloads at most 16 agent documents at once per instance, so such an attacker can keep new agents from connecting for a while; agents already connected keep working.
+- **Your network.** Auth refuses to download an agent's document from a private or special-use address. Run the server where its loopback and internal network have nothing that trusts a request for coming from there, rather than relying on that list alone.
