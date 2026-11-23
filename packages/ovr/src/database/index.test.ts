@@ -1051,6 +1051,17 @@ describe.each(drivers)("$name", (driver) => {
 			expect(Database.unique(other)).toBe(false);
 			expect(Database.unique(new Error("x"))).toBe(false);
 			expect(Database.unique({ code: "23505" })).toBe(false);
+			// Bun puts the SQLSTATE in errno
+			expect(
+				Database.unique(
+					Object.assign(new Error("x"), {
+						code: "ERR_POSTGRES_SERVER_ERROR",
+						errno: "23505",
+						constraint: "other_a",
+					}),
+					"other_a",
+				),
+			).toBe(true);
 		},
 	);
 

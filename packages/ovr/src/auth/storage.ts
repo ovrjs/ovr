@@ -3,6 +3,7 @@ import {
 	owned,
 	referenced,
 	references,
+	state,
 } from "../database/index.js";
 import { Schema } from "../schema/index.js";
 import { Table } from "../table/index.js";
@@ -386,7 +387,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 					if (
 						error instanceof Refused ||
 						// the account was deleted meanwhile, its tokens cascade with it
-						(error as { code?: unknown } | null)?.code === "23503"
+						state(error) === "23503"
 					)
 						return false;
 					throw error;

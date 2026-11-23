@@ -530,6 +530,16 @@ export class Sql<Row = unknown> implements Database.Query<Row> {
 }
 
 /**
+ * @param error Caught error
+ * @returns SQLSTATE of a Postgres error, pg puts it in `code` and Bun in `errno`
+ */
+export const state = (error: unknown) => {
+	const { code, errno } = (error ?? {}) as { code?: unknown; errno?: unknown };
+
+	return typeof code === "string" && code.length === 5 ? code : errno;
+};
+
+/**
  * Migrations a library's tables bring, by table. Tables of one library share
  * one list, applied by `database.migrate` in the order it lists them, before the application's.
  */
@@ -655,8 +665,7 @@ class Base<T extends readonly Table.Any[]> {
 					return await query;
 				} catch (error) {
 					// queries after an aborted statement fail too, keep the cause
-					if ((error as { code?: unknown } | null)?.code !== "25P02")
-						failure = error;
+					if (state(error) !== "25P02") failure = error;
 
 					throw error;
 				} finally {
@@ -784,12 +793,9 @@ class Base<T extends readonly Table.Any[]> {
 					await sql`SELECT set_config('migrate.sql', ${next.sql}, true)`;
 					await sql`DO $$ BEGIN EXECUTE current_setting('migrate.sql'); END $$`.catch(
 						(error: unknown) => {
-							const { code, message } = (error ?? {}) as {
-								code?: unknown;
-								message?: unknown;
-							};
+							const { message } = (error ?? {}) as { message?: unknown };
 							if (
-								code === "0A000" &&
+								state(error) === "0A000" &&
 								typeof message === "string" &&
 								message.includes("transaction commands")
 							)
@@ -1183,14 +1189,12 @@ class Base<T extends readonly Table.Any[]> {
 	static unique(error: unknown, constraint?: string) {
 		if (!(error instanceof Error)) return false;
 
-		const { code, constraint: name } = error as {
-			code?: unknown;
-			constraint?: unknown;
-		};
+		const { constraint: name } = error as { constraint?: unknown };
 
 		// SQLSTATE unique_violation
 		return (
-			code === "23505" && (constraint === undefined || name === constraint)
+			state(error) === "23505" &&
+			(constraint === undefined || name === constraint)
 		);
 	}
 }
