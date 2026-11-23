@@ -15,6 +15,7 @@
     "5-multipart",
     "7-agents",
     "8-auth",
-    "9-database"
+    "9-database",
+    "bun-sqlstate"
   ]
 }

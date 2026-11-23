@@ -1,5 +1,11 @@
 # ovr
 
+## 7.0.0-next.87
+
+### Patch Changes
+
+- 87695a0: `Database.unique()`, Auth's duplicate and deleted-account refusals, and migration errors read the SQLSTATE from `errno` too, where Bun's `PostgresError` puts it.
+
 ## 7.0.0-next.86
 
 ### Patch Changes

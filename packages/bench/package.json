@@ -6,7 +6,7 @@
 		"check": "tsc"
 	},
 	"dependencies": {
-		"ovr": "7.0.0-next.86"
+		"ovr": "7.0.0-next.87"
 	},
 	"devDependencies": {
 		"@remix-run/multipart-parser": "^0.16.3",
