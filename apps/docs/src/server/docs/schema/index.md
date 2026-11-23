@@ -33,6 +33,22 @@ if (result.issues) {
 - When **invalid**, the result is a `Schema.AggregateIssue` containing a non-empty `issues` tuple.
 - When **valid**, the result contains the type-safe `data`.
 
+| Schema                                                    | Parses                              |
+| --------------------------------------------------------- | ----------------------------------- |
+| `string()`, `number()`, `bigint()`, `boolean()`, `date()` | A value of that type                |
+| `literal(value)`, `enum([a, b])`                          | That value, or one of those         |
+| `array(item)`, `object(shape)`                            | Each item, or each key of the shape |
+| `union([a, b])`                                           | The first schema that parses        |
+| `instance(Class)`                                         | An instance of the class            |
+| `unknown()`                                               | Anything                            |
+
+Every schema takes these:
+
+- `optional()`, `nullable()`, and `nullish()` also accept `undefined`, `null`, or either. `default(value)` is used for `undefined`.
+- `refine(check, message)` adds a check, `transform(fn)` changes the parsed value, `preprocess(fn)` changes the input before parsing, and `pipe(schema)` parses the result again with another schema.
+- A string takes `min()`, `max()`, `email()`, `url()`, `uuid()`, `pattern()`, and `json(schema)`, which parses the string as JSON. A number takes `min()`, `max()`, `int()`, and `step()`, and a date or an array `min()` and `max()`.
+- An object takes `extend(shape)`, `pick(["a"])`, and `omit(["a"])`, which return a new object schema. Unknown keys are left out of `data`; `strict()` refuses them and `loose()` keeps them.
+
 ## JSON Schema
 
 `toJsonSchema` describes a schema as a [JSON Schema](https://json-schema.org/) object, for example to document an API or define tool parameters. A schema's `describe(text)` is its `description` there.
@@ -115,6 +131,20 @@ A description written to be complete for an agent can be more than a person need
 The form returns a refused submission to the page it is on. On a page with another address than the form's own, its action carries the page's address in a same-origin `_return` query param, such as `action="/signup?_return=%2Fjoin"`.
 
 > To share fields between routes, reuse the shape object, such as `.fields({ ...shape, note: Field.textarea() })`.
+
+| Field                                                                                  | Control                  | Value            |
+| -------------------------------------------------------------------------------------- | ------------------------ | ---------------- |
+| `text()`, `password()`, `search()`, `tel()`, `email()`, `url()`, `color()`, `hidden()` | An input of that type    | `string`         |
+| `date()`, `datetime()`, `month()`, `week()`, `time()`                                  | A picker                 | `string`         |
+| `number()`, `range()`                                                                  | A number input or slider | `number`         |
+| `checkbox()`                                                                           | A checkbox               | `boolean`        |
+| `file()`                                                                               | A file input             | `File`           |
+| `textarea()`                                                                           | A textarea               | `string`         |
+| [`select(options)`, `radio(options)`](#choices)                                        | A select or radios       | One of them      |
+| [`checkboxes(options)`](#choices)                                                      | Checkboxes               | An array of them |
+| [`list(field)`](#lists)                                                                | A row for each item      | An array         |
+
+A field takes the methods of its value's schema, such as `min()` and `optional()`, and those [constraints](#constraints) become attributes of its control.
 
 ### Lay out the fields
 

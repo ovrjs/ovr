@@ -50,13 +50,10 @@ export function network(value: string | undefined) {
 
 export namespace Limiter {
 	/**
-	 * Request capabilities available before parsing a body, including the
+	 * What reads the request before its body is parsed, including the
 	 * session, so a `key` can count each signed-in user.
 	 */
-	export type Context = Pick<
-		ContextType,
-		"req" | "url" | "ip" | "cookie" | "res" | "session"
-	>;
+	export type Context = Pick<ContextType, "req" | "url" | "ip" | "session">;
 	/** A token bucket allows an initial burst, then replenishes continuously. */
 	export interface Policy {
 		readonly limit: number;

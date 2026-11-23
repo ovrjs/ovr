@@ -102,6 +102,8 @@ const feed = await database.sql`
 `.parse(Schema.object({ title: Schema.string(), name: Schema.string() }));
 ```
 
+`toQuery()` returns the `text` and `values` a query sends, without running it, such as to log it: `{ text: 'SELECT * FROM "users" WHERE "users"."id" = $1', values: [id] }`.
+
 ### In a component
 
 A query can run in the [component](/render#async-components) that shows its rows, so a part of a page reads for itself wherever it is put:

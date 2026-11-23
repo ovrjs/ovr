@@ -72,16 +72,16 @@ export namespace Storage {
 		readonly family?: string;
 	}
 
+	/** A stored passkey */
+	export type Credential = Schema.Infer<typeof Storage.credentials>;
+
 	/** Credential lookup and compare-and-swap updates. */
 	export interface Credentials {
-		get(id: string): Result<Auth.Credential | null | undefined>;
+		get(id: string): Result<Credential | null | undefined>;
 		/** IDs of the user's credentials */
 		list(user: string): Result<readonly string[]>;
 		/** Save `credential` only if the record still matches `previous`. */
-		update(
-			credential: Auth.Credential,
-			previous: Auth.Credential,
-		): Result<boolean>;
+		update(credential: Credential, previous: Credential): Result<boolean>;
 	}
 }
 
@@ -709,7 +709,7 @@ CREATE INDEX auth_links_expiration ON auth_links (expiration);`,
 	 */
 	register(
 		create: (t: Database.Transaction, user: string) => Result<void>,
-		credential: Auth.Credential,
+		credential: Storage.Credential,
 	) {
 		return this.#db.sql(async (t) => {
 			await create(t, credential.user);

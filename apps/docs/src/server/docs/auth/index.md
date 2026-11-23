@@ -235,13 +235,17 @@ Supply children to control the markup and styling:
 
 ```tsx
 <register.Form class="stack">
-	<register.Field name="email" />
-	<register.Issue class="error" />
-	<button>Create account</button>
+	{({ Field }) => (
+		<>
+			<Field name="email" />
+			<register.Issue class="error" />
+			<button>Create account</button>
+		</>
+	)}
 </register.Form>
 ```
 
-`register.Field` renders one typed field; `register.Fields` renders them all. `login.Issue` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/schema#post-forms) as ordinary forms.
+As with a [route's form](/schema#lay-out-the-fields), a function child is given `Field`, which renders one typed field, and `Fields`, which renders them all. `login.Issue` customizes the login message. The forms accept normal HTML form attributes. Registration fields use the same [Field API](/schema#post-forms) as ordinary forms.
 
 `<register.Issue class="error" />` generates the following element. `login.Issue` uses the same markup:
 

@@ -207,7 +207,7 @@ export namespace Multipart {
 		 * new Multipart(request, { memory });
 		 * ```
 		 */
-		memory?: number;
+		memory?: number | undefined;
 
 		/**
 		 * Maximum `Request.body` size in bytes (default 16MB)
@@ -226,7 +226,7 @@ export namespace Multipart {
 		 * new Multipart(request, { payload });
 		 * ```
 		 */
-		payload?: number;
+		payload?: number | undefined;
 
 		/**
 		 * Maximum number of parts, each of which costs a little to read however
@@ -298,7 +298,7 @@ export class Multipart {
 		Unsupported;
 
 	/** Parser options */
-	readonly #options: Required<Multipart.Options> = {
+	readonly #options: Record<keyof Multipart.Options, number> = {
 		memory,
 		payload: 16 * Size.mb,
 		parts: 1000,

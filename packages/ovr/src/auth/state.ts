@@ -289,6 +289,5 @@ export class State {
 		if (session) await this.options.sessions.delete(session.id);
 		this.#clear();
 		this.#session = Promise.resolve(null);
-		return null;
 	}
 }

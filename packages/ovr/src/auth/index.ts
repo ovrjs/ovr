@@ -43,9 +43,12 @@ export namespace Auth {
 	export interface Forms<Shape extends Field.Shape> {
 		/** Creates an account with a passkey, from the users table's fields. */
 		readonly register: {
-			readonly Form: Route.Form<string>;
-			readonly Field: Form.Bound<Shape>["Field"];
-			readonly Fields: Form.Bound<Shape>["Fields"];
+			/** A function child is given the registration fields to lay them out, as a route's form is. */
+			readonly Form: (
+				props: Omit<Parameters<Route.Form<string>>[0], "children"> & {
+					children?: JSX.Element | ((form: Field.Bound<Shape>) => JSX.Element);
+				},
+			) => JSX.Element;
 			readonly Issue: (props: JSX.IntrinsicElements["p"]) => JSX.Element;
 		};
 		/** Signs in with a passkey. */
@@ -255,28 +258,6 @@ export namespace Auth {
 		readonly connected: number;
 		/** When the connection ends and the user connects it again, in milliseconds */
 		readonly expires: number;
-	}
-
-	/** A stored passkey, as Auth keeps it */
-	export interface Credential {
-		/** Credential ID, as the authenticator gave it, base64url */
-		id: string;
-		/** ID of the user it signs in as */
-		user: string;
-		/** SPKI-encoded P-256 public key as base64url. */
-		publicKey: string;
-		/** Signature counter, which a cloned authenticator would repeat */
-		counter: number;
-		/** Whether the credential is eligible for backup; this must not change. */
-		eligible: boolean;
-		/** Current backup state, which may change. */
-		backedUp: boolean;
-		/** When it was made, in milliseconds. */
-		created: number;
-		/** Origin it was made at. It signs in at that origin's hostname, on any port. */
-		origin: string;
-		/** What the person called it when adding it, such as "Laptop". */
-		name: string | null;
 	}
 }
 

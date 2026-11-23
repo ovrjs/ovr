@@ -57,9 +57,13 @@ export function routes(database: Store, service: ReturnType<typeof configure>) {
 
 						<h2>Create account</h2>
 						<register.Form>
-							<register.Field name="email" />
-							<register.Issue class="text-red-700" />
-							<button>Create account</button>
+							{({ Field }) => (
+								<>
+									<Field name="email" />
+									<register.Issue class="text-red-700" />
+									<button>Create account</button>
+								</>
+							)}
 						</register.Form>
 
 						{user && (

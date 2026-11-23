@@ -1,7 +1,7 @@
 import type { Context } from "../context/index.js";
 import { Database } from "../database/index.js";
 import { Field, Form, field, taken } from "../form/index.js";
-import { jsx } from "../jsx/index.js";
+import { type JSX, jsx } from "../jsx/index.js";
 import { Limiter } from "../limiter/index.js";
 import type { Middleware } from "../middleware/index.js";
 import { Route, element } from "../route/index.js";
@@ -126,7 +126,7 @@ export function configure<U extends Auth.Users>(
 	};
 
 	const admit = async (
-		c: Limiter.Context & Pick<Context, "text" | "redirect" | "url">,
+		c: Limiter.Context & Pick<Context, "text" | "redirect" | "url" | "res">,
 		method: "register" | "login" | "add" | "link",
 		prompt: boolean,
 	) => {
@@ -162,7 +162,7 @@ export function configure<U extends Auth.Users>(
 			prompt = false,
 		) =>
 		async (
-			c: Limiter.Context & Pick<Context, "text" | "redirect" | "url">,
+			c: Limiter.Context & Pick<Context, "text" | "redirect" | "url" | "res">,
 			next: Middleware.Next,
 		) => {
 			noStore(c.res.headers);
@@ -417,9 +417,6 @@ export function configure<U extends Auth.Users>(
 			// is where they go after logging in
 			const back = c.url.searchParams.get(Form.params[0]);
 			if (back) state(c).remember(back);
-			// registration's own fields, which no submission is kept for: a
-			// refusal says the same whatever was sent
-			const { Field, Fields } = fields.bind();
 			const Register = passkey.form(register, "register", {
 				...props,
 				endpoint: registration.url(),
@@ -491,7 +488,21 @@ export function configure<U extends Auth.Users>(
 				},
 			);
 			return {
-				register: { Form: Register, Field, Fields, Issue: Register.Issue },
+				register: {
+					Form: ({ children, ...props }) =>
+						Register({
+							...props,
+							// registration's own fields, which no submission is kept
+							// for: a refusal says the same whatever was sent
+							children:
+								typeof children === "function"
+									? (children as (form: Field.Bound<Shape>) => JSX.Element)(
+											fields.bind(),
+										)
+									: children,
+						}),
+					Issue: Register.Issue,
+				},
 				login: { Form: Login, Issue: Login.Issue },
 				add: { Form: Add, Issue: Add.Issue },
 				link: { Form: Link, Issue: Link.Issue },

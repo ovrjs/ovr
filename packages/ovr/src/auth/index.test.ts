@@ -354,7 +354,10 @@ function setup(extra: Partial<State.Options> = {}) {
 		),
 		Route.get("/session").use(async (c) => c.json(await c.session())),
 		Route.post("/session").use(async (c) => c.json(await auth.login(c, user))),
-		Route.post("/logout").use(async (c) => c.json(await auth.logout(c))),
+		Route.post("/logout").use(async (c) => {
+			await auth.logout(c);
+			c.text("Logged out");
+		}),
 	);
 	const post = (path: string, data: FormData, cookie = "", ip = "192.0.2.1") =>
 		app.fetch(origin + path, {
@@ -919,17 +922,6 @@ describe("form contracts", () => {
 		expectTypeOf<keyof Auth.Session>().toEqualTypeOf<
 			"id" | "user" | "expiration" | "agent"
 		>();
-		expectTypeOf<keyof Auth.Credential>().toEqualTypeOf<
-			| "id"
-			| "user"
-			| "publicKey"
-			| "counter"
-			| "eligible"
-			| "backedUp"
-			| "created"
-			| "origin"
-			| "name"
-		>();
 		expectTypeOf(Auth.tables.map((table) => table.name)).toEqualTypeOf<
 			(
 				| "auth_credentials"
@@ -1058,16 +1050,18 @@ function managed(
 		Route.get("/login").use((c) => {
 			const { register, login } = service.forms(c, { nonce: "csp-nonce" });
 			if (false) {
-				// @ts-expect-error Application field names remain exact.
-				register.Field({ name: "missing" });
+				jsx(register.Form, {
+					// @ts-expect-error Application field names remain exact.
+					children: ({ Field }) => jsx(Field, { name: "missing" }),
+				});
 				// @ts-expect-error Authentication methods live on the configured service.
 				c.auth;
 			}
 			return [
 				jsx(register.Form, {
 					class: "registration",
-					children: [
-						jsx(register.Field, { name: "email" }),
+					children: ({ Field }) => [
+						jsx(Field, { name: "email" }),
 						jsx(register.Issue, { class: "error" }),
 						jsx("button", { children: "Join" }),
 					],
@@ -1222,7 +1216,7 @@ describe("configured passkey callbacks", () => {
 				Route.get("/signup").use((c) => {
 					const { register } = auth.forms(c);
 					return jsx(register.Form, {
-						children: jsx(register.Field, { name: "email" }),
+						children: ({ Fields }) => jsx(Fields, {}),
 					});
 				}),
 			);
@@ -1347,7 +1341,7 @@ describe("configured passkey callbacks", () => {
 			Route.get("/signup").use((c) => {
 				const { register } = auth.forms(c);
 				return jsx(register.Form, {
-					children: jsx(register.Field, { name: "email" }),
+					children: ({ Field }) => jsx(Field, { name: "email" }),
 				});
 			}),
 		);
@@ -2910,7 +2904,7 @@ describe("Postgres storage", () => {
 	});
 
 	test("updates a credential only from its current snapshot", async () => {
-		const credential: Auth.Credential = {
+		const credential: Storage.Credential = {
 			id: "credential",
 			user: "u",
 			publicKey: "key",
@@ -2935,7 +2929,7 @@ describe("Postgres storage", () => {
 	});
 
 	test("registers the account and credential together or not at all", async () => {
-		const credential: Auth.Credential = {
+		const credential: Storage.Credential = {
 			id: "credential",
 			user: "u",
 			publicKey: "key",
@@ -4216,7 +4210,7 @@ describe("agents", () => {
 	test("the approval prompt offers only the signed-in user's passkeys", async () => {
 		const { browser } = agents();
 		await browser("/sign-in");
-		const passkey = (id: string, owner: string): Auth.Credential => ({
+		const passkey = (id: string, owner: string): Storage.Credential => ({
 			id,
 			user: owner,
 			publicKey: "key",
