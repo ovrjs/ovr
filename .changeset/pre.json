@@ -16,6 +16,7 @@
     "7-agents",
     "8-auth",
     "9-database",
+    "api-pass",
     "bun-sqlstate"
   ]
 }
